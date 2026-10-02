@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { AppState, Platform } from 'react-native';
 import EventSource from 'react-native-sse';
-import type { Address, CartLine, Category, Product, StoreSettings, User } from '@shiv/shared';
+import type { Address, CartLine, Category, Page, Product, StoreSettings, User } from '@shiv/shared';
 import { API_URL, api, logout, message, restoreSession } from './api';
 import { Language, translate } from './i18n';
 export type Route = {
@@ -36,11 +36,11 @@ function useStoreValue() {
   const refreshCatalog = useCallback(async () => {
     try {
       const [p, c, st] = await Promise.all([
-        api<Product[]>('/products'),
+        api<Page<Product>>('/products?limit=8'),
         api<Category[]>('/categories'),
         api<StoreSettings>('/store'),
       ]);
-      setProducts(p);
+      setProducts(p.items);
       setCategories(c);
       setSettings(st);
       setError('');
@@ -104,7 +104,7 @@ function useStoreValue() {
     if (!requireUser()) return;
     setCart(await api<CartLine[]>('/cart/items', 'PUT', { productId, quantity }));
   }
-  async function add(product: Product, quantity = 1) {
+  async function add(product: Product, quantity = product.minQuantity) {
     if (!requireUser()) return;
     try {
       await setQuantity(

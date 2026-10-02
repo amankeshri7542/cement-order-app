@@ -111,7 +111,7 @@ function Shell() {
               <View style={[s.row, { marginRight: 15 }]}>
                 <Icon name="location-outline" color="#7e94a5" size={20} />
                 <View>
-                  <Text style={{ color: '#93a1ab', fontSize: 9 }}>DELIVERING ACROSS</Text>
+                  <Text style={{ color: '#93a1ab', fontSize: 9 }}>BUILDING MATERIALS</Text>
                   <Text style={{ fontSize: 12, fontWeight: '600', color: C.ink, marginTop: 4 }}>
                     Patna & Bihar
                   </Text>
@@ -207,7 +207,7 @@ function Shell() {
               <ActivityIndicator color={C.navy} size="large" />
               <Text style={s.body}>{t('loading')}</Text>
             </View>
-          ) : (
+          ) : error ? null : (
             screen
           )}
         </View>

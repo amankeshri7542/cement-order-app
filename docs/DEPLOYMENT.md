@@ -49,3 +49,17 @@ Create/link the Expo project, choose final package/bundle IDs and configure Andr
 ## Release checklist
 
 Replace seed inventory with verified stock/prices; set actual delivery policy; configure business/GST details and decide tax-invoice workflow; validate Bihar delivery pincodes operationally; complete provider tests; inspect dependency advisories; run CI; configure backups, health alerts and retention; rehearse refunds and reconciliation. Container and native signing should be verified in environments with Docker and the relevant SDKs. No production resources or credentials were created by this implementation.
+
+## Pilot upgrade: migration, access, and privacy
+
+Back up the database, apply `20261002120000_pilot_operations` in staging, then production. The migration adds ledger opening balances, quantity/zone constraints, cursor indexes, and trigram search indexes. Its migration role must be allowed to install PostgreSQL `pg_trgm`; ask the managed database operator to enable it if necessary. Never drop ledger records to roll back application code.
+
+Release the API and customer/admin clients together: list endpoints now return `{items, nextCursor}` rather than arrays. Existing native builds need an enforced update or a separate compatibility rollout before this API is exposed to them. Take a short maintenance window for this initial pilot upgrade. Validate production data against new quantity constraints before migration.
+
+Supply a unique `ADMIN_BOOTSTRAP_PASSWORD` (12–200 characters) securely in the release shell, then run the existing `admin:grant` command for each staff phone. The command stores a scrypt hash and revokes that user's sessions. Staff need both phone OTP and the passphrase; sessions have an eight-hour absolute lifetime. Keep the bootstrap variable out of the runtime environment after use. Configure trusted proxy hops accurately for the persistent hashed-IP OTP budgets.
+
+Configure actual zones in Finance & settings. The migration creates none; do not run the development seed on production. Check active, inactive, unknown, minimum-order, and changed-fee pincodes at checkout. Existing CONTRACTOR roles become CUSTOMER/PENDING and require staff verification again. No contractor-only pricing or credit is enabled.
+
+Host `/privacy` and `/delete-account` on the admin domain; these routes are public. Set `EXPO_PUBLIC_PRIVACY_URL` to the HTTPS privacy page before rebuilding customer clients. Fill in the real business identity, retention periods, backup-deletion schedule, support contact, and provider disclosures before publication. The current support number is 9297513707; update both public pages if it changes. Complete Play Console Data safety/account-deletion declarations and confirm the public deletion URL works without installing the app.
+
+Deletion refuses staff accounts and customers with unresolved orders/refunds. It revokes sessions/devices, clears profile/contact snapshots and free-text customer notes, and retains de-identified transaction/audit records. Historical backups require the documented retention/restore procedure; application deletion does not erase old backups automatically.

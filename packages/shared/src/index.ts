@@ -33,6 +33,7 @@ export const otpRequestSchema = z.strictObject({ phone: phoneSchema });
 export const otpVerifySchema = z.strictObject({
   phone: phoneSchema,
   code: z.string().regex(/^\d{6}$/),
+  adminPassword: z.string().min(12).max(200).optional(),
 });
 export const refreshSchema = z.strictObject({
   refreshToken: z.string().min(32).max(200).optional(),
@@ -65,6 +66,9 @@ export const checkoutSchema = z.strictObject({
 });
 export const placeOrderSchema = z.strictObject({ reviewId: id, idempotencyKey: z.string().uuid() });
 export const productSchema = z.strictObject({
+  packSize: z.string().trim().max(100).default(''),
+  minQuantity: z.number().int().min(1).max(10000).default(1),
+  quantityStep: z.number().int().min(1).max(10000).default(1),
   name: text(120),
   brand: text(80),
   categoryId: id,
@@ -147,7 +151,15 @@ export const deviceSchema = z.strictObject({
 
 export type AddressInput = z.infer<typeof addressSchema>;
 export type Address = AddressInput & { id: string };
-export type User = { id: string; phone: string; name: string; role: Role; language: 'en' | 'hi' };
+export type User = {
+  id: string;
+  phone: string;
+  name: string;
+  role: Role;
+  language: 'en' | 'hi';
+  contractorStatus?: string;
+  deletedAt?: string | null;
+};
 export type Category = { id: string; name: string; slug: string };
 export type Product = z.infer<typeof productSchema> & {
   id: string;
@@ -190,8 +202,12 @@ export type CheckoutReview = {
   notes: string;
   paymentMethod: 'COD' | 'ONLINE';
   settingsVersion: number;
+  deliveryZoneId: string;
+  deliveryZoneVersion: number;
+  deliveryEstimate: string;
 };
 export type Payment = {
+  initializationStartedAt?: string | null;
   status: 'PENDING' | 'CAPTURED' | 'REFUND_PENDING' | 'REFUNDED';
   method: 'COD' | 'ONLINE';
   razorpayOrderId: string | null;
@@ -215,6 +231,9 @@ export type Order = {
   user?: User;
 };
 export type Quote = {
+  decisionSource?: string | null;
+  decisionNote?: string;
+  decisionAt?: string | null;
   id: string;
   number: string;
   status: 'REQUESTED' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED';
@@ -278,3 +297,60 @@ export function totals(
   if (subtotalPaise + fee > 2_000_000_000) throw new Error('Order exceeds supported total');
   return { subtotalPaise, deliveryFeePaise: fee, totalPaise: subtotalPaise + fee };
 }
+
+export type Page<T> = { items: T[]; nextCursor: string | null };
+export const inventorySchema = z.strictObject({
+  kind: z.enum(['PURCHASE_IN', 'WALK_IN_SALE', 'RETURN', 'DAMAGE', 'MANUAL_ADJUSTMENT']),
+  quantity: z
+    .number()
+    .int()
+    .min(-1_000_000)
+    .max(1_000_000)
+    .refine((v) => v !== 0),
+  note: text(500),
+  reference: z.string().trim().max(100).default(''),
+  idempotencyKey: z.string().uuid(),
+});
+export type InventoryMovement = {
+  id: string;
+  productId: string;
+  kind: string;
+  quantity: number;
+  balanceAfter: number;
+  actorId: string;
+  reference: string;
+  note: string;
+  createdAt: string;
+};
+export const deliveryZoneSchema = z.strictObject({
+  name: text(100),
+  active: z.boolean(),
+  deliveryFeePaise: paise,
+  minimumOrderPaise: paise,
+  freeDeliveryAbovePaise: paise.nullable(),
+  estimate: text(200),
+  pincodes: z
+    .array(z.string().regex(/^[1-9]\d{5}$/))
+    .min(1)
+    .max(500)
+    .refine((v) => new Set(v).size === v.length, 'Duplicate pincodes'),
+  expectedVersion: z.number().int().min(1).optional(),
+});
+export type DeliveryZone = Omit<
+  z.infer<typeof deliveryZoneSchema>,
+  'pincodes' | 'expectedVersion'
+> & { id: string; version: number; pincodes: { pincode: string }[] };
+export const contractorDecisionSchema = z.strictObject({
+  status: z.enum(['VERIFIED', 'REJECTED']),
+  note: text(500),
+});
+export const deletionSchema = z.strictObject({ confirmation: z.literal('DELETE') });
+export const storeQuoteRespondSchema = quoteRespondSchema.extend({ note: text(500) });
+export type SessionInfo = {
+  id: string;
+  label: string;
+  createdAt: string;
+  lastSeenAt: string;
+  current: boolean;
+  deviceCount: number;
+};

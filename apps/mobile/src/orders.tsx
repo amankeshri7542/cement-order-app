@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, Platform, Pressable, Share, Text, View } from 'react-native';
-import { Order, money, statusLabel } from '@shiv/shared';
+import { Order, Page, money, statusLabel } from '@shiv/shared';
 import { api, message } from './api';
 import { useStore } from './store';
 import { Button, C, Empty, Icon, Notice, Tag, s } from './ui';
@@ -22,11 +22,17 @@ export async function confirm(message: string) {
 export function Orders() {
   const { t, navigate } = useStore();
   const [orders, setOrders] = useState<Order[]>([]);
+  const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const load = useCallback(async () => {
+  const load = useCallback(async (after?: string) => {
+    setLoading(true);
     try {
-      setOrders(await api<Order[]>('/orders'));
+      const page = await api<Page<Order>>(
+        `/orders?limit=24${after ? '&cursor=' + encodeURIComponent(after) : ''}`,
+      );
+      setOrders((old) => (after ? [...old, ...page.items] : page.items));
+      setCursor(page.nextCursor);
       setError('');
     } catch (e) {
       setError(message(e));
@@ -82,6 +88,11 @@ export function Orders() {
           </View>
         </Pressable>
       ))}
+      {cursor && (
+        <Button loading={loading} onPress={() => void load(cursor)}>
+          Load more orders
+        </Button>
+      )}
     </View>
   );
 }
@@ -170,8 +181,17 @@ export function OrderDetail() {
             Your stock is reserved for 30 minutes. Payment is confirmed only after verification by
             the store’s server.
           </Notice>
+          {order.payment.initializationStartedAt && !order.payment.razorpayOrderId && (
+            <Notice>
+              Payment setup needs store verification. Do not make another payment. Contact the store
+              with this order number.
+            </Notice>
+          )}
           <Button
             loading={busy}
+            disabled={Boolean(
+              order.payment.initializationStartedAt && !order.payment.razorpayOrderId,
+            )}
             onPress={async () => {
               setBusy(true);
               try {

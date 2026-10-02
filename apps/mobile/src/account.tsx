@@ -11,9 +11,9 @@ import {
   View,
 } from 'react-native';
 import * as Notifications from 'expo-notifications';
-import { addressSchema, Address, User } from '@shiv/shared';
+import { addressSchema, Address, SessionInfo, User } from '@shiv/shared';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { api, message, saveSession } from './api';
+import { api, clearLocalSession, message, saveSession } from './api';
 import { useStore } from './store';
 import { Button, C, Field, Icon, IconName, Notice, Section, s } from './ui';
 
@@ -21,6 +21,7 @@ export function Login() {
   const { loginVisible, setLoginVisible, setUser, setLanguage, t } = useStore();
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
   const [sent, setSent] = useState(false);
   const [devCode, setDevCode] = useState('');
   const [busy, setBusy] = useState(false);
@@ -39,7 +40,7 @@ export function Login() {
         const result = await api<{ user: User; accessToken?: string; refreshToken?: string }>(
           '/auth/otp/verify',
           'POST',
-          { phone: `+91${phone}`, code },
+          { phone: `+91${phone}`, code, ...(adminPassword ? { adminPassword } : {}) },
         );
         const user = await saveSession(result);
         setUser(user);
@@ -109,6 +110,15 @@ export function Login() {
                 placeholder="6-digit code"
               />
             )}
+            {sent && (
+              <Field
+                label="Staff passphrase (staff only)"
+                secureTextEntry
+                value={adminPassword}
+                onChangeText={setAdminPassword}
+                autoComplete="current-password"
+              />
+            )}
             {Boolean(devCode) && (
               <Notice>
                 Local development code: {devCode}
@@ -160,7 +170,12 @@ export function Account() {
   } = useStore();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(user?.name || '');
-  const [contractor, setContractor] = useState(user?.role === 'CONTRACTOR');
+  const [contractor, setContractor] = useState(
+    user?.contractorStatus === 'PENDING' || user?.role === 'CONTRACTOR',
+  );
+  const [sessions, setSessions] = useState<SessionInfo[] | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmation, setConfirmation] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   async function save() {
@@ -253,7 +268,7 @@ export function Account() {
               onValueChange={setContractor}
               accessibilityLabel={t('contractor')}
             />
-            <Text style={[s.body, { flex: 1 }]}>{t('contractor')}</Text>
+            <Text style={[s.body, { flex: 1 }]}>Request contractor verification</Text>
           </View>
           {Boolean(error) && <Notice error>{error}</Notice>}
           <Button loading={busy} onPress={() => void save()}>
@@ -320,10 +335,98 @@ export function Account() {
         </View>
       )}
       {user && (
+        <View style={[s.card, s.stack]}>
+          <Text style={s.h2}>Account security & privacy</Text>
+          <Text style={s.body}>
+            Contractor verification: {user.contractorStatus || 'NONE'}. Verification does not grant
+            credit or special prices.
+          </Text>
+          <Button
+            secondary
+            onPress={() =>
+              void api<SessionInfo[]>('/auth/sessions')
+                .then(setSessions)
+                .catch((e) => setToast(message(e)))
+            }
+          >
+            Manage signed-in devices
+          </Button>
+          {sessions?.map((session) => (
+            <View key={session.id} style={s.stack}>
+              <Text style={s.body}>
+                {session.current ? 'This device' : session.label} ·{' '}
+                {new Date(session.lastSeenAt).toLocaleDateString('en-IN')}
+              </Text>
+              {!session.current && (
+                <Button
+                  secondary
+                  onPress={() =>
+                    void api(`/auth/sessions/${session.id}`, 'DELETE')
+                      .then(() => api<SessionInfo[]>('/auth/sessions'))
+                      .then(setSessions)
+                      .catch((e) => setToast(message(e)))
+                  }
+                >
+                  Sign out device
+                </Button>
+              )}
+            </View>
+          ))}
+          <Text style={s.body}>
+            Your number and delivery details support sign-in, orders and support. Deletion removes
+            your profile, addresses, cart and sessions. De-identified financial records remain for
+            reconciliation. Resolve open orders/refunds first.
+          </Text>
+          <Button secondary onPress={() => setDeleting(!deleting)}>
+            Delete account
+          </Button>
+          {deleting && (
+            <>
+              <Notice>This cannot be undone. All devices will be signed out.</Notice>
+              <Field
+                label="Type DELETE to confirm"
+                value={confirmation}
+                onChangeText={setConfirmation}
+              />
+              <Button
+                disabled={confirmation !== 'DELETE'}
+                loading={busy}
+                onPress={async () => {
+                  setBusy(true);
+                  try {
+                    await api('/me/delete', 'POST', { confirmation });
+                    await clearLocalSession();
+                    setUser(null);
+                    navigate({ screen: 'Home' });
+                    setToast('Account deleted');
+                  } catch (e) {
+                    setToast(message(e));
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              >
+                Permanently delete my account
+              </Button>
+            </>
+          )}
+        </View>
+      )}
+      {user && (
         <Button secondary onPress={() => void signout()}>
           {t('signout')}
         </Button>
       )}
+      <Button
+        secondary
+        onPress={() =>
+          void Linking.openURL(
+            process.env.EXPO_PUBLIC_PRIVACY_URL || 'http://localhost:3000/privacy',
+          ).catch(() => setToast('Could not open the privacy policy. Contact the store.'))
+        }
+      >
+        Privacy & deletion policy
+      </Button>
       <Text style={[s.body, { textAlign: 'center', fontSize: 11 }]}>
         Shiv Cement Store · Built on trust.
       </Text>

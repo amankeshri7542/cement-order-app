@@ -45,7 +45,8 @@ test('customer places a COD order, tracks it, reorders and requests a bulk quote
   await expect(page.getByText('Address saved', { exact: true })).toBeVisible();
   await page.getByRole('tab', { name: 'Products' }).click();
   await page.getByRole('button', { name: 'View UltraTech Super' }).click();
-  await page.getByRole('button', { name: 'Add to cart', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Quantity', exact: true }).fill('10');
+  await page.getByRole('button', { name: /Add.*to cart/ }).click();
   await page.getByRole('button', { name: 'Your cart, 1 products' }).click();
   await page.getByRole('button', { name: 'Continue to checkout' }).click();
   await page.getByRole('button', { name: 'Review your order' }).click();
@@ -57,7 +58,7 @@ test('customer places a COD order, tracks it, reorders and requests a bulk quote
   await page.getByRole('button', { name: 'Order again', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Continue to checkout' })).toBeVisible();
   await page.getByRole('tab', { name: 'Home' }).click();
-  await page.getByRole('button', { name: 'Get bulk price', exact: true }).click();
+  await page.getByRole('button', { name: 'Bulk quotation', exact: true }).click();
   await page.getByRole('button', { name: 'UltraTech Super', exact: true }).click();
   await page.getByRole('button', { name: 'Send bulk request' }).click();
   await expect(page.getByText('Requested', { exact: true })).toBeVisible();
@@ -75,7 +76,8 @@ test('admin changes price and finance policy, fulfils an order and replies to a 
 }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await adminLogin(page);
-  await expect(page.getByRole('heading', { name: 'A good day to build.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Your materials counter.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Stock in/ })).toBeVisible();
   await page.screenshot({ path: 'test-results/admin-overview.png', fullPage: true });
   await page.getByRole('button', { name: 'Products', exact: true }).click();
   await page.getByRole('button', { name: 'Edit UltraTech Super' }).click();
@@ -83,7 +85,9 @@ test('admin changes price and finance policy, fulfils an order and replies to a 
   await page.getByRole('button', { name: 'Save product', exact: true }).click();
   await expect(page.getByText('₹425.00', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Finance & settings', exact: true }).click();
-  await page.getByLabel('Flat delivery charge (₹)').fill('600');
+  await page.getByRole('button', { name: /Patna test/ }).click();
+  await page.getByLabel('Delivery charge (₹)', { exact: true }).fill('600');
+  await page.getByRole('button', { name: 'Save delivery zone' }).click();
   await page.getByRole('button', { name: 'Save settings' }).click();
   await expect(page.getByText('Store and finance settings saved')).toBeVisible();
   await page
@@ -150,7 +154,8 @@ test('live price updates refresh the catalogue and invalidate an accepted checko
   await updatePrice(45000);
   await expect(page.getByText('₹450.00', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'View UltraTech Super' }).click();
-  await page.getByRole('button', { name: 'Add to cart', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Quantity', exact: true }).fill('10');
+  await page.getByRole('button', { name: /Add.*to cart/ }).click();
   await page.getByRole('button', { name: 'Your cart, 1 products' }).click();
   await page.getByRole('button', { name: 'Continue to checkout' }).click();
   await page.getByRole('button', { name: 'Review your order' }).click();
@@ -175,10 +180,101 @@ test('admin UI denies a customer account and a lost network produces a recoverab
     page.getByRole('alert').filter({ hasText: 'does not have store staff access' }),
   ).toBeVisible();
   await page.goto('http://localhost:8082');
-  await page.route('**/api/v1/products', (route) => route.abort());
+  await page.route('**/api/v1/products*', (route) => route.abort());
   await page.reload();
   await expect(page.getByRole('alert')).toContainText('Check your connection');
-  await page.unroute('**/api/v1/products');
-  await page.getByRole('button', { name: 'Try again', exact: true }).click();
+  await page.unroute('**/api/v1/products*');
+  await page.getByRole('button', { name: 'Try again', exact: true }).first().click();
   await expect(page.getByRole('button', { name: 'View UltraTech Super' })).toBeVisible();
+});
+
+test('store records stock and delivery rules; customers browse server pages on mobile', async ({
+  page,
+}) => {
+  await adminLogin(page, '9297513709');
+  await page.getByRole('button', { name: 'Products', exact: true }).click();
+  await page.getByRole('button', { name: 'Stock ledger UltraTech Super' }).click();
+  await page.getByRole('combobox', { name: 'Movement', exact: true }).selectOption('WALK_IN_SALE');
+  await page.getByLabel('Quantity', { exact: true }).fill('5');
+  await page.getByLabel('Receipt / reference').fill('WALK-IN-5');
+  await page.getByLabel('Reason', { exact: true }).fill('Counter collection');
+  await page.getByRole('button', { name: 'Record stock movement' }).click();
+  await expect(
+    page.getByRole('dialog').getByRole('cell', { name: 'WALK-IN-5 Counter collection' }),
+  ).toBeVisible();
+  await page.screenshot({ path: 'test-results/pilot-stock-ledger.png' });
+  await page.getByRole('button', { name: 'Close dialog' }).click();
+  await page.getByRole('button', { name: 'Finance & settings', exact: true }).click();
+  await page.getByRole('button', { name: 'Add delivery zone' }).click();
+  await page.getByLabel('Zone name').fill('Outstation check');
+  await page.getByLabel('Pincodes, separated by commas').fill('801111');
+  await page.getByLabel('Delivery charge (₹)', { exact: true }).fill('900');
+  await page.getByLabel('Delivery estimate', { exact: true }).fill('2–3 days after confirmation');
+  await page.getByRole('button', { name: 'Save delivery zone' }).click();
+  await expect(page.getByRole('button', { name: /Outstation check/ })).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator('.sidebar')).toBeHidden();
+  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Open menu', exact: true })).toHaveAttribute(
+    'aria-expanded',
+    'true',
+  );
+  await page.getByRole('button', { name: 'Finance & settings', exact: true }).click();
+  await expect(page.locator('.sidebar')).toBeHidden();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.screenshot({ path: 'test-results/pilot-admin-mobile.png' });
+  const sample = await (
+    await page.request.get('http://localhost:4010/api/v1/products/test-ultratech')
+  ).json();
+  const data = Object.fromEntries(
+    Object.keys(productSchema.shape).map((key) => [key, sample[key]]),
+  );
+  for (let i = 0; i < 27; i++) {
+    const r = await page.request.post('http://localhost:4010/api/v1/admin/products', {
+      headers: { Origin: 'http://localhost:3001' },
+      data: { ...data, name: `Pilot material ${String(i).padStart(2, '0')}`, stock: 20 },
+    });
+    expect(r.ok()).toBe(true);
+  }
+  await page.goto('http://localhost:8082');
+  await page.getByRole('textbox', { name: 'Delivery pincode' }).fill('801111');
+  await page.getByRole('button', { name: 'Check delivery', exact: true }).click();
+  await expect(page.getByText('2–3 days after confirmation', { exact: false })).toBeVisible();
+  await page.getByRole('tab', { name: 'Products', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'View Pilot material 00' })).toBeVisible();
+  await page.getByRole('button', { name: 'Filters and sort', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Filter by brand' })).toBeVisible();
+  await page.getByRole('button', { name: 'Show materials', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Filter by brand' })).toBeHidden();
+  const firstCount = await page.getByRole('button', { name: /^View / }).count();
+  expect(firstCount).toBe(24);
+  await page.getByRole('button', { name: 'Load more materials' }).click();
+  await expect(page.getByRole('button', { name: 'View UltraTech Super' })).toBeVisible();
+  expect(await page.getByRole('button', { name: /^View / }).count()).toBe(28);
+  await page.getByRole('textbox', { name: 'Search cement, steel, sand…' }).scrollIntoViewIfNeeded();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.screenshot({ path: 'test-results/pilot-catalogue-mobile.png' });
+});
+
+test('public privacy and verified account deletion work without installing the app', async ({
+  page,
+}) => {
+  await page.goto('http://localhost:3001/privacy');
+  await expect(page.getByRole('heading', { name: 'Privacy, in plain language.' })).toBeVisible();
+  await page.getByRole('link', { name: 'Request account deletion' }).click();
+  await page.getByLabel('Mobile number', { exact: true }).fill('9888888884');
+  const otp = page.waitForResponse(
+    (r) => r.url().endsWith('/auth/otp/request') && r.status() === 201,
+  );
+  await page.getByRole('button', { name: 'Get verification code' }).click();
+  const code = (await (await otp).json()).devCode;
+  await page.getByLabel('Verification code', { exact: true }).fill(code);
+  await page.getByRole('button', { name: 'Verify account', exact: true }).click();
+  await page.getByLabel('Deletion confirmation').fill('DELETE');
+  await page.getByRole('button', { name: 'Delete my account', exact: true }).click();
+  await expect(page.getByRole('status')).toContainText('account has been deleted');
 });

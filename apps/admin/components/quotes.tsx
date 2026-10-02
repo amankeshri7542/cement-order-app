@@ -123,6 +123,13 @@ function QuoteEditor({
     <Modal title={quote.number} close={close}>
       <form className="form-stack" onSubmit={submit}>
         <Badge value={quote.status} />
+        {quote.decisionSource && (
+          <p>
+            Decision:{' '}
+            {quote.decisionSource === 'CUSTOMER' ? 'Customer in app' : 'Recorded by store'} ·{' '}
+            {quote.decisionNote}
+          </p>
+        )}
         {quote.status === 'SENT' && (
           <div className="button-row">
             {(['ACCEPTED', 'REJECTED'] as const).map((status) => (
@@ -140,11 +147,14 @@ function QuoteEditor({
                     )
                   )
                     return;
+                  const note = window.prompt('Record who confirmed, how, and when (required):');
+                  if (!note?.trim()) return;
                   setBusy(true);
                   try {
                     await api(`/admin/quotes/${quote.id}/respond`, 'POST', {
                       revision: quote.revision,
                       status,
+                      note,
                     });
                     await save(
                       status === 'ACCEPTED' ? 'Customer acceptance recorded' : 'Quote closed',

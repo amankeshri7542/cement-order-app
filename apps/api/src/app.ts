@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { OperationsController } from './operations';
 import { Controller, Get, Inject, Module } from '@nestjs/common';
 import { APP_GUARD, NestFactory } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
@@ -39,6 +40,7 @@ class HealthController {
     AdminController,
     IntegrationsController,
     HealthController,
+    OperationsController,
   ],
   providers: [
     Db,

@@ -1,10 +1,12 @@
 import {
   CanActivate,
   Controller,
+  Delete,
   ExecutionContext,
   Get,
   Inject,
   Injectable,
+  Param,
   Post,
   Req,
   Res,
@@ -18,6 +20,7 @@ import { otpRequestSchema, otpVerifySchema, refreshSchema } from '@shiv/shared';
 import { Db } from './db';
 import { getConfig } from './config';
 import { AuthRequest, Contract, Input, Public, cookie, fail, hash, safeEqual } from './http';
+import { assertSession, limitOtp, refreshLifetime, verifyPassword } from './security';
 
 @Injectable()
 export class AuthGuard implements CanActivate {
@@ -47,8 +50,9 @@ export class AuthGuard implements CanActivate {
       where: { accessHash: hash(token) },
       include: { user: true },
     });
-    if (!session || session.expiresAt < new Date())
+    if (!session || session.expiresAt <= new Date())
       fail('UNAUTHORIZED', 'Your session expired. Sign in again.', 401);
+    await assertSession(this.db, session);
     req.user = session.user;
     req.sessionId = session.id;
     if (
@@ -56,6 +60,11 @@ export class AuthGuard implements CanActivate {
       session.user.role !== 'ADMIN'
     )
       fail('FORBIDDEN', 'Store staff access is required.', 403);
+    if (session.lastSeenAt.getTime() < Date.now() - 60000)
+      await this.db.session.updateMany({
+        where: { id: session.id },
+        data: { lastSeenAt: new Date() },
+      });
     return true;
   }
 }
@@ -118,7 +127,7 @@ export class AuthService {
         : {}),
     };
   }
-  async verify(phone: string, code: string) {
+  async verify(phone: string, code: string, adminPassword?: string, label = 'Unknown device') {
     const challenge = await this.db.otpChallenge.findUnique({ where: { phone } });
     if (
       !challenge ||
@@ -158,13 +167,33 @@ export class AuthService {
       });
       if (!consumed.count) fail('INVALID_OTP', 'Code already used. Request a new one.', 401);
       const user = await tx.user.upsert({ where: { phone }, create: { phone }, update: {} });
+      if (user.deletedAt) fail('UNAUTHORIZED', 'This account has been deleted.', 401);
+      const now = new Date();
+      let adminVerifiedAt: Date | null = null;
+      if (user.role === 'ADMIN') {
+        const credential = await tx.adminCredential.findUnique({ where: { userId: user.id } });
+        if (credential) {
+          if (!adminPassword || !(await verifyPassword(adminPassword, credential.passwordHash)))
+            fail('INVALID_CREDENTIALS', 'The sign-in details could not be verified.', 401);
+          adminVerifiedAt = now;
+        } else if (getConfig().NODE_ENV === 'production') {
+          fail(
+            'ADMIN_SETUP_REQUIRED',
+            'Staff authentication must be configured by the store.',
+            403,
+          );
+        }
+        // Development-only fixture exception: no credential permits OTP-only local staff login.
+      }
       await tx.session.create({
         data: {
           userId: user.id,
           accessHash: hash(accessToken),
           refreshHash: hash(refreshToken),
+          label: label.slice(0, 160),
+          adminVerifiedAt,
           expiresAt: new Date(Date.now() + 1800000),
-          refreshExpiresAt: new Date(Date.now() + 30 * 86400000),
+          refreshExpiresAt: new Date(Date.now() + refreshLifetime(user.role)),
         },
       });
       return { user, accessToken, refreshToken };
@@ -180,12 +209,14 @@ export class AuthService {
       });
       if (!session || session.refreshExpiresAt < new Date())
         fail('UNAUTHORIZED', 'Please sign in again.', 401);
+      await assertSession(tx, session);
       await tx.session.update({
         where: { id: session.id },
         data: {
           accessHash: hash(accessToken),
           refreshHash: hash(refreshToken),
           expiresAt: new Date(Date.now() + 1800000),
+          lastSeenAt: new Date(),
         },
       });
       return { user: session.user, accessToken, refreshToken };
@@ -213,7 +244,10 @@ export class AuthController {
     };
     if (req.headers.origin) {
       res.cookie('shiv_access', result.accessToken, { ...options, maxAge: 1800000 });
-      res.cookie('shiv_refresh', result.refreshToken, { ...options, maxAge: 30 * 86400000 });
+      res.cookie('shiv_refresh', result.refreshToken, {
+        ...options,
+        maxAge: refreshLifetime(result.user.role),
+      });
       return { user: result.user };
     }
     return result;
@@ -221,7 +255,11 @@ export class AuthController {
   @Public()
   @Post('otp/request')
   @Contract(otpRequestSchema)
-  request(@Input(otpRequestSchema) body: z.infer<typeof otpRequestSchema>) {
+  async request(
+    @Input(otpRequestSchema) body: z.infer<typeof otpRequestSchema>,
+    @Req() req: AuthRequest,
+  ) {
+    await limitOtp(this.db, req.ip || req.socket.remoteAddress || 'unknown', 'send');
     return this.auth.request(body.phone);
   }
   @Public()
@@ -232,7 +270,17 @@ export class AuthController {
     @Req() req: AuthRequest,
     @Res({ passthrough: true }) res: Response,
   ) {
-    return this.sendSession(await this.auth.verify(body.phone, body.code), req, res);
+    await limitOtp(this.db, req.ip || req.socket.remoteAddress || 'unknown', 'verify');
+    return this.sendSession(
+      await this.auth.verify(
+        body.phone,
+        body.code,
+        body.adminPassword,
+        req.get('user-agent') || 'Unknown device',
+      ),
+      req,
+      res,
+    );
   }
   @Public()
   @Post('refresh')
@@ -269,5 +317,34 @@ export class AuthController {
   }
   @Get('session') session(@Req() req: AuthRequest) {
     return { user: req.user };
+  }
+  @Get('sessions') async sessions(@Req() req: AuthRequest) {
+    const sessions = await this.db.session.findMany({
+      where: { userId: req.user.id, refreshExpiresAt: { gt: new Date() } },
+      select: {
+        id: true,
+        label: true,
+        createdAt: true,
+        lastSeenAt: true,
+        _count: { select: { devices: true } },
+      },
+      orderBy: { lastSeenAt: 'desc' },
+    });
+    return sessions.map(({ _count, ...session }) => ({
+      ...session,
+      current: session.id === req.sessionId,
+      deviceCount: _count.devices,
+    }));
+  }
+  @Delete('sessions/:id') async revoke(@Param('id') id: string, @Req() req: AuthRequest) {
+    const result = await this.db.session.deleteMany({ where: { id, userId: req.user.id } });
+    if (!result.count) fail('NOT_FOUND', 'Session not found.', 404);
+    return { ok: true };
+  }
+  @Post('sessions/revoke-others') async revokeOthers(@Req() req: AuthRequest) {
+    const result = await this.db.session.deleteMany({
+      where: { userId: req.user.id, id: { not: req.sessionId } },
+    });
+    return { ok: true, revoked: result.count };
   }
 }

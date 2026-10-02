@@ -38,6 +38,9 @@ enum QuoteStatus {
   EXPIRED
 }
 model User {
+  contractorStatus String @default("NONE")
+  deletedAt DateTime?
+  adminCredential AdminCredential?
   id String @id @default(cuid())
   phone String @unique
   name String @default("")
@@ -53,8 +56,12 @@ model User {
   quotes Quote[]
   notifications Notification[]
   devices Device[]
+  @@index([createdAt, id])
 }
 model Session {
+  label String @default("Unknown device")
+  lastSeenAt DateTime @default(now())
+  adminVerifiedAt DateTime?
   id String @id @default(cuid())
   userId String
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -99,6 +106,10 @@ model Category {
   products Product[]
 }
 model Product {
+  packSize String @default("")
+  minQuantity Int @default(1)
+  quantityStep Int @default(1)
+  movements InventoryMovement[]
   id String @id @default(cuid())
   name String
   brand String
@@ -123,6 +134,11 @@ model Product {
   orderItems OrderItem[]
   quoteItems QuoteItem[]
   @@index([active, categoryId])
+  @@index([active, name, id])
+  @@index([active, pricePaise, id])
+  @@index([active, createdAt, id])
+  @@index([active, categoryId, name, id])
+  @@index([active, brand, name, id])
 }
 model ProductPriceHistory {
   id String @id @default(cuid())
@@ -179,6 +195,8 @@ model Order {
   @@unique([userId, idempotencyKey])
   @@index([userId, createdAt])
   @@index([status, reservedUntil])
+  @@index([createdAt, id])
+  @@index([userId, createdAt, id])
 }
 model OrderItem {
   id String @id @default(cuid())
@@ -228,6 +246,10 @@ model PaymentEvent {
   @@index([paymentId])
 }
 model Quote {
+  decisionSource String?
+  decisionActorId String?
+  decisionAt DateTime?
+  decisionNote String @default("")
   id String @id @default(cuid())
   number String @unique
   userId String
@@ -249,6 +271,8 @@ model Quote {
   revisions QuoteRevision[]
   @@index([userId, createdAt])
   @@index([status, validUntil])
+  @@index([createdAt, id])
+  @@index([userId, createdAt, id])
 }
 model QuoteItem {
   id String @id @default(cuid())
@@ -314,4 +338,60 @@ model AuditLog {
   details Json
   createdAt DateTime @default(now())
   @@index([entityId, createdAt])
+  @@index([createdAt, id])
+}
+
+
+enum InventoryKind {
+  PURCHASE_IN
+  WALK_IN_SALE
+  ONLINE_ORDER
+  ORDER_CANCELLED
+  RETURN
+  DAMAGE
+  MANUAL_ADJUSTMENT
+}
+model InventoryMovement {
+  id String @id @default(cuid())
+  productId String
+  product Product @relation(fields: [productId], references: [id])
+  kind InventoryKind
+  quantity Int
+  balanceAfter Int
+  actorId String
+  reference String
+  note String
+  idempotencyKey String @unique
+  createdAt DateTime @default(now())
+  @@index([productId, createdAt, id])
+  @@index([createdAt, id])
+}
+model DeliveryZone {
+  id String @id @default(cuid())
+  name String
+  active Boolean @default(true)
+  deliveryFeePaise Int
+  minimumOrderPaise Int @default(0)
+  freeDeliveryAbovePaise Int?
+  estimate String
+  version Int @default(1)
+  pincodes DeliveryPincode[]
+}
+model DeliveryPincode {
+  pincode String @id
+  zoneId String
+  zone DeliveryZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  @@index([zoneId])
+}
+model AdminCredential {
+  userId String @id
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  passwordHash String
+  updatedAt DateTime @updatedAt
+}
+model AuthRateLimit {
+  key String @id
+  count Int @default(1)
+  expiresAt DateTime
+  @@index([expiresAt])
 }

@@ -1,8 +1,16 @@
-import { Controller, Get, Inject, Param, Post, Req } from '@nestjs/common';
+import { Controller, Get, Inject, Param, Post, Query, Req } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
-import { quoteOfferSchema, quoteRequestSchema, quoteRespondSchema, totals } from '@shiv/shared';
+import {
+  quoteOfferSchema,
+  quoteRequestSchema,
+  quoteRespondSchema,
+  storeQuoteRespondSchema,
+  totals,
+} from '@shiv/shared';
+import { validateQuantity } from './inventory';
+import { paginate } from './pagination';
 import { Db } from './db';
 import { Admin, AuthRequest, Contract, Input, fail } from './http';
 import { reference, validDelivery } from './orders';
@@ -11,18 +19,21 @@ import { reference, validDelivery } from './orders';
 @Controller()
 export class QuotesController {
   constructor(@Inject(Db) private db: Db) {}
-  @Get('quotes') async list(@Req() req: AuthRequest) {
+  @Get('quotes') async list(@Req() req: AuthRequest, @Query() query: Record<string, string>) {
+    const page = paginate(query, `quotes:${req.user.id}`);
     const quotes = await this.db.quote.findMany({
-      where: { userId: req.user.id },
-      include: { items: true, revisions: true },
-      orderBy: { createdAt: 'desc' },
-      take: 100,
+      where: { userId: req.user.id, ...page.after },
+      include: { items: true },
+      orderBy: page.orderBy,
+      take: page.take,
     });
-    return quotes.map((q) => ({
-      ...q,
-      status:
-        q.status === 'SENT' && q.validUntil && q.validUntil < new Date() ? 'EXPIRED' : q.status,
-    }));
+    return page.finish(
+      quotes.map((q) => ({
+        ...q,
+        status:
+          q.status === 'SENT' && q.validUntil && q.validUntil < new Date() ? 'EXPIRED' : q.status,
+      })),
+    );
   }
   @Post('quotes')
   @Contract(quoteRequestSchema)
@@ -55,6 +66,7 @@ export class QuotesController {
           items: {
             create: body.items.map((i) => {
               const p = products.find((p) => p.id === i.productId)!;
+              validateQuantity(p, i.quantity);
               return { ...i, name: p.name, unit: p.unit };
             }),
           },
@@ -63,17 +75,21 @@ export class QuotesController {
       });
     });
   }
-  @Admin() @Get('admin/quotes') async all() {
+  @Admin() @Get('admin/quotes') async all(@Query() query: Record<string, string>) {
+    const page = paginate(query, 'admin-quotes');
     const quotes = await this.db.quote.findMany({
-      include: { items: true, user: true, revisions: true },
-      orderBy: { createdAt: 'desc' },
-      take: 300,
+      where: page.after,
+      include: { items: true, user: true },
+      orderBy: page.orderBy,
+      take: page.take,
     });
-    return quotes.map((q) => ({
-      ...q,
-      status:
-        q.status === 'SENT' && q.validUntil && q.validUntil < new Date() ? 'EXPIRED' : q.status,
-    }));
+    return page.finish(
+      quotes.map((q) => ({
+        ...q,
+        status:
+          q.status === 'SENT' && q.validUntil && q.validUntil < new Date() ? 'EXPIRED' : q.status,
+      })),
+    );
   }
   @Admin()
   @Post('admin/quotes/:id/offer')
@@ -116,6 +132,10 @@ export class QuotesController {
         where: { id },
         data: {
           status: 'SENT',
+          decisionSource: null,
+          decisionActorId: null,
+          decisionAt: null,
+          decisionNote: '',
           revision: { increment: 1 },
           validUntil: new Date(body.validUntil),
           totalPaise: total.totalPaise,
@@ -161,19 +181,20 @@ export class QuotesController {
   }
   @Admin()
   @Post('admin/quotes/:id/respond')
-  @Contract(quoteRespondSchema)
+  @Contract(storeQuoteRespondSchema)
   adminRespond(
     @Param('id') id: string,
-    @Input(quoteRespondSchema) body: z.infer<typeof quoteRespondSchema>,
+    @Input(storeQuoteRespondSchema) body: z.infer<typeof storeQuoteRespondSchema>,
     @Req() req: AuthRequest,
   ) {
-    return this.decide(id, body, req.user.id);
+    return this.decide(id, body, req.user.id, undefined, body.note);
   }
   private decide(
     id: string,
     body: z.infer<typeof quoteRespondSchema>,
     actorId: string,
     ownerId?: string,
+    note = '',
   ) {
     return this.db.atomic(async (tx) => {
       const quote = await tx.quote.findFirst({
@@ -189,7 +210,13 @@ export class QuotesController {
         fail('QUOTE_CHANGED', 'Quote changed or expired. Review the latest version.', 409);
       const updated = await tx.quote.update({
         where: { id },
-        data: { status: body.status },
+        data: {
+          status: body.status,
+          decisionSource: ownerId ? 'CUSTOMER' : 'STORE_RECORDED',
+          decisionActorId: actorId,
+          decisionAt: new Date(),
+          decisionNote: note,
+        },
         include: { items: true },
       });
       await tx.auditLog.create({
@@ -197,7 +224,7 @@ export class QuotesController {
           actorId,
           event: `QUOTE_${body.status}`,
           entityId: id,
-          details: { revision: body.revision, byStore: !ownerId },
+          details: { revision: body.revision, byStore: !ownerId, note },
         },
       });
       return updated;

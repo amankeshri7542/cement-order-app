@@ -1,17 +1,20 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Category, Product, money, productSchema } from '@shiv/shared';
 import { Plus, Search, Pencil, Package, Upload } from 'lucide-react';
 import { api, errorMessage } from '../lib/api';
 import { Badge, Empty, Field, Modal } from './ui';
+import { Inventory } from './operations';
 
 export function Products({
   products,
+  onFilter,
   categories,
   refresh,
   notice,
 }: {
   products: Product[];
+  onFilter: (query: string) => void;
   categories: Category[];
   refresh: () => Promise<void>;
   notice: (value: string) => void;
@@ -19,11 +22,15 @@ export function Products({
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState<Product | 'new' | null>(null);
   const [category, setCategory] = useState('');
-  const filtered = products.filter(
-    (p) =>
-      `${p.name} ${p.brand}`.toLowerCase().includes(search.toLowerCase()) &&
-      (!category || p.categoryId === category),
-  );
+  const [inventory, setInventory] = useState<Product | null>(null);
+  useEffect(() => {
+    const timer = setTimeout(
+      () => onFilter(`q=${encodeURIComponent(search)}&category=${encodeURIComponent(category)}`),
+      250,
+    );
+    return () => clearTimeout(timer);
+  }, [search, category, onFilter]);
+  const filtered = products;
   return (
     <>
       <div className="toolbar">
@@ -43,7 +50,7 @@ export function Products({
         >
           <option value="">All categories</option>
           {categories.map((c) => (
-            <option key={c.id} value={c.id}>
+            <option key={c.id} value={c.slug}>
               {c.name}
             </option>
           ))}
@@ -98,6 +105,13 @@ export function Products({
                 </td>
                 <td>
                   <button
+                    className="secondary"
+                    onClick={() => setInventory(p)}
+                    aria-label={`Stock ledger ${p.name}`}
+                  >
+                    Stock ledger
+                  </button>
+                  <button
                     className="icon-button"
                     aria-label={`Edit ${p.name}`}
                     onClick={() => setEditing(p)}
@@ -151,6 +165,9 @@ export function Products({
           <button className="secondary">Add category</button>
         </form>
       </div>
+      {inventory && (
+        <Inventory product={inventory} close={() => setInventory(null)} refresh={refresh} />
+      )}
       {editing && (
         <ProductEditor
           product={editing === 'new' ? undefined : editing}
@@ -192,8 +209,11 @@ function ProductEditor({
       type: String(f.get('type')),
       grade: String(f.get('grade')),
       unit: String(f.get('unit')),
+      packSize: String(f.get('packSize')),
+      minQuantity: Number(f.get('minQuantity')),
+      quantityStep: Number(f.get('quantityStep')),
       pricePaise: Math.round(Number(f.get('price')) * 100),
-      stock: Number(f.get('stock')),
+      stock: product?.stock ?? Number(f.get('stock')),
       active: f.get('active') === 'on',
       description: String(f.get('description')),
       recommendedUse: String(f.get('recommendedUse')),
@@ -256,9 +276,38 @@ function ProductEditor({
               required
             />
           </Field>
-          <Field label="Available stock">
+          <Field label="Pack size / specification">
+            <input
+              name="packSize"
+              defaultValue={product?.packSize}
+              maxLength={100}
+              placeholder="50 kg sealed bag / 4 tiles per box"
+            />
+          </Field>
+          <Field label="Minimum quantity">
+            <input
+              name="minQuantity"
+              type="number"
+              min="1"
+              step="1"
+              defaultValue={product?.minQuantity || 1}
+              required
+            />
+          </Field>
+          <Field label="Quantity step">
+            <input
+              name="quantityStep"
+              type="number"
+              min="1"
+              step="1"
+              defaultValue={product?.quantityStep || 1}
+              required
+            />
+          </Field>
+          <Field label={product ? 'Available stock · use stock ledger to change' : 'Opening stock'}>
             <input
               name="stock"
+              readOnly={Boolean(product)}
               type="number"
               min="0"
               step="1"

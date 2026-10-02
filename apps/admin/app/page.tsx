@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Activity,
   ArrowRight,
@@ -22,15 +22,32 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { Category, Order, Product, Quote, StoreSettings, User, money } from '@shiv/shared';
+import {
+  Category,
+  Order,
+  Page as PageResult,
+  Product,
+  Quote,
+  StoreSettings,
+  User,
+  money,
+} from '@shiv/shared';
 import { api, errorMessage } from '../lib/api';
 import { Badge, Empty, Field, Modal, SectionTitle } from '../components/ui';
 import { Products } from '../components/products';
 import { Orders, OrdersTable } from '../components/orders';
 import { Quotes } from '../components/quotes';
 import { Settings } from '../components/settings';
+import { DeliveryZones, StaffSessions, AuditHistory } from '../components/operations';
 
-type Tab = 'Overview' | 'Orders' | 'Products' | 'Bulk quotes' | 'Customers' | 'Finance & settings';
+type Tab =
+  | 'Overview'
+  | 'Orders'
+  | 'Products'
+  | 'Bulk quotes'
+  | 'Customers'
+  | 'Finance & settings'
+  | 'Store activity';
 type Customer = User & { createdAt: string; _count: { orders: number; quotes: number } };
 type Dashboard = {
   todayOrders: number;
@@ -49,13 +66,18 @@ const navigation = [
   { label: 'Bulk quotes', icon: ClipboardList },
   { label: 'Customers', icon: Users },
   { label: 'Finance & settings', icon: Settings2 },
+  { label: 'Store activity', icon: Activity },
 ] as const;
 export default function Page() {
+  const refreshSequence = useRef(0);
   const [user, setUser] = useState<User | null>(null);
   const [checking, setChecking] = useState(true);
   const [tab, setTab] = useState<Tab>('Overview');
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [productQuery, setProductQuery] = useState('');
+  const [orderQuery, setOrderQuery] = useState('');
+  const [cursors, setCursors] = useState<Record<string, string | null>>({});
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [quotes, setQuotes] = useState<Quote[]>([]);
@@ -85,35 +107,71 @@ export default function Page() {
     return () => clearTimeout(id);
   }, [message]);
   const refresh = useCallback(async () => {
+    const sequence = ++refreshSequence.current;
     if (user?.role !== 'ADMIN') return;
     setBusy(true);
     setError('');
     try {
       const [d, o, p, c, q, u, s] = await Promise.all([
         api<Dashboard>('/admin/dashboard'),
-        api<Order[]>('/admin/orders'),
-        api<Product[]>('/admin/products'),
+        api<PageResult<Order>>(`/admin/orders?${orderQuery}`),
+        api<PageResult<Product>>(`/admin/products?${productQuery}`),
         api<Category[]>('/categories'),
-        api<Quote[]>('/admin/quotes'),
-        api<Customer[]>('/admin/customers'),
+        api<PageResult<Quote>>('/admin/quotes'),
+        api<PageResult<Customer>>('/admin/customers'),
         api<StoreSettings>('/store'),
       ]);
+      if (sequence !== refreshSequence.current) return;
       setDashboard(d);
-      setOrders(o);
-      setProducts(p);
+      setOrders(o.items);
+      setProducts(p.items);
       setCategories(c);
-      setQuotes(q);
-      setCustomers(u);
+      setQuotes(q.items);
+      setCustomers(u.items);
+      setCursors({
+        Orders: o.nextCursor,
+        Products: p.nextCursor,
+        'Bulk quotes': q.nextCursor,
+        Customers: u.nextCursor,
+      });
       setSettings(s);
+    } catch (e) {
+      if (sequence === refreshSequence.current) setError(errorMessage(e));
+    } finally {
+      if (sequence === refreshSequence.current) setBusy(false);
+    }
+  }, [user, productQuery, orderQuery]);
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+  async function more() {
+    if (!cursors[tab] || busy) return;
+    const sequence = refreshSequence.current;
+    setBusy(true);
+    try {
+      const path =
+        tab === 'Products'
+          ? `/admin/products?${productQuery}&`
+          : tab === 'Orders'
+            ? `/admin/orders?${orderQuery}&`
+            : tab === 'Bulk quotes'
+              ? '/admin/quotes?'
+              : '/admin/customers?';
+      const page = await api<PageResult<Order | Product | Quote | Customer>>(
+        `${path}cursor=${encodeURIComponent(cursors[tab]!)}`,
+      );
+      if (sequence !== refreshSequence.current) return;
+      if (tab === 'Products') setProducts((old) => [...old, ...(page.items as Product[])]);
+      if (tab === 'Orders') setOrders((old) => [...old, ...(page.items as Order[])]);
+      if (tab === 'Bulk quotes') setQuotes((old) => [...old, ...(page.items as Quote[])]);
+      if (tab === 'Customers') setCustomers((old) => [...old, ...(page.items as Customer[])]);
+      setCursors((old) => ({ ...old, [tab]: page.nextCursor }));
     } catch (e) {
       setError(errorMessage(e));
     } finally {
       setBusy(false);
     }
-  }, [user]);
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
+  }
   if (checking)
     return (
       <div className="loading-page">
@@ -132,7 +190,7 @@ export default function Page() {
   };
   return (
     <div className="shell">
-      <aside className={`sidebar ${navOpen ? 'open' : ''}`}>
+      <aside id="store-navigation" className={`sidebar ${navOpen ? 'open' : ''}`}>
         <a href="/" className="brand">
           <span className="brand-icon">
             <Building2 size={25} />
@@ -196,6 +254,8 @@ export default function Page() {
             <button
               className="icon-button mobile-menu"
               aria-label="Open menu"
+              aria-expanded={navOpen}
+              aria-controls="store-navigation"
               onClick={() => setNavOpen(true)}
             >
               <Menu size={22} />
@@ -235,7 +295,7 @@ export default function Page() {
           <div className="page-heading">
             <div>
               <span className="eyebrow">SHIV CEMENT STORE</span>
-              <h1>{tab === 'Overview' ? 'A good day to build.' : tab}</h1>
+              <h1>{tab === 'Overview' ? 'Your materials counter.' : tab}</h1>
               <p>
                 {
                   {
@@ -245,6 +305,7 @@ export default function Page() {
                     'Bulk quotes': 'Better prices for bigger plans.',
                     Customers: 'The people building with you.',
                     'Finance & settings': 'Your store, your delivery charges, your controls.',
+                    'Store activity': 'A record of changes, decisions and staff actions.',
                   }[tab]
                 }
               </p>
@@ -272,33 +333,26 @@ export default function Page() {
             </div>
           ) : tab === 'Overview' && dashboard ? (
             <>
-              <section className="store-banner">
+              <section className="store-banner counter-board">
                 <div>
-                  <span className="eyebrow">THE FOUNDATION OF EVERY BUILD</span>
+                  <span className="eyebrow">SHIV / MATERIALS & SUPPLY</span>
                   <h2>
-                    Your neighbourhood store.
-                    <br />A stronger Bihar.
+                    Stock in.
+                    <br />
+                    Orders out.
                   </h2>
-                  <p>Quality materials. Fair prices. Delivered with care.</p>
+                  <p>A clear view of what needs your attention today.</p>
                   <button onClick={() => changeTab('Products')}>
-                    Keep your catalogue up to date
-                    <ArrowRight size={17} />
+                    Open the stock counter <ArrowRight size={17} />
                   </button>
                 </div>
-                <div className="banner-art" aria-hidden="true">
-                  <div className="building b1" />
-                  <div className="building b2" />
-                  <div className="building b3" />
-                  <div className="cement-bag">
-                    <span>SHIV</span>
-                    <strong>
-                      BUILD
-                      <br />
-                      STRONG.
-                    </strong>
-                    <small>CEMENT STORE</small>
-                  </div>
-                  <div className="ground-line" />
+                <div className="dispatch-board">
+                  <span>DISPATCH BOARD</span>
+                  <strong>{dashboard.pendingOrders}</strong>
+                  <p>orders awaiting fulfilment</p>
+                  <button onClick={() => changeTab('Orders')}>
+                    Review orders <ArrowUpRight size={17} />
+                  </button>
                 </div>
               </section>
               <section className="stats-grid" aria-label="Today's store metrics">
@@ -400,6 +454,7 @@ export default function Page() {
           ) : null}
           {tab === 'Products' && (
             <Products
+              onFilter={setProductQuery}
               products={products}
               categories={categories}
               refresh={refresh}
@@ -408,6 +463,7 @@ export default function Page() {
           )}
           {tab === 'Orders' && (
             <Orders
+              onFilter={setOrderQuery}
               orders={orders}
               refresh={refresh}
               notice={setMessage}
@@ -419,12 +475,16 @@ export default function Page() {
             <Quotes quotes={quotes} refresh={refresh} notice={setMessage} />
           )}
           {tab === 'Finance & settings' && settings && (
-            <Settings
-              key={settings.version}
-              settings={settings}
-              refresh={refresh}
-              notice={setMessage}
-            />
+            <>
+              <DeliveryZones />
+              <StaffSessions />
+              <Settings
+                key={settings.version}
+                settings={settings}
+                refresh={refresh}
+                notice={setMessage}
+              />
+            </>
           )}
           {tab === 'Customers' && (
             <div className="panel table-wrap">
@@ -478,6 +538,12 @@ export default function Page() {
               )}
             </div>
           )}
+          {tab === 'Store activity' && <AuditHistory />}
+          {cursors[tab] && (
+            <button className="secondary load-more" disabled={busy} onClick={() => void more()}>
+              {busy ? 'Loading…' : 'Load more'}
+            </button>
+          )}
           <footer className="page-footer">
             <span>
               <ShieldCheck size={14} /> Your store. Built on trust.
@@ -501,13 +567,49 @@ export default function Page() {
             <p>
               {customer.phone} · {customer._count.orders} orders
             </p>
+            <h3>Contractor verification · {customer.contractorStatus || 'NONE'}</h3>
+            <p>
+              Verification records a store decision only. It does not grant credit or special
+              prices.
+            </p>
+            {customer.contractorStatus !== 'NONE' && customer.role !== 'ADMIN' && (
+              <form
+                className="form-stack"
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  const f = new FormData(e.currentTarget);
+                  try {
+                    await api(`/admin/customers/${customer.id}/contractor`, 'PATCH', {
+                      status: f.get('status'),
+                      note: f.get('note'),
+                    });
+                    setCustomer(await api(`/admin/customers/${customer.id}`));
+                    await refresh();
+                    setMessage('Contractor verification recorded');
+                  } catch (err) {
+                    setMessage(errorMessage(err));
+                  }
+                }}
+              >
+                <Field label="Decision">
+                  <select name="status">
+                    <option value="VERIFIED">Verify contractor</option>
+                    <option value="REJECTED">Reject / revoke verification</option>
+                  </select>
+                </Field>
+                <Field label="Verification evidence / reason">
+                  <input name="note" required maxLength={500} />
+                </Field>
+                <button className="primary">Record verification</button>
+              </form>
+            )}
             <h3>Saved addresses</h3>
             {customer.addresses.map((a) => (
               <p key={a.id}>
                 {a.line1}, {a.city} {a.pincode}
               </p>
             ))}
-            <h3>Order history</h3>
+            <h3>Five most recent orders</h3>
             {customer.orders.map((o) => (
               <button
                 className="line-item"
@@ -531,6 +633,7 @@ export default function Page() {
 function Login({ onLogin, forbidden }: { onLogin: (u: User) => void; forbidden: boolean }) {
   const [phone, setPhone] = useState('9297513707');
   const [code, setCode] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
   const [sent, setSent] = useState(false);
   const [devCode, setDevCode] = useState('');
   const [error, setError] = useState(
@@ -552,6 +655,7 @@ function Login({ onLogin, forbidden }: { onLogin: (u: User) => void; forbidden: 
         const r = await api<{ user: User }>('/auth/otp/verify', 'POST', {
           phone: `+91${phone}`,
           code,
+          ...(adminPassword ? { adminPassword } : {}),
         });
         if (r.user.role !== 'ADMIN') {
           await api('/auth/logout', 'POST', {});
@@ -623,6 +727,18 @@ function Login({ onLogin, forbidden }: { onLogin: (u: User) => void; forbidden: 
                   pattern="[0-9]{6}"
                   required
                   aria-label="Verification code"
+                />
+              </Field>
+            )}
+            {sent && (
+              <Field label="Staff passphrase">
+                <input
+                  aria-label="Staff passphrase"
+                  type="password"
+                  autoComplete="current-password"
+                  value={adminPassword}
+                  onChange={(e) => setAdminPassword(e.target.value)}
+                  minLength={12}
                 />
               </Field>
             )}

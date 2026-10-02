@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
-import { Quote, money, statusLabel } from '@shiv/shared';
+import { Quote, Page, Product, money, statusLabel } from '@shiv/shared';
 import { api, message } from './api';
 import { useStore } from './store';
 import { Button, C, Empty, Field, Icon, Notice, Section, Tag, s } from './ui';
@@ -11,9 +11,15 @@ export function Quotes() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
   const [loading, setLoading] = useState(true);
-  async function load() {
+  const [cursor, setCursor] = useState<string | null>(null);
+  async function load(after?: string) {
+    setLoading(true);
     try {
-      setQuotes(await api<Quote[]>('/quotes'));
+      const page = await api<Page<Quote>>(
+        `/quotes?limit=24${after ? '&cursor=' + encodeURIComponent(after) : ''}`,
+      );
+      setQuotes((old) => (after ? [...old, ...page.items] : page.items));
+      setCursor(page.nextCursor);
       setError('');
     } catch (e) {
       setError(message(e));
@@ -104,6 +110,14 @@ export function Quotes() {
               </Button>
             </>
           )}
+          {q.decisionSource && (
+            <Text style={s.body}>
+              {q.decisionSource === 'CUSTOMER'
+                ? 'Decision made by you'
+                : 'Decision recorded by store'}
+              {q.decisionNote ? ` · ${q.decisionNote}` : ''}
+            </Text>
+          )}
           {q.status === 'ACCEPTED' && (
             <Notice>
               The store will contact you to arrange your order and payment. Accepting this quote
@@ -112,11 +126,60 @@ export function Quotes() {
           )}
         </View>
       ))}
+      {cursor && (
+        <Button loading={loading} onPress={() => void load(cursor)}>
+          Load more quotes
+        </Button>
+      )}
     </View>
   );
 }
 export function QuoteRequest() {
-  const { products, addresses, route, t, navigate } = useStore();
+  const { products: homeProducts, addresses, route, t, navigate } = useStore();
+  const [products, setProducts] = useState<Product[]>(homeProducts);
+  const [search, setSearch] = useState('');
+  const [found, setFound] = useState<Product[]>(homeProducts);
+  const [more, setMore] = useState<string | null>(null);
+  const [searchError, setSearchError] = useState('');
+  useEffect(() => {
+    let live = true;
+    const timer = setTimeout(() => {
+      void api<Page<Product>>(`/products?limit=24&q=${encodeURIComponent(search)}`)
+        .then((page) => {
+          if (live) {
+            setFound(page.items);
+            setMore(page.nextCursor);
+            setSearchError('');
+            setProducts((old) => [
+              ...new Map(
+                [...old.filter((p) => lines[p.id]), ...page.items].map((p) => [p.id, p]),
+              ).values(),
+            ]);
+          }
+        })
+        .catch((e) => {
+          if (live) setSearchError(message(e));
+        });
+    }, 250);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [search]);
+  useEffect(() => {
+    if (route.id)
+      void api<Product>(`/products/${route.id}`)
+        .then((p) => {
+          setProducts((old) => [...old.filter((x) => x.id !== p.id), p]);
+          setLines((old) => ({
+            ...old,
+            [p.id]:
+              Math.ceil(Math.max(old[p.id] || 100, p.minQuantity) / p.quantityStep) *
+              p.quantityStep,
+          }));
+        })
+        .catch((e) => setSearchError(message(e)));
+  }, [route.id]);
   const [lines, setLines] = useState<Record<string, number>>(route.id ? { [route.id]: 100 } : {});
   const [addressId, setAddress] = useState(addresses[0]?.id || '');
   const [date, setDate] = useState(new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10));
@@ -151,18 +214,47 @@ export function QuoteRequest() {
       <Text style={s.title}>{t('requestQuote')}</Text>
       <Text style={s.body}>{t('bulkBody')}</Text>
       <Text style={s.h2}>Materials & quantities</Text>
+      <Field label="Find a material" value={search} onChangeText={setSearch} />
+      {searchError ? <Notice error>{searchError}</Notice> : null}
+      {more && (
+        <Button
+          secondary
+          onPress={() => {
+            void api<Page<Product>>(
+              `/products?limit=24&q=${encodeURIComponent(search)}&cursor=${encodeURIComponent(more)}`,
+            )
+              .then((page) => {
+                setFound((old) => [...old, ...page.items]);
+                setMore(page.nextCursor);
+                setProducts((old) => [
+                  ...new Map(
+                    [...old.filter((p) => lines[p.id]), ...page.items].map((p) => [p.id, p]),
+                  ).values(),
+                ]);
+              })
+              .catch((e) => setSearchError(message(e)));
+          }}
+        >
+          More materials
+        </Button>
+      )}
       <ScrollView
         horizontal
         contentContainerStyle={{ gap: 9 }}
         showsHorizontalScrollIndicator={false}
       >
-        {products
+        {found
           .filter((p) => !lines[p.id])
           .map((p) => (
             <Pressable
               accessibilityRole="button"
               key={p.id}
-              onPress={() => setLines({ ...lines, [p.id]: 100 })}
+              onPress={() =>
+                setLines({
+                  ...lines,
+                  [p.id]: Math.ceil(Math.max(100, p.minQuantity) / p.quantityStep) * p.quantityStep,
+                })
+              }
               style={[s.card, s.row, { padding: 13 }]}
             >
               <Icon name="add" size={17} />

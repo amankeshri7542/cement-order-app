@@ -1,5 +1,6 @@
-import { Controller, Get, Inject, Param } from '@nestjs/common';
+import { Controller, Get, Inject, Param, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import { paginate } from './pagination';
 import { Db } from './db';
 import { Admin, fail } from './http';
 
@@ -59,33 +60,45 @@ export class AdminController {
       recentOrders,
     };
   }
-  @Get('customers') customers() {
-    return this.db.user.findMany({
-      select: {
-        id: true,
-        name: true,
-        phone: true,
-        role: true,
-        createdAt: true,
-        _count: { select: { orders: true, quotes: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 300,
-    });
+  @Get('customers') async customers(@Query() query: Record<string, string>) {
+    const page = paginate(query, 'customers');
+    return page.finish(
+      await this.db.user.findMany({
+        where: { deletedAt: null, ...page.after },
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          role: true,
+          contractorStatus: true,
+          createdAt: true,
+          _count: { select: { orders: true, quotes: true } },
+        },
+        orderBy: page.orderBy,
+        take: page.take,
+      }),
+    );
   }
   @Get('customers/:id') async customer(@Param('id') id: string) {
     const user = await this.db.user.findUnique({
       where: { id },
       include: {
         addresses: true,
-        orders: { orderBy: { createdAt: 'desc' }, take: 100 },
+        orders: { orderBy: { createdAt: 'desc' }, take: 5 },
         _count: { select: { orders: true } },
       },
     });
     if (!user) fail('NOT_FOUND', 'Customer not found.', 404);
     return user;
   }
-  @Get('audit') audit() {
-    return this.db.auditLog.findMany({ orderBy: { createdAt: 'desc' }, take: 100 });
+  @Get('audit') async audit(@Query() query: Record<string, string>) {
+    const page = paginate(query, 'audit');
+    return page.finish(
+      await this.db.auditLog.findMany({
+        where: page.after,
+        orderBy: page.orderBy,
+        take: page.take,
+      }),
+    );
   }
 }

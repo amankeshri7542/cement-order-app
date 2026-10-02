@@ -1,4 +1,15 @@
-import { Controller, Get, Inject, Injectable, Param, Patch, Post, Put, Req } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Inject,
+  Injectable,
+  Param,
+  Patch,
+  Post,
+  Put,
+  Query,
+  Req,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Prisma } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
@@ -14,6 +25,8 @@ import {
 } from '@shiv/shared';
 import { Db } from './db';
 import { Admin, AuthRequest, Contract, Input, fail } from './http';
+import { paginate } from './pagination';
+import { deliveryFor, moveStock, validateQuantity } from './inventory';
 import { onlineReady } from './config';
 
 export const orderInclude = {
@@ -56,6 +69,7 @@ export class OrdersService {
         return;
       }
       const product = await tx.product.findUnique({ where: { id: input.productId } });
+      if (product) validateQuantity(product, input.quantity);
       if (!product?.active || product.stock < input.quantity)
         fail('OUT_OF_STOCK', 'That quantity is not available.', 409);
       if (
@@ -93,6 +107,7 @@ export class OrdersService {
       if (input.paymentMethod === 'ONLINE' && !(settings.onlinePaymentsEnabled && onlineReady()))
         fail('PAYMENTS_UNAVAILABLE', 'Online payment is unavailable. Choose cash on delivery.');
       const items = cart.map(({ product, quantity }) => {
+        validateQuantity(product, quantity);
         if (!product.active || product.stock < quantity)
           fail('OUT_OF_STOCK', `${product.name} is not available in that quantity.`, 409);
         return {
@@ -105,11 +120,15 @@ export class OrdersService {
           lineTotalPaise: product.pricePaise * quantity,
         };
       });
+      const zone = await deliveryFor(tx, address.pincode, totals(items, 0, null).subtotalPaise);
       const snapshot = {
         ...input,
         address,
         items,
-        ...totals(items, settings.deliveryFeePaise, settings.freeDeliveryAbovePaise),
+        ...totals(items, zone.deliveryFeePaise, zone.freeDeliveryAbovePaise),
+        deliveryZoneId: zone.id,
+        deliveryZoneVersion: zone.version,
+        deliveryEstimate: zone.estimate,
         settingsVersion: settings.version,
         changes: cart
           .filter((c) => c.seenPriceVersion !== c.product.priceVersion)
@@ -164,6 +183,9 @@ export class OrdersService {
         JSON.stringify(snapshot.items.map((c) => [c.productId, c.quantity]))
       )
         fail('CART_CHANGED', 'Your cart changed. Review it again.', 409);
+      const zone = await deliveryFor(tx, snapshot.address.pincode, snapshot.subtotalPaise);
+      if (zone.id !== snapshot.deliveryZoneId || zone.version !== snapshot.deliveryZoneVersion)
+        fail('PRICE_CHANGED', 'Delivery policy changed. Review the updated total.', 409);
       for (const line of snapshot.items) {
         const product = await tx.product.findUniqueOrThrow({ where: { id: line.productId } });
         if (product.priceVersion !== line.priceVersion || product.pricePaise !== line.pricePaise)
@@ -177,23 +199,20 @@ export class OrdersService {
               currentPricePaise: product.pricePaise,
             },
           );
-        const reserved = await tx.product.updateMany({
-          where: {
-            id: product.id,
-            active: true,
-            stock: { gte: line.quantity },
-            priceVersion: line.priceVersion,
-          },
-          data: { stock: { decrement: line.quantity }, version: { increment: 1 } },
+        validateQuantity(product, line.quantity);
+        if (!product.active || product.stock < line.quantity)
+          fail('OUT_OF_STOCK', `${product.name} is no longer available in this quantity.`, 409);
+        await moveStock(tx, {
+          productId: product.id,
+          kind: 'ONLINE_ORDER',
+          quantity: -line.quantity,
+          actorId: userId,
+          reference: review.id,
+          note: 'Online order reservation',
+          idempotencyKey: `order:${review.id}:${product.id}`,
         });
-        if (!reserved.count)
-          fail('OUT_OF_STOCK', `${product.name} is no longer available in that quantity.`, 409);
       }
-      const amounts = totals(
-        snapshot.items,
-        settings.deliveryFeePaise,
-        settings.freeDeliveryAbovePaise,
-      );
+      const amounts = totals(snapshot.items, zone.deliveryFeePaise, zone.freeDeliveryAbovePaise);
       const online = snapshot.paymentMethod === 'ONLINE';
       const order = await tx.order.create({
         data: {
@@ -270,9 +289,14 @@ export class OrdersService {
         status === 'CANCELLED' && order.payment?.status === 'CAPTURED' ? 'REFUND_PENDING' : status;
       if (status === 'CANCELLED') {
         for (const line of order.items)
-          await tx.product.update({
-            where: { id: line.productId },
-            data: { stock: { increment: line.quantity }, version: { increment: 1 } },
+          await moveStock(tx, {
+            productId: line.productId,
+            kind: 'ORDER_CANCELLED',
+            quantity: line.quantity,
+            actorId,
+            reference: order.id,
+            note: 'Cancelled order stock release',
+            idempotencyKey: `cancel:${order.id}:${line.productId}`,
           });
         if (next === 'REFUND_PENDING')
           await tx.payment.update({ where: { orderId: id }, data: { status: 'REFUND_PENDING' } });
@@ -395,13 +419,16 @@ export class OrdersController {
   ) {
     return this.orders.place(req.user.id, body);
   }
-  @Get('orders') list(@Req() req: AuthRequest) {
-    return this.db.order.findMany({
-      where: { userId: req.user.id },
-      include: orderInclude,
-      orderBy: { createdAt: 'desc' },
-      take: 100,
-    });
+  @Get('orders') async list(@Req() req: AuthRequest, @Query() query: Record<string, string>) {
+    const page = paginate(query, `orders:${req.user.id}`);
+    return page.finish(
+      await this.db.order.findMany({
+        where: { userId: req.user.id, ...page.after },
+        include: orderInclude,
+        orderBy: page.orderBy,
+        take: page.take,
+      }),
+    );
   }
   @Get('orders/:id') async detail(@Param('id') id: string, @Req() req: AuthRequest) {
     const order = await this.db.order.findFirst({
@@ -431,11 +458,44 @@ export class OrdersController {
       req.user.id,
     );
   }
-  @Admin() @Get('admin/orders') all() {
-    return this.db.order.findMany({
+  @Admin() @Get('admin/orders') async all(@Query() query: Record<string, string>) {
+    const parsed = z
+      .object({
+        q: z.string().max(100).default(''),
+        status: orderStatusSchema.shape.status.optional(),
+      })
+      .safeParse(query);
+    if (!parsed.success) fail('INVALID_FILTER', 'Check order filters.');
+    const { q, status } = parsed.data;
+    const page = paginate(query, JSON.stringify({ list: 'admin-orders', q, status }));
+    return page.finish(
+      await this.db.order.findMany({
+        include: { ...orderInclude, user: true },
+        where: {
+          AND: [
+            page.after,
+            status ? { status } : {},
+            q
+              ? {
+                  OR: [
+                    { number: { contains: q, mode: 'insensitive' } },
+                    { user: { name: { contains: q, mode: 'insensitive' } } },
+                  ],
+                }
+              : {},
+          ],
+        },
+        orderBy: page.orderBy,
+        take: page.take,
+      }),
+    );
+  }
+  @Admin()
+  @Get('admin/orders/:id')
+  adminDetail(@Param('id') id: string) {
+    return this.db.order.findUniqueOrThrow({
+      where: { id },
       include: { ...orderInclude, user: true },
-      orderBy: { createdAt: 'desc' },
-      take: 300,
     });
   }
   @Admin() @Patch('admin/orders/:id/status') @Contract(orderStatusSchema) change(

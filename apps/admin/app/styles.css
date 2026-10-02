@@ -1,10 +1,10 @@
 @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=DM+Sans:wght@400;450;500;550;600;650;700&display=swap');
 :root {
-  --navy: #142c43;
-  --ink: #1c3044;
-  --muted: #607484;
-  --yellow: #f5c344;
-  --paper: #f4f6f8;
+  --navy: #252c2b;
+  --ink: #252c2b;
+  --muted: #62665f;
+  --yellow: #e9ad32;
+  --paper: #f7f6f1;
   --line: #e7ebef;
   --green: #26775b;
   --white: #fff;
@@ -548,7 +548,7 @@ table {
 th {
   font-weight: 500;
   font-size: 10px;
-  color: #607484;
+  color: #62665f;
   background: #fafbfd;
   padding: 13px 20px;
   border-bottom: 1px solid var(--line);
@@ -997,7 +997,7 @@ dialog::backdrop {
   background: var(--navy);
   color: #fff;
   border-radius: 7px;
-  box-shadow: 0 8px 30px #1c30442a;
+  box-shadow: 0 8px 30px #252c2b2a;
   padding: 15px 18px;
   display: flex;
   align-items: center;
@@ -1185,10 +1185,12 @@ dialog::backdrop {
 @media (max-width: 800px) {
   .sidebar {
     transform: translateX(-100%);
+    visibility: hidden;
     transition: transform 0.2s;
   }
   .sidebar.open {
     transform: translateX(0);
+    visibility: visible;
   }
   .main-shell {
     margin-left: 0;
@@ -1351,5 +1353,165 @@ dialog::backdrop {
   }
   .toast {
     display: none;
+  }
+}
+
+/* Materials counter: readable prices, warm concrete surfaces and dispatch labels. */
+body {
+  font-size: 15px;
+}
+h1,
+h2,
+.brand {
+  font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+}
+h1 {
+  font-size: clamp(32px, 4vw, 46px);
+  letter-spacing: -0.5px;
+}
+button,
+input,
+select {
+  min-height: 44px;
+}
+button:focus-visible,
+a:focus-visible,
+summary:focus-visible {
+  outline: 3px solid #386451;
+  outline-offset: 3px;
+}
+.sidebar {
+  background: #252c2b;
+}
+.panel {
+  border-radius: 6px;
+  box-shadow: none;
+}
+.counter-board {
+  background: #deded6;
+  color: #252c2b;
+  border-radius: 6px;
+  border-left: 7px solid #e9ad32;
+}
+.counter-board h2 {
+  color: #252c2b;
+  font-size: clamp(38px, 5vw, 64px);
+  line-height: 0.95;
+}
+.counter-board .eyebrow,
+.counter-board p {
+  color: #50574f;
+}
+.counter-board button {
+  color: #252c2b;
+}
+.dispatch-board {
+  padding: 24px;
+  border: 1px solid #aeb3a8;
+  min-width: 230px;
+  align-self: stretch;
+  background: #f7f6f1;
+}
+.dispatch-board > span {
+  font-family: monospace;
+  letter-spacing: 2px;
+  font-size: 12px;
+}
+.dispatch-board > strong {
+  display: block;
+  font-size: 64px;
+  font-weight: 800;
+}
+.operations-panel {
+  padding: 24px;
+  margin-bottom: 24px;
+}
+.zone-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 16px;
+}
+.zone-card {
+  padding: 20px;
+  border: 1px solid #c8cbbf;
+  border-left: 4px solid #e9ad32;
+  background: #f7f6f1;
+  text-align: left;
+  display: grid;
+  gap: 10px;
+  border-radius: 4px;
+  overflow-wrap: anywhere;
+}
+.zone-card span,
+.zone-card small {
+  font-size: 13px;
+}
+.session-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.session-row small {
+  display: block;
+  color: var(--muted);
+  margin-top: 6px;
+}
+.load-more {
+  margin: 24px auto;
+  display: block;
+}
+.policy-page {
+  max-width: 760px;
+  margin: auto;
+  padding: 48px 24px;
+  line-height: 1.7;
+}
+.policy-page h2 {
+  margin-top: 32px;
+}
+.policy-page a {
+  text-decoration: underline;
+}
+.policy-page .primary {
+  display: inline-block;
+}
+.operations-panel pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: 420px;
+}
+@media (max-width: 650px) {
+  .counter-board {
+    display: grid;
+    gap: 20px;
+    padding: 22px;
+  }
+  .dispatch-board {
+    min-width: 0;
+    width: 100%;
+  }
+  .session-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .operations-panel {
+    padding: 16px;
+  }
+  .section-title {
+    flex-wrap: wrap;
+    gap: 14px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
   }
 }

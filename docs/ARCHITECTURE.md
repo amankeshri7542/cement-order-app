@@ -2,13 +2,13 @@
 
 ## Scope and assumptions
 
-Single store, INR, delivery throughout Bihar, English/Hindi customer UI. Phone/WhatsApp initially +91 9297513707. Admin controls store contact, flat delivery fee, free-delivery threshold, and online-payment switch. Example inventory is seeded in PostgreSQL for local development only; it is never embedded in the customer app. No provider accounts are available yet. COD works locally; production OTP, online checkout, push, and object storage need credentials.
+Single store, INR, configurable pincode delivery zones in Patna/Bihar, English/Hindi customer UI. Phone/WhatsApp initially +91 9297513707. Admin controls store contact, pincode serviceability, zone delivery fees/minimums/free-delivery thresholds, and online-payment switch. Example inventory is seeded in PostgreSQL for local development only; it is never embedded in the customer app. No provider accounts are available yet. COD works locally; production OTP, online checkout, push, and object storage need credentials.
 
 ## Architecture and trust boundaries
 
 An npm monorepo contains Expo/React Native mobile, Next.js admin, NestJS API, and one small shared package for contracts, validation, and display formatting. PostgreSQL is authoritative. Native sessions use SecureStore; browser sessions use HttpOnly cookies with origin validation. Roles are loaded from the database on every authenticated request. No client can assign its own role or authoritative price. Admin bootstrap is an explicit local CLI action.
 
-The API validates strict Zod schemas, exposes versioned REST and OpenAPI, and returns safe error codes with request IDs. Public product SSE messages only invalidate cached data. A single API instance supports in-process notification and rate limiting; database OTP limits protect phone numbers across restarts. HTTPS, exact CORS origins, secure cookies, and real OTP configuration are mandatory in production.
+The API validates strict Zod schemas, exposes versioned REST and OpenAPI, and returns safe error codes with request IDs. Public product SSE messages only invalidate cached data. A single API instance supports in-process notification and rate limiting; database OTP limits protect phone numbers and hashed-IP budgets across restarts. HTTPS, exact CORS origins, secure cookies, and real OTP configuration are mandatory in production.
 
 ## Domain and contracts
 
@@ -33,7 +33,7 @@ Bulk requests record products/quantities, site, date, GST/company/contact, and n
 
 ## Screens and visual direction
 
-Customer: Home, Products, product detail, cart, address/delivery/payment review, confirmation, Orders/tracking/reorder, Account/addresses/language, Bulk quotes. Admin: overview, orders/detail, products/editor, quotes/editor, customers, finance/settings. Deep navy, construction yellow, cool concrete grey, white, and muted steel blue; strong sans-serif typography, large readable prices, a restrained cement-bag motif, and clear touch targets. No broad ecommerce marketplace UI.
+Customer: Home, Products, product detail, cart, address/delivery/payment review, confirmation, Orders/tracking/reorder, Account/addresses/language, Bulk quotes. Admin: overview, orders/detail, products/editor, quotes/editor, customers, finance/settings. Deep navy, construction yellow, cool concrete grey, white, and muted steel blue; strong sans-serif typography, large readable prices, a restrained construction details and honest product-photo fallbacks, and clear touch targets. No broad ecommerce marketplace UI.
 
 ## Phases and verification
 
@@ -42,3 +42,15 @@ Customer: Home, Products, product detail, cart, address/delivery/payment review,
 3. Complete customer and admin journeys, errors/loading/empty states, bilingual navigation.
 4. Unit tests, real PostgreSQL integration/concurrency tests, browser journey tests, typecheck/lint/build, security review.
 5. Docker, GitHub Actions, deployment/environment documentation and honest implementation report.
+
+## Pilot operations extension
+
+`Product.stock` is the available balance maintained alongside immutable `InventoryMovement` entries in the same Serializable transaction. Online reservation removes available stock immediately; cancellation restores it once. The additive migration creates opening balances. Selling quantities remain integers: choose kg/piece/bag/box as the unit; `packSize` describes the pack while `minQuantity` and `quantityStep` enforce ordering rules. Fractional stock and multiwarehouse accounting are intentionally outside this single-store pilot.
+
+`DeliveryZone` owns unique `DeliveryPincode` records. Reviews snapshot zone identity/version and the estimate; checkout revalidates active serviceability, price policy, quantities, and stock. New production databases have no serviceable zone until staff configure one.
+
+Catalogue/admin products, orders, customers, quotes, inventory, and audit use bounded `{items, nextCursor}` responses. Composite sort-plus-ID indexes support keyset navigation; PostgreSQL trigram GIN indexes support case-insensitive product name/brand/specification searches. Filter/sort changes reset cursors. Mobile initially fetches eight home products, then catalogue pages of 24, with details fetched by ID.
+
+`AdminCredential` stores staff passphrase hashes separately from customer data. `Session` tracks staff assurance, label, and last use; `AuthRateLimit` stores expiring hashed-IP counters. Contractor verification is a separate reviewed status. Quote decision source/actor/time/evidence distinguishes customer confirmation from a staff record of an offline decision.
+
+Customer deletion is a guarded transaction; it anonymizes contact snapshots and notes, clears devices/sessions, and retains de-identified transaction data. Public privacy/deletion pages are served by the admin web application and linked from the customer account page. See the deployment guide for retention and Play Store prerequisites.

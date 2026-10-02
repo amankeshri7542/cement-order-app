@@ -342,18 +342,21 @@ export class PaymentsService {
         currency: z.string(),
       })
       .parse(await this.gateway(`orders/${encodeURIComponent(providerId)}`));
-    const payment = await this.db.payment.findUniqueOrThrow({ where: { orderId } });
-    if (
-      payment.method !== 'ONLINE' ||
-      remote.receipt !== orderId ||
-      remote.amount !== payment.amountPaise ||
-      remote.currency !== 'INR' ||
-      (payment.razorpayOrderId && payment.razorpayOrderId !== providerId)
-    )
-      fail('PAYMENT_MISMATCH', 'Provider order does not match this order.');
-    await this.db.payment.update({ where: { orderId }, data: { razorpayOrderId: providerId } });
-    await this.db.auditLog.create({
-      data: { actorId, event: 'PAYMENT_RECONCILED', entityId: orderId, details: { providerId } },
+    await this.db.atomic(async (tx) => {
+      const payment = await tx.payment.findUniqueOrThrow({ where: { orderId } });
+      if (
+        remote.id !== providerId ||
+        payment.method !== 'ONLINE' ||
+        remote.receipt !== orderId ||
+        remote.amount !== payment.amountPaise ||
+        remote.currency !== 'INR' ||
+        (payment.razorpayOrderId && payment.razorpayOrderId !== providerId)
+      )
+        fail('PAYMENT_MISMATCH', 'Provider order does not match this order.');
+      await tx.payment.update({ where: { orderId }, data: { razorpayOrderId: providerId } });
+      await tx.auditLog.create({
+        data: { actorId, event: 'PAYMENT_RECONCILED', entityId: orderId, details: { providerId } },
+      });
     });
     const payments = z
       .object({ items: z.array(capturedSchema) })

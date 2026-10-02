@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Order, OrderStatus, money, statusLabel, transitions } from '@shiv/shared';
 import { ArrowUpRight, Search, Printer } from 'lucide-react';
 import { api, errorMessage } from '../lib/api';
@@ -73,6 +73,7 @@ export function OrdersTable({ orders, select }: { orders: Order[]; select: (id: 
   );
 }
 export function Orders({
+  onFilter,
   orders,
   refresh,
   notice,
@@ -82,12 +83,37 @@ export function Orders({
   orders: Order[];
   refresh: () => Promise<void>;
   notice: (value: string) => void;
+  onFilter: (query: string) => void;
   selectedId: string | null;
   setSelectedId: (id: string | null) => void;
 }) {
   const [filter, setFilter] = useState('');
   const [search, setSearch] = useState('');
-  const selected = orders.find((o) => o.id === selectedId);
+  const [detail, setDetail] = useState<Order | null>(null);
+  useEffect(() => {
+    let live = true;
+    if (selectedId)
+      void api<Order>(`/admin/orders/${selectedId}`)
+        .then((o) => {
+          if (live) setDetail(o);
+        })
+        .catch((e) => notice(errorMessage(e)));
+    else setDetail(null);
+    return () => {
+      live = false;
+    };
+  }, [selectedId, orders, notice]);
+  useEffect(() => {
+    const timer = setTimeout(
+      () =>
+        onFilter(
+          `q=${encodeURIComponent(search)}${filter ? '&status=' + encodeURIComponent(filter) : ''}`,
+        ),
+      250,
+    );
+    return () => clearTimeout(timer);
+  }, [search, filter, onFilter]);
+  const selected = detail?.id === selectedId ? detail : null;
   return (
     <>
       <div className="toolbar">
@@ -112,14 +138,7 @@ export function Orders({
         </select>
       </div>
       <div className="panel">
-        <OrdersTable
-          orders={orders.filter(
-            (o) =>
-              (!filter || filter === o.status) &&
-              `${o.number} ${o.address.name}`.toLowerCase().includes(search.toLowerCase()),
-          )}
-          select={setSelectedId}
-        />
+        <OrdersTable orders={orders} select={setSelectedId} />
       </div>
       {selected && (
         <OrderDetail
@@ -257,6 +276,10 @@ function OrderDetail({
               });
             }}
           >
+            <p className="warning">
+              Find the Razorpay order by receipt {order.id}. Verify its amount and currency. Do not
+              create a replacement payment order when the first result is uncertain.
+            </p>
             <Field label="Razorpay order ID for reconciliation">
               <input
                 name="provider"

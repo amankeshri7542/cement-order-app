@@ -1,5 +1,6 @@
+import { afterEach } from 'vitest';
 import 'reflect-metadata';
-import { beforeAll, beforeEach, afterAll, describe, expect, it } from 'vitest';
+import { beforeAll, beforeEach, afterAll, describe, expect, it, vi } from 'vitest';
 import { loadEnvFile } from 'node:process';
 import { createHmac, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
@@ -8,6 +9,8 @@ import type { INestApplication } from '@nestjs/common';
 import type { Server } from 'node:http';
 import { Db } from '../src/db';
 import { hash } from '../src/http';
+import { PaymentsService } from '../src/payments';
+import { hashPassword } from '../src/security';
 import { OrdersService } from '../src/orders';
 
 if (existsSync('.env.test')) loadEnvFile('.env.test');
@@ -125,7 +128,7 @@ beforeAll(async () => {
 }, 30000);
 beforeEach(async () => {
   await db.$executeRawUnsafe(
-    'TRUNCATE TABLE "User", "Category", "Product", "Order", "Quote", "AuditLog", "OtpChallenge", "StoreSettings" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "User", "Category", "Product", "Order", "Quote", "AuditLog", "OtpChallenge", "AuthRateLimit", "DeliveryZone", "StoreSettings" RESTART IDENTITY CASCADE',
   );
   for (const [i, role] of (['customer', 'other', 'admin'] as const).entries()) {
     await db.user.create({
@@ -148,6 +151,28 @@ beforeEach(async () => {
   }
   await db.category.create({ data: { id: 'cement-category', name: 'Cement', slug: 'cement' } });
   await db.product.create({ data: product });
+  await db.inventoryMovement.create({
+    data: {
+      productId: 'cement',
+      kind: 'PURCHASE_IN',
+      quantity: 100,
+      balanceAfter: 100,
+      actorId: 'fixture',
+      reference: 'Fixture',
+      note: 'Opening test stock',
+      idempotencyKey: 'opening:cement',
+    },
+  });
+  await db.deliveryZone.create({
+    data: {
+      id: 'test-zone',
+      name: 'Patna test',
+      deliveryFeePaise: 50000,
+      minimumOrderPaise: 0,
+      estimate: 'Test delivery',
+      pincodes: { create: [{ pincode: '800020' }, { pincode: '800001' }] },
+    },
+  });
   await db.storeSettings.create({
     data: { id: 'store', deliveryFeePaise: 50000, onlinePaymentsEnabled: true },
   });
@@ -569,10 +594,404 @@ describe('Quotations and admin conflicts', () => {
     await request(server)
       .post(`/api/v1/admin/quotes/${q.body.id}/respond`)
       .set(auth('admin'))
-      .send({ revision: 1, status: 'ACCEPTED' })
+      .send({ revision: 1, status: 'ACCEPTED', note: 'Customer confirmed by phone' })
       .expect(201);
     expect(
       (await db.auditLog.findFirstOrThrow({ where: { event: 'QUOTE_ACCEPTED' } })).actorId,
     ).toBe('admin');
+  });
+});
+
+afterEach(() => vi.restoreAllMocks());
+describe('Pilot operations and privacy', () => {
+  it('pages tied catalogue values without duplicates and rejects mismatched cursors', async () => {
+    await db.product.createMany({
+      data: Array.from({ length: 55 }, (_, i) => ({
+        ...product,
+        id: `material-${String(i).padStart(3, '0')}`,
+        name: 'Same material',
+        brand: i % 2 ? 'A' : 'B',
+        pricePaise: 50000,
+        stock: i % 3 ? 10 : 0,
+      })),
+    });
+    const ids: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const r: { body: { items: { id: string }[]; nextCursor: string | null } } = await request(
+        server,
+      )
+        .get('/api/v1/products')
+        .query({ limit: 7, sort: 'price_desc', ...(cursor ? { cursor } : {}) })
+        .expect(200);
+      expect(r.body.items.length).toBeLessThanOrEqual(7);
+      ids.push(...r.body.items.map((p: { id: string }) => p.id));
+      cursor = r.body.nextCursor;
+    } while (cursor);
+    expect(ids.length).toBe(56);
+    expect(new Set(ids).size).toBe(56);
+    const a = await request(server)
+      .get('/api/v1/products?limit=3&brand=A&availability=in')
+      .expect(200);
+    expect(
+      a.body.items.every((p: { brand: string; stock: number }) => p.brand === 'A' && p.stock > 0),
+    ).toBe(true);
+    await request(server)
+      .get('/api/v1/products')
+      .query({ cursor: a.body.nextCursor, brand: 'B', availability: 'in' })
+      .expect(400);
+    await request(server).get('/api/v1/products?cursor=garbage').expect(400);
+    await request(server).get('/api/v1/products?limit=5000').expect(400);
+  });
+  it('writes idempotent inventory movements and prevents concurrent negative balances', async () => {
+    const move = {
+      kind: 'WALK_IN_SALE',
+      quantity: 70,
+      note: 'Counter receipt',
+      reference: 'R-1',
+      idempotencyKey: randomUUID(),
+    };
+    const results = await Promise.all([
+      request(server).post('/api/v1/admin/products/cement/movements').set(auth('admin')).send(move),
+      request(server).post('/api/v1/admin/products/cement/movements').set(auth('admin')).send(move),
+    ]);
+    expect(results.map((r) => r.status)).toEqual([201, 201]);
+    expect(results[0]!.body.id).toBe(results[1]!.body.id);
+    const sales = await Promise.all(
+      [1, 2].map((i) =>
+        request(server)
+          .post('/api/v1/admin/products/cement/movements')
+          .set(auth('admin'))
+          .send({ ...move, quantity: 20, reference: `R-${i + 1}`, idempotencyKey: randomUUID() }),
+      ),
+    );
+    expect(sales.map((r) => r.status).sort()).toEqual([201, 409]);
+    const balance = await db.product.findUniqueOrThrow({ where: { id: 'cement' } });
+    expect(balance.stock).toBe(10);
+    expect(
+      (
+        await db.inventoryMovement.aggregate({
+          where: { productId: 'cement' },
+          _sum: { quantity: true },
+        })
+      )._sum.quantity,
+    ).toBe(balance.stock);
+    await request(server)
+      .post('/api/v1/admin/products/cement/movements')
+      .set(auth('admin'))
+      .send({ ...move, quantity: 1 })
+      .expect(409);
+    await request(server)
+      .post('/api/v1/admin/products/cement/movements')
+      .set(auth())
+      .send({ ...move, idempotencyKey: randomUUID() })
+      .expect(403);
+    await expect(
+      db.inventoryMovement.update({
+        where: { id: results[0]!.body.id },
+        data: { note: 'Changed' },
+      }),
+    ).rejects.toThrow();
+  });
+  it('requires stock ledger entry and enforces material quantity increments', async () => {
+    await request(server)
+      .patch('/api/v1/admin/products/cement')
+      .set(auth('admin'))
+      .send({ ...product, expectedVersion: 1, stock: 200, id: undefined })
+      .expect(409);
+    await db.product.update({
+      where: { id: 'cement' },
+      data: { minQuantity: 10, quantityStep: 5 },
+    });
+    await request(server)
+      .put('/api/v1/cart/items')
+      .set(auth())
+      .send({ productId: 'cement', quantity: 11 })
+      .expect(400);
+    await cart('customer', 10);
+    const r = await review();
+    await db.product.update({ where: { id: 'cement' }, data: { minQuantity: 20 } });
+    await place(r.body.id).then((r) => expect(r.status).toBe(400));
+  });
+  it('records online reservation and cancellation once in stock ledger', async () => {
+    const o = await order();
+    await request(server).post(`/api/v1/orders/${o.id}/cancel`).set(auth()).expect(201);
+    await request(server).post(`/api/v1/orders/${o.id}/cancel`).set(auth()).expect(409);
+    expect(await db.inventoryMovement.count({ where: { kind: 'ONLINE_ORDER' } })).toBe(1);
+    expect(await db.inventoryMovement.count({ where: { kind: 'ORDER_CANCELLED' } })).toBe(1);
+    expect((await db.inventoryMovement.aggregate({ _sum: { quantity: true } }))._sum.quantity).toBe(
+      100,
+    );
+  });
+  it('validates pincode, minimum and delivery version before reserving stock', async () => {
+    await request(server)
+      .get('/api/v1/delivery/999999')
+      .expect(200)
+      .then((r) => expect(r.body.serviceable).toBe(false));
+    await cart();
+    await db.deliveryZone.update({
+      where: { id: 'test-zone' },
+      data: { minimumOrderPaise: 500000 },
+    });
+    await request(server)
+      .post('/api/v1/checkout/review')
+      .set(auth())
+      .send({ addressId: 'customer-address', deliveryDate: date, paymentMethod: 'COD' })
+      .expect(409)
+      .then((r) => expect(r.body.error.code).toBe('DELIVERY_MINIMUM'));
+    await db.deliveryZone.update({ where: { id: 'test-zone' }, data: { minimumOrderPaise: 0 } });
+    const r = await review();
+    await request(server)
+      .patch('/api/v1/admin/delivery-zones/test-zone')
+      .set(auth('admin'))
+      .send({
+        name: 'Updated',
+        active: true,
+        deliveryFeePaise: 90000,
+        minimumOrderPaise: 0,
+        freeDeliveryAbovePaise: null,
+        estimate: 'Tomorrow',
+        pincodes: ['800020'],
+        expectedVersion: 1,
+      })
+      .expect(200);
+    expect((await place(r.body.id)).body.error.code).toBe('PRICE_CHANGED');
+    expect((await db.product.findUniqueOrThrow({ where: { id: 'cement' } })).stock).toBe(100);
+    await db.deliveryZone.update({ where: { id: 'test-zone' }, data: { active: false } });
+    await request(server)
+      .post('/api/v1/checkout/review')
+      .set(auth())
+      .send({ addressId: 'customer-address', deliveryDate: date, paymentMethod: 'COD' })
+      .expect(409);
+  });
+  it('rejects overlapping pincodes without partially changing a zone', async () => {
+    const zone = {
+      name: 'Overlap',
+      active: true,
+      deliveryFeePaise: 0,
+      minimumOrderPaise: 0,
+      freeDeliveryAbovePaise: null,
+      estimate: 'Tomorrow',
+      pincodes: ['800020'],
+    };
+    await request(server)
+      .post('/api/v1/admin/delivery-zones')
+      .set(auth('admin'))
+      .send(zone)
+      .expect(409);
+    expect(await db.deliveryZone.count()).toBe(1);
+  });
+  it('requires configured staff passphrase and invalidates sessions after credential change', async () => {
+    const password = 'correct-staff-passphrase';
+    await db.adminCredential.create({
+      data: { userId: 'admin', passwordHash: await hashPassword(password) },
+    });
+    await request(server).get('/api/v1/admin/dashboard').set(auth('admin')).expect(401);
+    const r = await request(server)
+      .post('/api/v1/auth/otp/request')
+      .send({ phone: '+919999999993' })
+      .expect(201);
+    await request(server)
+      .post('/api/v1/auth/otp/verify')
+      .send({
+        phone: '+919999999993',
+        code: r.body.devCode,
+        adminPassword: 'wrong-staff-passphrase',
+      })
+      .expect(401);
+    const logged = await request(server)
+      .post('/api/v1/auth/otp/verify')
+      .send({ phone: '+919999999993', code: r.body.devCode, adminPassword: password })
+      .expect(201);
+    expect(JSON.stringify(logged.body)).not.toContain('scrypt-v1');
+    const header = { Authorization: `Bearer ${logged.body.accessToken}` };
+    await request(server).get('/api/v1/admin/dashboard').set(header).expect(200);
+    await db.adminCredential.update({
+      where: { userId: 'admin' },
+      data: { passwordHash: await hashPassword('new-correct-staff-passphrase') },
+    });
+    await request(server).get('/api/v1/admin/dashboard').set(header).expect(401);
+  });
+  it('limits OTP requests across phone numbers with persistent hashed IP counters', async () => {
+    for (let i = 0; i < 10; i++)
+      await request(server)
+        .post('/api/v1/auth/otp/request')
+        .send({ phone: `+9188888888${String(i).padStart(2, '0')}` })
+        .expect(201);
+    await request(server)
+      .post('/api/v1/auth/otp/request')
+      .send({ phone: '+918888888899' })
+      .expect(429);
+    const buckets = await db.authRateLimit.findMany();
+    expect(buckets.length).toBe(2);
+    expect(JSON.stringify(buckets)).not.toContain('127.0.0.1');
+  });
+  it('lists safe session metadata and restricts session revocation to its owner', async () => {
+    const sessions = await request(server).get('/api/v1/auth/sessions').set(auth()).expect(200);
+    expect(sessions.body[0].current).toBe(true);
+    expect(JSON.stringify(sessions.body)).not.toContain('Hash');
+    const other = await db.session.findFirstOrThrow({ where: { userId: 'other' } });
+    await request(server).delete(`/api/v1/auth/sessions/${other.id}`).set(auth()).expect(404);
+    await request(server)
+      .delete(`/api/v1/auth/sessions/${sessions.body[0].id}`)
+      .set(auth())
+      .expect(200);
+    await request(server).get('/api/v1/orders').set(auth()).expect(401);
+  });
+  it('requires audited contractor verification rather than self-promotion', async () => {
+    const r = await request(server)
+      .patch('/api/v1/me')
+      .set(auth())
+      .send({ name: 'Builder', language: 'en', contractor: true })
+      .expect(200);
+    expect(r.body.role).toBe('CUSTOMER');
+    expect(r.body.contractorStatus).toBe('PENDING');
+    await request(server)
+      .patch('/api/v1/admin/customers/customer/contractor')
+      .set(auth())
+      .send({ status: 'VERIFIED', note: 'Self claim' })
+      .expect(403);
+    await request(server)
+      .patch('/api/v1/admin/customers/customer/contractor')
+      .set(auth('admin'))
+      .send({ status: 'VERIFIED', note: 'Store owner checked business details in person' })
+      .expect(200);
+    expect((await db.user.findUniqueOrThrow({ where: { id: 'customer' } })).role).toBe(
+      'CONTRACTOR',
+    );
+    expect(await db.auditLog.count({ where: { event: 'CONTRACTOR_REVIEWED' } })).toBe(1);
+  });
+  it('deletes personal account data and revokes access while retaining de-identified financial records', async () => {
+    const o = await order();
+    await request(server)
+      .post('/api/v1/me/delete')
+      .set(auth())
+      .send({ confirmation: 'DELETE' })
+      .expect(409);
+    await request(server).post(`/api/v1/orders/${o.id}/cancel`).set(auth()).expect(201);
+    await db.orderStatusHistory.create({
+      data: {
+        orderId: o.id,
+        status: 'CANCELLED',
+        actorId: 'admin',
+        note: address.phone + ' ' + address.line1,
+      },
+    });
+    await db.auditLog.create({
+      data: {
+        actorId: 'admin',
+        event: 'STAFF_NOTE',
+        entityId: o.id,
+        details: { note: address.phone },
+      },
+    });
+    await request(server)
+      .post('/api/v1/me/delete')
+      .set(auth())
+      .send({ confirmation: 'wrong' })
+      .expect(400);
+    await request(server)
+      .post('/api/v1/me/delete')
+      .set(auth())
+      .send({ confirmation: 'DELETE' })
+      .expect(201);
+    await request(server).get('/api/v1/orders').set(auth()).expect(401);
+    expect(
+      JSON.stringify(await db.orderStatusHistory.findMany({ where: { orderId: o.id } })),
+    ).not.toContain(address.phone);
+    expect(JSON.stringify(await db.auditLog.findMany({ where: { entityId: o.id } }))).not.toContain(
+      address.phone,
+    );
+    expect(await db.address.count({ where: { userId: 'customer' } })).toBe(0);
+    expect(await db.session.count({ where: { userId: 'customer' } })).toBe(0);
+    const retained = await db.order.findUniqueOrThrow({ where: { id: o.id } });
+    expect(retained.totalPaise).toBe(o.totalPaise);
+    expect(JSON.stringify(retained)).not.toContain(address.phone);
+    expect(JSON.stringify(retained)).not.toContain(address.line1);
+    expect(
+      (await db.user.findUniqueOrThrow({ where: { id: 'customer' } })).deletedAt,
+    ).not.toBeNull();
+    await request(server)
+      .post('/api/v1/me/delete')
+      .set(auth('admin'))
+      .send({ confirmation: 'DELETE' })
+      .expect(403);
+  });
+  it('never creates a second gateway order after an uncertain initialization', async () => {
+    const o = await order('ONLINE');
+    const gateway = vi
+      .spyOn(app.get(PaymentsService), 'gateway')
+      .mockRejectedValue(new Error('Network result unknown'));
+    await request(server).post(`/api/v1/payments/orders/${o.id}`).set(auth()).expect(500);
+    await request(server).post(`/api/v1/payments/orders/${o.id}`).set(auth()).expect(409);
+    expect(gateway).toHaveBeenCalledTimes(1);
+  });
+  it('allows only one provider association during concurrent payment recovery', async () => {
+    const o = await order('ONLINE');
+    vi.spyOn(app.get(PaymentsService), 'gateway').mockImplementation(async (path: string) =>
+      path.endsWith('/payments')
+        ? { items: [] }
+        : { id: path.split('/')[1], receipt: o.id, amount: o.totalPaise, currency: 'INR' },
+    );
+    const results = await Promise.all(
+      ['order_first123', 'order_second123'].map((razorpayOrderId) =>
+        request(server)
+          .post(`/api/v1/admin/orders/${o.id}/reconcile-payment`)
+          .set(auth('admin'))
+          .send({ razorpayOrderId }),
+      ),
+    );
+    expect(results.map((r) => r.status).sort()).toEqual([201, 400]);
+    expect(await db.auditLog.count({ where: { event: 'PAYMENT_RECONCILED' } })).toBe(1);
+  });
+});
+
+describe('Quote decision provenance', () => {
+  it('clears old decision metadata on revised offers and requires staff evidence', async () => {
+    const q = await request(server)
+      .post('/api/v1/quotes')
+      .set(auth())
+      .send({
+        items: [{ productId: 'cement', quantity: 100 }],
+        addressId: 'customer-address',
+        deliveryDate: date,
+      })
+      .expect(201);
+    const offer = {
+      expectedRevision: 0,
+      items: [{ productId: 'cement', unitPricePaise: 40000 }],
+      deliveryFeePaise: 0,
+      validUntil: new Date(Date.now() + 86400000).toISOString(),
+    };
+    await request(server)
+      .post(`/api/v1/admin/quotes/${q.body.id}/offer`)
+      .set(auth('admin'))
+      .send(offer)
+      .expect(201);
+    const rejected = await request(server)
+      .post(`/api/v1/quotes/${q.body.id}/respond`)
+      .set(auth())
+      .send({ revision: 1, status: 'REJECTED' })
+      .expect(201);
+    expect(rejected.body.decisionSource).toBe('CUSTOMER');
+    const revised = await request(server)
+      .post(`/api/v1/admin/quotes/${q.body.id}/offer`)
+      .set(auth('admin'))
+      .send({ ...offer, expectedRevision: 1 })
+      .expect(201);
+    expect(revised.body.decisionSource).toBeNull();
+    expect(revised.body.decisionAt).toBeNull();
+    await request(server)
+      .post(`/api/v1/admin/quotes/${q.body.id}/respond`)
+      .set(auth('admin'))
+      .send({ revision: 2, status: 'ACCEPTED' })
+      .expect(400);
+    const accepted = await request(server)
+      .post(`/api/v1/admin/quotes/${q.body.id}/respond`)
+      .set(auth('admin'))
+      .send({ revision: 2, status: 'ACCEPTED', note: 'Customer confirmed by phone' })
+      .expect(201);
+    expect(accepted.body.decisionSource).toBe('STORE_RECORDED');
+    expect(accepted.body.decisionActorId).toBe('admin');
   });
 });

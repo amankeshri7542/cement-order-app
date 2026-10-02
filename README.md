@@ -6,6 +6,8 @@ An Expo customer app, Next.js store dashboard, and NestJS/PostgreSQL commerce ba
 
 The backend owns prices, delivery charges, inventory and payment state. Local example inventory and mock OTP are for development. **Do not accept real payments until the production setup and provider verification below are complete.**
 
+The [pilot implementation report](docs/PILOT_IMPLEMENTATION.md) covers inventory movements, paginated catalogues, pincode zones, staff security, and the updated UI.
+
 ## Run locally
 
 Use Node.js 22.12+ and PostgreSQL 16+. From this repository:
@@ -22,6 +24,8 @@ npm run db:generate
 npm run build -w @shiv/shared
 npm run db:migrate
 npm run db:seed
+# Supply ADMIN_BOOTSTRAP_PASSWORD through your shell or secret manager first.
+# Use a unique 12–200 character staff passphrase; do not put it in command history.
 npm run admin:grant -w @shiv/api -- +919297513707
 ```
 
@@ -44,15 +48,18 @@ For the prepared local workspace on this machine, an isolated PostgreSQL instanc
 
 For local OTP sign-in, request a code using a valid Indian mobile number. A clearly labelled random development code appears in the form. It expires in 5 minutes, is single-use and limited to five attempts. The store number has admin access only after the grant command; signing up never grants admin privileges.
 
+Each staff sign-in requires phone OTP plus the staff passphrase. Re-running `admin:grant` rotates that passphrase and revokes existing sessions. Staff without a credential are accepted only in development/test; production rejects them.
+
 ## Store controls
 
-- **Products:** create/edit products, stock, prices, visibility, category and images. Price edits use version checks and create an audit trail.
-- **Orders:** inspect customer/payment/history; prepare, dispatch and deliver; record cash received; cancel eligible orders and restore stock; record cash refunds; reconcile verified Razorpay payments.
-- **Bulk quotes:** price each requested material, set a custom delivery charge and expiry, and send revisions. Customers accept the exact revision they reviewed. Accepted quotes require store follow-up to arrange an order/payment.
-- **Customers:** contact, saved addresses and order history.
-- **Finance & settings:** change phone/WhatsApp, flat delivery fee, free-delivery threshold, delivery message and online-payment switch. Existing orders keep agreed totals.
+- **Products:** edit specifications, selling units, pack description, minimum/step quantities, prices, visibility, and images. Record stock through the immutable **Stock ledger**, including purchases, walk-in sales, returns, damage, and signed manual corrections. Existing balances cannot be overwritten.
+- **Orders:** inspect customer/payment/history; prepare, dispatch, and deliver; record cash received; cancel eligible orders and restore stock; record cash refunds; reconcile verified Razorpay payments.
+- **Bulk quotes:** versioned prices, custom delivery charge, and expiry. Customer decisions and staff-recorded decisions have separate provenance; staff must record evidence. Accepted quotes still require manual store follow-up.
+- **Customers:** recent orders, contact details, and audited contractor verification. Asking for contractor access does not grant pricing or credit privileges.
+- **Finance & settings:** contact/WhatsApp, online-payment switch, staff sessions, and delivery zones. Each pincode belongs to one zone with active status, charge, minimum order, free-delivery threshold, and delivery estimate.
+- **Store activity:** paginated audit history. Product, order, customer, and quotation lists use server-side pages.
 
-Seed data uses a **₹500 delivery charge** and **free delivery from ₹50,000**, purely as editable development examples. Review actual product prices and policies before using this with customers. Prices are treated as final selling prices; GST calculation and statutory tax invoices are not enabled.
+Development seed zones cover only **800001, 800002, and 800020**. They use example fees; review all prices and configure actual serviceable pincodes before inviting customers. Production migration creates no serviceable zones. Prices are final selling prices; statutory GST invoices are not implemented.
 
 ## Verification
 
@@ -69,7 +76,7 @@ npm run test:e2e
 npm run build
 ```
 
-Browser tests start separate API/admin/customer servers on 4010/3001/8082. They use Chrome (`npx playwright install chrome` if needed). Unit and integration tests cover server pricing, transaction races, OTP/session security, authorization, webhook replay, refunds and quote revisions. Browser tests cover ordering, admin management, quotations, localization, mobile sizing and network recovery. See [implementation report](docs/IMPLEMENTATION.md) for actual verification results and limits.
+Browser tests start separate API/admin/customer servers on 4010/3001/8082. They use Chrome (`npx playwright install chrome` if needed). Unit and integration tests cover server pricing, transaction races, OTP/session security, authorization, webhook replay, refunds and quote revisions. Browser tests cover ordering, admin management, quotations, localization, mobile sizing and network recovery. See [pilot implementation report](docs/PILOT_IMPLEMENTATION.md) for actual verification results and limits.
 
 ## Native app
 

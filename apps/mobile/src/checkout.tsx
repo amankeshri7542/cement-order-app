@@ -59,6 +59,8 @@ export function Cart() {
           <View style={[s.between, { marginTop: 18 }]}>
             <Quantity
               value={c.quantity}
+              min={c.product.minQuantity}
+              step={c.product.quantityStep}
               max={Math.min(10000, c.product.stock)}
               disabled={Boolean(busy)}
               change={(n) => void change(c.productId, n)}
@@ -318,6 +320,8 @@ export function Checkout() {
               {review.address.line1}, {review.address.area}, {review.address.city}{' '}
               {review.address.pincode}
               {'\n'}Delivery: {review.deliveryDate}
+              {'\n'}
+              {review.deliveryEstimate}
               {'\n'}
               {paymentMethod === 'COD' ? t('cod') : 'Razorpay online payment'}
             </Text>

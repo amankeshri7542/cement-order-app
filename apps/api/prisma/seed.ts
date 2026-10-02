@@ -8,7 +8,11 @@ async function main() {
       { name: 'Cement', slug: 'cement' },
       { name: 'Steel', slug: 'steel' },
       { name: 'Sand', slug: 'sand' },
-      { name: 'Bricks', slug: 'bricks' },
+      { name: 'Bricks & blocks', slug: 'bricks' },
+      { name: 'Aggregates', slug: 'aggregates' },
+      { name: 'Tiles', slug: 'tiles' },
+      { name: 'Pipes', slug: 'pipes' },
+      { name: 'Hardware', slug: 'hardware' },
     ];
     for (const c of categories)
       await db.category.upsert({
@@ -116,6 +120,37 @@ async function main() {
     ];
     for (const p of products)
       await db.product.upsert({ where: { id: p.id }, create: { ...p, images: [] }, update: {} });
+    for (const p of products) {
+      const actual = await db.product.findUniqueOrThrow({ where: { id: p.id } });
+      if (actual.stock)
+        await db.inventoryMovement.upsert({
+          where: { idempotencyKey: `opening:${p.id}` },
+          update: {},
+          create: {
+            productId: p.id,
+            kind: 'MANUAL_ADJUSTMENT',
+            quantity: actual.stock,
+            balanceAfter: actual.stock,
+            actorId: 'seed',
+            reference: 'Development opening balance',
+            note: 'Example stock only',
+            idempotencyKey: `opening:${p.id}`,
+          },
+        });
+    }
+    await db.deliveryZone.upsert({
+      where: { id: 'demo-patna' },
+      update: {},
+      create: {
+        id: 'demo-patna',
+        name: 'Patna demo — verify before launch',
+        deliveryFeePaise: 50000,
+        minimumOrderPaise: 0,
+        freeDeliveryAbovePaise: 5000000,
+        estimate: 'Store will call to confirm the delivery slot.',
+        pincodes: { create: ['800001', '800002', '800020'].map((pincode) => ({ pincode })) },
+      },
+    });
     await db.storeSettings.upsert({
       where: { id: 'store' },
       create: {
