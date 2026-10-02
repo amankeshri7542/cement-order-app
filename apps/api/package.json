@@ -1,0 +1,41 @@
+{
+  "name": "@shiv/api",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch --env-file=.env src/main.ts",
+    "start": "node dist/main.js",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run test/domain.test.ts",
+    "test:integration": "vitest run test/integration.test.ts",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
+    "db:seed": "tsx --env-file=.env prisma/seed.ts",
+    "admin:grant": "tsx --env-file=.env scripts/grant-admin.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.980.0",
+    "@aws-sdk/s3-request-presigner": "^3.980.0",
+    "@nestjs/common": "^11.1.11",
+    "@nestjs/core": "^11.1.11",
+    "@nestjs/platform-express": "^11.1.11",
+    "@nestjs/swagger": "^11.2.5",
+    "@nestjs/throttler": "^6.5.0",
+    "@prisma/client": "6.19.2",
+    "@shiv/shared": "1.0.0",
+    "firebase-admin": "^14.5.0",
+    "helmet": "^8.1.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "zod": "^4.3.5"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/supertest": "^6.0.3",
+    "prisma": "6.19.2",
+    "supertest": "^7.2.2",
+    "tsx": "^4.21.0",
+    "vitest": "^5.0.3"
+  }
+}

@@ -1,0 +1,47 @@
+name: Verify Shiv Cement Store
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: shiv
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: shiv_cement_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U shiv"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://shiv:ci-only-password@localhost:5432/shiv_cement_test
+      TEST_DATABASE_URL: postgresql://shiv:ci-only-password@localhost:5432/shiv_cement_test
+      OTP_HASH_SECRET: ci-only-secret-with-at-least-thirty-two-characters
+      OTP_PROVIDER: mock
+      CI: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: cp apps/api/.env.example apps/api/.env
+      - run: npm run db:generate && npm run build -w @shiv/shared && npm run db:migrate
+      - run: npm run lint && npm run typecheck
+      - run: npm test && npm run test:integration
+      - run: npx playwright install --with-deps chrome
+      - run: npm run test:e2e
+      - run: npm run build
+      - run: docker build -t shiv-cement-api:ci .
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: test-failure-artifacts
+          path: |
+            test-results/
+            playwright-report/

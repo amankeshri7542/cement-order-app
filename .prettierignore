@@ -1,0 +1,10 @@
+node_modules
+package-lock.json
+.local
+.playwright-cli
+**/.next*
+**/dist
+**/.expo
+test-results
+playwright-report
+**/next-env.d.ts

@@ -1,0 +1,49 @@
+{
+  "name": "shiv-cement-store",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev:api": "npm run dev -w @shiv/api",
+    "dev:admin": "npm run dev -w @shiv/admin",
+    "dev:mobile": "npm run start -w @shiv/mobile",
+    "dev:web": "npm run web -w @shiv/mobile",
+    "db:generate": "npm run db:generate -w @shiv/api",
+    "db:migrate": "npm run db:migrate -w @shiv/api",
+    "db:seed": "npm run db:seed -w @shiv/api",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "test": "npm run test -w @shiv/api",
+    "test:integration": "npm run test:integration -w @shiv/api",
+    "test:e2e": "playwright test",
+    "build": "npm run build -w @shiv/shared && npm run build -w @shiv/api && npm run build -w @shiv/admin && npm run build -w @shiv/mobile"
+  },
+  "overrides": {
+    "@prisma/config": {
+      "deepmerge-ts": "^8.0.0",
+      "effect": "^3.20.0"
+    },
+    "@nestjs/swagger": {
+      "js-yaml": "^5.4.1"
+    },
+    "gaxios": {
+      "uuid": "^11.1.1"
+    }
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.0",
+    "@playwright/test": "^1.58.0",
+    "@types/node": "^22.19.0",
+    "eslint": "^9.39.0",
+    "prettier": "^3.9.9",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.53.0"
+  }
+}

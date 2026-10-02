@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "Shiv Cement Store",
+    "slug": "shiv-cement-store",
+    "scheme": "shivcement",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": { "bundleIdentifier": "in.shivcement.store", "supportsTablet": true },
+    "android": { "package": "in.shivcement.store" },
+    "web": { "bundler": "metro", "name": "Shiv Cement Store" },
+    "plugins": ["expo-secure-store", "expo-notifications"]
+  }
+}
