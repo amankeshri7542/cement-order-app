@@ -7,7 +7,7 @@
     "start": "node dist/main.js",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run test/domain.test.ts",
+    "test": "vitest run test/domain.test.ts test/rate-cards.test.ts test/rate-rules.test.ts test/rate-providers.test.ts",
     "test:integration": "vitest run test/integration.test.ts",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
@@ -28,6 +28,7 @@
     "helmet": "^8.1.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
+    "sharp": "^0.35.5",
     "zod": "^4.3.5"
   },
   "devDependencies": {

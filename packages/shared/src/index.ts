@@ -354,3 +354,5 @@ export type SessionInfo = {
   current: boolean;
   deviceCount: number;
 };
+
+export * from './rate-studio';

@@ -183,7 +183,7 @@ export function Products({
     </>
   );
 }
-function ProductEditor({
+export function ProductEditor({
   product,
   categories,
   close,

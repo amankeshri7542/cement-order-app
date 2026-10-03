@@ -128,7 +128,7 @@ beforeAll(async () => {
 }, 30000);
 beforeEach(async () => {
   await db.$executeRawUnsafe(
-    'TRUNCATE TABLE "User", "Category", "Product", "Order", "Quote", "AuditLog", "OtpChallenge", "AuthRateLimit", "DeliveryZone", "StoreSettings" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "PriceUpdateBatch", "RateSource", "User", "Category", "Product", "Order", "Quote", "AuditLog", "OtpChallenge", "AuthRateLimit", "DeliveryZone", "StoreSettings" RESTART IDENTITY CASCADE',
   );
   for (const [i, role] of (['customer', 'other', 'admin'] as const).entries()) {
     await db.user.create({
@@ -993,5 +993,483 @@ describe('Quote decision provenance', () => {
       .expect(201);
     expect(accepted.body.decisionSource).toBe('STORE_RECORDED');
     expect(accepted.body.decisionActorId).toBe('admin');
+  });
+});
+
+// Rate Studio uses the real database; paid extraction providers are mocked.
+const rateBase = '/api/v1/admin/rate-studio';
+async function newRate(sourceType = 'MANUAL', idempotencyKey = randomUUID()) {
+  return (
+    await request(server)
+      .post(`${rateBase}/batches`)
+      .set(auth('admin'))
+      .send({ title: 'Supplier price sheet', sourceType, idempotencyKey })
+      .expect(201)
+  ).body;
+}
+function rateRow(productId = 'cement', price = 43000) {
+  return {
+    productId,
+    label: 'Test cement',
+    brand: 'Test',
+    specification: 'PPC',
+    unit: '50 kg bag',
+    weight: '',
+    proposedPricePaise: price,
+    included: true,
+    reviewed: true,
+    acknowledged: true,
+    note: 'Confirmed at counter',
+    rememberAlias: false,
+    refreshBaseline: false,
+    expectedProductVersion: 1,
+  };
+}
+async function saveRate(batch: { id: string; version: number; title: string }, items: unknown[]) {
+  return (
+    await request(server)
+      .patch(`${rateBase}/batches/${batch.id}`)
+      .set(auth('admin'))
+      .send({ expectedVersion: batch.version, title: batch.title, items })
+      .expect(200)
+  ).body;
+}
+function publishRate(batch: { id: string; version: number }) {
+  return request(server)
+    .post(`${rateBase}/batches/${batch.id}/publish`)
+    .set(auth('admin'))
+    .send({ expectedVersion: batch.version, confirmation: 'PUBLISH' });
+}
+async function uploadRate(batch: { id: string; version: number }) {
+  const sharp = (await import('sharp')).default;
+  const bytes = await sharp({ create: { width: 1, height: 1, channels: 3, background: '#ddab30' } })
+    .png()
+    .toBuffer();
+  const result = await request(server)
+    .post(`${rateBase}/batches/${batch.id}/source`)
+    .set(auth('admin'))
+    .set('Content-Type', 'image/png')
+    .set('X-Batch-Version', String(batch.version))
+    .set('X-File-Name', 'supplier.png')
+    .send(bytes)
+    .expect(201);
+  return { batch: result.body, bytes };
+}
+async function finishRate(id: string) {
+  await vi.waitFor(
+    async () =>
+      expect((await db.priceUpdateBatch.findUniqueOrThrow({ where: { id } })).status).not.toBe(
+        'PROCESSING',
+      ),
+    { timeout: 5000, interval: 20 },
+  );
+  return (await request(server).get(`${rateBase}/batches/${id}`).set(auth('admin')).expect(200))
+    .body;
+}
+const extractedRate = {
+  brand: 'Test',
+  product: 'Test cement',
+  category: 'Cement',
+  size: null,
+  specification: 'PPC',
+  price: '430',
+  unit: '50 kg bag',
+  weight: null,
+  effectiveDate: null,
+  deliveryNotes: null,
+  confidence: 0.5,
+  sourceText: 'Test cement PPC 430',
+  sourceReference: 'row 1',
+};
+describe('Rate Studio financial and extraction operations', () => {
+  it('denies customer access to every source, draft, publication and card operation', async () => {
+    const paths = [
+      'providers',
+      'batches',
+      'batches/missing',
+      'batches/missing/source',
+      'cards/missing',
+      'cards/missing/pages/1/png',
+    ];
+    for (const path of paths)
+      await request(server).get(`${rateBase}/${path}`).set(auth()).expect(403);
+    for (const path of [
+      'batches',
+      'batches/missing/source',
+      'batches/missing/extract',
+      'batches/missing/adjust',
+      'batches/missing/publish',
+      'batches/missing/cancel',
+      'batches/missing/cards',
+    ])
+      await request(server).post(`${rateBase}/${path}`).set(auth()).send({}).expect(403);
+    await request(server).patch(`${rateBase}/batches/missing`).set(auth()).send({}).expect(403);
+  });
+  it('creates one draft when creation is retried concurrently', async () => {
+    const key = randomUUID();
+    const [a, b] = await Promise.all([newRate('MANUAL', key), newRate('MANUAL', key)]);
+    expect(a.id).toBe(b.id);
+    expect(await db.priceUpdateBatch.count()).toBe(1);
+  });
+  it('publishes multiple products atomically with one history per actual change and one post-commit SSE', async () => {
+    const { Events } = await import('../src/catalog');
+    const event = vi.spyOn(app.get(Events), 'publish');
+    await db.product.create({
+      data: { ...product, id: 'second', name: 'Second material', pricePaise: 60000 },
+    });
+    const b = await saveRate(await newRate(), [rateRow(), rateRow('second', 62000)]);
+    const reads: Promise<unknown>[] = [];
+    event.mockImplementation(() => {
+      reads.push(
+        db.priceUpdateBatch
+          .findUniqueOrThrow({ where: { id: b.id } })
+          .then((v) => expect(v.status).toBe('PUBLISHED')),
+      );
+    });
+    const responses = await Promise.all([publishRate(b), publishRate(b)]);
+    expect(responses.map((r) => r.status)).toEqual([201, 201]);
+    expect(await db.productPriceHistory.count({ where: { batchId: b.id } })).toBe(2);
+    expect((await db.product.findUniqueOrThrow({ where: { id: 'cement' } })).priceVersion).toBe(2);
+    expect((await db.product.findUniqueOrThrow({ where: { id: 'second' } })).pricePaise).toBe(
+      62000,
+    );
+    expect(event).toHaveBeenCalledTimes(1);
+    await Promise.all(reads);
+    expect(
+      responses[0]!.body.items
+        .flatMap((row: { issues: { code: string }[] }) => row.issues)
+        .some((issue: { code: string }) => issue.code === 'PRODUCT_CHANGED'),
+    ).toBe(false);
+    await db.product.update({
+      where: { id: 'cement' },
+      data: { active: false, name: 'Renamed later', version: { increment: 1 } },
+    });
+    const historical = (
+      await request(server).get(`${rateBase}/batches/${b.id}`).set(auth('admin')).expect(200)
+    ).body;
+    expect(historical.items[0].product.name).toBe(product.name);
+    expect(historical.items[0].issues.some((issue: { blocking: boolean }) => issue.blocking)).toBe(
+      false,
+    );
+
+    await request(server)
+      .patch(`${rateBase}/batches/${b.id}`)
+      .set(auth('admin'))
+      .send({ expectedVersion: responses[0]!.body.version, title: b.title, items: [] })
+      .expect(409);
+    await expect(
+      db.priceUpdateBatchItem.updateMany({
+        where: { batchId: b.id },
+        data: { note: 'rewrite evidence' },
+      }),
+    ).rejects.toThrow();
+    await expect(
+      db.priceUpdateBatch.update({ where: { id: b.id }, data: { title: 'rewrite' } }),
+    ).rejects.toThrow();
+  });
+  it('rejects stale product versions without changing any other product or history', async () => {
+    const { Events } = await import('../src/catalog');
+    const event = vi.spyOn(app.get(Events), 'publish');
+    await db.product.create({ data: { ...product, id: 'second', name: 'Second material' } });
+    const b = await saveRate(await newRate(), [rateRow(), rateRow('second', 44000)]);
+    await db.product.update({
+      where: { id: 'second' },
+      data: { pricePaise: 50000, version: { increment: 1 } },
+    });
+    await publishRate(b).expect(409);
+    expect((await db.product.findUniqueOrThrow({ where: { id: 'cement' } })).pricePaise).toBe(
+      41000,
+    );
+    expect(await db.productPriceHistory.count()).toBe(0);
+    expect(event).not.toHaveBeenCalled();
+    expect((await db.priceUpdateBatch.findUniqueOrThrow({ where: { id: b.id } })).status).not.toBe(
+      'PUBLISHED',
+    );
+  });
+  it('rejects a product changed after selection and before a new row is saved', async () => {
+    const b = await newRate();
+    await db.product.update({
+      where: { id: 'cement' },
+      data: { version: { increment: 1 }, pricePaise: 45000 },
+    });
+    await request(server)
+      .patch(`${rateBase}/batches/${b.id}`)
+      .set(auth('admin'))
+      .send({ expectedVersion: b.version, title: b.title, items: [rateRow()] })
+      .expect(409);
+    expect(await db.priceUpdateBatchItem.count()).toBe(0);
+  });
+  it('rejects concurrent draft editors and preserves the winning review', async () => {
+    const b = await newRate();
+    const responses = await Promise.all(
+      [43000, 45000].map((price) =>
+        request(server)
+          .patch(`${rateBase}/batches/${b.id}`)
+          .set(auth('admin'))
+          .send({ expectedVersion: b.version, title: b.title, items: [rateRow('cement', price)] }),
+      ),
+    );
+    expect(responses.map((r) => r.status).sort()).toEqual([200, 409]);
+    expect(await db.priceUpdateBatchItem.count()).toBe(1);
+  });
+  it('shows duplicate and abnormal-change warnings and requires human acknowledgement', async () => {
+    let b = await saveRate(await newRate(), [rateRow(), rateRow()]);
+    expect(b.issues.some((i: { code: string }) => i.code === 'DUPLICATE')).toBe(true);
+    await publishRate(b).expect(409);
+    b = await saveRate(b, [{ ...rateRow('cement', 410000), acknowledged: false }]);
+    expect(b.issues.some((i: { code: string }) => i.code === 'LARGE_CHANGE')).toBe(true);
+    await publishRate(b).expect(409);
+  });
+  it('creates adjustment previews with integer rounding and no live change', async () => {
+    const b = await newRate('ADJUSTMENT');
+    const r = await request(server)
+      .post(`${rateBase}/batches/${b.id}/adjust`)
+      .set(auth('admin'))
+      .send({
+        expectedVersion: b.version,
+        productIds: ['cement'],
+        kind: 'PERCENT',
+        direction: 'INCREASE',
+        amount: 250,
+      })
+      .expect(201);
+    expect(r.body.items[0].proposedPricePaise).toBe(42025);
+    expect(r.body.status).toBe('REVIEW_REQUIRED');
+    expect((await db.product.findUniqueOrThrow({ where: { id: 'cement' } })).pricePaise).toBe(
+      41000,
+    );
+    await publishRate(r.body).expect(409);
+  });
+  it('records unchanged sheets without fabricating monetary history', async () => {
+    const b = await saveRate(await newRate(), [rateRow('cement', 41000)]);
+    await publishRate(b).expect(201);
+    expect(await db.productPriceHistory.count()).toBe(0);
+    expect((await db.product.findUniqueOrThrow({ where: { id: 'cement' } })).priceVersion).toBe(1);
+  });
+  it('invalidates checkout for pack changes without equal-price monetary history', async () => {
+    const { productSchema } = await import('@shiv/shared');
+    const p = await db.product.findUniqueOrThrow({ where: { id: 'cement' } });
+    const data = Object.fromEntries(
+      Object.keys(productSchema.shape).map((k) => [k, p[k as keyof typeof p]]),
+    );
+    await request(server)
+      .patch('/api/v1/admin/products/cement')
+      .set(auth('admin'))
+      .send({ ...data, packSize: 'Revised pack description', expectedVersion: p.version })
+      .expect(200);
+    expect(await db.productPriceHistory.count()).toBe(0);
+    expect((await db.product.findUniqueOrThrow({ where: { id: 'cement' } })).priceVersion).toBe(2);
+    expect(await db.auditLog.count({ where: { event: 'PRODUCT_TERMS_CHANGED' } })).toBe(1);
+  });
+  it('preserves checkout re-review after a batch publishes', async () => {
+    await cart();
+    const r = await review();
+    const b = await saveRate(await newRate(), [rateRow()]);
+    await publishRate(b).expect(201);
+    const placed = await place(r.body.id);
+    expect(placed.status).toBe(409);
+    expect(placed.body.error.code).toBe('PRICE_CHANGED');
+  });
+  it('creates remembered aliases only after publication and rejects conflicting alias mappings atomically', async () => {
+    const { normalizeAlias } = await import('../src/rate-studio/rules');
+    const b = await saveRate(await newRate(), [
+      { ...rateRow(), label: 'Counter PPC', rememberAlias: true },
+    ]);
+    expect(await db.productAlias.count()).toBe(0);
+    await publishRate(b).expect(201);
+    expect((await db.productAlias.findFirstOrThrow()).normalizedAlias).toBe(
+      normalizeAlias('Test Counter PPC PPC'),
+    );
+    await db.product.create({ data: { ...product, id: 'second', name: 'Second material' } });
+    const next = await saveRate(await newRate(), [
+      { ...rateRow('second'), label: 'Counter PPC', rememberAlias: true },
+    ]);
+    await publishRate(next).expect(409);
+    expect((await db.product.findUniqueOrThrow({ where: { id: 'second' } })).pricePaise).toBe(
+      41000,
+    );
+  });
+  it('validates private source bytes, retains digest evidence and blocks replacement', async () => {
+    const initial = await newRate('IMAGE');
+    await request(server)
+      .post(`${rateBase}/batches/${initial.id}/source`)
+      .set(auth('admin'))
+      .set('Content-Type', 'image/png')
+      .set('X-Batch-Version', '1')
+      .send(Buffer.from('<script>bad</script>'))
+      .expect(400);
+    const { batch: b, bytes } = await uploadRate(initial);
+    expect(b.source.sha256).toHaveLength(64);
+    expect(b.source.storageKey).toBeUndefined();
+    const image = await request(server)
+      .get(`${rateBase}/batches/${b.id}/source`)
+      .set(auth('admin'))
+      .expect(200);
+    expect(image.body).toEqual(bytes);
+    expect(image.headers['cross-origin-resource-policy']).toBe('same-site');
+    await request(server)
+      .post(`${rateBase}/batches/${b.id}/source`)
+      .set(auth('admin'))
+      .set('Content-Type', 'image/png')
+      .set('X-Batch-Version', String(b.version))
+      .send(bytes)
+      .expect(409);
+  });
+  it('retains OCR after interpretation fails and retries only interpretation', async () => {
+    const { RateProviders, RateProviderError } = await import('../src/rate-studio/providers');
+    const p = app.get(RateProviders);
+    const ocr = vi
+      .spyOn(p, 'ocr')
+      .mockResolvedValue({ text: extractedRate.sourceText, layout: [], usage: { images: 1 } });
+    const interpret = vi
+      .spyOn(p, 'interpret')
+      .mockRejectedValueOnce(new RateProviderError('INTERPRETATION_UNAVAILABLE'))
+      .mockResolvedValue({ extraction: { rows: [extractedRate] }, usage: { model: 'mock' } });
+    const { batch: b } = await uploadRate(await newRate('IMAGE'));
+    await request(server)
+      .post(`${rateBase}/batches/${b.id}/extract`)
+      .set(auth('admin'))
+      .send({ expectedVersion: b.version })
+      .expect(201);
+    const failed = await finishRate(b.id);
+    expect(failed.source.ocrText).toBe(extractedRate.sourceText);
+    expect(failed.errorCode).toBe('INTERPRETATION_UNAVAILABLE');
+    await request(server)
+      .post(`${rateBase}/batches/${b.id}/extract`)
+      .set(auth('admin'))
+      .send({ expectedVersion: failed.version })
+      .expect(201);
+    const done = await finishRate(b.id);
+    expect(done.items).toHaveLength(1);
+    expect(done.items[0].productId).toBe('cement');
+    expect(done.items[0].reviewed).toBe(false);
+    expect(done.items[0].issues.some((i: { code: string }) => i.code === 'LOW_CONFIDENCE')).toBe(
+      true,
+    );
+    expect(ocr).toHaveBeenCalledTimes(1);
+    expect(interpret).toHaveBeenCalledTimes(2);
+    expect(await db.productPriceHistory.count()).toBe(0);
+  });
+  it('recovers interrupted leases and allows manual entry with the uploaded source intact', async () => {
+    const { batch: b } = await uploadRate(await newRate('IMAGE'));
+    await db.priceUpdateBatch.update({
+      where: { id: b.id },
+      data: {
+        status: 'PROCESSING',
+        stage: 'INTERPRETING',
+        attemptToken: randomUUID(),
+        leaseUntil: new Date(Date.now() - 1),
+      },
+    });
+    const recovered = (
+      await request(server).get(`${rateBase}/batches/${b.id}`).set(auth('admin')).expect(200)
+    ).body;
+    expect(recovered.errorCode).toBe('PROCESS_INTERRUPTED');
+    const manual = await saveRate(recovered, [rateRow()]);
+    expect(manual.source.id).toBe(b.source.id);
+    await publishRate(manual).expect(201);
+  });
+  it('does not let an expired OCR attempt overwrite evidence or call interpretation', async () => {
+    const { RateProviders } = await import('../src/rate-studio/providers');
+    const { RateStudioService } = await import('../src/rate-studio/studio');
+    const p = app.get(RateProviders);
+    let resolveOcr!: (value: {
+      text: string;
+      layout: unknown[];
+      usage: Record<string, number>;
+    }) => void;
+    const ocr = vi.spyOn(p, 'ocr').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveOcr = resolve;
+        }),
+    );
+    const interpret = vi.spyOn(p, 'interpret');
+    const { batch: b } = await uploadRate(await newRate('IMAGE'));
+    const token = randomUUID();
+    await db.priceUpdateBatch.update({
+      where: { id: b.id },
+      data: { status: 'PROCESSING', attemptToken: token, leaseUntil: new Date(Date.now() + 60000) },
+    });
+    const pending = app.get(RateStudioService).process(b.id, token);
+    await vi.waitFor(() => expect(ocr).toHaveBeenCalled());
+    await db.priceUpdateBatch.update({
+      where: { id: b.id },
+      data: { leaseUntil: new Date(Date.now() - 1) },
+    });
+    await app.get(RateStudioService).get(b.id);
+    resolveOcr({ text: 'stale result', layout: [], usage: { images: 1 } });
+    await pending;
+    expect(
+      (await db.rateSource.findUniqueOrThrow({ where: { id: b.source.id } })).ocrText,
+    ).toBeNull();
+    expect(interpret).not.toHaveBeenCalled();
+  });
+  it('uses a confirmed alias before normalized product matching', async () => {
+    const { matchRate, normalizeAlias, extractionAlias } = await import('../src/rate-studio/rules');
+    const row = { ...extractedRate, product: 'Vendor shorthand' };
+    await db.productAlias.create({
+      data: {
+        productId: 'cement',
+        alias: extractionAlias(row),
+        normalizedAlias: normalizeAlias(extractionAlias(row)),
+        source: 'test',
+        confirmedBy: 'admin',
+      },
+    });
+    const match = await db.atomic((tx) => matchRate(tx, row));
+    expect(match.product?.id).toBe('cement');
+    expect(match.method).toBe('CONFIRMED_ALIAS');
+  });
+  it('keeps published prices intact when rendering fails and creates exact immutable card values', async () => {
+    const b = await saveRate(await newRate(), [rateRow('cement', 43025)]);
+    await publishRate(b).expect(201);
+    const input = {
+      format: 'SQUARE',
+      template: 'COUNTER',
+      heading: 'Current material rates',
+      deliveryMessage: 'Confirm delivery with the store.',
+      contactLabel: 'Call / WhatsApp',
+      promotionalCopy: '',
+      confirmed: true,
+    };
+    const card = (
+      await request(server)
+        .post(`${rateBase}/batches/${b.id}/cards`)
+        .set(auth('admin'))
+        .send(input)
+        .expect(201)
+    ).body;
+    expect(card.snapshot.items[0].pricePaise).toBe(43025);
+    expect(card.snapshot.items[0].unit).toBe('50 kg bag');
+    const svg = await request(server)
+      .get(`${rateBase}/cards/${card.id}/pages/1/svg`)
+      .set(auth('admin'))
+      .expect(200);
+    expect(svg.text || svg.body.toString()).toContain('430.25');
+    const renderer = await import('../src/rate-studio/cards');
+    vi.spyOn(renderer, 'rateCardPng').mockRejectedValue(new Error('renderer unavailable'));
+    await request(server)
+      .get(`${rateBase}/cards/${card.id}/pages/1/png`)
+      .set(auth('admin'))
+      .expect(503);
+    expect((await db.product.findUniqueOrThrow({ where: { id: 'cement' } })).pricePaise).toBe(
+      43025,
+    );
+    expect((await db.priceUpdateBatch.findUniqueOrThrow({ where: { id: b.id } })).status).toBe(
+      'PUBLISHED',
+    );
+    await expect(
+      db.rateCard.update({ where: { id: card.id }, data: { snapshot: { wrong: true } } }),
+    ).rejects.toThrow();
+    await db.product.update({
+      where: { id: 'cement' },
+      data: { pricePaise: 44000, priceVersion: { increment: 1 } },
+    });
+    await request(server)
+      .post(`${rateBase}/batches/${b.id}/cards`)
+      .set(auth('admin'))
+      .send(input)
+      .expect(409);
   });
 });

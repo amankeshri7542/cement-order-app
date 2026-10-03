@@ -142,12 +142,49 @@ test('live price updates refresh the catalogue and invalidate an accepted checko
   async function updatePrice(pricePaise: number) {
     const result = await request.get('http://localhost:4010/api/v1/products/test-ultratech');
     const product = await result.json();
-    const data = Object.fromEntries(
-      Object.keys(productSchema.shape).map((key) => [key, product[key]]),
-    );
-    const response = await request.patch(
-      'http://localhost:4010/api/v1/admin/products/test-ultratech',
-      { headers, data: { ...data, pricePaise, expectedVersion: product.version } },
+    const batch = await (
+      await request.post('http://localhost:4010/api/v1/admin/rate-studio/batches', {
+        headers,
+        data: {
+          title: 'Live checkout rates',
+          sourceType: 'MANUAL',
+          idempotencyKey: crypto.randomUUID(),
+        },
+      })
+    ).json();
+    const saved = await (
+      await request.patch(`http://localhost:4010/api/v1/admin/rate-studio/batches/${batch.id}`, {
+        headers,
+        data: {
+          expectedVersion: batch.version,
+          title: batch.title,
+          items: [
+            {
+              productId: product.id,
+              label: product.name,
+              brand: product.brand,
+              specification: '',
+              unit: product.unit,
+              weight: '',
+              proposedPricePaise: pricePaise,
+              expectedProductVersion: product.version,
+              included: true,
+              reviewed: true,
+              acknowledged: true,
+              note: 'Browser reviewed',
+              rememberAlias: false,
+              refreshBaseline: false,
+            },
+          ],
+        },
+      })
+    ).json();
+    const response = await request.post(
+      `http://localhost:4010/api/v1/admin/rate-studio/batches/${batch.id}/publish`,
+      {
+        headers,
+        data: { expectedVersion: saved.version, confirmation: 'PUBLISH' },
+      },
     );
     expect(response.ok()).toBe(true);
   }

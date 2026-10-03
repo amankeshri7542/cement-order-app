@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './styles.css';
+import './rate-studio.css';
 export const metadata: Metadata = {
   title: 'Shiv Cement Store · Store desk',
   description: 'Orders, inventory and delivery for Shiv Cement Store.',

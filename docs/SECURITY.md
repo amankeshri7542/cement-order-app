@@ -45,3 +45,7 @@ The full monorepo audit still reports upstream Expo tooling advisories, principa
 - Review caught two regressions and tests now guard them: deleted-customer notes remaining in status/audit records, and old decision provenance surviving quote revision. Neither is intentionally deferred.
 
 The full dependency audit still reports **11 affected packages (4 high, 7 moderate)** in the Expo tooling chain. Do not apply the suggested force downgrade to Expo 44. Assess a supported Expo/toolchain remediation before native release. No production provider or signed-device behavior is proven by local tests.
+
+## Rate Studio boundary
+
+Rate Studio endpoints require ADMIN authorization, including original source reads and card downloads. Source images are signature/decoder checked, size bounded and privately stored; object keys are content-addressed and verified on read. External outputs are schema validated and cannot directly update prices. Publication requires reviewed mappings and current product versions. Immutable database evidence, per-staff attempt limits, timeouts and safe usage logs protect the workflow. Live provider policies and handwriting accuracy still require staging verification; see [Rate Studio privacy and operational limits](RATE_STUDIO.md).

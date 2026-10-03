@@ -54,3 +54,7 @@ Catalogue/admin products, orders, customers, quotes, inventory, and audit use bo
 `AdminCredential` stores staff passphrase hashes separately from customer data. `Session` tracks staff assurance, label, and last use; `AuthRateLimit` stores expiring hashed-IP counters. Contractor verification is a separate reviewed status. Quote decision source/actor/time/evidence distinguishes customer confirmation from a staff record of an offline decision.
 
 Customer deletion is a guarded transaction; it anonymizes contact snapshots and notes, clears devices/sessions, and retains de-identified transaction data. Public privacy/deletion pages are served by the admin web application and linked from the customer account page. See the deployment guide for retention and Play Store prerequisites.
+
+## Rate Studio
+
+Private image sources feed Vision OCR and strict OpenAI interpretation. Versioned draft rows require deterministic validation and explicit staff review. Product versions are checked again in the serializable publication transaction; history and audit commit before SSE invalidation. Card snapshots and rendering run separately from price publication. See [Rate Studio architecture](RATE_STUDIO.md) for schema, recovery and trust boundaries.

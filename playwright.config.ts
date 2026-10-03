@@ -21,7 +21,7 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: 'npm run dev:api',
+      command: 'npm exec -w @shiv/api -- tsx --env-file=.env scripts/e2e-api.ts',
       url: 'http://localhost:4010/api/v1/health',
       timeout: 120000,
       env: {

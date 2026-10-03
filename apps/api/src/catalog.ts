@@ -186,8 +186,9 @@ export class CatalogController {
           'Record a stock movement instead of replacing the balance.',
           409,
         );
+      const monetaryChanged = old.pricePaise !== data.pricePaise;
       const changed =
-        old.pricePaise !== data.pricePaise ||
+        monetaryChanged ||
         old.unit !== data.unit ||
         old.packSize !== data.packSize ||
         old.minQuantity !== data.minQuantity ||
@@ -201,7 +202,7 @@ export class CatalogController {
         },
         include: { category: true },
       });
-      if (changed)
+      if (monetaryChanged)
         await tx.productPriceHistory.create({
           data: {
             productId: id,
@@ -214,7 +215,11 @@ export class CatalogController {
       await tx.auditLog.create({
         data: {
           actorId: req.user.id,
-          event: changed ? 'PRICE_CHANGED' : 'PRODUCT_UPDATED',
+          event: monetaryChanged
+            ? 'PRICE_CHANGED'
+            : changed
+              ? 'PRODUCT_TERMS_CHANGED'
+              : 'PRODUCT_UPDATED',
           entityId: id,
           details: {
             oldPricePaise: old.pricePaise,

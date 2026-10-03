@@ -66,7 +66,10 @@ export class Errors implements ExceptionFilter {
       code: 'INTERNAL_ERROR',
       message: 'Something went wrong. Please try again.',
     };
-    if (error instanceof HttpException) {
+    if (error && typeof error === 'object' && 'status' in error && error.status === 413) {
+      status = 413;
+      body = { code: 'UPLOAD_TOO_LARGE', message: 'The uploaded file or request is too large.' };
+    } else if (error instanceof HttpException) {
       status = error.getStatus();
       const detail = error.getResponse();
       body = typeof detail === 'object' ? { ...detail } : { message: detail };

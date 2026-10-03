@@ -63,3 +63,7 @@ Configure actual zones in Finance & settings. The migration creates none; do not
 Host `/privacy` and `/delete-account` on the admin domain; these routes are public. Set `EXPO_PUBLIC_PRIVACY_URL` to the HTTPS privacy page before rebuilding customer clients. Fill in the real business identity, retention periods, backup-deletion schedule, support contact, and provider disclosures before publication. The current support number is 9297513707; update both public pages if it changes. Complete Play Console Data safety/account-deletion declarations and confirm the public deletion URL works without installing the app.
 
 Deletion refuses staff accounts and customers with unresolved orders/refunds. It revokes sessions/devices, clears profile/contact snapshots and free-text customer notes, and retains de-identified transaction/audit records. Historical backups require the documented retention/restore procedure; application deletion does not erase old backups automatically.
+
+## Rate Studio
+
+Apply the Rate Studio and immutable OCR evidence migrations before starting the updated API. Configure backend-only Vision/OpenAI credentials and a separate private source bucket only when enabling extraction. Manual workflows need no AI setup. The Docker image includes fonts for deterministic PNG rendering. See [Rate Studio production setup and privacy](RATE_STUDIO.md) for exact variables, provider checks, limits, backup and acceptance procedures.

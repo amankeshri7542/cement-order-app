@@ -8,6 +8,8 @@ The backend owns prices, delivery charges, inventory and payment state. Local ex
 
 The [pilot implementation report](docs/PILOT_IMPLEMENTATION.md) covers inventory movements, paginated catalogues, pincode zones, staff security, and the updated UI.
 
+[Rate Studio](docs/RATE_STUDIO.md) adds private rate-sheet imports, reviewed bulk price publication and deterministic shareable rate cards. Manual workflows work without AI credentials.
+
 ## Run locally
 
 Use Node.js 22.12+ and PostgreSQL 16+. From this repository:

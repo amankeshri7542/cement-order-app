@@ -1,4 +1,12 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+  useRef,
+  type ReactNode,
+} from 'react';
 import { AppState, Platform } from 'react-native';
 import EventSource from 'react-native-sse';
 import type { Address, CartLine, Category, Page, Product, StoreSettings, User } from '@shiv/shared';
@@ -33,26 +41,36 @@ function useStoreValue() {
   const [loading, setLoading] = useState(true);
   const [loginVisible, setLoginVisible] = useState(false);
   const [toast, setToast] = useState('');
+  const catalogRequest = useRef(0);
+  const accountRequest = useRef(0);
   const refreshCatalog = useCallback(async () => {
+    const current = ++catalogRequest.current;
     try {
       const [p, c, st] = await Promise.all([
         api<Page<Product>>('/products?limit=8'),
         api<Category[]>('/categories'),
         api<StoreSettings>('/store'),
       ]);
+      if (current !== catalogRequest.current) return;
       setProducts(p.items);
       setCategories(c);
       setSettings(st);
       setError('');
     } catch (e) {
-      setError(message(e));
+      if (current === catalogRequest.current) setError(message(e));
     } finally {
-      setLoading(false);
+      if (current === catalogRequest.current) setLoading(false);
     }
   }, []);
   const refreshAccount = useCallback(async () => {
-    if (!user) return;
+    const current = ++accountRequest.current;
+    if (!user) {
+      setCart([]);
+      setAddresses([]);
+      return;
+    }
     const [c, a] = await Promise.all([api<CartLine[]>('/cart'), api<Address[]>('/me/addresses')]);
+    if (current !== accountRequest.current) return;
     setCart(c);
     setAddresses(a);
   }, [user]);
@@ -70,6 +88,7 @@ function useStoreValue() {
     const source = new EventSource(`${API_URL}/events`);
     source.addEventListener('open', () => {
       void refreshCatalog();
+      if (user) void refreshAccount().catch(() => {});
     });
     source.addEventListener('message', (event) => {
       if (event.data && !event.data.includes('HEARTBEAT')) {

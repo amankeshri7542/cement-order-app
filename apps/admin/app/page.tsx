@@ -1,4 +1,5 @@
 'use client';
+import { RateStudio } from '../components/rate-studio/studio';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Activity,
@@ -32,7 +33,7 @@ import {
   User,
   money,
 } from '@shiv/shared';
-import { api, errorMessage } from '../lib/api';
+import { API_URL, api, errorMessage } from '../lib/api';
 import { Badge, Empty, Field, Modal, SectionTitle } from '../components/ui';
 import { Products } from '../components/products';
 import { Orders, OrdersTable } from '../components/orders';
@@ -44,6 +45,7 @@ type Tab =
   | 'Overview'
   | 'Orders'
   | 'Products'
+  | 'Rate Studio'
   | 'Bulk quotes'
   | 'Customers'
   | 'Finance & settings'
@@ -63,6 +65,7 @@ const navigation = [
   { label: 'Overview', icon: LayoutDashboard },
   { label: 'Orders', icon: ShoppingBag },
   { label: 'Products', icon: Package },
+  { label: 'Rate Studio', icon: ClipboardList },
   { label: 'Bulk quotes', icon: ClipboardList },
   { label: 'Customers', icon: Users },
   { label: 'Finance & settings', icon: Settings2 },
@@ -73,6 +76,7 @@ export default function Page() {
   const [user, setUser] = useState<User | null>(null);
   const [checking, setChecking] = useState(true);
   const [tab, setTab] = useState<Tab>('Overview');
+  const [rateDirty, setRateDirty] = useState(false);
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [productQuery, setProductQuery] = useState('');
@@ -144,6 +148,15 @@ export default function Page() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+  useEffect(() => {
+    if (user?.role !== 'ADMIN') return;
+    const source = new EventSource(`${API_URL}/events`);
+    source.onopen = () => void refresh();
+    source.onmessage = (event) => {
+      if (!event.data.includes('HEARTBEAT')) void refresh();
+    };
+    return () => source.close();
+  }, [refresh, user?.role]);
   async function more() {
     if (!cursors[tab] || busy) return;
     const sequence = refreshSequence.current;
@@ -181,10 +194,14 @@ export default function Page() {
     );
   if (!user || user.role !== 'ADMIN') return <Login onLogin={setUser} forbidden={Boolean(user)} />;
   const changeTab = (value: Tab) => {
+    if (value !== tab && rateDirty && !window.confirm('Discard unsaved rate sheet edits?')) return;
+    if (value !== tab) setRateDirty(false);
     setTab(value);
     setNavOpen(false);
   };
   const openOrder = (id: string) => {
+    if (rateDirty && !window.confirm('Discard unsaved rate sheet edits?')) return;
+    setRateDirty(false);
     setSelectedOrder(id);
     setTab('Orders');
   };
@@ -292,31 +309,34 @@ export default function Page() {
           </div>
         </header>
         <main>
-          <div className="page-heading">
-            <div>
-              <span className="eyebrow">SHIV CEMENT STORE</span>
-              <h1>{tab === 'Overview' ? 'Your materials counter.' : tab}</h1>
-              <p>
-                {
+          {tab !== 'Rate Studio' && (
+            <div className="page-heading">
+              <div>
+                <span className="eyebrow">SHIV CEMENT STORE</span>
+                <h1>{tab === 'Overview' ? 'Your materials counter.' : tab}</h1>
+                <p>
                   {
-                    Overview: 'Here’s what’s happening at your store today.',
-                    Orders: 'From the first bag to the final delivery.',
-                    Products: 'Keep your prices current and your stock ready.',
-                    'Bulk quotes': 'Better prices for bigger plans.',
-                    Customers: 'The people building with you.',
-                    'Finance & settings': 'Your store, your delivery charges, your controls.',
-                    'Store activity': 'A record of changes, decisions and staff actions.',
-                  }[tab]
-                }
-              </p>
+                    {
+                      Overview: 'Here’s what’s happening at your store today.',
+                      Orders: 'From the first bag to the final delivery.',
+                      Products: 'Keep your prices current and your stock ready.',
+                      'Bulk quotes': 'Better prices for bigger plans.',
+                      Customers: 'The people building with you.',
+                      'Finance & settings': 'Your store, your delivery charges, your controls.',
+                      'Rate Studio': 'Review prices. Publish with confidence. Share your rates.',
+                      'Store activity': 'A record of changes, decisions and staff actions.',
+                    }[tab]
+                  }
+                </p>
+              </div>
+              {tab === 'Overview' && (
+                <button className="primary" onClick={() => changeTab('Orders')}>
+                  Manage orders
+                  <ArrowUpRight size={17} />
+                </button>
+              )}
             </div>
-            {tab === 'Overview' && (
-              <button className="primary" onClick={() => changeTab('Orders')}>
-                Manage orders
-                <ArrowUpRight size={17} />
-              </button>
-            )}
-          </div>
+          )}
           {error && (
             <div className="error" role="alert">
               {error}{' '}
@@ -452,6 +472,14 @@ export default function Page() {
               </div>
             </>
           ) : null}
+          {tab === 'Rate Studio' && (
+            <RateStudio
+              categories={categories}
+              refresh={refresh}
+              notice={setMessage}
+              onDirtyChange={setRateDirty}
+            />
+          )}
           {tab === 'Products' && (
             <Products
               onFilter={setProductQuery}

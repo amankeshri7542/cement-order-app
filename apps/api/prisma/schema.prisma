@@ -106,6 +106,8 @@ model Category {
   products Product[]
 }
 model Product {
+  aliases ProductAlias[]
+  rateItems PriceUpdateBatchItem[]
   packSize String @default("")
   minQuantity Int @default(1)
   quantityStep Int @default(1)
@@ -141,6 +143,9 @@ model Product {
   @@index([active, brand, name, id])
 }
 model ProductPriceHistory {
+  kind String @default("PRICE")
+  batchId String?
+  batch PriceUpdateBatch? @relation(fields: [batchId], references: [id])
   id String @id @default(cuid())
   productId String
   product Product @relation(fields: [productId], references: [id])
@@ -394,4 +399,95 @@ model AuthRateLimit {
   count Int @default(1)
   expiresAt DateTime
   @@index([expiresAt])
+}
+
+model ProductAlias {
+  id String @id @default(cuid())
+  productId String
+  product Product @relation(fields: [productId], references: [id])
+  alias String
+  normalizedAlias String @unique
+  source String
+  confirmedBy String
+  createdAt DateTime @default(now())
+  @@index([productId])
+}
+model RateSource {
+  id String @id @default(cuid())
+  sha256 String @unique
+  fileName String
+  contentType String
+  size Int
+  storageKey String
+  createdBy String
+  createdAt DateTime @default(now())
+  ocrText String?
+  ocr Json?
+  batches PriceUpdateBatch[]
+}
+model PriceUpdateBatch {
+  id String @id @default(cuid())
+  title String
+  sourceType String
+  status String @default("DRAFT")
+  version Int @default(1)
+  idempotencyKey String @unique
+  sourceId String?
+  source RateSource? @relation(fields: [sourceId], references: [id])
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  publishedBy String?
+  publishedAt DateTime?
+  stage String @default("")
+  attemptToken String?
+  leaseUntil DateTime?
+  attempts Int @default(0)
+  errorCode String?
+  extraction Json?
+  usage Json @default("{}")
+  items PriceUpdateBatchItem[]
+  cards RateCard[]
+  history ProductPriceHistory[]
+  @@index([createdAt, id])
+  @@index([status, leaseUntil])
+}
+model PriceUpdateBatchItem {
+  id String @id @default(cuid())
+  batchId String
+  batch PriceUpdateBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  position Int
+  productId String?
+  product Product? @relation(fields: [productId], references: [id])
+  label String @default("")
+  brand String @default("")
+  specification String @default("")
+  unit String @default("")
+  weight String @default("")
+  proposedPricePaise Int?
+  oldPricePaise Int?
+  expectedProductVersion Int?
+  included Boolean @default(true)
+  reviewed Boolean @default(false)
+  acknowledged Boolean @default(false)
+  rememberAlias Boolean @default(false)
+  note String @default("")
+  confidence Float?
+  matchMethod String @default("MANUAL")
+  extracted Json?
+  publishedPricePaise Int?
+  publishedProduct Json?
+  @@unique([batchId, position])
+  @@index([productId])
+}
+model RateCard {
+  id String @id @default(cuid())
+  batchId String
+  batch PriceUpdateBatch @relation(fields: [batchId], references: [id])
+  format String
+  template String
+  snapshot Json
+  createdBy String
+  createdAt DateTime @default(now())
+  @@index([batchId, createdAt])
 }

@@ -1,3 +1,7 @@
+import { raw, json } from 'express';
+import { RateStudioController, RateStudioService } from './rate-studio/studio';
+import { RateProviders } from './rate-studio/providers';
+import { RateStorage } from './rate-studio/storage';
 import 'reflect-metadata';
 import { OperationsController } from './operations';
 import { Controller, Get, Inject, Module } from '@nestjs/common';
@@ -41,9 +45,13 @@ class HealthController {
     IntegrationsController,
     HealthController,
     OperationsController,
+    RateStudioController,
   ],
   providers: [
     Db,
+    RateStudioService,
+    RateProviders,
+    RateStorage,
     AuthService,
     Events,
     OrdersService,
@@ -59,6 +67,12 @@ export async function createApp() {
   const app = await NestFactory.create(AppModule, { rawBody: true, logger: ['error', 'warn'] });
   app.getHttpAdapter().getInstance().set('trust proxy', c.TRUST_PROXY_HOPS);
   app.setGlobalPrefix('api/v1');
+  const rateJson = json({ limit: '512kb' });
+  app.use(
+    '/api/v1/admin/rate-studio',
+    raw({ type: ['image/png', 'image/jpeg', 'image/webp'], limit: '5mb' }),
+    (req: Request, res: Response, next: NextFunction) => rateJson(req, res, next),
+  );
   app.use(helmet());
   app.enableCors({
     origin: c.CORS_ORIGINS.split(','),
