@@ -578,7 +578,8 @@ test('comparison distinguishes selling units; Hindi and enlarged reduced-motion 
   await page.goto(`${site}/products`);
   await screenshot(page, 'catalogue');
   for (const id of [first, second]) {
-    await page.locator(`a[href="/products/${id}"]`).first().click();
+    await page.getByRole('combobox', { name: 'Brand', exact: true }).selectOption('TEST WEB');
+    await page.getByRole('main').locator(`a[href="/products/${id}"]`).first().click();
     await expect(page).toHaveURL(`${site}/products/${id}`);
     await expect(page.getByRole('heading', { level: 1 })).toContainText(
       id === first ? 'TEST WEB Cement PPC' : 'TEST WEB Steel TMT',
