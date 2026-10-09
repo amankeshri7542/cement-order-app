@@ -150,7 +150,7 @@ The default launcher/status commands still assume port 3000. After manually star
 - Verify owned HTTPS domains, exact Origins, cookie topology, ingress-only API access, proxy hop count/spoof resistance, CSP and edge body/rate/connection limits. Local throttling does not prevent DDoS.
 - Verify separate migration/runtime DB credentials, managed encrypted backups/retention/PITR and measured restoration; name an incident operator. Approve proposed RPO 24h/RTO 4h rather than assuming the disposable rehearsal proves them.
 - Family decisions: contacts/coverage, selling units, pending-demand defaults (customer 3/₹1 lakh, store 25/₹10 lakh, 50% stock share; pending quotes 3/30), exception approver, old-work responsibility, refunds/GST/legal wording. Current collections are not profit; partial fulfilment/credit/tax invoicing are not implemented.
-- Push-hook visibility: the visible workflow is verification-only, GitHub deployment listing was empty, and Vercel found no ordering-repo project in the named team. GitHub webhook enumeration returned 404 for missing `admin:repo_hook` scope; hidden external integrations cannot be exhaustively ruled out from this session. No hosting configuration was changed.
+- Push/deployment inspection: the workflow is verification-only, repository-owner-authenticated GitHub webhook enumeration returned an empty list, GitHub deployment history was empty, and Vercel found no ordering-repo project in the named team. No application publication hook was identified. Other accounts/providers not available in this session are outside this inspection; no hosting configuration was changed.
 
 ## Release completion
 
