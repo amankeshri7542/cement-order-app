@@ -5,6 +5,7 @@ import type { z } from 'zod';
 import { deliveryResponse, publicGet } from '../lib/api';
 import { price } from '../lib/catalog';
 import { useLanguage } from './language';
+import { useLiveRefresh } from './live';
 
 export function Delivery() {
   const { t } = useLanguage();
@@ -14,18 +15,30 @@ export function Delivery() {
   const [error, setError] = useState<'invalid' | 'network' | null>(null);
   const [ready, setReady] = useState(false);
   const request = useRef(0);
-  useEffect(() => setReady(true), []);
-  async function check() {
+  const checkedPincode = useRef<string | null>(null);
+  useEffect(() => {
+    setReady(true);
+    return () => {
+      request.current++;
+    };
+  }, []);
+  useLiveRefresh(() => {
+    if (checkedPincode.current) void check(checkedPincode.current);
+  });
+  async function check(value = pincode) {
     const current = ++request.current;
     setResult(null);
-    if (!/^[1-9]\d{5}$/.test(pincode)) {
+    if (!/^[1-9]\d{5}$/.test(value)) {
+      checkedPincode.current = null;
       setError('invalid');
+      setBusy(false);
       return;
     }
+    checkedPincode.current = value;
     setError(null);
     setBusy(true);
     try {
-      const data = await publicGet(`/delivery/${pincode}`, deliveryResponse);
+      const data = await publicGet(`/delivery/${value}`, deliveryResponse);
       if (request.current === current) setResult(data);
     } catch {
       if (request.current === current) setError('network');
@@ -72,6 +85,7 @@ export function Delivery() {
               aria-describedby={error ? 'delivery-error' : undefined}
               onChange={(event) => {
                 request.current++;
+                checkedPincode.current = null;
                 setBusy(false);
                 setResult(null);
                 setError(null);

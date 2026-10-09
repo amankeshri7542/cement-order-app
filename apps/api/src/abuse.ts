@@ -15,6 +15,7 @@ export async function budget(
   subject: string,
   limit: number,
   duration = hour,
+  cost = 1,
 ) {
   const digest = createHmac('sha256', getConfig().OTP_HASH_SECRET)
     .update(`${scope}:${subject}`)
@@ -23,7 +24,7 @@ export async function budget(
   const now = new Date();
   const old = await tx.authRateLimit.findUnique({ where: { key } });
   const fresh = !old || old.expiresAt <= now;
-  const count = fresh ? 1 : old.count + 1;
+  const count = fresh ? cost : old.count + cost;
   if (count > limit)
     fail(
       'RESOURCE_LIMIT',
@@ -35,7 +36,8 @@ export async function budget(
     create: { key, count, expiresAt: new Date(now.getTime() + duration) },
     update: { count, ...(fresh ? { expiresAt: new Date(now.getTime() + duration) } : {}) },
   });
-  if (count === Math.max(1, Math.ceil(limit * 0.8))) {
+  const warning = Math.max(1, Math.ceil(limit * 0.8));
+  if ((fresh ? 0 : old.count) < warning && count >= warning) {
     console.warn(
       JSON.stringify({ event: 'SECURITY_BUDGET_WARNING', scope, count, limit, duration }),
     );

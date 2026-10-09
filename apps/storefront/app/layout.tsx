@@ -3,6 +3,8 @@ import { connection } from 'next/server';
 import type { ReactNode } from 'react';
 import { LanguageProvider } from '../components/language';
 import { Header, Footer } from '../components/shell';
+import { CommerceProvider, CommerceFeedback } from '../components/commerce';
+import { AssistantLauncher } from '../components/assistant-launcher';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -22,11 +24,15 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
     <html lang="en" data-scroll-behavior="smooth">
       <body>
         <LanguageProvider>
-          <Header />
-          <main id="main" className="site-main">
-            {children}
-          </main>
-          <Footer />
+          <CommerceProvider>
+            <Header />
+            <main id="main" className="site-main">
+              {children}
+            </main>
+            <Footer />
+            <CommerceFeedback />
+            <AssistantLauncher />
+          </CommerceProvider>
         </LanguageProvider>
       </body>
     </html>

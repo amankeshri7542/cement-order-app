@@ -1,4 +1,6 @@
 'use client';
+import { BuyActions } from './commerce';
+import { AskAbout } from './assistant-launcher';
 
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -141,6 +143,8 @@ export function ProductDetail({
                 {dateLabel(product.priceUpdatedAt, language)}
               </p>
               <Freshness connection={connection} checkedAt={checkedAt} busy={busy} />
+              <BuyActions product={product} />
+              <AskAbout id={product.id} name={product.name} />
               <dl className="spec-grid">
                 <div>
                   <dt>{t('Selling unit', 'बिक्री इकाई')}</dt>

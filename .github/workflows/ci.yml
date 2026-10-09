@@ -41,8 +41,10 @@ jobs:
       - run: npm run test:e2e -- --config=playwright.qa.config.ts --project=chrome
       - run: npm run test:e2e -- --config=playwright.qa.config.ts --project=webkit
       - run: npm run build --workspaces --if-present
+      - name: Verify isolated production headers and storefront bundle
+        run: node scripts/check-production-headers.mjs --self-test && node scripts/check-production-headers.mjs
       - run: npm run security:scan
-      - run: npm audit --omit=dev --workspace @shiv/api --workspace @shiv/shared
+      - run: npm audit --omit=dev --workspace @shiv/api --workspace @shiv/shared --workspace @shiv/storefront
       - run: docker build -t shiv-cement-api:ci .
       - uses: actions/upload-artifact@v4
         if: failure()
@@ -51,3 +53,5 @@ jobs:
           path: |
             test-results/
             playwright-report/
+            .local/security-hardening/
+          include-hidden-files: true
