@@ -64,12 +64,12 @@ The lockfile retains existing versions; installed Next.js is 16.3.8, React 19.2.
 
 ## Changed files
 
-| Area                    | Files and purpose                                                                                                                                                                                              |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Public app              | `apps/storefront/app/`, `components/`, `lib/`, `proxy.ts`, framework/package configuration: bilingual pages, validated public reads, freshness and security policy.                                            |
-| Launcher                | `scripts/local.mjs`, `scripts/local-services.mjs`, `scripts/local.test.mjs`: explicit ports, identity/ownership checks, safe lifecycle and regression tests.                                                   |
-| Verification            | `tests/storefront.spec.ts`, `playwright.config.ts`, `scripts/check-production-headers.mjs`, `.github/workflows/ci.yml`: real-API browser journeys, isolated server, production CSP/performance and unit gates. |
-| Integration and handoff | Root `package.json`/lockfile, README, local-testing guide, V2 roadmap, this report, discovery register and three storefront screenshots. Existing migration and backend application files remain unchanged.    |
+| Area                    | Files and purpose                                                                                                                                                                                                                                                                                |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Public app              | `apps/storefront/app/`, `components/`, `lib/`, `proxy.ts`, framework/package configuration: bilingual pages, validated public reads, freshness and security policy.                                                                                                                              |
+| Launcher                | `scripts/local.mjs`, `scripts/local-services.mjs`, `scripts/local.test.mjs`: explicit ports, identity/ownership checks, safe lifecycle and regression tests.                                                                                                                                     |
+| Verification            | `tests/storefront.spec.ts`, `playwright.config.ts`, `scripts/check-production-headers.mjs`, `.github/workflows/ci.yml`: real-API browser journeys, isolated server, production CSP/performance and unit gates.                                                                                   |
+| Integration and handoff | Root `package.json`/lockfile, README, local-testing guide, V2 roadmap, this report, discovery register and three storefront screenshots. The existing privacy/account-deletion page receives only the CI-proven hydration guard below; migration and backend application files remain unchanged. |
 
 ## Local review
 
@@ -161,6 +161,12 @@ Raw local evidence is kept under ignored `.local/v2-storefront/`.
 The first review commit `e91ff25fa4cc6bed370303c2eed20106143a865a` passed CI setup, lint/typechecks and all backend/launcher/contract suites, but Chrome was **54/55**: doubled text on Linux caused horizontal overflow. Local reproduction with the wider Arial fallback confirmed a 368 px page at a 360 px viewport. The long “Recommended use” heading set the description grid's intrinsic minimum width. One `overflow-wrap: anywhere` rule on those headings fixes wrapping without clipping content. The browser test now deliberately covers the portable fallback font and reports offending element bounds while retaining its original fit assertion.
 
 The before-fix targeted Chrome case failed (`layout-before.json`); after-fix Chrome and WebKit each passed **1/1**, recorded in `layout-chrome-fixed.json` and `layout-webkit-fixed.json`. Lint, the browser-spec typecheck and the isolated production storefront rebuild passed. The final review SHA is validated again in CI; the first failed run remains linked in the review history. Earlier complete local suites above predate this one-line layout correction.
+
+### Existing privacy-form hydration correction
+
+The next CI commit `0a9740ebbcf2180d4c1f051027371d14f09ec784` passed all 55 Chrome journeys. WebKit passed 54/55, including every storefront case, but the existing account-deletion journey failed before OTP verification. Its trace proves a request body of `{"phone":"+91"}` with HTTP 400: input entered before hydration was lost. The API rejected the invalid phone correctly.
+
+A delayed-JavaScript regression failed before the fix (`deletion-before.json`). The existing `apps/admin/app/delete-account/page.tsx` now keeps its phone field and submit button disabled until handlers are mounted, matching the storefront delivery guard. This is the only existing application-page change, required to preserve the baseline regression gate; authentication, verification, deletion semantics and production records are unchanged. After the fix, Chrome and WebKit each passed **1/1**, with lint, browser-spec typecheck and the isolated owner production rebuild also passing. Evidence is in `deletion-chrome-fixed.json` and `deletion-webkit-fixed.json`. The final review CI reruns the complete suites.
 
 ## Production checks and launcher lifecycle
 
