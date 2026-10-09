@@ -6,11 +6,11 @@ This is a source-review release on `codex/pilot-readiness`, not approval for pub
 
 Repository: <https://github.com/amankeshri7542/cement-order-app>. Existing draft: [PR #1](https://github.com/amankeshri7542/cement-order-app/pull/1). Starting HEAD was `8f0fc53568059a7cc10d844766f769b8f637b7e6`; a fresh fetch showed zero ahead/behind against the feature branch. No main merge, reset or rewritten history is part of this handoff. Use `git rev-parse HEAD` after checking out the review commit to identify the exact revision; CI must be checked for that SHA, not merely for the branch name.
 
-Application, migration, test and CI changes are committed as `5db35e3db9a3ac1763a1c5f0ae2bf197a5050a8f`; the documentation handoff follows without application changes.
+The main application, migration, test and CI changes are committed as `5db35e3db9a3ac1763a1c5f0ae2bf197a5050a8f`. The release follow-up also corrects the catalogue interaction race described below.
 
 The previously uncommitted work adds the simplified bilingual owner desk, durable owner work/acknowledgment, COD delivery exceptions and physical returns, dated cash movements, accepted-quote conversion, customer cart/draft/uncertain-submit recovery, and QA corrections. Security changes add transactional demand caps, audited exceptions, persistent resource budgets, validated photos, open-session event checks, frontend CSP and operational recovery tooling. Three additive migrations introduce the workflow/financial records, quote/order pack snapshots, and demand exceptions/validated asset records. Existing transactional stock, server prices, record ownership, signed payment events and human price approval remain in place.
 
-This release review changes documentation and fixes clean-checkout CI setup: the bootstrap command explicitly loads `.env.test`, but the workflow previously created only `.env`. Its missing-file failure was reproduced (exit 9); CI now creates `.env.test` from its disposable test URL. No application behavior was changed during the release review.
+This release review fixes clean-checkout CI setup: the bootstrap command explicitly loads `.env.test`, but the workflow previously created only `.env`. Its missing-file failure was reproduced (exit 9); CI now creates `.env.test` from its disposable test URL. CI then exposed a catalogue race: an unchanged search debounce cleared/remounted the product card during a click. Preserving equal normalized search state removes that unnecessary reload. A clock-controlled real pointer regression fails before the fix and passes after it; existing live-price refresh and explicit checkout review remain tested.
 
 ## Status vocabulary
 
@@ -63,7 +63,7 @@ PostgreSQL is authoritative. Clients never set authoritative prices, roles or pa
 
 ## Verification and source identity
 
-Before this release review, all 162 entries in `.local/security-hardening/source-after.json` matched the working tree. The earlier browser-run manifest differed only in four Markdown reports and three regenerated synthetic screenshots; application, schema, test, lockfile and configuration bytes matched. Thus the complete **Chrome 42/42 and WebKit 42/42** runs on 8 October 2026 remain valid local evidence for the application source in this release. Both had zero retries/skips/flaky failures, uncaught page errors or View text-node warnings. This review did not change application source; the only verification-config change prepares CI's ignored `.env.test`.
+Before this release review, all 162 entries in `.local/security-hardening/source-after.json` matched the working tree. The earlier browser-run manifest differed only in four Markdown reports and three regenerated synthetic screenshots; application, schema, test, lockfile and configuration bytes matched. The **Chrome 42/42 and WebKit 42/42** runs on 8 October 2026 are historical source-matched evidence. [CI run 37901781347](https://github.com/amankeshri7542/cement-order-app/actions/runs/37901781347) at `88285c2646e2ebb440c3998adaed11c59e4c5874` nevertheless found the intermittent catalogue race (Chrome 41 passed/1 failed; subsequent steps skipped). That failure was investigated and reproduced, not retried away. Fresh post-fix results are recorded in the release completion below.
 
 Fresh release checks are stored under ignored `.local/release-review/`. Typechecks, lint, unit/provider **61/61**, API/PostgreSQL **67/67**, workflows **20/20**, migration bootstrap and disposable restore passed. The initial API/workflow attempts stopped at setup because PostgreSQL was down; no test assertion ran in those attempts. Starting the existing cluster resolved that environment failure; both complete reruns passed. Build and final publication evidence are recorded in the release completion below. Raw test reports, traces, dumps, authentication state and certificates are deliberately not published. Screenshots under `docs/screenshots` show synthetic local practice/test fixtures, not exported customer records.
 
@@ -134,7 +134,7 @@ To reproduce this alternate-port review, keep the existing local database runnin
 # Terminal 1
 CORS_ORIGINS=http://localhost:3000,http://localhost:3002,http://localhost:8081 npm run dev:api
 # Terminal 2
-npm exec -w @shiv/admin -- next dev --port 3002
+npm exec -w @shiv/admin -- next dev --port 3002 --hostname 127.0.0.1
 # Terminal 3
 npm run dev:web
 ```
@@ -154,6 +154,10 @@ The default launcher/status commands still assume port 3000. After manually star
 
 ## Release completion
 
+The post-CI catalogue correction passed the targeted Chrome regression plus unchanged live-price journey (**2/2**). Complete final-source **WebKit 43/43** (9 October, 08:20 UTC) and **Chrome 43/43** (08:24 UTC) ran sequentially on loopback `shiv_cement_test`, with zero retries, skips, unexpected/flaky results, uncaught page errors or View text-node warnings. The earlier post-fix Chrome 43/43 run was repeated after test-only formatting so the final evidence matches the checked-in bytes. Evidence: `.local/release-review/{chrome-final,webkit-followup}.json`, corresponding results/HTML directories and `final-browser-summary.json`. The manifest changes only the catalogue and its journey test; backend/security source, migrations and dependencies retain the source matched by the 61/67/20 supporting results above. Final lint, typechecks and the repository pattern scan passed again. Three existing synthetic workflow screenshots were regenerated by the complete suites.
+
 Local production builds passed for shared contracts, API, Next.js and Expo Android/iOS/web exports. Expo compatibility passed. The maintained Secretlint 13.0.7 final scan of 148 staged text files outside the repository ignore rules reported only five reviewed database-string fixtures/placeholders (staging example, loopback launcher, two CI values, `.env.example`); no unreviewed credential was found. The limited repository scan passed. Staged `git diff --check` reports one existing blank line at EOF in `20261007160000_quote_pack_consent/migration.sql`; it is retained because that migration has already been applied locally and changing its bytes would invalidate its checksum. No other whitespace defect was reported. Three existing Git commits were already covered by the prior local-history scan and the fresh fetch added no divergent feature commits.
 
 Publication uses the existing draft PR above. Its check for the final pushed SHA is the authoritative CI result; local evidence alone does not imply that CI, container verification or public staging is cleared. Raw local evidence remains ignored.
+
+The post-fix ordered production rebuild also passed (`.local/release-review/build-followup.log`). Managed local apps were safely restarted and Chrome verified the owner store title/staff sign-in at 3002, real customer catalogue/detail at 8081 and API health at 4000 (`smoke-followup.log`). Development counts remain 6 users / 8 products / 0 orders / 0 quotes, and payments remain disabled. No environment file changed. The follow-up Secretlint scan found no issues in the new text changes; publication still excludes environment files, raw evidence, credentials and storage data. The earlier failed CI run remains linked above so reviewers can distinguish the fix from a simple rerun; inspect the new PR check for the final pushed SHA.

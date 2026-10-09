@@ -1,5 +1,7 @@
 # Security hardening — local implementation
 
+Release follow-up, 9 October: the implementation below is retained. A later exact-source CI run exposed an intermittent customer catalogue click race; the release review reproduced it and preserves normalized search state to avoid removing a pressed card. See [BROWSER_QA_REPORT.md](BROWSER_QA_REPORT.md) for before/after evidence and [REVIEW_HANDOFF.md](REVIEW_HANDOFF.md) for final-source verification, publication links and residual gates. The earlier 42/42 browser counts below are historical, not a claim about every later revision. The source-review push is now authorized; deployment and online payments remain unauthorized.
+
 Scope: `codex/pilot-readiness`, existing dirty working tree preserved. No deployment, real messages, paid resources, or online payments authorized. The latest browser QA follow-up (40/40 Chrome and WebKit) supersedes the historical QA failures.
 
 ## Plan and attack surface

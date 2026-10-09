@@ -2,6 +2,23 @@ import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures';
 import { productSchema, type DeliveryZone } from '@shiv/shared';
 
+test('catalogue keeps a product press intact across an unchanged search debounce', async ({
+  page,
+}) => {
+  await page.clock.install({ time: new Date('2026-01-01T00:00:00Z') });
+  await page.goto('http://localhost:8082');
+  await expect(page.getByRole('tab', { name: 'Products' })).toBeVisible();
+  await page.clock.pauseAt(new Date('2026-01-01T01:00:00Z'));
+  await page.getByRole('tab', { name: 'Products' }).click();
+  const product = page.getByRole('button', { name: 'View UltraTech Super' });
+  await expect(product).toBeVisible();
+  await product.hover();
+  await page.mouse.down();
+  await page.clock.runFor(350);
+  await page.mouse.up();
+  await expect(page.getByRole('textbox', { name: 'Quantity', exact: true })).toBeVisible();
+});
+
 async function mobileLogin(page: Page, phone: string) {
   await page.goto('http://localhost:8082');
   await page.getByRole('tab', { name: 'Account' }).click();

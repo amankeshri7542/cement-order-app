@@ -469,7 +469,12 @@ export function Catalogue() {
     setCategory(route.category || '');
   }, [route.category]);
   useEffect(() => {
-    const timer = setTimeout(() => setSearch({ query: query.trim(), brand: brand.trim() }), 300);
+    const timer = setTimeout(() => {
+      const next = { query: query.trim(), brand: brand.trim() };
+      setSearch((previous) =>
+        previous.query === next.query && previous.brand === next.brand ? previous : next,
+      );
+    }, 300);
     return () => clearTimeout(timer);
   }, [query, brand]);
   useEffect(() => {

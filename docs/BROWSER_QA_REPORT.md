@@ -1,18 +1,34 @@
 # Browser QA fixes — 8 October 2026
 
-## Security follow-up — 8–9 October 2026 (latest)
+## Release follow-up — 9 October 2026 (latest)
+
+[CI run 37901781347](https://github.com/amankeshri7542/cement-order-app/actions/runs/37901781347), for `88285c2646e2ebb440c3998adaed11c59e4c5874`, passed 41 Chrome cases and failed the live-price journey: clicking **View UltraTech Super** left the catalogue open, so **Quantity** never appeared. WebKit and later CI steps were skipped. Earlier 42/42 runs did not exclude this intermittent race.
+
+The trace showed a catalogue request starting during the pointer action, about 300ms after the screen opened. `Catalogue` scheduled a new search object even when the normalized search was unchanged; this triggered a foreground reload that removed and remounted the pressed card. A new regression pauses the browser clock, opens Products, uses normal hover/actionability to position the pointer, holds the press across 350ms, releases and expects Quantity. It failed on the old code and passed after preserving the previous search object when its normalized query and brand are equal. The existing live-price/renewed-checkout-consent journey also passed unchanged. No force click, retry, skipped assertion or protection bypass was added.
+
+Before/after evidence is retained privately under `.local/release-review/catalogue-before-corrected.log`, `catalogue-before-corrected-results/`, and `catalogue-after-corrected.log`. An initial test-harness attempt did not scroll the card into view; it is retained but is not the controlled before/after evidence. Complete final-source engine results are recorded in [REVIEW_HANDOFF.md](REVIEW_HANDOFF.md). Firefox was rechecked again and still exits before navigation with **Could not find profile folder** (`.local/release-review/firefox-followup.log`). The physical-device, real-zoom and extreme-right Safari gaps remain.
+
+Exact regression command:
+
+```sh
+npm run test:e2e -- --config=playwright.qa.config.ts --project=chrome --grep 'unchanged search debounce|live price updates'
+```
+
+Manual verification on an isolated practice store: open the customer app, choose **Products**, immediately press and briefly hold a visible product card, then release. Its details and **Quantity** must appear. Return, search for a real product name, wait for results, and open it; repeat with leading/trailing spaces to confirm normalization. In a second owner browser, change a synthetic product's selling price through the reviewed flow. Confirm the customer catalogue refreshes and a previously accepted checkout total requires renewed review/consent. Do not place practice orders in operational data. Use owner `http://localhost:3002` and customer `http://localhost:8081` for this machine's supervised review; the normal harness uses disposable ports 3001/8082/4010.
+
+## Security follow-up — 8–9 October 2026 (historical)
 
 The security hardening work preserved QA-01 session recovery, QA-02 enlarged-text reflow, QA-03 ordinary WebKit scrim/draft protection and QA-04 View warning fixes. Fresh complete final suites passed **Chrome 42/42 and WebKit 42/42**, sequentially against the disposable test database, with no retries/skips. Recorded pages have zero uncaught errors and zero View text-node warnings. The two added checks verify actual frontend response policy and blocked HTML-injected owner scripts.
 
 Evidence: `.local/security-hardening/{chrome,webkit}-final.json`, corresponding results/HTML directories and `*-final-observations.json`. The first expanded run exposed CSP/Expo integration issues; they were fixed at the actual response layer and existing Rate Studio assertions retained. Production CSP was separately tested in both engines on both frontends over a self-signed local TLS fixture; provider responses were simulated.
 
-Firefox launch was rechecked and remains blocked before navigation by **Could not find profile folder** (`.local/security-hardening/firefox-launch.log`). Actual phones, real zoom/accessibility and extreme-right Safari behavior remain unverified; no force-click or weakened protection was used. The earlier 40/40 follow-up remains valid historical evidence of the QA fixes, but the 42/42 runs are the current regression result.
+Firefox launch was rechecked and remains blocked before navigation by **Could not find profile folder** (`.local/security-hardening/firefox-launch.log`). Actual phones, real zoom/accessibility and extreme-right Safari behavior remain unverified; no force-click or weakened protection was used. The earlier 40/40 and 42/42 follow-ups remain historical evidence; the release follow-up above supersedes them.
 
 See [SECURITY_HARDENING_REPORT.md](SECURITY_HARDENING_REPORT.md) for the verified security fixes, failed-before evidence, exact commands, residual risks and exact manual/staging steps. Local apps were restarted with development data preserved and online payments disabled.
 
 ## Current disposition
 
-**Ready for supervised local family review. Latest security-follow-up Chrome and WebKit suites each pass 42/42; the Firefox and physical-device limits below remain.** No deployment, real SMS/payment transaction, or development-database reset was performed. Online payments remain disabled in the development store. The historical report below describes the pre-fix state and is superseded by this follow-up.
+**Ready for supervised local family review. Release-follow-up Chrome and WebKit suites each pass 43/43; the Firefox and physical-device limits below remain.** No deployment, real SMS/payment transaction, or development-database reset was performed. Online payments remain disabled in the development store. The historical report below describes the pre-fix state and is superseded by this follow-up.
 
 Changes preserve backend authentication, explicit discard confirmation, and both human price-review and publication confirmation. Existing unrelated working-tree changes were retained. Commands in `README.md`, `docs/LOCAL_TESTING.md`, and the historical command references in `docs/LOCAL_PROGRESS.md` now match the actual workspace scripts. The local launcher also prints the correct database-stop command.
 
