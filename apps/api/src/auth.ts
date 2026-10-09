@@ -1,3 +1,4 @@
+import { leased } from './abuse';
 import {
   CanActivate,
   Controller,
@@ -13,6 +14,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ApiTags } from '@nestjs/swagger';
+import type { Prisma } from '@prisma/client';
 import { createHmac, randomBytes, randomInt } from 'node:crypto';
 import type { Response } from 'express';
 import { z } from 'zod';
@@ -30,6 +32,11 @@ export class AuthGuard implements CanActivate {
   ) {}
   async canActivate(ctx: ExecutionContext) {
     const req = ctx.switchToHttp().getRequest<AuthRequest>();
+    if (
+      getConfig().OTP_PROVIDER === 'mock' &&
+      !['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress || '')
+    )
+      fail('FORBIDDEN', 'Mock authentication is restricted to local loopback requests.', 403);
     // Cookie-authenticated writes require an exact trusted Origin, including login/logout.
     const origin = req.headers.origin;
     if (
@@ -55,6 +62,7 @@ export class AuthGuard implements CanActivate {
     await assertSession(this.db, session);
     req.user = session.user;
     req.sessionId = session.id;
+    req.sessionAccessHash = session.accessHash;
     if (
       this.reflector.getAllAndOverride<boolean>('admin', [ctx.getHandler(), ctx.getClass()]) &&
       session.user.role !== 'ADMIN'
@@ -79,20 +87,42 @@ export class AuthService {
   }
   private async twilio(path: string, params: URLSearchParams) {
     const c = getConfig();
-    const result = await fetch(
-      `https://verify.twilio.com/v2/Services/${c.TWILIO_VERIFY_SERVICE_SID}/${path}`,
-      {
+    const result = await leased(this.db, 'otp', 4, 15000, () =>
+      fetch(`https://verify.twilio.com/v2/Services/${c.TWILIO_VERIFY_SERVICE_SID}/${path}`, {
         method: 'POST',
         headers: {
           Authorization: `Basic ${Buffer.from(`${c.TWILIO_ACCOUNT_SID}:${c.TWILIO_AUTH_TOKEN}`).toString('base64')}`,
         },
         body: params,
         signal: AbortSignal.timeout(10000),
-      },
+      }),
+    ).catch(() =>
+      fail('OTP_UNAVAILABLE', 'SMS verification is unavailable. Try again shortly.', 503),
     );
+    if (path === 'VerificationCheck' && result.status === 404)
+      fail('INVALID_OTP', 'Code expired or already used. Request a new one.', 401);
     if (!result.ok)
       fail('OTP_UNAVAILABLE', 'Could not verify your number. Try again shortly.', 503);
-    return (await result.json()) as { status: string };
+    const body = await result.json().catch(() => null);
+    if (!body || typeof body.status !== 'string')
+      fail('OTP_UNAVAILABLE', 'SMS verification is unavailable. Try again shortly.', 503);
+    return body as { status: string };
+  }
+  private async verifyStaff(
+    db: Pick<Prisma.TransactionClient, 'adminCredential'>,
+    userId: string,
+    adminPassword?: string,
+  ) {
+    const credential = await db.adminCredential.findUnique({ where: { userId } });
+    if (credential) {
+      if (!adminPassword || !(await verifyPassword(adminPassword, credential.passwordHash)))
+        fail('INVALID_CREDENTIALS', 'The sign-in details could not be verified.', 401);
+      return new Date();
+    }
+    if (getConfig().NODE_ENV === 'production')
+      fail('ADMIN_SETUP_REQUIRED', 'Staff authentication must be configured by the store.', 403);
+    // Development-only fixture exception: no credential permits OTP-only local staff login.
+    return null;
   }
   async request(phone: string) {
     const code = String(randomInt(100000, 1000000));
@@ -147,6 +177,10 @@ export class AuthService {
       data: { attempts: { increment: 1 } },
     });
     if (!attempt.count) fail('INVALID_OTP', 'Code expired or invalid.', 401);
+    // Twilio deletes an approved verification. Check the passphrase before consuming it.
+    const existing = await this.db.user.findUnique({ where: { phone } });
+    if (existing?.deletedAt) fail('UNAUTHORIZED', 'This account has been deleted.', 401);
+    if (existing?.role === 'ADMIN') await this.verifyStaff(this.db, existing.id, adminPassword);
     const valid =
       getConfig().OTP_PROVIDER === 'mock'
         ? safeEqual(challenge.codeHash, this.otpHash(phone, code))
@@ -168,23 +202,9 @@ export class AuthService {
       if (!consumed.count) fail('INVALID_OTP', 'Code already used. Request a new one.', 401);
       const user = await tx.user.upsert({ where: { phone }, create: { phone }, update: {} });
       if (user.deletedAt) fail('UNAUTHORIZED', 'This account has been deleted.', 401);
-      const now = new Date();
-      let adminVerifiedAt: Date | null = null;
-      if (user.role === 'ADMIN') {
-        const credential = await tx.adminCredential.findUnique({ where: { userId: user.id } });
-        if (credential) {
-          if (!adminPassword || !(await verifyPassword(adminPassword, credential.passwordHash)))
-            fail('INVALID_CREDENTIALS', 'The sign-in details could not be verified.', 401);
-          adminVerifiedAt = now;
-        } else if (getConfig().NODE_ENV === 'production') {
-          fail(
-            'ADMIN_SETUP_REQUIRED',
-            'Staff authentication must be configured by the store.',
-            403,
-          );
-        }
-        // Development-only fixture exception: no credential permits OTP-only local staff login.
-      }
+      // Recheck inside the transaction in case staff credentials changed during verification.
+      const adminVerifiedAt =
+        user.role === 'ADMIN' ? await this.verifyStaff(tx, user.id, adminPassword) : null;
       await tx.session.create({
         data: {
           userId: user.id,

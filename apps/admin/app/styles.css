@@ -1037,7 +1037,11 @@ dialog::backdrop {
 .login-page {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  overflow-wrap: anywhere;
+}
+.login-page > section {
+  min-width: 0;
 }
 .login-story {
   padding: 50px 60px;
@@ -1099,6 +1103,8 @@ dialog::backdrop {
   padding-left: 13px;
 }
 .phone-input > span {
+  flex-shrink: 0;
+  white-space: nowrap;
   font-size: 12px;
   color: #7e909f;
   padding-right: 12px;
@@ -1291,7 +1297,7 @@ dialog::backdrop {
     grid-template-columns: 1fr;
   }
   .login-page {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .login-story {
     padding: 27px;
@@ -1513,5 +1519,206 @@ summary:focus-visible {
     animation: none !important;
     transition: none !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* The daily phone desk keeps the four shop destinations within thumb reach. */
+.owner-bottom-nav,
+.owner-order-cards {
+  display: none;
+}
+.owner-queue-tabs,
+.owner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 16px 0;
+}
+.owner-queue-tabs button {
+  flex: 1 1 180px;
+  text-align: left;
+  white-space: normal;
+  line-height: 1.5;
+}
+.owner-actions a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-weight: 650;
+}
+.owner-more-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+  gap: 16px;
+}
+.owner-more-grid button {
+  justify-content: flex-start;
+  text-align: left;
+  min-height: 80px;
+  white-space: normal;
+  line-height: 1.5;
+}
+.owner-order-card {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  overflow-wrap: anywhere;
+}
+.owner-order-card h3 {
+  margin: 12px 0 4px;
+  font-size: 20px;
+}
+.owner-order-card p {
+  margin: 8px 0;
+  line-height: 1.6;
+}
+.owner-order-card small {
+  display: block;
+  margin: 12px 0;
+  line-height: 1.6;
+}
+.owner-order-card .row-between {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.owner-order-card .owner-next-action {
+  margin-top: 12px;
+  white-space: normal;
+  line-height: 1.5;
+}
+.owner-order-card .owner-actions {
+  margin-bottom: 0;
+}
+dialog details {
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+dialog summary {
+  cursor: pointer;
+  padding: 14px 0;
+  font-weight: 650;
+  line-height: 1.5;
+}
+dialog fieldset {
+  border: 1px solid var(--line);
+  padding: 14px;
+  border-radius: 6px;
+  min-width: 0;
+}
+dialog legend {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-weight: 650;
+}
+@media (max-width: 720px) {
+  .owner-bottom-nav {
+    position: fixed;
+    inset: auto 0 0;
+    z-index: 30;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+    background: #fff;
+    border-top: 1px solid var(--line);
+    box-shadow: 0 -4px 18px #252c2b0d;
+  }
+  .owner-bottom-nav button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-height: 60px;
+    padding: 6px 3px;
+    color: #50574f;
+    background: transparent;
+    border: 0;
+    border-radius: 6px;
+    line-height: 1.4;
+    font-size: 13px;
+  }
+  .owner-bottom-nav button.active {
+    background: #edf1ec;
+    color: #244f3c;
+    font-weight: 750;
+  }
+  .main-shell main {
+    padding-bottom: calc(100px + env(safe-area-inset-bottom));
+  }
+  .owner-order-cards {
+    display: grid;
+    gap: 14px;
+  }
+  .owner-order-table {
+    display: none;
+  }
+  .owner-queue-tabs {
+    gap: 8px;
+  }
+  .owner-queue-tabs button {
+    flex-basis: calc(50% - 8px);
+    padding: 12px;
+    font-size: 14px;
+  }
+  .topbar {
+    padding-inline: 12px;
+    gap: 8px;
+  }
+  .topbar .date-label,
+  .topbar .avatar,
+  .topbar .breadcrumbs > span,
+  .topbar .breadcrumbs > svg {
+    display: none;
+  }
+  .topbar-actions {
+    gap: 6px;
+  }
+  .topbar-actions .secondary {
+    padding-inline: 10px;
+  }
+  .page-heading h1 {
+    font-family: inherit;
+    font-size: 28px;
+    line-height: 1.4;
+  }
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+  dialog {
+    width: calc(100% - 16px);
+    max-height: calc(100dvh - 24px);
+    padding: 18px;
+  }
+  dialog .modal-head {
+    position: sticky;
+    top: -18px;
+    padding-top: 14px;
+    padding-bottom: 12px;
+    background: #fff;
+    z-index: 2;
+  }
+  dialog .button-row {
+    flex-wrap: wrap;
+  }
+  dialog .button-row button {
+    flex: 1 1 150px;
+    white-space: normal;
+    line-height: 1.5;
+  }
+  .toast {
+    bottom: calc(92px + env(safe-area-inset-bottom));
+    max-width: calc(100% - 24px);
+  }
+}
+@media print {
+  .owner-bottom-nav {
+    display: none;
   }
 }

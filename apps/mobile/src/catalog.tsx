@@ -62,10 +62,9 @@ export function MaterialArt({ product, large }: { product: Product; large?: bool
   );
 }
 export function ProductCard({ product }: { product: Product }) {
-  const { t, navigate, add, cart } = useStore();
+  const { t, language, navigate, add, cart, cartBusy, setQuantity, setToast } = useStore();
   const [busy, setBusy] = useState(false);
   const inCart = cart.find((line) => line.productId === product.id)?.quantity || 0;
-  const increment = inCart ? product.quantityStep : product.minQuantity;
   const available = product.stock >= product.minQuantity;
   return (
     <View style={cs.productCard}>
@@ -97,19 +96,41 @@ export function ProductCard({ product }: { product: Product }) {
           </Text>
         </View>
       </Pressable>
-      <Button
-        secondary
-        disabled={!available || inCart + increment > product.stock}
-        loading={busy}
-        onPress={() => {
-          setBusy(true);
-          void add(product, increment).finally(() => setBusy(false));
-        }}
-        icon="add"
-        style={cs.cardButton}
-      >
-        {t('add')}
-      </Button>
+      {inCart > 0 ? (
+        <View style={[cs.cardButton, { gap: 6, paddingHorizontal: 0 }]}>
+          <Text style={[cs.unit, { marginTop: 0 }]}>
+            {language === 'hi' ? 'कार्ट में' : 'In cart'} · {product.unit}
+          </Text>
+          <Quantity
+            label={`${product.name} quantity`}
+            value={inCart}
+            min={product.minQuantity}
+            step={product.quantityStep}
+            max={Math.min(product.stock, 10000)}
+            disabled={cartBusy}
+            commitOnBlur
+            allowRemove
+            onInvalid={setToast}
+            change={(quantity) =>
+              void setQuantity(product.id, quantity).catch((e) => setToast(message(e)))
+            }
+          />
+        </View>
+      ) : (
+        <Button
+          secondary
+          disabled={!available || cartBusy}
+          loading={busy}
+          onPress={() => {
+            setBusy(true);
+            void add(product).finally(() => setBusy(false));
+          }}
+          icon="add"
+          style={cs.cardButton}
+        >
+          {t('add')}
+        </Button>
+      )}
     </View>
   );
 }
@@ -426,7 +447,7 @@ function FilterChips({
   );
 }
 export function Catalogue() {
-  const { route, products: refreshedProducts, categories, t } = useStore();
+  const { route, products: refreshedProducts, categories, t, registerRefresh } = useStore();
   const [query, setQuery] = useState('');
   const [brand, setBrand] = useState('');
   const [brands, setBrands] = useState<string[]>([]);
@@ -441,6 +462,9 @@ export function Catalogue() {
   const [more, setMore] = useState(false);
   const [error, setError] = useState('');
   const request = useRef(0);
+  const visibleItems = useRef(items);
+  visibleItems.current = items;
+  const inFlight = useRef(false);
   useEffect(() => {
     setCategory(route.category || '');
   }, [route.category]);
@@ -462,10 +486,12 @@ export function Catalogue() {
     };
   }, [search.brand]);
   const load = useCallback(
-    async (cursor?: string) => {
+    async (cursor?: string, background = false) => {
+      if (background && inFlight.current) return;
       const current = ++request.current;
+      inFlight.current = true;
       if (cursor) setMore(true);
-      else {
+      else if (!background) {
         setLoading(true);
         setMore(false);
         setItems([]);
@@ -482,7 +508,15 @@ export function Catalogue() {
       });
       if (cursor) params.set('cursor', cursor);
       try {
-        const page = await api<Page<Product>>(`/products?${params}`);
+        let page = await api<Page<Product>>(`/products?${params}`);
+        const refreshed = [...page.items];
+        // Refresh exactly the pages already opened, preserving the customer's browsing depth.
+        while (background && page.nextCursor && refreshed.length < visibleItems.current.length) {
+          params.set('cursor', page.nextCursor);
+          page = await api<Page<Product>>(`/products?${params}`);
+          if (current !== request.current) return;
+          refreshed.push(...page.items);
+        }
         if (current !== request.current) return;
         setItems((old) =>
           cursor
@@ -490,13 +524,14 @@ export function Catalogue() {
                 ...old,
                 ...page.items.filter((item) => !old.some((existing) => existing.id === item.id)),
               ]
-            : page.items,
+            : [...new Map(refreshed.map((item) => [item.id, item])).values()],
         );
         setNextCursor(page.nextCursor);
       } catch (e) {
         if (current === request.current) setError(message(e));
       } finally {
         if (current === request.current) {
+          inFlight.current = false;
           setLoading(false);
           setMore(false);
         }
@@ -509,7 +544,11 @@ export function Catalogue() {
     return () => {
       request.current++;
     };
+  }, [load]);
+  useEffect(() => {
+    void load(undefined, true);
   }, [load, refreshedProducts]);
+  useEffect(() => registerRefresh(() => load(undefined, true)), [load, registerRefresh]);
   return (
     <View style={s.stack}>
       <View>
@@ -618,13 +657,10 @@ export function Catalogue() {
           <ProductGrid products={items} />
         </>
       )}
-      {error && (
+      {Boolean(error) && (
         <View style={s.stack}>
           <Notice error>{error}</Notice>
-          <Button
-            secondary
-            onPress={() => void load(items.length && nextCursor ? nextCursor : undefined)}
-          >
+          <Button secondary onPress={() => void load(undefined, Boolean(items.length))}>
             Try again
           </Button>
         </View>
@@ -652,48 +688,67 @@ export function Catalogue() {
   );
 }
 export function ProductDetail() {
-  const { route, products, t, add, navigate, cart } = useStore();
-  const [product, setProduct] = useState<Product | null>(null);
-  const [quantity, setQuantity] = useState(1);
+  const { route, products, t, add, navigate, cart, cartBusy, registerRefresh } = useStore();
+  const cached = products.find((item) => item.id === route.id);
+  const [product, setProduct] = useState<Product | null>(cached || null);
+  const [quantity, setQuantity] = useState(cached?.minQuantity || 1);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [retry, setRetry] = useState(0);
-  useEffect(() => {
-    let active = true;
+  const request = useRef(0);
+  const cartRef = useRef(cart);
+  cartRef.current = cart;
+  const load = useCallback(async () => {
+    const current = ++request.current;
     setLoading(true);
     setError('');
-    setProduct(null);
-    void api<Product>(`/products/${encodeURIComponent(route.id || '')}`)
-      .then((value) => {
-        if (active) {
-          setProduct(value);
-          setQuantity(value.minQuantity);
-        }
-      })
-      .catch((e) => {
-        if (active) setError(message(e));
-      })
-      .finally(() => {
-        if (active) setLoading(false);
+    try {
+      const value = await api<Product>(`/products/${encodeURIComponent(route.id || '')}`);
+      if (current !== request.current) return;
+      setProduct(value);
+      const inCart = cartRef.current.find((line) => line.productId === value.id)?.quantity || 0;
+      const available = Math.max(
+        value.minQuantity,
+        Math.floor((Math.min(value.stock, 10000) - inCart) / value.quantityStep) *
+          value.quantityStep,
+      );
+      setQuantity((old) => {
+        if (old >= value.minQuantity && old <= available && old % value.quantityStep === 0)
+          return old;
+        return Math.min(
+          available,
+          Math.max(value.minQuantity, Math.ceil(old / value.quantityStep) * value.quantityStep),
+        );
       });
+    } catch (e) {
+      if (current === request.current) setError(message(e));
+    } finally {
+      if (current === request.current) setLoading(false);
+    }
+  }, [route.id]);
+  useEffect(() => {
+    void load();
     return () => {
-      active = false;
+      request.current++;
     };
-  }, [route.id, products, retry]);
-  if (loading) return <Skeletons />;
+  }, [load, products]);
+  useEffect(() => registerRefresh(load), [load, registerRefresh]);
+  if (loading && !product) return <Skeletons />;
   if (!product)
     return (
       <Empty
         title="Material could not be loaded"
         body={error || 'This material may no longer be available.'}
         action="Try again"
-        onAction={() => setRetry((value) => value + 1)}
+        onAction={() => void load()}
       />
     );
   const inCart = cart.find((line) => line.productId === product.id)?.quantity || 0;
   return (
     <View style={s.stack}>
+      {Boolean(error) && (
+        <Notice error>{error} Displaying the last loaded material details.</Notice>
+      )}
       <View style={[s.card, { backgroundColor: C.concrete }]}>
         <MaterialArt product={product} large />
       </View>
@@ -737,12 +792,19 @@ export function ProductDetail() {
           value={quantity}
           min={product.minQuantity}
           step={product.quantityStep}
-          max={Math.min(product.stock - inCart, 10000)}
+          max={Math.min(product.stock, 10000) - inCart}
+          disabled={cartBusy || busy}
           change={setQuantity}
         />
       </View>
       <Button
-        disabled={quantity + inCart > product.stock || quantity < product.minQuantity}
+        disabled={
+          !product.active ||
+          cartBusy ||
+          quantity + inCart > Math.min(product.stock, 10000) ||
+          quantity < product.minQuantity ||
+          quantity % product.quantityStep !== 0
+        }
         loading={busy}
         icon="bag-add-outline"
         onPress={() => {
@@ -752,6 +814,11 @@ export function ProductDetail() {
       >
         {t('add')} · {money(product.pricePaise * quantity)}
       </Button>
+      {inCart > 0 && (
+        <Text style={s.body}>
+          In cart: {inCart} × {product.unit}
+        </Text>
+      )}
       <Button secondary onPress={() => navigate({ screen: 'QuoteRequest', id: product.id })}>
         {t('bulk')}
       </Button>
@@ -766,6 +833,10 @@ export function Quantity({
   min = 1,
   step = 1,
   disabled,
+  label = 'Quantity',
+  commitOnBlur = false,
+  allowRemove = false,
+  onInvalid,
 }: {
   value: number;
   change: (value: number) => void;
@@ -773,42 +844,76 @@ export function Quantity({
   min?: number;
   step?: number;
   disabled?: boolean;
+  label?: string;
+  commitOnBlur?: boolean;
+  allowRemove?: boolean;
+  onInvalid?: (message: string) => void;
 }) {
   const [draft, setDraft] = useState(String(value));
-  useEffect(() => setDraft(String(value)), [value]);
+  useEffect(() => {
+    if (!disabled) setDraft(String(value));
+  }, [value, disabled]);
+  const previous = Math.min(Math.floor(max / step) * step, Math.floor((value - 1) / step) * step);
+  const next = Math.max(min, Math.ceil((value + 1) / step) * step);
+  const canDecrease = allowRemove || previous >= min;
+  function commit() {
+    const quantity = Number(draft);
+    if (
+      draft &&
+      Number.isInteger(quantity) &&
+      quantity >= min &&
+      quantity <= max &&
+      quantity % step === 0
+    ) {
+      if (quantity !== value) change(quantity);
+    } else {
+      setDraft(String(value));
+      onInvalid?.(`Enter a quantity from ${min} to ${max}, in steps of ${step}.`);
+    }
+  }
   return (
     <View style={cs.quantity}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Decrease quantity"
-        disabled={disabled || value - step < min}
-        onPress={() => change(value - step)}
-        style={[cs.quantityButton, (disabled || value - step < min) && { opacity: 0.35 }]}
+        accessibilityLabel={`Decrease ${label === 'Quantity' ? 'quantity' : label}`}
+        disabled={disabled || !canDecrease}
+        onPress={() => change(previous < min ? 0 : previous)}
+        style={[cs.quantityButton, (disabled || !canDecrease) && { opacity: 0.35 }]}
       >
         <Icon name="remove" size={19} />
       </Pressable>
       <TextInput
-        accessibilityLabel="Quantity"
+        accessibilityLabel={label}
+        accessibilityHint={`Minimum ${min}, step ${step}, maximum ${max}`}
         value={draft}
         keyboardType="number-pad"
         selectTextOnFocus
         editable={!disabled}
-        onBlur={() => setDraft(String(value))}
+        onBlur={() => (commitOnBlur ? commit() : setDraft(String(value)))}
+        onSubmitEditing={() => {
+          if (commitOnBlur) commit();
+        }}
         onChangeText={(text) => {
           if (!/^\d*$/.test(text)) return;
           setDraft(text);
           const next = Number(text);
-          if (Number.isInteger(next) && next >= min && next <= max && (next - min) % step === 0)
+          if (
+            !commitOnBlur &&
+            Number.isInteger(next) &&
+            next >= min &&
+            next <= max &&
+            next % step === 0
+          )
             change(next);
         }}
         style={cs.quantityValue}
       />
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Increase quantity"
-        disabled={disabled || value + step > max}
-        onPress={() => change(value + step)}
-        style={[cs.quantityButton, (disabled || value + step > max) && { opacity: 0.35 }]}
+        accessibilityLabel={`Increase ${label === 'Quantity' ? 'quantity' : label}`}
+        disabled={disabled || next > max}
+        onPress={() => change(next)}
+        style={[cs.quantityButton, (disabled || next > max) && { opacity: 0.35 }]}
       >
         <Icon name="add" size={19} />
       </Pressable>
@@ -923,6 +1028,7 @@ const cs = StyleSheet.create({
     backgroundColor: C.concrete,
   },
   quantity: {
+    maxWidth: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
@@ -933,6 +1039,8 @@ const cs = StyleSheet.create({
   quantityButton: { width: 46, height: 46, alignItems: 'center', justifyContent: 'center' },
   quantityValue: {
     width: 54,
+    minWidth: 32,
+    flexShrink: 1,
     minHeight: 46,
     textAlign: 'center',
     color: C.ink,

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Linking,
   Modal,
@@ -18,7 +18,7 @@ import { useStore } from './store';
 import { Button, C, Field, Icon, IconName, Notice, Section, s } from './ui';
 
 export function Login() {
-  const { loginVisible, setLoginVisible, setUser, setLanguage, t } = useStore();
+  const { loginVisible, setLoginVisible, completeLogin, t } = useStore();
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
@@ -43,12 +43,11 @@ export function Login() {
           { phone: `+91${phone}`, code, ...(adminPassword ? { adminPassword } : {}) },
         );
         const user = await saveSession(result);
-        setUser(user);
-        setLanguage(user.language);
-        setLoginVisible(false);
+        await completeLogin(user);
         setSent(false);
         setCode('');
         setDevCode('');
+        setAdminPassword('');
       }
     } catch (e) {
       setError(message(e));
@@ -434,20 +433,42 @@ export function Account() {
   );
 }
 export function Addresses() {
-  const { user, addresses, setAddresses, t, setToast } = useStore();
-  const [show, setShow] = useState(!addresses.length);
+  const { user, addresses, setAddresses, t, setToast, route, completeAddress, refreshAccount } =
+    useStore();
+  const routedAddress = addresses.find((address) => address.id === route.id);
+  const [show, setShow] = useState(Boolean(route.id) || !addresses.length);
+  const [editingId, setEditingId] = useState<string | null>(route.id || null);
+  const initialized = useRef(!route.id || Boolean(routedAddress));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [form, setForm] = useState({
-    label: 'Site',
-    name: user?.name || '',
-    phone: user?.phone.replace('+91', '') || '',
-    line1: '',
-    area: '',
-    city: 'Patna',
-    pincode: '',
-    landmark: '',
-  });
+  function addressForm(address?: Address) {
+    return {
+      label: address?.label || 'Site',
+      name: address?.name || user?.name || '',
+      phone: (address?.phone || user?.phone || '').replace('+91', ''),
+      line1: address?.line1 || '',
+      area: address?.area || '',
+      city: address?.city || 'Patna',
+      pincode: address?.pincode || '',
+      landmark: address?.landmark || '',
+    };
+  }
+  const [form, setForm] = useState(() => addressForm(routedAddress));
+  function edit(address?: Address) {
+    initialized.current = true;
+    setEditingId(address?.id || null);
+    setForm(addressForm(address));
+    setError('');
+    setShow(true);
+  }
+  useEffect(() => {
+    if (initialized.current || !route.id) return;
+    const address = addresses.find((item) => item.id === route.id);
+    if (address) {
+      initialized.current = true;
+      edit(address);
+    }
+  }, [addresses, route.id]);
   async function save() {
     setBusy(true);
     setError('');
@@ -458,10 +479,15 @@ export function Addresses() {
         state: 'Bihar',
       });
       if (!parsed.success) throw new Error(parsed.error.issues.map((i) => i.message).join('\n'));
-      const address = await api<Address>('/me/addresses', 'POST', parsed.data);
-      setAddresses([address, ...addresses]);
+      const address = await api<Address>(
+        editingId ? `/me/addresses/${editingId}` : '/me/addresses',
+        editingId ? 'PATCH' : 'POST',
+        parsed.data,
+      );
+      setAddresses((old) => [address, ...old.filter((item) => item.id !== address.id)]);
       setShow(false);
       setToast('Address saved');
+      completeAddress(address.id);
     } catch (e) {
       setError(message(e));
     } finally {
@@ -470,20 +496,37 @@ export function Addresses() {
   }
   return (
     <View style={s.stack}>
-      <Section title={t('savedAddresses')} action="+ Add new" onAction={() => setShow(true)} />
+      <Section title={t('savedAddresses')} action="+ Add new" onAction={() => edit()} />
       {addresses.map((a) => (
         <View key={a.id} style={s.card}>
           <View style={s.between}>
             <Text style={{ color: C.ink, fontWeight: '700', fontSize: 16 }}>{a.label}</Text>
             <Pressable
               accessibilityRole="button"
+              accessibilityLabel={`Edit ${a.label} address`}
+              disabled={busy}
+              onPress={() => edit(a)}
+              style={{ padding: 12 }}
+            >
+              <Icon name="create-outline" size={18} />
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
               accessibilityLabel={`Delete ${a.label} address`}
+              disabled={busy}
               onPress={async () => {
+                setBusy(true);
                 try {
                   await api(`/me/addresses/${a.id}`, 'DELETE');
-                  setAddresses(addresses.filter((x) => x.id !== a.id));
+                  setAddresses((old) => old.filter((x) => x.id !== a.id));
+                  if (editingId === a.id) {
+                    setEditingId(null);
+                    setShow(false);
+                  }
                 } catch (e) {
                   setToast(message(e));
+                } finally {
+                  setBusy(false);
                 }
               }}
               style={{ padding: 12 }}
@@ -498,9 +541,32 @@ export function Addresses() {
           </Text>
         </View>
       ))}
-      {show && (
+      {show && !initialized.current && (
+        <View style={s.stack}>
+          <Notice error>
+            This saved address is not available. Refresh addresses or return to your draft.
+          </Notice>
+          <Button
+            secondary
+            loading={busy}
+            onPress={async () => {
+              setBusy(true);
+              try {
+                await refreshAccount();
+              } catch (e) {
+                setToast(message(e));
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Refresh addresses
+          </Button>
+        </View>
+      )}
+      {show && initialized.current && (
         <View style={[s.card, s.stack]}>
-          <Text style={s.h2}>Add a delivery address</Text>
+          <Text style={s.h2}>{editingId ? 'Edit delivery address' : 'Add a delivery address'}</Text>
           {(
             [
               { key: 'label', label: 'Address label (Home / Site)' },
@@ -519,16 +585,25 @@ export function Addresses() {
               value={form[x.key]}
               keyboardType={['phone', 'pincode'].includes(x.key) ? 'number-pad' : 'default'}
               maxLength={x.key === 'pincode' ? 6 : x.key === 'phone' ? 10 : 200}
-              onChangeText={(value) => setForm({ ...form, [x.key]: value })}
+              onChangeText={(value) => setForm((current) => ({ ...current, [x.key]: value }))}
             />
           ))}
-          <Text style={s.body}>State: Bihar · We deliver across Bihar.</Text>
+          <Text style={s.body}>
+            State: Bihar · Delivery availability and charges are checked for your pincode.
+          </Text>
           {Boolean(error) && <Notice error>{error}</Notice>}
           <Button loading={busy} onPress={() => void save()}>
             {t('saveAddress')}
           </Button>
           {addresses.length > 0 && (
-            <Button secondary onPress={() => setShow(false)}>
+            <Button
+              secondary
+              disabled={busy}
+              onPress={() => {
+                setShow(false);
+                setError('');
+              }}
+            >
               Cancel
             </Button>
           )}

@@ -2,6 +2,7 @@ import { Controller, Get, Inject, Param, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { paginate } from './pagination';
 import { Db } from './db';
+import { orderInclude } from './orders';
 import { Admin, fail } from './http';
 
 @ApiTags('Store administration')
@@ -28,8 +29,8 @@ export class AdminController {
       recentOrders,
     ] = await Promise.all([
       this.db.order.count({ where: { createdAt: { gte: today } } }),
-      this.db.payment.aggregate({
-        where: { status: 'CAPTURED', updatedAt: { gte: today } },
+      this.db.financialMovement.aggregate({
+        where: { kind: 'COLLECTION', occurredAt: { gte: today } },
         _sum: { amountPaise: true },
       }),
       this.db.order.count({ where: { status: { in: ['CONFIRMED', 'PREPARING'] } } }),
@@ -46,10 +47,32 @@ export class AdminController {
       this.db.order.findMany({
         orderBy: { createdAt: 'desc' },
         take: 8,
-        include: { user: true, payment: true, items: true },
+        include: { ...orderInclude, user: true },
       }),
     ]);
+    const [counter, refunds, newWork, issues] = await Promise.all([
+      this.db.financialMovement.aggregate({
+        where: { kind: 'COUNTER_SALE', occurredAt: { gte: today } },
+        _sum: { amountPaise: true },
+      }),
+      this.db.financialMovement.aggregate({
+        where: { kind: 'REFUND', occurredAt: { gte: today } },
+        _sum: { amountPaise: true },
+      }),
+      this.db.ownerWork.count({
+        where: {
+          acknowledgedAt: null,
+          order: { status: { in: ['CONFIRMED', 'PENDING_PAYMENT'] } },
+        },
+      }),
+      this.db.order.count({ where: { status: { in: ['DELIVERY_EXCEPTION', 'REFUND_PENDING'] } } }),
+    ]);
     return {
+      newWork,
+      issues,
+      todayCounterSalesPaise: counter._sum.amountPaise || 0,
+      todayRefundsPaise: refunds._sum.amountPaise || 0,
+      profitPaise: null,
       todayOrders,
       todaySalesPaise: sales._sum.amountPaise || 0,
       pendingOrders,

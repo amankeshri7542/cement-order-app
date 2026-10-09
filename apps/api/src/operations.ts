@@ -1,16 +1,100 @@
 import { Controller, Get, Inject, Param, Patch, Post, Query, Req } from '@nestjs/common';
+import { OrderStatus, QuoteStatus, type Prisma } from '@prisma/client';
 import { z } from 'zod';
 import {
   contractorDecisionSchema,
   deletionSchema,
   deliveryZoneSchema,
   inventorySchema,
+  totals,
 } from '@shiv/shared';
 import { Db } from './db';
 import { Admin, AuthRequest, Contract, Input, Public, fail } from './http';
 import { Events } from './catalog';
 import { moveStock } from './inventory';
 import { paginate } from './pagination';
+
+const evidenceId = z.string().regex(/^[A-Za-z0-9_:-]{1,200}$/);
+const evidenceNumber = z.number().int().safe();
+const evidenceTime = z.iso.datetime();
+const evidenceStatus = z.enum([
+  ...Object.values(OrderStatus),
+  ...Object.values(QuoteStatus),
+  'NONE',
+  'PENDING',
+  'VERIFIED',
+]);
+
+function retainEvidence(value: Prisma.JsonValue, fields: Record<string, z.ZodType>) {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  return Object.fromEntries([
+    ['personalDataRemoved', true],
+    ...Object.entries(fields).flatMap(([key, schema]) => {
+      const parsed = schema.safeParse(source[key]);
+      return parsed.success ? [[key, parsed.data]] : [];
+    }),
+  ]) as Prisma.InputJsonObject;
+}
+
+export function redactAuditDetails(value: Prisma.JsonValue) {
+  return retainEvidence(value, {
+    amountPaise: evidenceNumber,
+    totalPaise: evidenceNumber,
+    subtotalPaise: evidenceNumber,
+    deliveryFeePaise: evidenceNumber,
+    oldPricePaise: evidenceNumber,
+    newPricePaise: evidenceNumber,
+    quantity: evidenceNumber,
+    revision: evidenceNumber,
+    sourceQuoteRevision: evidenceNumber,
+    version: evidenceNumber,
+    from: evidenceStatus,
+    to: evidenceStatus,
+    status: evidenceStatus,
+    byStore: z.boolean(),
+    paymentId: evidenceId,
+    razorpayOrderId: evidenceId,
+    refundId: evidenceId,
+    providerId: evidenceId,
+    productId: evidenceId,
+    orderId: evidenceId,
+    quoteId: evidenceId,
+    sourceQuoteId: evidenceId,
+    inventoryMovementId: evidenceId,
+    occurredAt: evidenceTime,
+  });
+}
+
+export function redactQuoteSnapshot(value: Prisma.JsonValue) {
+  return retainEvidence(value, {
+    id: evidenceId,
+    number: evidenceId,
+    status: evidenceStatus,
+    revision: evidenceNumber,
+    deliveryDate: z.iso.date(),
+    deliveryConfirmed: z.boolean(),
+    deliveryFeePaise: evidenceNumber,
+    totalPaise: evidenceNumber.nullable(),
+    validUntil: evidenceTime.nullable(),
+    createdAt: evidenceTime,
+    updatedAt: evidenceTime,
+    decisionSource: z.enum(['CUSTOMER', 'STORE_RECORDED']).nullable(),
+    decisionActorId: evidenceId.nullable(),
+    decisionAt: evidenceTime.nullable(),
+    items: z.array(
+      z.object({
+        id: evidenceId,
+        quoteId: evidenceId,
+        productId: evidenceId,
+        name: z.string().max(200),
+        unit: z.string().max(100),
+        packSize: z.string().max(100).optional(),
+        quantity: evidenceNumber,
+        unitPricePaise: evidenceNumber.nullable(),
+      }),
+    ),
+  });
+}
 
 @Controller()
 export class OperationsController {
@@ -44,9 +128,40 @@ export class OperationsController {
     const quantity = ['WALK_IN_SALE', 'DAMAGE'].includes(body.kind)
       ? -body.quantity
       : body.quantity;
-    const result = await this.db.atomic((tx) =>
-      moveStock(tx, { ...body, quantity, productId: id, actorId: req.user.id }),
-    );
+    const result = await this.db.atomic(async (tx) => {
+      const priorSale =
+        body.kind === 'WALK_IN_SALE'
+          ? await tx.inventoryMovement.findUnique({
+              where: { idempotencyKey: body.idempotencyKey },
+            })
+          : null;
+      const movement = await moveStock(tx, {
+        ...body,
+        quantity,
+        productId: id,
+        actorId: req.user.id,
+      });
+      // An old stock-only sale has no known original price; replay must not invent one.
+      if (movement.kind === 'WALK_IN_SALE' && !priorSale) {
+        const product = await tx.product.findUniqueOrThrow({ where: { id } });
+        await tx.financialMovement.upsert({
+          where: { inventoryMovementId: movement.id },
+          create: {
+            inventoryMovementId: movement.id,
+            kind: 'COUNTER_SALE',
+            amountPaise: totals(
+              [{ pricePaise: product.pricePaise, quantity: -movement.quantity }],
+              0,
+              null,
+            ).totalPaise,
+            actorId: req.user.id,
+            occurredAt: movement.createdAt,
+          },
+          update: {},
+        });
+      }
+      return movement;
+    });
     this.events.publish({ type: 'CATALOG_UPDATED', productId: id });
     return result;
   }
@@ -173,7 +288,7 @@ export class OperationsController {
         where: { orderId: { in: orders.map((o) => o.id) } },
         data: { note: '' },
       });
-      await tx.auditLog.updateMany({
+      const audit = await tx.auditLog.findMany({
         where: {
           OR: [
             { actorId: req.user.id },
@@ -184,14 +299,20 @@ export class OperationsController {
             },
           ],
         },
-        data: { details: { personalDataRemoved: true } },
+        select: { id: true, details: true },
       });
+      for (const entry of audit)
+        await tx.auditLog.update({
+          where: { id: entry.id },
+          data: { details: redactAuditDetails(entry.details) },
+        });
       await tx.session.deleteMany({ where });
       await tx.device.deleteMany({ where });
       await tx.address.deleteMany({ where });
       await tx.cartItem.deleteMany({ where });
       await tx.notification.deleteMany({ where });
       await tx.checkoutReview.updateMany({ where, data: { snapshot: { deleted: true } } });
+      await tx.deliveryAttempt.updateMany({ where: { order: where }, data: { note: '' } });
       await tx.order.updateMany({
         where,
         data: {
@@ -208,14 +329,28 @@ export class OperationsController {
           notes: '',
         },
       });
-      await tx.quoteRevision.updateMany({
+      const revisions = await tx.quoteRevision.findMany({
         where: { quote: where },
-        data: { snapshot: { deleted: true } },
+        select: { id: true, snapshot: true },
       });
+      for (const revision of revisions)
+        await tx.quoteRevision.update({
+          where: { id: revision.id },
+          data: { snapshot: redactQuoteSnapshot(revision.snapshot) },
+        });
       await tx.quote.updateMany({
         where,
         data: {
-          address: { deleted: true },
+          address: {
+            name: 'Deleted customer',
+            phone: '',
+            line1: '',
+            area: '',
+            city: '',
+            state: '',
+            pincode: '',
+            landmark: '',
+          },
           company: '',
           gstin: '',
           notes: '',

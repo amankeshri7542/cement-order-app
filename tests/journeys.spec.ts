@@ -1,5 +1,6 @@
-import { test, expect, type Page } from '@playwright/test';
-import { productSchema } from '@shiv/shared';
+import type { Page } from '@playwright/test';
+import { test, expect } from './fixtures';
+import { productSchema, type DeliveryZone } from '@shiv/shared';
 
 async function mobileLogin(page: Page, phone: string) {
   await page.goto('http://localhost:8082');
@@ -13,9 +14,11 @@ async function mobileLogin(page: Page, phone: string) {
   const code = (await (await response).json()).devCode;
   await page.getByRole('textbox', { name: 'Verification code', exact: true }).fill(code);
   await page.getByRole('button', { name: 'Verify & continue' }).click();
+  await expect(page.getByRole('dialog')).toBeHidden();
   await expect(page.getByRole('button', { name: 'Sign out', exact: true })).toBeVisible();
 }
 async function adminLogin(page: Page, phone = '9297513707') {
+  await page.addInitScript(() => localStorage.setItem('shiv-owner-language', 'en'));
   await page.goto('http://localhost:3001');
   await page.getByRole('textbox', { name: 'Staff mobile number' }).fill(phone);
   const response = page.waitForResponse(
@@ -47,7 +50,7 @@ test('customer places a COD order, tracks it, reorders and requests a bulk quote
   await page.getByRole('button', { name: 'View UltraTech Super' }).click();
   await page.getByRole('textbox', { name: 'Quantity', exact: true }).fill('10');
   await page.getByRole('button', { name: /Add.*to cart/ }).click();
-  await page.getByRole('button', { name: 'Your cart, 1 products' }).click();
+  await page.getByRole('button', { name: 'Your cart, 10 items, 1 product' }).click();
   await page.getByRole('button', { name: 'Continue to checkout' }).click();
   await page.getByRole('button', { name: 'Review your order' }).click();
   await expect(page.getByText('₹4,600.00', { exact: true })).toBeVisible();
@@ -76,15 +79,21 @@ test('admin changes price and finance policy, fulfils an order and replies to a 
 }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await adminLogin(page);
-  await expect(page.getByRole('heading', { name: 'Your materials counter.' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: /Stock in/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Today' })).toBeVisible();
+  await expect(page.getByRole('region', { name: "Today's work", exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^नया काम \/ New work/ })).toBeVisible();
   await page.screenshot({ path: 'test-results/admin-overview.png', fullPage: true });
-  await page.getByRole('button', { name: 'Products', exact: true }).click();
+  await page
+    .getByRole('navigation', { name: 'Main navigation', exact: true })
+    .getByRole('button', { name: 'Prices & stock', exact: true })
+    .click();
+  await page.getByRole('textbox', { name: 'Search products', exact: true }).fill('UltraTech Super');
   await page.getByRole('button', { name: 'Edit UltraTech Super' }).click();
   await page.getByLabel('Selling price (₹)').fill('425');
   await page.getByRole('button', { name: 'Save product', exact: true }).click();
   await expect(page.getByText('₹425.00', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Finance & settings', exact: true }).click();
+  await page.getByRole('button', { name: 'More', exact: true }).click();
+  await page.getByRole('button', { name: /Finance & settings$/ }).click();
   await page.getByRole('button', { name: /Patna test/ }).click();
   await page.getByLabel('Delivery charge (₹)', { exact: true }).fill('600');
   await page.getByRole('button', { name: 'Save delivery zone' }).click();
@@ -107,14 +116,17 @@ test('admin changes price and finance policy, fulfils an order and replies to a 
     page.getByRole('dialog').getByText('Delivered', { exact: true }).first(),
   ).toBeVisible();
   await page.getByRole('button', { name: 'Close dialog' }).click();
-  await page.getByRole('button', { name: 'Bulk quotes', exact: true }).click();
-  await page
-    .getByRole('button', { name: /^Open quote/ })
-    .first()
-    .click();
+  await page.getByRole('button', { name: 'More', exact: true }).click();
+  await page.getByRole('button', { name: /Bulk quotes$/ }).click();
+  const openQuote = page.getByRole('button', { name: /^Open quote/ }).first();
+  const quoteNumber = (await openQuote.getAttribute('aria-label'))!.replace('Open quote ', '');
+  await openQuote.click();
   await page.getByLabel(/UltraTech Super.*price per unit/).fill('400');
+  await page.getByRole('checkbox', { name: /I checked the site/ }).check();
   await page.getByRole('button', { name: 'Send quotation' }).click();
-  await expect(page.getByText('Sent', { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('row').filter({ hasText: quoteNumber }).getByText('Sent', { exact: true }),
+  ).toBeVisible();
 });
 test('live price updates refresh the catalogue and invalidate an accepted checkout total', async ({
   page,
@@ -139,6 +151,29 @@ test('live price updates refresh the catalogue and invalidate an accepted checko
     data: { phone: '+919297513708', code: (await otp.json()).devCode },
   });
   const headers = { Authorization: `Bearer ${(await login.json()).accessToken}` };
+  // This price-change journey owns its freight fixture; it does not depend on an earlier test.
+  const zones = (await (
+    await request.get('http://localhost:4010/api/v1/admin/delivery-zones', { headers })
+  ).json()) as DeliveryZone[];
+  const zone = zones.find((entry) => entry.id === 'test-zone')!;
+  expect(zone).toBeDefined();
+  const freight = await request.patch(
+    `http://localhost:4010/api/v1/admin/delivery-zones/${zone.id}`,
+    {
+      headers,
+      data: {
+        name: zone.name,
+        active: true,
+        deliveryFeePaise: 60000,
+        minimumOrderPaise: 0,
+        freeDeliveryAbovePaise: null,
+        estimate: zone.estimate,
+        pincodes: zone.pincodes.map((entry) => entry.pincode),
+        expectedVersion: zone.version,
+      },
+    },
+  );
+  expect(freight.ok(), await freight.text()).toBe(true);
   async function updatePrice(pricePaise: number) {
     const result = await request.get('http://localhost:4010/api/v1/products/test-ultratech');
     const product = await result.json();
@@ -193,7 +228,7 @@ test('live price updates refresh the catalogue and invalidate an accepted checko
   await page.getByRole('button', { name: 'View UltraTech Super' }).click();
   await page.getByRole('textbox', { name: 'Quantity', exact: true }).fill('10');
   await page.getByRole('button', { name: /Add.*to cart/ }).click();
-  await page.getByRole('button', { name: 'Your cart, 1 products' }).click();
+  await page.getByRole('button', { name: /^Your cart,.*1 product$/ }).click();
   await page.getByRole('button', { name: 'Continue to checkout' }).click();
   await page.getByRole('button', { name: 'Review your order' }).click();
   await page.getByRole('checkbox').check();
@@ -229,7 +264,11 @@ test('store records stock and delivery rules; customers browse server pages on m
   page,
 }) => {
   await adminLogin(page, '9297513709');
-  await page.getByRole('button', { name: 'Products', exact: true }).click();
+  await page
+    .getByRole('navigation', { name: 'Main navigation', exact: true })
+    .getByRole('button', { name: 'Prices & stock', exact: true })
+    .click();
+  await page.getByRole('textbox', { name: 'Search products', exact: true }).fill('UltraTech Super');
   await page.getByRole('button', { name: 'Stock ledger UltraTech Super' }).click();
   await page.getByRole('combobox', { name: 'Movement', exact: true }).selectOption('WALK_IN_SALE');
   await page.getByLabel('Quantity', { exact: true }).fill('5');
@@ -241,7 +280,8 @@ test('store records stock and delivery rules; customers browse server pages on m
   ).toBeVisible();
   await page.screenshot({ path: 'test-results/pilot-stock-ledger.png' });
   await page.getByRole('button', { name: 'Close dialog' }).click();
-  await page.getByRole('button', { name: 'Finance & settings', exact: true }).click();
+  await page.getByRole('button', { name: 'More', exact: true }).click();
+  await page.getByRole('button', { name: /Finance & settings$/ }).click();
   await page.getByRole('button', { name: 'Add delivery zone' }).click();
   await page.getByLabel('Zone name').fill('Outstation check');
   await page.getByLabel('Pincodes, separated by commas').fill('801111');
@@ -251,12 +291,8 @@ test('store records stock and delivery rules; customers browse server pages on m
   await expect(page.getByRole('button', { name: /Outstation check/ })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.locator('.sidebar')).toBeHidden();
-  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Open menu', exact: true })).toHaveAttribute(
-    'aria-expanded',
-    'true',
-  );
-  await page.getByRole('button', { name: 'Finance & settings', exact: true }).click();
+  await page.getByRole('button', { name: 'More', exact: true }).click();
+  await page.getByRole('button', { name: /Finance & settings$/ }).click();
   await expect(page.locator('.sidebar')).toBeHidden();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
@@ -280,6 +316,18 @@ test('store records stock and delivery rules; customers browse server pages on m
   await page.getByRole('button', { name: 'Check delivery', exact: true }).click();
   await expect(page.getByText('2–3 days after confirmation', { exact: false })).toBeVisible();
   await page.getByRole('tab', { name: 'Products', exact: true }).click();
+  const pilotProducts = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      url.pathname.endsWith('/products') &&
+      url.searchParams.get('q') === 'Pilot material' &&
+      response.ok()
+    );
+  });
+  await page
+    .getByRole('textbox', { name: 'Search cement, steel, sand…', exact: true })
+    .fill('Pilot material');
+  await pilotProducts;
   await expect(page.getByRole('button', { name: 'View Pilot material 00' })).toBeVisible();
   await page.getByRole('button', { name: 'Filters and sort', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Filter by brand' })).toBeVisible();
@@ -288,8 +336,10 @@ test('store records stock and delivery rules; customers browse server pages on m
   const firstCount = await page.getByRole('button', { name: /^View / }).count();
   expect(firstCount).toBe(24);
   await page.getByRole('button', { name: 'Load more materials' }).click();
-  await expect(page.getByRole('button', { name: 'View UltraTech Super' })).toBeVisible();
-  expect(await page.getByRole('button', { name: /^View / }).count()).toBe(28);
+  await expect(
+    page.getByRole('button', { name: 'View Pilot material 26', exact: true }),
+  ).toBeVisible();
+  expect(await page.getByRole('button', { name: /^View / }).count()).toBe(27);
   await page.getByRole('textbox', { name: 'Search cement, steel, sand…' }).scrollIntoViewIfNeeded();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,

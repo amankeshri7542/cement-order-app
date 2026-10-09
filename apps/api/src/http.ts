@@ -18,6 +18,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 export type AuthRequest = Request & {
   user: User;
   sessionId: string;
+  sessionAccessHash: string;
   requestId: string;
   rawBody?: Buffer;
 };
@@ -95,6 +96,15 @@ export class Errors implements ExceptionFilter {
           requestId: req.requestId,
           status,
           errorType: error instanceof Error ? error.constructor.name : 'Unknown',
+          timestamp: new Date().toISOString(),
+        }),
+      );
+    if ([401, 403, 429].includes(status))
+      console.warn(
+        JSON.stringify({
+          event: 'SECURITY_REQUEST_REJECTED',
+          requestId: req.requestId,
+          status,
           timestamp: new Date().toISOString(),
         }),
       );

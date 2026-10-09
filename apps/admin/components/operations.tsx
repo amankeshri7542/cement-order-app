@@ -37,7 +37,14 @@ export function Inventory({
     [product.id],
   );
   useEffect(() => {
-    void load().catch((e) => setError(errorMessage(e)));
+    const refreshVisible = () => {
+      void load()
+        .then(() => setError(''))
+        .catch((e) => setError(errorMessage(e)));
+    };
+    refreshVisible();
+    window.addEventListener('shiv-owner-refresh', refreshVisible);
+    return () => window.removeEventListener('shiv-owner-refresh', refreshVisible);
   }, [load]);
   return (
     <Modal title={`Stock ledger · ${product.name}`} close={close}>
@@ -60,8 +67,11 @@ export function Inventory({
             });
             setKey(crypto.randomUUID());
             form.reset();
-            await load();
-            await refresh();
+            await Promise.all([load(), refresh()]).catch(() =>
+              setError(
+                'Stock movement recorded. The latest balance could not be refreshed; do not repeat the entry. Use Refresh data.',
+              ),
+            );
           } catch (err) {
             setError(errorMessage(err));
           } finally {
@@ -156,7 +166,14 @@ export function DeliveryZones() {
     [],
   );
   useEffect(() => {
-    void load().catch((e) => setError(errorMessage(e)));
+    const refreshVisible = () => {
+      void load()
+        .then(() => setError(''))
+        .catch((e) => setError(errorMessage(e)));
+    };
+    refreshVisible();
+    window.addEventListener('shiv-owner-refresh', refreshVisible);
+    return () => window.removeEventListener('shiv-owner-refresh', refreshVisible);
   }, [load]);
   const zone = editing === 'new' ? null : editing;
   return (
@@ -318,7 +335,14 @@ export function StaffSessions() {
     [error, setError] = useState('');
   const load = useCallback(async () => setSessions(await api<SessionInfo[]>('/auth/sessions')), []);
   useEffect(() => {
-    void load().catch((e) => setError(errorMessage(e)));
+    const refreshVisible = () => {
+      void load()
+        .then(() => setError(''))
+        .catch((e) => setError(errorMessage(e)));
+    };
+    refreshVisible();
+    window.addEventListener('shiv-owner-refresh', refreshVisible);
+    return () => window.removeEventListener('shiv-owner-refresh', refreshVisible);
   }, [load]);
   return (
     <section className="panel operations-panel">
@@ -386,7 +410,14 @@ export function AuditHistory() {
     setCursor(page.nextCursor);
   }, []);
   useEffect(() => {
-    void load().catch((e) => setError(errorMessage(e)));
+    const refreshVisible = () => {
+      void load()
+        .then(() => setError(''))
+        .catch((e) => setError(errorMessage(e)));
+    };
+    refreshVisible();
+    window.addEventListener('shiv-owner-refresh', refreshVisible);
+    return () => window.removeEventListener('shiv-owner-refresh', refreshVisible);
   }, [load]);
   return (
     <section className="panel operations-panel">

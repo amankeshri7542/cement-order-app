@@ -1,3 +1,5 @@
+import { budget } from '../abuse';
+import { getConfig } from '../config';
 import {
   Controller,
   Get,
@@ -467,6 +469,9 @@ export class RateStudioService {
         })) >= 2
       )
         fail('EXTRACTION_BUSY', 'Two sheets are processing. Wait for one to finish.', 429);
+      if (getConfig().EXTRACTION_PAUSED)
+        fail('EXTRACTION_PAUSED', 'Extraction paused. Continue manually.', 503);
+      await budget(tx, 'extraction:global', 'store', getConfig().EXTRACTIONS_PER_DAY, 86400000);
       if (b.attempts >= 5)
         fail('EXTRACTION_LIMIT', 'This batch reached five extraction attempts. Continue manually.');
       await tx.priceUpdateBatch.update({

@@ -1,35 +1,42 @@
 generator client {
   provider = "prisma-client-js"
 }
+
 datasource db {
   provider = "postgresql"
-  url = env("DATABASE_URL")
+  url      = env("DATABASE_URL")
 }
+
 enum Role {
   CUSTOMER
   CONTRACTOR
   ADMIN
 }
+
 enum OrderStatus {
   PENDING_PAYMENT
   CONFIRMED
   PREPARING
   OUT_FOR_DELIVERY
+  DELIVERY_EXCEPTION
   DELIVERED
   CANCELLED
   REFUND_PENDING
   REFUNDED
 }
+
 enum PaymentStatus {
   PENDING
   CAPTURED
   REFUND_PENDING
   REFUNDED
 }
+
 enum PaymentMethod {
   COD
   ONLINE
 }
+
 enum QuoteStatus {
   REQUESTED
   SENT
@@ -37,104 +44,117 @@ enum QuoteStatus {
   REJECTED
   EXPIRED
 }
+
 model User {
-  contractorStatus String @default("NONE")
-  deletedAt DateTime?
-  adminCredential AdminCredential?
-  id String @id @default(cuid())
-  phone String @unique
-  name String @default("")
-  role Role @default(CUSTOMER)
-  language String @default("en")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  sessions Session[]
-  addresses Address[]
-  cart CartItem[]
-  reviews CheckoutReview[]
-  orders Order[]
-  quotes Quote[]
-  notifications Notification[]
-  devices Device[]
+  demandOverrides DemandOverride[]
+  contractorStatus String           @default("NONE")
+  deletedAt        DateTime?
+  adminCredential  AdminCredential?
+  id               String           @id @default(cuid())
+  phone            String           @unique
+  name             String           @default("")
+  role             Role             @default(CUSTOMER)
+  language         String           @default("en")
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  sessions         Session[]
+  addresses        Address[]
+  cart             CartItem[]
+  reviews          CheckoutReview[]
+  orders           Order[]
+  quotes           Quote[]
+  notifications    Notification[]
+  devices          Device[]
+  assignedWork     OwnerWork[]      @relation("WorkOwner")
+  technicalWork    OwnerWork[]      @relation("TechnicalOwner")
+
   @@index([createdAt, id])
 }
+
 model Session {
-  label String @default("Unknown device")
-  lastSeenAt DateTime @default(now())
-  adminVerifiedAt DateTime?
-  id String @id @default(cuid())
-  userId String
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  accessHash String @unique
-  refreshHash String @unique
-  expiresAt DateTime
+  label            String    @default("Unknown device")
+  lastSeenAt       DateTime  @default(now())
+  adminVerifiedAt  DateTime?
+  id               String    @id @default(cuid())
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessHash       String    @unique
+  refreshHash      String    @unique
+  expiresAt        DateTime
   refreshExpiresAt DateTime
-  createdAt DateTime @default(now())
-  devices Device[]
+  createdAt        DateTime  @default(now())
+  devices          Device[]
+
   @@index([userId])
 }
+
 model OtpChallenge {
-  phone String @id
-  codeHash String
-  attempts Int @default(0)
-  sentAt DateTime @default(now())
-  expiresAt DateTime
-  consumed Boolean @default(false)
+  phone       String   @id
+  codeHash    String
+  attempts    Int      @default(0)
+  sentAt      DateTime @default(now())
+  expiresAt   DateTime
+  consumed    Boolean  @default(false)
   windowStart DateTime @default(now())
-  sends Int @default(1)
+  sends       Int      @default(1)
 }
+
 model Address {
-  id String @id @default(cuid())
-  userId String
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  label String
-  name String
-  phone String
-  line1 String
-  area String
-  city String
-  state String @default("Bihar")
-  pincode String
-  landmark String @default("")
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label     String
+  name      String
+  phone     String
+  line1     String
+  area      String
+  city      String
+  state     String   @default("Bihar")
+  pincode   String
+  landmark  String   @default("")
   createdAt DateTime @default(now())
+
   @@index([userId])
 }
+
 model Category {
-  id String @id @default(cuid())
-  name String
-  slug String @unique
+  id       String    @id @default(cuid())
+  name     String
+  slug     String    @unique
   products Product[]
 }
+
 model Product {
-  aliases ProductAlias[]
-  rateItems PriceUpdateBatchItem[]
-  packSize String @default("")
-  minQuantity Int @default(1)
-  quantityStep Int @default(1)
-  movements InventoryMovement[]
-  id String @id @default(cuid())
-  name String
-  brand String
-  categoryId String
-  category Category @relation(fields: [categoryId], references: [id])
-  type String
-  grade String
-  unit String
-  pricePaise Int
-  priceVersion Int @default(1)
-  version Int @default(1)
-  priceUpdatedAt DateTime @default(now())
-  stock Int @default(0)
-  active Boolean @default(true)
-  images String[]
-  description String
+  aliases        ProductAlias[]
+  rateItems      PriceUpdateBatchItem[]
+  packSize       String                 @default("")
+  minQuantity    Int                    @default(1)
+  quantityStep   Int                    @default(1)
+  movements      InventoryMovement[]
+  id             String                 @id @default(cuid())
+  name           String
+  brand          String
+  categoryId     String
+  category       Category               @relation(fields: [categoryId], references: [id])
+  type           String
+  grade          String
+  unit           String
+  pricePaise     Int
+  priceVersion   Int                    @default(1)
+  version        Int                    @default(1)
+  priceUpdatedAt DateTime               @default(now())
+  stock          Int                    @default(0)
+  active         Boolean                @default(true)
+  images         String[]
+  description    String
   recommendedUse String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  priceHistory ProductPriceHistory[]
-  cartItems CartItem[]
-  orderItems OrderItem[]
-  quoteItems QuoteItem[]
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  priceHistory   ProductPriceHistory[]
+  cartItems      CartItem[]
+  orderItems     OrderItem[]
+  quoteItems     QuoteItem[]
+
   @@index([active, categoryId])
   @@index([active, name, id])
   @@index([active, pricePaise, id])
@@ -142,210 +162,302 @@ model Product {
   @@index([active, categoryId, name, id])
   @@index([active, brand, name, id])
 }
+
 model ProductPriceHistory {
-  kind String @default("PRICE")
-  batchId String?
-  batch PriceUpdateBatch? @relation(fields: [batchId], references: [id])
-  id String @id @default(cuid())
-  productId String
-  product Product @relation(fields: [productId], references: [id])
+  kind          String            @default("PRICE")
+  batchId       String?
+  batch         PriceUpdateBatch? @relation(fields: [batchId], references: [id])
+  id            String            @id @default(cuid())
+  productId     String
+  product       Product           @relation(fields: [productId], references: [id])
   oldPricePaise Int
   newPricePaise Int
-  version Int
-  actorId String
-  createdAt DateTime @default(now())
+  version       Int
+  actorId       String
+  createdAt     DateTime          @default(now())
+
   @@index([productId, createdAt])
 }
+
 model CartItem {
-  userId String
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  productId String
-  product Product @relation(fields: [productId], references: [id])
-  quantity Int
-  seenPricePaise Int
+  userId           String
+  user             User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId        String
+  product          Product @relation(fields: [productId], references: [id])
+  quantity         Int
+  seenPricePaise   Int
   seenPriceVersion Int
+
   @@id([userId, productId])
 }
+
 model CheckoutReview {
-  id String @id @default(cuid())
-  userId String
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  snapshot Json
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  snapshot  Json
   expiresAt DateTime
   createdAt DateTime @default(now())
-  order Order?
+  order     Order?
+
   @@index([userId])
 }
+
 model Order {
-  id String @id @default(cuid())
-  number String @unique
-  userId String
-  user User @relation(fields: [userId], references: [id])
-  reviewId String @unique
-  review CheckoutReview @relation(fields: [reviewId], references: [id])
-  idempotencyKey String
-  status OrderStatus
-  address Json
-  deliveryDate String
-  notes String
-  subtotalPaise Int
+  quoteId          String?              @unique
+  quote            Quote?               @relation(fields: [quoteId], references: [id])
+  quoteRevision    Int?
+  work             OwnerWork?
+  deliveryAttempts DeliveryAttempt[]
+  id               String               @id @default(cuid())
+  number           String               @unique
+  userId           String
+  user             User                 @relation(fields: [userId], references: [id])
+  reviewId         String               @unique
+  review           CheckoutReview       @relation(fields: [reviewId], references: [id])
+  idempotencyKey   String
+  status           OrderStatus
+  address          Json
+  deliveryDate     String
+  notes            String
+  subtotalPaise    Int
   deliveryFeePaise Int
-  totalPaise Int
-  reservedUntil DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  items OrderItem[]
-  history OrderStatusHistory[]
-  payment Payment?
+  totalPaise       Int
+  reservedUntil    DateTime?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  items            OrderItem[]
+  history          OrderStatusHistory[]
+  payment          Payment?
+
   @@unique([userId, idempotencyKey])
   @@index([userId, createdAt])
   @@index([status, reservedUntil])
   @@index([createdAt, id])
   @@index([userId, createdAt, id])
 }
+
 model OrderItem {
-  id String @id @default(cuid())
-  orderId String
-  order Order @relation(fields: [orderId], references: [id])
-  productId String
-  product Product @relation(fields: [productId], references: [id])
-  name String
-  unit String
-  quantity Int
-  pricePaise Int
-  priceVersion Int
+  packSize       String  @default("")
+  id             String  @id @default(cuid())
+  orderId        String
+  order          Order   @relation(fields: [orderId], references: [id])
+  productId      String
+  product        Product @relation(fields: [productId], references: [id])
+  name           String
+  unit           String
+  quantity       Int
+  pricePaise     Int
+  priceVersion   Int
   lineTotalPaise Int
+
   @@index([orderId])
 }
+
 model OrderStatusHistory {
-  id String @id @default(cuid())
-  orderId String
-  order Order @relation(fields: [orderId], references: [id])
-  status OrderStatus
-  note String
-  actorId String
-  createdAt DateTime @default(now())
+  id        String      @id @default(cuid())
+  orderId   String
+  order     Order       @relation(fields: [orderId], references: [id])
+  status    OrderStatus
+  note      String
+  actorId   String
+  createdAt DateTime    @default(now())
+
   @@index([orderId, createdAt])
 }
+
 model Payment {
-  id String @id @default(cuid())
-  orderId String @unique
-  order Order @relation(fields: [orderId], references: [id])
-  method PaymentMethod
-  status PaymentStatus @default(PENDING)
-  amountPaise Int
-  razorpayOrderId String? @unique
-  razorpayPaymentId String? @unique
+  movements               FinancialMovement[]
+  id                      String              @id @default(cuid())
+  orderId                 String              @unique
+  order                   Order               @relation(fields: [orderId], references: [id])
+  method                  PaymentMethod
+  status                  PaymentStatus       @default(PENDING)
+  amountPaise             Int
+  razorpayOrderId         String?             @unique
+  razorpayPaymentId       String?             @unique
   initializationStartedAt DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  events PaymentEvent[]
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+  events                  PaymentEvent[]
 }
+
 model PaymentEvent {
-  id String @id
-  paymentId String
-  payment Payment @relation(fields: [paymentId], references: [id])
-  type String
+  id          String   @id
+  paymentId   String
+  payment     Payment  @relation(fields: [paymentId], references: [id])
+  type        String
   payloadHash String
-  createdAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+
   @@index([paymentId])
 }
+
 model Quote {
-  decisionSource String?
-  decisionActorId String?
-  decisionAt DateTime?
-  decisionNote String @default("")
-  id String @id @default(cuid())
-  number String @unique
-  userId String
-  user User @relation(fields: [userId], references: [id])
-  status QuoteStatus @default(REQUESTED)
-  revision Int @default(0)
-  address Json
-  deliveryDate String
-  company String
-  gstin String
-  notes String
-  adminNote String @default("")
-  deliveryFeePaise Int @default(0)
-  totalPaise Int?
-  validUntil DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  items QuoteItem[]
-  revisions QuoteRevision[]
+  deliveryConfirmed Boolean         @default(false)
+  idempotencyKey    String?
+  requestHash       String?
+  order             Order?
+  work              OwnerWork?
+  decisionSource    String?
+  decisionActorId   String?
+  decisionAt        DateTime?
+  decisionNote      String          @default("")
+  id                String          @id @default(cuid())
+  number            String          @unique
+  userId            String
+  user              User            @relation(fields: [userId], references: [id])
+  status            QuoteStatus     @default(REQUESTED)
+  revision          Int             @default(0)
+  address           Json
+  deliveryDate      String
+  company           String
+  gstin             String
+  notes             String
+  adminNote         String          @default("")
+  deliveryFeePaise  Int             @default(0)
+  totalPaise        Int?
+  validUntil        DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  items             QuoteItem[]
+  revisions         QuoteRevision[]
+
+  @@unique([userId, idempotencyKey])
   @@index([userId, createdAt])
   @@index([status, validUntil])
   @@index([createdAt, id])
   @@index([userId, createdAt, id])
 }
+
 model QuoteItem {
-  id String @id @default(cuid())
-  quoteId String
-  quote Quote @relation(fields: [quoteId], references: [id])
-  productId String
-  product Product @relation(fields: [productId], references: [id])
-  name String
-  unit String
-  quantity Int
+  packSize       String  @default("")
+  id             String  @id @default(cuid())
+  quoteId        String
+  quote          Quote   @relation(fields: [quoteId], references: [id])
+  productId      String
+  product        Product @relation(fields: [productId], references: [id])
+  name           String
+  unit           String
+  quantity       Int
   unitPricePaise Int?
+
   @@unique([quoteId, productId])
 }
+
 model QuoteRevision {
-  id String @id @default(cuid())
-  quoteId String
-  quote Quote @relation(fields: [quoteId], references: [id])
-  revision Int
-  snapshot Json
-  actorId String
+  id        String   @id @default(cuid())
+  quoteId   String
+  quote     Quote    @relation(fields: [quoteId], references: [id])
+  revision  Int
+  snapshot  Json
+  actorId   String
   createdAt DateTime @default(now())
+
   @@unique([quoteId, revision])
 }
+
 model StoreSettings {
-  id String @id @default("store")
-  phone String @default("+919297513707")
-  deliveryFeePaise Int @default(50000)
+  id                     String   @id @default("store")
+  phone                  String   @default("+919297513707")
+  deliveryFeePaise       Int      @default(50000)
   freeDeliveryAbovePaise Int?
-  onlinePaymentsEnabled Boolean @default(false)
-  deliveryMessage String @default("Delivery across Patna & Bihar. We will call to confirm your delivery time.")
-  version Int @default(1)
-  updatedAt DateTime @updatedAt
+  onlinePaymentsEnabled  Boolean  @default(false)
+  deliveryMessage        String   @default("Delivery across Patna & Bihar. We will call to confirm your delivery time.")
+  version                Int      @default(1)
+  updatedAt              DateTime @updatedAt
 }
+
 model Notification {
-  id String @id @default(cuid())
-  userId String
-  user User @relation(fields: [userId], references: [id])
-  title String
-  body String
-  orderId String?
-  read Boolean @default(false)
-  sentAt DateTime?
-  attempts Int @default(0)
-  createdAt DateTime @default(now())
+  dedupeKey String?   @unique
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  title     String
+  body      String
+  orderId   String?
+  read      Boolean   @default(false)
+  sentAt    DateTime?
+  attempts  Int       @default(0)
+  createdAt DateTime  @default(now())
+
   @@index([userId, createdAt])
 }
+
+model OwnerWork {
+  id               String    @id @default(cuid())
+  orderId          String?   @unique
+  order            Order?    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  quoteId          String?   @unique
+  quote            Quote?    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  assignedToId     String?
+  assignedTo       User?     @relation("WorkOwner", fields: [assignedToId], references: [id])
+  technicalOwnerId String?
+  technicalOwner   User?     @relation("TechnicalOwner", fields: [technicalOwnerId], references: [id])
+  acknowledgedAt   DateTime?
+  createdAt        DateTime  @default(now())
+  deliveredAt      DateTime?
+  attempts         Int       @default(0)
+  nextAttemptAt    DateTime  @default(now())
+  lastError        String?
+
+  @@index([deliveredAt, nextAttemptAt])
+}
+
+model DeliveryAttempt {
+  id             String   @id @default(cuid())
+  orderId        String
+  order          Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  action         String
+  reason         String?
+  note           String
+  retryDate      String?
+  items          Json?
+  actorId        String
+  idempotencyKey String
+  createdAt      DateTime @default(now())
+
+  @@unique([orderId, idempotencyKey])
+}
+
+model FinancialMovement {
+  id                  String   @id @default(cuid())
+  paymentId           String?
+  payment             Payment? @relation(fields: [paymentId], references: [id])
+  inventoryMovementId String?  @unique
+  kind                String
+  amountPaise         Int
+  actorId             String
+  occurredAt          DateTime @default(now())
+
+  @@unique([paymentId, kind])
+  @@index([occurredAt, kind])
+}
+
 model Device {
-  token String @id
-  userId String
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  platform String
+  token     String   @id
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platform  String
   sessionId String
-  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   updatedAt DateTime @updatedAt
+
   @@index([userId])
   @@index([sessionId])
 }
+
 model AuditLog {
-  id String @id @default(cuid())
-  actorId String
-  event String
-  entityId String
-  details Json
+  id        String   @id @default(cuid())
+  actorId   String
+  event     String
+  entityId  String
+  details   Json
   createdAt DateTime @default(now())
+
   @@index([entityId, createdAt])
   @@index([createdAt, id])
 }
-
 
 enum InventoryKind {
   PURCHASE_IN
@@ -356,138 +468,170 @@ enum InventoryKind {
   DAMAGE
   MANUAL_ADJUSTMENT
 }
+
 model InventoryMovement {
-  id String @id @default(cuid())
-  productId String
-  product Product @relation(fields: [productId], references: [id])
-  kind InventoryKind
-  quantity Int
-  balanceAfter Int
-  actorId String
-  reference String
-  note String
-  idempotencyKey String @unique
-  createdAt DateTime @default(now())
+  id             String        @id @default(cuid())
+  productId      String
+  product        Product       @relation(fields: [productId], references: [id])
+  kind           InventoryKind
+  quantity       Int
+  balanceAfter   Int
+  actorId        String
+  reference      String
+  note           String
+  idempotencyKey String        @unique
+  createdAt      DateTime      @default(now())
+
   @@index([productId, createdAt, id])
   @@index([createdAt, id])
 }
+
 model DeliveryZone {
-  id String @id @default(cuid())
-  name String
-  active Boolean @default(true)
-  deliveryFeePaise Int
-  minimumOrderPaise Int @default(0)
+  id                     String            @id @default(cuid())
+  name                   String
+  active                 Boolean           @default(true)
+  deliveryFeePaise       Int
+  minimumOrderPaise      Int               @default(0)
   freeDeliveryAbovePaise Int?
-  estimate String
-  version Int @default(1)
-  pincodes DeliveryPincode[]
+  estimate               String
+  version                Int               @default(1)
+  pincodes               DeliveryPincode[]
 }
+
 model DeliveryPincode {
-  pincode String @id
-  zoneId String
-  zone DeliveryZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  pincode String       @id
+  zoneId  String
+  zone    DeliveryZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+
   @@index([zoneId])
 }
+
 model AdminCredential {
-  userId String @id
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       String   @id
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   passwordHash String
-  updatedAt DateTime @updatedAt
+  updatedAt    DateTime @updatedAt
 }
+
 model AuthRateLimit {
-  key String @id
-  count Int @default(1)
+  key       String   @id
+  count     Int      @default(1)
   expiresAt DateTime
+
   @@index([expiresAt])
 }
 
 model ProductAlias {
-  id String @id @default(cuid())
-  productId String
-  product Product @relation(fields: [productId], references: [id])
-  alias String
-  normalizedAlias String @unique
-  source String
-  confirmedBy String
-  createdAt DateTime @default(now())
+  id              String   @id @default(cuid())
+  productId       String
+  product         Product  @relation(fields: [productId], references: [id])
+  alias           String
+  normalizedAlias String   @unique
+  source          String
+  confirmedBy     String
+  createdAt       DateTime @default(now())
+
   @@index([productId])
 }
+
 model RateSource {
-  id String @id @default(cuid())
-  sha256 String @unique
-  fileName String
+  id          String             @id @default(cuid())
+  sha256      String             @unique
+  fileName    String
   contentType String
-  size Int
-  storageKey String
-  createdBy String
-  createdAt DateTime @default(now())
-  ocrText String?
-  ocr Json?
-  batches PriceUpdateBatch[]
+  size        Int
+  storageKey  String
+  createdBy   String
+  createdAt   DateTime           @default(now())
+  ocrText     String?
+  ocr         Json?
+  batches     PriceUpdateBatch[]
 }
+
 model PriceUpdateBatch {
-  id String @id @default(cuid())
-  title String
-  sourceType String
-  status String @default("DRAFT")
-  version Int @default(1)
-  idempotencyKey String @unique
-  sourceId String?
-  source RateSource? @relation(fields: [sourceId], references: [id])
-  createdBy String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  publishedBy String?
-  publishedAt DateTime?
-  stage String @default("")
-  attemptToken String?
-  leaseUntil DateTime?
-  attempts Int @default(0)
-  errorCode String?
-  extraction Json?
-  usage Json @default("{}")
-  items PriceUpdateBatchItem[]
-  cards RateCard[]
-  history ProductPriceHistory[]
+  id             String                 @id @default(cuid())
+  title          String
+  sourceType     String
+  status         String                 @default("DRAFT")
+  version        Int                    @default(1)
+  idempotencyKey String                 @unique
+  sourceId       String?
+  source         RateSource?            @relation(fields: [sourceId], references: [id])
+  createdBy      String
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  publishedBy    String?
+  publishedAt    DateTime?
+  stage          String                 @default("")
+  attemptToken   String?
+  leaseUntil     DateTime?
+  attempts       Int                    @default(0)
+  errorCode      String?
+  extraction     Json?
+  usage          Json                   @default("{}")
+  items          PriceUpdateBatchItem[]
+  cards          RateCard[]
+  history        ProductPriceHistory[]
+
   @@index([createdAt, id])
   @@index([status, leaseUntil])
 }
+
 model PriceUpdateBatchItem {
-  id String @id @default(cuid())
-  batchId String
-  batch PriceUpdateBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
-  position Int
-  productId String?
-  product Product? @relation(fields: [productId], references: [id])
-  label String @default("")
-  brand String @default("")
-  specification String @default("")
-  unit String @default("")
-  weight String @default("")
-  proposedPricePaise Int?
-  oldPricePaise Int?
+  id                     String           @id @default(cuid())
+  batchId                String
+  batch                  PriceUpdateBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  position               Int
+  productId              String?
+  product                Product?         @relation(fields: [productId], references: [id])
+  label                  String           @default("")
+  brand                  String           @default("")
+  specification          String           @default("")
+  unit                   String           @default("")
+  weight                 String           @default("")
+  proposedPricePaise     Int?
+  oldPricePaise          Int?
   expectedProductVersion Int?
-  included Boolean @default(true)
-  reviewed Boolean @default(false)
-  acknowledged Boolean @default(false)
-  rememberAlias Boolean @default(false)
-  note String @default("")
-  confidence Float?
-  matchMethod String @default("MANUAL")
-  extracted Json?
-  publishedPricePaise Int?
-  publishedProduct Json?
+  included               Boolean          @default(true)
+  reviewed               Boolean          @default(false)
+  acknowledged           Boolean          @default(false)
+  rememberAlias          Boolean          @default(false)
+  note                   String           @default("")
+  confidence             Float?
+  matchMethod            String           @default("MANUAL")
+  extracted              Json?
+  publishedPricePaise    Int?
+  publishedProduct       Json?
+
   @@unique([batchId, position])
   @@index([productId])
 }
+
 model RateCard {
-  id String @id @default(cuid())
-  batchId String
-  batch PriceUpdateBatch @relation(fields: [batchId], references: [id])
-  format String
-  template String
-  snapshot Json
+  id        String           @id @default(cuid())
+  batchId   String
+  batch     PriceUpdateBatch @relation(fields: [batchId], references: [id])
+  format    String
+  template  String
+  snapshot  Json
   createdBy String
-  createdAt DateTime @default(now())
+  createdAt DateTime         @default(now())
+
   @@index([batchId, createdAt])
+}
+
+model DemandOverride {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind String
+  maxTotalPaise Int
+  expiresAt DateTime
+  usedAt DateTime?
+  @@index([userId, kind, expiresAt])
+}
+model ProductAsset {
+  id String @id
+  url String @unique
+  createdAt DateTime @default(now())
 }

@@ -128,7 +128,7 @@ beforeAll(async () => {
 }, 30000);
 beforeEach(async () => {
   await db.$executeRawUnsafe(
-    'TRUNCATE TABLE "PriceUpdateBatch", "RateSource", "User", "Category", "Product", "Order", "Quote", "AuditLog", "OtpChallenge", "AuthRateLimit", "DeliveryZone", "StoreSettings" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "ProductAsset", "PriceUpdateBatch", "RateSource", "User", "Category", "Product", "Order", "Quote", "AuditLog", "OtpChallenge", "AuthRateLimit", "DeliveryZone", "StoreSettings" RESTART IDENTITY CASCADE',
   );
   for (const [i, role] of (['customer', 'other', 'admin'] as const).entries()) {
     await db.user.create({
@@ -337,6 +337,19 @@ describe('Checkout and stock transaction integrity', () => {
     expect((await db.product.findUniqueOrThrow({ where: { id: 'cement' } })).stock).toBe(90);
   });
   it('does not oversell the last stock to concurrent customers', async () => {
+    // Both wholesale requests were reviewed by the owner; inventory must still arbitrate the last stock.
+    for (const phone of ['+919999999991', '+919999999992'])
+      await request(server)
+        .post('/api/v1/admin/demand-overrides')
+        .set(auth('admin'))
+        .send({
+          phone,
+          kind: 'ORDER',
+          maxTotalPaise: 10000000,
+          reason: 'Reviewed last-stock wholesale demand',
+        })
+        .expect(201);
+
     await db.product.update({ where: { id: 'cement' }, data: { stock: 10 } });
     await cart('customer');
     await cart('other');
@@ -543,8 +556,12 @@ describe('Quotations and admin conflicts', () => {
       .post(`/api/v1/admin/quotes/${q.body.id}/offer`)
       .set(auth('admin'))
       .send({ ...offer, expectedRevision: 2 })
-      .expect(409);
-    expect(await db.quoteRevision.count()).toBe(2);
+      .expect(201);
+    const revised = await db.quote.findUniqueOrThrow({ where: { id: q.body.id } });
+    expect(revised.status).toBe('SENT');
+    expect(revised.decisionAt).toBeNull();
+    expect(revised.decisionSource).toBeNull();
+    expect(await db.quoteRevision.count()).toBe(3);
   });
   it('rejects stale product edits and negative stock at the database boundary', async () => {
     const { id: _id, ...data } = product;
@@ -823,7 +840,8 @@ describe('Pilot operations and privacy', () => {
       .send({ phone: '+918888888899' })
       .expect(429);
     const buckets = await db.authRateLimit.findMany();
-    expect(buckets.length).toBe(2);
+    expect(buckets.filter((b) => b.key.startsWith('send:')).length).toBe(2);
+    expect(buckets.filter((b) => b.key.startsWith('budget:otp:send:global:')).length).toBe(1);
     expect(JSON.stringify(buckets)).not.toContain('127.0.0.1');
   });
   it('lists safe session metadata and restricts session revocation to its owner', async () => {
@@ -1471,5 +1489,377 @@ describe('Rate Studio financial and extraction operations', () => {
       .set(auth('admin'))
       .send(input)
       .expect(409);
+  });
+});
+
+describe('security hardening', () => {
+  it('bounds pending COD demand and leaves rejected stock unchanged', async () => {
+    for (let i = 0; i < 3; i++) await order();
+    await cart();
+    const r = await review();
+    const rejected = await place(r.body.id);
+    expect(rejected.status).toBe(429);
+    expect(rejected.body.error.code).toBe('DEMAND_REVIEW_REQUIRED');
+    expect(await db.order.count()).toBe(3);
+    expect((await db.product.findUniqueOrThrow({ where: { id: 'cement' } })).stock).toBe(70);
+  });
+  it('rejects unverified public product image URLs', async () => {
+    const { id: _id, ...body } = product;
+    const r = await request(server)
+      .post('/api/v1/admin/products')
+      .set(auth('admin'))
+      .send({ ...body, images: ['https://attacker.invalid/tracker.svg'] });
+    expect(r.status).toBe(400);
+    expect(r.body.error.code).toBe('UNAPPROVED_ASSET');
+  });
+  it('stops an already-open owner event stream after session revocation', async () => {
+    const { OwnerWorkController, OwnerWorkService } = await import('../src/owner-work');
+    const session = await db.session.findFirstOrThrow({ where: { userId: 'admin' } });
+    const controller = app.get(OwnerWorkController);
+    const stream = Reflect.apply(controller.events, controller, [
+      { sessionId: session.id, sessionAccessHash: session.accessHash },
+    ]);
+    const received: unknown[] = [];
+    let completed = false;
+    const subscription = stream.subscribe({
+      next: (v: unknown) => received.push(v),
+      complete: () => {
+        completed = true;
+      },
+    });
+    await db.session.delete({ where: { id: session.id } });
+    app.get(OwnerWorkService).stream.next({ type: 'OWNER_WORK_UPDATED' });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    subscription.unsubscribe();
+    expect(received).toEqual([]);
+    expect(completed).toBe(true);
+  });
+});
+
+describe('security hardening concurrency and recovery', () => {
+  const exception = (who = 'admin', amount = 10000000) =>
+    request(server)
+      .post('/api/v1/admin/demand-overrides')
+      .set(auth(who as keyof typeof tokens))
+      .send({
+        phone: '+919999999991',
+        kind: 'ORDER',
+        maxTotalPaise: amount,
+        reason: 'Verified wholesale customer by phone',
+      });
+  it('serializes pending demand and consumes an audited exception once', async () => {
+    for (let i = 0; i < 2; i++) await order();
+    await cart();
+    const a = await review(),
+      b = await review();
+    const results = await Promise.all([place(a.body.id), place(b.body.id)]);
+    expect(results.map((r) => r.status).sort()).toEqual([201, 429]);
+    expect(await db.order.count()).toBe(3);
+    await exception('customer').expect(403);
+    await exception().expect(201);
+    const extra = await order();
+    expect(await db.auditLog.count({ where: { event: 'DEMAND_OVERRIDE_USED' } })).toBe(1);
+    expect(await db.auditLog.count({ where: { event: 'DEMAND_OVERRIDE_GRANTED' } })).toBe(1);
+    await cart();
+    const next = await review();
+    await place(next.body.id).then((r) => expect(r.status).toBe(429));
+    const retry = await place(extra.reviewId, 'customer', extra.idempotencyKey);
+    expect(retry.status).toBe(201);
+    expect(retry.body.id).toBe(extra.id);
+    expect((await db.product.findUniqueOrThrow({ where: { id: 'cement' } })).stock).toBe(60);
+  });
+  it('blocks single-customer stock monopolization, allowing bounded owner-approved wholesale', async () => {
+    await cart('customer', 80);
+    const r = await review();
+    await place(r.body.id).then((v) => expect(v.body.error.code).toBe('DEMAND_REVIEW_REQUIRED'));
+    await exception('admin', 100).expect(201);
+    await place(r.body.id).then((v) => expect(v.status).toBe(429));
+    const approval = await exception().expect(201);
+    await db.demandOverride.update({
+      where: { id: approval.body.id },
+      data: { expiresAt: new Date(0) },
+    });
+    await place(r.body.id).then((v) => expect(v.status).toBe(429));
+    await exception().expect(201);
+    await place(r.body.id).then((v) => expect(v.status).toBe(201));
+    expect((await db.product.findUniqueOrThrow({ where: { id: 'cement' } })).stock).toBe(20);
+  });
+  it('limits concurrent quotations and retains keyed retry recovery', async () => {
+    const body = {
+      items: [{ productId: 'cement', quantity: 100 }],
+      addressId: 'customer-address',
+      deliveryDate: date,
+      idempotencyKey: randomUUID(),
+    };
+    const send = (key: string) =>
+      request(server)
+        .post('/api/v1/quotes')
+        .set(auth())
+        .send({ ...body, idempotencyKey: key });
+    const first = await send(body.idempotencyKey).expect(201);
+    await send(randomUUID()).expect(201);
+    const results = await Promise.all([send(randomUUID()), send(randomUUID())]);
+    expect(results.map((r) => r.status).sort()).toEqual([201, 429]);
+    expect((await send(body.idempotencyKey).expect(201)).body.id).toBe(first.body.id);
+    await request(server)
+      .post(`/api/v1/admin/quotes/${first.body.id}/acknowledge`)
+      .set(auth('admin'))
+      .send({})
+      .expect(201);
+    await send(randomUUID()).expect(201);
+    expect((await db.product.findUniqueOrThrow({ where: { id: 'cement' } })).stock).toBe(100);
+  });
+  it('enforces store-wide caps across customers and does not release old pending stock', async () => {
+    const { getConfig } = await import('../src/config');
+    const c = getConfig();
+    const old = c.PENDING_COD_STORE;
+    c.PENDING_COD_STORE = 1;
+    try {
+      await cart();
+      await cart('other');
+      const a = await review(),
+        b = await review('other');
+      const results = await Promise.all([place(a.body.id), place(b.body.id, 'other')]);
+      expect(results.map((r) => r.status).sort()).toEqual([201, 429]);
+      await db.order.updateMany({ data: { createdAt: new Date(0) } });
+      await app.get(OrdersService).expireReservations();
+      expect(await db.order.count({ where: { status: 'CONFIRMED' } })).toBe(1);
+      expect((await db.product.findUniqueOrThrow({ where: { id: 'cement' } })).stock).toBe(90);
+    } finally {
+      c.PENDING_COD_STORE = old;
+    }
+  });
+  it('persists global OTP budgets, emits a threshold warning, and ignores spoofed forwarded IPs', async () => {
+    const { getConfig } = await import('../src/config');
+    const c = getConfig();
+    const old = c.OTP_SENDS_PER_DAY;
+    c.OTP_SENDS_PER_DAY = 2;
+    try {
+      for (let i = 0; i < 2; i++)
+        await request(server)
+          .post('/api/v1/auth/otp/request')
+          .send({ phone: `+91988888888${i}` })
+          .expect(201);
+      const denied = await request(server)
+        .post('/api/v1/auth/otp/request')
+        .set('X-Forwarded-For', '203.0.113.9')
+        .send({ phone: '+919888888889' });
+      expect(denied.status).toBe(429);
+      expect(
+        await db.auditLog.count({
+          where: { event: 'SECURITY_BUDGET_WARNING', entityId: 'otp:send:global' },
+        }),
+      ).toBe(1);
+      expect(await db.authRateLimit.count({ where: { key: { startsWith: 'send:600000:' } } })).toBe(
+        1,
+      );
+    } finally {
+      c.OTP_SENDS_PER_DAY = old;
+    }
+  });
+  it('holds resource concurrency across DB clients and honours emergency switches', async () => {
+    const { leased } = await import('../src/abuse');
+    const { getConfig } = await import('../src/config');
+    const c = getConfig();
+    let release!: () => void;
+    const held = leased(
+      db,
+      'security-test',
+      1,
+      10000,
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    while (!release) await new Promise((r) => setTimeout(r, 5));
+    try {
+      await expect(leased(db, 'security-test', 1, 10000, async () => true)).rejects.toMatchObject({
+        status: 429,
+      });
+    } finally {
+      release();
+      await held;
+    }
+    expect(await leased(db, 'security-test', 1, 10000, async () => true)).toBe(true);
+    c.DEMAND_PAUSED = true;
+    c.OTP_PAUSED = true;
+    try {
+      await cart();
+      await request(server)
+        .post('/api/v1/checkout/review')
+        .set(auth())
+        .send({ addressId: 'customer-address', deliveryDate: date, paymentMethod: 'COD' })
+        .expect(503);
+      await request(server)
+        .post('/api/v1/auth/otp/request')
+        .send({ phone: '+919888888881' })
+        .expect(503);
+    } finally {
+      c.DEMAND_PAUSED = false;
+      c.OTP_PAUSED = false;
+    }
+  });
+  it.each(['rotation', 'demotion', 'expiry', 'credential change'])(
+    'closes owner streams on %s',
+    async (change) => {
+      const { OwnerWorkController, OwnerWorkService } = await import('../src/owner-work');
+      const session = await db.session.findFirstOrThrow({ where: { userId: 'admin' } });
+      const controller = app.get(OwnerWorkController);
+      const stream = Reflect.apply(controller.events, controller, [
+        { sessionId: session.id, sessionAccessHash: session.accessHash },
+      ]);
+      const received: unknown[] = [];
+      let completed = false;
+      const subscription = stream.subscribe({
+        next: (v: unknown) => received.push(v),
+        complete: () => {
+          completed = true;
+        },
+      });
+      if (change === 'rotation')
+        await db.session.update({
+          where: { id: session.id },
+          data: { accessHash: hash('rotated') },
+        });
+      if (change === 'demotion')
+        await db.user.update({ where: { id: 'admin' }, data: { role: 'CUSTOMER' } });
+      if (change === 'expiry')
+        await db.session.update({ where: { id: session.id }, data: { expiresAt: new Date(0) } });
+      if (change === 'credential change')
+        await db.adminCredential.create({
+          data: {
+            userId: 'admin',
+            passwordHash: await hashPassword('changed-passphrase-for-test'),
+          },
+        });
+      app.get(OwnerWorkService).stream.next({ type: 'OWNER_WORK_UPDATED' });
+      await new Promise((r) => setTimeout(r, 100));
+      subscription.unsubscribe();
+      expect(received).toEqual([]);
+      expect(completed).toBe(true);
+    },
+  );
+});
+
+describe('security hardening public photo boundary (simulated object storage)', () => {
+  it('validates bytes before storage, only publishes recorded assets, and bounds the HTTP body', async () => {
+    const { S3Client } = await import('@aws-sdk/client-s3');
+    const sharp = (await import('sharp')).default;
+    const { getConfig } = await import('../src/config');
+    const c = getConfig();
+    const before = {
+      R2_ENDPOINT: c.R2_ENDPOINT,
+      R2_BUCKET: c.R2_BUCKET,
+      R2_ACCESS_KEY_ID: c.R2_ACCESS_KEY_ID,
+      R2_SECRET_ACCESS_KEY: c.R2_SECRET_ACCESS_KEY,
+      R2_PUBLIC_URL: c.R2_PUBLIC_URL,
+    };
+    Object.assign(c, {
+      R2_ENDPOINT: 'https://storage.example.invalid',
+      R2_BUCKET: 'simulated-public',
+      R2_ACCESS_KEY_ID: 'simulation',
+      R2_SECRET_ACCESS_KEY: 'simulation',
+      R2_PUBLIC_URL: 'https://assets.example.invalid',
+    });
+    const send = vi.spyOn(S3Client.prototype, 'send').mockResolvedValue({} as never);
+    const upload = (bytes: Buffer, type = 'image/png', who: keyof typeof tokens = 'admin') =>
+      request(server)
+        .post('/api/v1/admin/uploads')
+        .set(auth(who))
+        .set('Content-Type', type)
+        .send(bytes);
+    try {
+      const bytes = await sharp({
+        create: { width: 16, height: 16, channels: 3, background: '#fff' },
+      })
+        .png()
+        .toBuffer();
+      await upload(bytes, 'image/png', 'customer').expect(403);
+      await upload(Buffer.from('<svg onload="alert(1)"/>')).expect(400);
+      await upload(bytes, 'image/jpeg').expect(400);
+      await upload(bytes.subarray(0, 30)).expect(400);
+      await upload(Buffer.alloc(5 * 1024 * 1024 + 1)).expect(413);
+      expect(send).not.toHaveBeenCalled();
+      const photo = await upload(bytes).expect(201);
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(
+        await db.productAsset.findUnique({ where: { url: photo.body.publicUrl } }),
+      ).not.toBeNull();
+      const { id: _id, ...body } = product;
+      await request(server)
+        .post('/api/v1/admin/products')
+        .set(auth('admin'))
+        .send({ ...body, images: [photo.body.publicUrl] })
+        .expect(201);
+      await request(server)
+        .post('/api/v1/admin/products')
+        .set(auth('admin'))
+        .send({
+          ...body,
+          images: [
+            'https://assets.example.invalid/products/00000000-0000-4000-8000-000000000000.webp',
+          ],
+        })
+        .expect(400);
+      c.UPLOADS_PAUSED = true;
+      await upload(bytes).expect(503);
+      c.UPLOADS_PAUSED = false;
+    } finally {
+      Object.assign(c, before);
+      c.UPLOADS_PAUSED = false;
+      send.mockRestore();
+    }
+  });
+});
+
+describe('security hardening extraction provider budget (simulated OCR/AI)', () => {
+  it('stops extraction while paused or over the persistent global budget, leaving prices untouched', async () => {
+    const { getConfig } = await import('../src/config');
+    const c = getConfig();
+    const old = c.EXTRACTIONS_PER_DAY;
+    c.EXTRACTIONS_PER_DAY = 1;
+    const { RateProviders } = await import('../src/rate-studio/providers');
+    const providers = app.get(RateProviders);
+    const ocr = vi
+      .spyOn(providers, 'ocr')
+      .mockResolvedValue({ text: extractedRate.sourceText, layout: [], usage: { images: 1 } });
+    const interpret = vi
+      .spyOn(providers, 'interpret')
+      .mockResolvedValue({ extraction: { rows: [extractedRate] }, usage: { model: 'simulation' } });
+    try {
+      const { batch: first } = await uploadRate(await newRate('IMAGE'));
+      c.EXTRACTION_PAUSED = true;
+      await request(server)
+        .post(`${rateBase}/batches/${first.id}/extract`)
+        .set(auth('admin'))
+        .send({ expectedVersion: first.version })
+        .expect(503);
+      expect(ocr).not.toHaveBeenCalled();
+      c.EXTRACTION_PAUSED = false;
+      await request(server)
+        .post(`${rateBase}/batches/${first.id}/extract`)
+        .set(auth('admin'))
+        .send({ expectedVersion: first.version })
+        .expect(201);
+      await finishRate(first.id);
+      const { batch: second } = await uploadRate(await newRate('IMAGE'));
+      await request(server)
+        .post(`${rateBase}/batches/${second.id}/extract`)
+        .set(auth('admin'))
+        .send({ expectedVersion: second.version })
+        .expect(429);
+      expect(ocr).toHaveBeenCalledTimes(1);
+      expect(interpret).toHaveBeenCalledTimes(1);
+      expect(await db.productPriceHistory.count()).toBe(0);
+      expect(
+        await db.auditLog.count({
+          where: { event: 'SECURITY_BUDGET_WARNING', entityId: 'extraction:global' },
+        }),
+      ).toBe(1);
+    } finally {
+      c.EXTRACTIONS_PER_DAY = old;
+      c.EXTRACTION_PAUSED = false;
+    }
   });
 });

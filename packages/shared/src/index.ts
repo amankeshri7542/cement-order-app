@@ -6,6 +6,7 @@ export const orderStatuses = [
   'CONFIRMED',
   'PREPARING',
   'OUT_FOR_DELIVERY',
+  'DELIVERY_EXCEPTION',
   'DELIVERED',
   'CANCELLED',
   'REFUND_PENDING',
@@ -17,7 +18,8 @@ export const transitions: Record<OrderStatus, readonly OrderStatus[]> = {
   PENDING_PAYMENT: ['CONFIRMED', 'CANCELLED'],
   CONFIRMED: ['PREPARING', 'CANCELLED'],
   PREPARING: ['OUT_FOR_DELIVERY', 'CANCELLED'],
-  OUT_FOR_DELIVERY: ['DELIVERED'],
+  OUT_FOR_DELIVERY: ['DELIVERED', 'DELIVERY_EXCEPTION'],
+  DELIVERY_EXCEPTION: ['OUT_FOR_DELIVERY', 'CANCELLED'],
   DELIVERED: [],
   CANCELLED: ['REFUND_PENDING'],
   REFUND_PENDING: ['REFUNDED'],
@@ -39,7 +41,7 @@ export const refreshSchema = z.strictObject({
   refreshToken: z.string().min(32).max(200).optional(),
 });
 export const profileSchema = z.strictObject({
-  name: text(100),
+  name: text(100).optional(),
   language: z.enum(['en', 'hi']),
   contractor: z.boolean().optional(),
 });
@@ -102,6 +104,7 @@ export const orderStatusSchema = z.strictObject({
   note: z.string().trim().max(500).default(''),
 });
 export const quoteRequestSchema = z.strictObject({
+  idempotencyKey: z.string().uuid().optional(),
   items: z
     .array(z.strictObject({ productId: id, quantity: z.number().int().min(1).max(100000) }))
     .min(1)
@@ -117,6 +120,11 @@ export const quoteRequestSchema = z.strictObject({
   notes: z.string().trim().max(1500).default(''),
 });
 export const quoteOfferSchema = z.strictObject({
+  deliveryDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  deliveryConfirmed: z.boolean().default(false),
   expectedRevision: z.number().int().min(0),
   items: z
     .array(z.strictObject({ productId: id, unitPricePaise: paise.refine((v) => v > 0) }))
@@ -181,6 +189,7 @@ export type CartLine = {
   product: Product;
 };
 export type ReviewLine = {
+  packSize?: string;
   productId: string;
   name: string;
   unit: string;
@@ -214,6 +223,10 @@ export type Payment = {
   razorpayPaymentId: string | null;
 };
 export type Order = {
+  quoteId?: string | null;
+  quoteRevision?: number | null;
+  work?: OwnerWork | null;
+  deliveryAttempts?: DeliveryAttempt[];
   id: string;
   number: string;
   userId: string;
@@ -231,6 +244,9 @@ export type Order = {
   user?: User;
 };
 export type Quote = {
+  work?: OwnerWork | null;
+  deliveryConfirmed?: boolean;
+  order?: { id: string; number: string } | null;
   decisionSource?: string | null;
   decisionNote?: string;
   decisionAt?: string | null;
@@ -247,6 +263,7 @@ export type Quote = {
   validUntil: string | null;
   createdAt: string;
   items: {
+    packSize?: string;
     productId: string;
     name: string;
     quantity: number;
@@ -299,6 +316,46 @@ export function totals(
 }
 
 export type Page<T> = { items: T[]; nextCursor: string | null };
+export type OwnerWork = {
+  id: string;
+  orderId: string | null;
+  quoteId: string | null;
+  assignedTo?: Pick<User, 'id' | 'name' | 'phone'> | null;
+  technicalOwner?: Pick<User, 'id' | 'name' | 'phone'> | null;
+  acknowledgedAt: string | null;
+  deliveredAt: string | null;
+  createdAt: string;
+  attempts: number;
+  lastError: string | null;
+};
+export type DeliveryAttempt = {
+  id: string;
+  action: string;
+  reason: string | null;
+  note: string;
+  retryDate: string | null;
+  createdAt: string;
+};
+export const deliveryActionSchema = z.strictObject({
+  action: z.enum(['REPORT', 'RETRY', 'RETURN']),
+  reason: z.enum(['UNAVAILABLE', 'REFUSED', 'INACCESSIBLE']).optional(),
+  note: text(500),
+  retryDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  items: z
+    .array(
+      z.strictObject({
+        productId: id,
+        sellableQuantity: z.number().int().min(0).max(100000),
+        damagedQuantity: z.number().int().min(0).max(100000),
+      }),
+    )
+    .max(50)
+    .optional(),
+  idempotencyKey: z.string().uuid(),
+});
 export const inventorySchema = z.strictObject({
   kind: z.enum(['PURCHASE_IN', 'WALK_IN_SALE', 'RETURN', 'DAMAGE', 'MANUAL_ADJUSTMENT']),
   quantity: z

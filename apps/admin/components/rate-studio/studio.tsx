@@ -148,6 +148,21 @@ export function RateStudio({
     };
   }, [loadHistory]);
   useEffect(() => {
+    const refreshVisible = () => {
+      void Promise.all([
+        api<Providers>(`${base}/providers`).then(setProviders),
+        loadHistory(),
+        batch && !dirty && !busy
+          ? api<RateBatch>(`${base}/batches/${batch.id}`).then(adopt)
+          : Promise.resolve(),
+      ])
+        .then(() => setError(''))
+        .catch((e) => setError(errorMessage(e)));
+    };
+    window.addEventListener('shiv-owner-refresh', refreshVisible);
+    return () => window.removeEventListener('shiv-owner-refresh', refreshVisible);
+  }, [adopt, batch, busy, dirty, loadHistory]);
+  useEffect(() => {
     if (!dirty) return;
     const warn = (event: BeforeUnloadEvent) => {
       event.preventDefault();
@@ -516,7 +531,7 @@ export function RateStudio({
                   <p>
                     {batch.sourceType === 'IMAGE'
                       ? 'Upload a clear screenshot or photograph. PNG, JPG or WebP, up to 5 MB.'
-                      : 'Enter the rates you confirmed with your supplier. Notes stay with each reviewed row.'}
+                      : 'Enter the prices customers will pay. If a supplier sheet shows purchase costs, enter your agreed selling prices before review.'}
                   </p>
                 </div>
               )}
@@ -782,7 +797,7 @@ export function RateStudio({
                         disabled={locked || !row.included}
                         onChange={(e) => change(index, { reviewed: e.target.checked }, true)}
                       />
-                      I checked the product, unit and price
+                      I checked the product, unit and customer selling price
                     </label>
                     {row.issues.some((issue) => !issue.blocking) && (
                       <label className="check">
@@ -978,7 +993,7 @@ export function RateStudio({
           <div className="form-stack">
             <p>
               {confirm === 'publish'
-                ? `${included.length} reviewed rates will be checked against current product versions and published together. Customers will see the new rates and must review changed checkout totals.`
+                ? `${included.length} customer selling prices will be checked against current product versions and published together. These must be the prices customers will pay, not supplier purchase costs. Customers must review changed checkout totals.`
                 : confirm === 'cancel'
                   ? 'This sheet will be closed. Published catalogue prices will not change.'
                   : 'Your unsaved edits will be discarded. The last saved draft stays in price sheet history.'}

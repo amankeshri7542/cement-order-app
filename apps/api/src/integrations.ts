@@ -9,16 +9,18 @@ import {
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { productPhoto } from './product-assets';
+import { budget, leased } from './abuse';
 import { cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getMessaging } from 'firebase-admin/messaging';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { deviceSchema, uploadSchema } from '@shiv/shared';
+import { deviceSchema } from '@shiv/shared';
 import { Admin, AuthRequest, Contract, Input, fail } from './http';
 import { getConfig } from './config';
 import { Db } from './db';
 import { OrdersService } from './orders';
+import { OwnerWorkService } from './owner-work';
 
 @Injectable()
 export class Maintenance implements OnModuleInit, OnModuleDestroy {
@@ -27,6 +29,7 @@ export class Maintenance implements OnModuleInit, OnModuleDestroy {
   constructor(
     @Inject(Db) private db: Db,
     @Inject(OrdersService) private orders: OrdersService,
+    @Inject(OwnerWorkService) private ownerWork: OwnerWorkService,
   ) {}
   onModuleInit() {
     if (getConfig().NODE_ENV === 'test') return;
@@ -57,6 +60,19 @@ export class Maintenance implements OnModuleInit, OnModuleDestroy {
     if (this.busy) return;
     this.busy = true;
     try {
+      const expired = await this.db.authRateLimit.findMany({
+        where: { expiresAt: { lt: new Date() } },
+        select: { key: true },
+        take: 200,
+      });
+      if (expired.length)
+        await this.db.authRateLimit.deleteMany({
+          where: { key: { in: expired.map((row) => row.key) }, expiresAt: { lt: new Date() } },
+        });
+      await this.db.demandOverride.deleteMany({
+        where: { expiresAt: { lt: new Date(Date.now() - 30 * 86400000) } },
+      });
+      await this.ownerWork.dispatch();
       await this.orders.expireReservations();
       await this.db.quote.updateMany({
         where: { status: 'SENT', validUntil: { lt: new Date() } },
@@ -126,9 +142,9 @@ export class IntegrationsController {
   }
   @Admin()
   @Post('admin/uploads')
-  @Contract(uploadSchema)
-  async upload(@Input(uploadSchema) body: z.infer<typeof uploadSchema>) {
+  async upload(@Req() req: AuthRequest) {
     const c = getConfig();
+    if (c.UPLOADS_PAUSED) fail('UPLOADS_PAUSED', 'Photo uploads are paused.', 503);
     if (!(
       c.R2_ENDPOINT &&
       c.R2_BUCKET &&
@@ -137,23 +153,50 @@ export class IntegrationsController {
       c.R2_PUBLIC_URL
     ))
       fail('STORAGE_NOT_CONFIGURED', 'Configure object storage before uploading images.', 503);
-    const ext = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }[body.contentType];
-    const key = `products/${randomUUID()}.${ext}`;
-    const client = new S3Client({
-      region: 'auto',
-      endpoint: c.R2_ENDPOINT,
-      credentials: { accessKeyId: c.R2_ACCESS_KEY_ID, secretAccessKey: c.R2_SECRET_ACCESS_KEY },
+    await this.db.atomic(async (tx) => {
+      await budget(tx, 'photo:staff', req.user.id, 30);
+      await budget(tx, 'photo:global', 'store', 200, 86400000);
     });
-    const uploadUrl = await getSignedUrl(
-      client,
-      new PutObjectCommand({
-        Bucket: c.R2_BUCKET,
-        Key: key,
-        ContentType: body.contentType,
-        ContentLength: body.size,
-      }),
-      { expiresIn: 120 },
-    );
-    return { uploadUrl, publicUrl: `${c.R2_PUBLIC_URL.replace(/\/$/, '')}/${key}` };
+    return leased(this.db, 'photo', 2, 60000, async () => {
+      const bytes = await productPhoto(
+        req.body,
+        String(req.headers['content-type'] || '').split(';')[0]!,
+      );
+      const key = `products/${randomUUID()}.webp`;
+      const client = new S3Client({
+        region: 'auto',
+        endpoint: c.R2_ENDPOINT,
+        maxAttempts: 1,
+        credentials: { accessKeyId: c.R2_ACCESS_KEY_ID!, secretAccessKey: c.R2_SECRET_ACCESS_KEY! },
+      });
+      try {
+        await client.send(
+          new PutObjectCommand({
+            Bucket: c.R2_BUCKET,
+            Key: key,
+            Body: bytes,
+            ContentType: 'image/webp',
+            ContentLength: bytes.length,
+            CacheControl: 'public, max-age=31536000, immutable',
+          }),
+          { abortSignal: AbortSignal.timeout(30000) },
+        );
+      } catch {
+        fail('STORAGE_UNAVAILABLE', 'Photo storage is unavailable. Try again later.', 503);
+      } finally {
+        client.destroy();
+      }
+      const publicUrl = `${new URL(c.R2_PUBLIC_URL!).origin}/${key}`;
+      await this.db.productAsset.create({ data: { id: key, url: publicUrl } });
+      await this.db.auditLog.create({
+        data: {
+          actorId: req.user.id,
+          event: 'PRODUCT_PHOTO_VALIDATED',
+          entityId: key,
+          details: { bytes: bytes.length },
+        },
+      });
+      return { publicUrl };
+    });
   }
 }

@@ -33,7 +33,9 @@ export class RateStorage {
     if (!detected || detected !== claimedType)
       fail('RATE_SOURCE_TYPE', 'Upload a JPEG, PNG or WebP image matching its declared type.');
     try {
-      const image = sharp(bytes, { limitInputPixels: maxPixels, failOn: 'warning' });
+      const image = sharp(bytes, { limitInputPixels: maxPixels, failOn: 'warning' }).timeout({
+        seconds: 5,
+      });
       const metadata = await image.metadata();
       if (
         !metadata.width ||

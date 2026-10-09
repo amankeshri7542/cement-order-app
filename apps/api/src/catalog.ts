@@ -1,3 +1,4 @@
+import { approvedAssets } from './product-assets';
 import {
   Controller,
   Delete,
@@ -55,6 +56,7 @@ export class CatalogController {
         brand: z.string().max(80).default(''),
         availability: z.enum(['all', 'in', 'out']).default('all'),
         sort: z.enum(['name', 'price_asc', 'price_desc', 'newest']).default('name'),
+        lowStock: z.enum(['true', 'false']).optional(),
       })
       .safeParse(query);
     if (!parsed.success) fail('INVALID_FILTER', 'Check the catalogue filters.');
@@ -70,6 +72,7 @@ export class CatalogController {
         where: {
           AND: [
             admin ? {} : { active: true },
+            admin && f.lowStock === 'true' ? { active: true, stock: { lt: 25 } } : {},
             page.after,
             f.q
               ? {
@@ -138,6 +141,7 @@ export class CatalogController {
     if (body.minQuantity % body.quantityStep)
       fail('INVALID_QUANTITY', 'Minimum quantity must be a multiple of the quantity step.');
     const product = await this.db.atomic(async (tx) => {
+      await approvedAssets(tx, body.images);
       const p = await tx.product.create({
         data: { ...body, stock: 0 },
         include: { category: true },
@@ -177,6 +181,7 @@ export class CatalogController {
     if (data.minQuantity % data.quantityStep)
       fail('INVALID_QUANTITY', 'Minimum quantity must be a multiple of the quantity step.');
     const product = await this.db.atomic(async (tx) => {
+      await approvedAssets(tx, data.images);
       const old = await tx.product.findUniqueOrThrow({ where: { id } });
       if (old.version !== expectedVersion)
         fail('CONFLICT', 'Product changed. Refresh before saving.', 409);
@@ -311,10 +316,27 @@ export class AccountController {
     @Input(addressSchema) body: z.infer<typeof addressSchema>,
     @Req() req: AuthRequest,
   ) {
-    if ((await this.db.address.count({ where: { userId: req.user.id } })) >= 20)
-      fail('ADDRESS_LIMIT', 'You can save up to 20 addresses.');
-    return this.db.address.create({ data: { ...body, userId: req.user.id } });
+    return this.db.atomic(async (tx) => {
+      if ((await tx.address.count({ where: { userId: req.user.id } })) >= 20)
+        fail('ADDRESS_LIMIT', 'You can save up to 20 addresses.');
+      return tx.address.create({ data: { ...body, userId: req.user.id } });
+    });
   }
+  @Patch('addresses/:id')
+  @Contract(addressSchema)
+  async editAddress(
+    @Param('id') id: string,
+    @Input(addressSchema) body: z.infer<typeof addressSchema>,
+    @Req() req: AuthRequest,
+  ) {
+    const result = await this.db.address.updateMany({
+      where: { id, userId: req.user.id },
+      data: body,
+    });
+    if (!result.count) fail('NOT_FOUND', 'Address not found.', 404);
+    return this.db.address.findUniqueOrThrow({ where: { id } });
+  }
+
   @Delete('addresses/:id') async deleteAddress(@Param('id') id: string, @Req() req: AuthRequest) {
     const result = await this.db.address.deleteMany({ where: { id, userId: req.user.id } });
     if (!result.count) fail('NOT_FOUND', 'Address not found.', 404);

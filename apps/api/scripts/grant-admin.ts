@@ -12,10 +12,20 @@ async function main() {
       );
     const passwordHash = await hashPassword(password);
     await db.$transaction(async (tx) => {
+      await tx.storeSettings.upsert({
+        where: { id: 'store' },
+        update: {},
+        create: {
+          id: 'store',
+          deliveryFeePaise: 0,
+          onlinePaymentsEnabled: false,
+          deliveryMessage: 'Contact the store to confirm delivery coverage and charges.',
+        },
+      });
       const user = await tx.user.upsert({
         where: { phone },
-        create: { phone, role: 'ADMIN', name: 'Store owner' },
-        update: { role: 'ADMIN' },
+        create: { phone, role: 'ADMIN', name: process.argv[3] || 'Store owner' },
+        update: { role: 'ADMIN', ...(process.argv[3] ? { name: process.argv[3] } : {}) },
       });
       await tx.adminCredential.upsert({
         where: { userId: user.id },

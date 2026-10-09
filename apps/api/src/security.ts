@@ -1,3 +1,4 @@
+import { budget } from './abuse';
 import { createHmac, randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 import type { Prisma, Session, User } from '@prisma/client';
 import { Db } from './db';
@@ -51,6 +52,9 @@ export async function assertSession(
 }
 
 export async function limitOtp(db: Db, ip: string, action: 'send' | 'verify') {
+  const c = getConfig();
+  if (c.OTP_PAUSED)
+    fail('OTP_UNAVAILABLE', 'Sign-in is temporarily paused. Contact the store.', 503);
   const now = new Date();
   const ipHash = createHmac('sha256', getConfig().OTP_HASH_SECRET)
     .update(`otp-ip:${ip}`)
@@ -72,6 +76,13 @@ export async function limitOtp(db: Db, ip: string, action: 'send' | 'verify') {
       where: { key: { in: expired.map((row) => row.key) }, expiresAt: { lte: now } },
     });
   const allowed = await db.atomic(async (tx) => {
+    await budget(
+      tx,
+      `otp:${action}:global`,
+      'store',
+      action === 'send' ? c.OTP_SENDS_PER_DAY : c.OTP_CHECKS_PER_DAY,
+      86400000,
+    );
     let allowed = true;
     for (const [duration, limit] of budgets) {
       const key = `${action}:${duration}:${ipHash}`;

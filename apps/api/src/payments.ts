@@ -174,6 +174,14 @@ export class PaymentsService {
         data: { id: eventId, paymentId: payment.id, type: 'payment.captured', payloadHash },
       });
       if (payment.status !== 'PENDING') return { duplicate: true };
+      await tx.financialMovement.create({
+        data: {
+          paymentId: payment.id,
+          kind: 'COLLECTION',
+          amountPaise: payment.amountPaise,
+          actorId: 'razorpay',
+        },
+      });
       const late = payment.order.status === 'CANCELLED';
       if (!late && payment.order.status !== 'PENDING_PAYMENT')
         fail('PAYMENT_CONFLICT', 'Order is not awaiting payment.', 409);
@@ -269,6 +277,14 @@ export class PaymentsService {
         await tx.paymentEvent.create({
           data: { id: eventId, paymentId: p.id, type: body.event, payloadHash: hash(raw) },
         });
+        await tx.financialMovement.create({
+          data: {
+            paymentId: p.id,
+            kind: 'REFUND',
+            amountPaise: p.amountPaise,
+            actorId: 'razorpay',
+          },
+        });
         await tx.payment.update({ where: { id: p.id }, data: { status: 'REFUNDED' } });
         await tx.order.update({
           where: { id: p.orderId },
@@ -301,6 +317,7 @@ export class PaymentsService {
       const p = await tx.payment.findUnique({ where: { orderId }, include: { order: true } });
       if (!p || p.method !== 'COD')
         fail('INVALID_PAYMENT_STATE', 'This is not a cash-on-delivery order.');
+      if (p.status === (refund ? 'REFUNDED' : 'CAPTURED')) return { ok: true, duplicate: true };
       if (
         refund
           ? p.status !== 'REFUND_PENDING'
@@ -311,6 +328,14 @@ export class PaymentsService {
       await tx.payment.update({
         where: { id: p.id },
         data: { status: refund ? 'REFUNDED' : 'CAPTURED' },
+      });
+      await tx.financialMovement.create({
+        data: {
+          paymentId: p.id,
+          kind: refund ? 'REFUND' : 'COLLECTION',
+          amountPaise: p.amountPaise,
+          actorId,
+        },
       });
       if (refund)
         await tx.order.update({

@@ -70,3 +70,22 @@ export async function uploadFile(
     );
   return data;
 }
+
+export async function uploadProductPhoto(file: File, retry = true): Promise<{ publicUrl: string }> {
+  if (file.size > 5 * 1024 * 1024) throw new Error('Choose an image under 5 MiB.');
+  const response = await fetch(`${API_URL}/admin/uploads`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': file.type },
+    body: file,
+    signal: AbortSignal.timeout(60000),
+  });
+  if (response.status === 401 && retry) {
+    await api('/auth/refresh', 'POST', {}, false);
+    return uploadProductPhoto(file, false);
+  }
+  const data = await response.json();
+  if (!response.ok)
+    throw new ApiError(data.error?.code || 'ERROR', data.error?.message || 'Image upload failed.');
+  return data;
+}

@@ -14,6 +14,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { AuthController, AuthGuard, AuthService } from './auth';
 import { AccountController, CatalogController, Events } from './catalog';
 import { Db } from './db';
+import { OwnerWorkController, OwnerWorkService } from './owner-work';
 import { Errors, Public } from './http';
 import { getConfig } from './config';
 import { OrdersController, OrdersService } from './orders';
@@ -35,6 +36,7 @@ class HealthController {
     ThrottlerModule.forRoot([{ ttl: 60000, limit: process.env.NODE_ENV === 'test' ? 10000 : 120 }]),
   ],
   controllers: [
+    OwnerWorkController,
     AuthController,
     CatalogController,
     AccountController,
@@ -48,6 +50,7 @@ class HealthController {
     RateStudioController,
   ],
   providers: [
+    OwnerWorkService,
     Db,
     RateStudioService,
     RateProviders,
@@ -73,6 +76,7 @@ export async function createApp() {
     raw({ type: ['image/png', 'image/jpeg', 'image/webp'], limit: '5mb' }),
     (req: Request, res: Response, next: NextFunction) => rateJson(req, res, next),
   );
+  app.use('/api/v1/admin/uploads', raw({ type: '*/*', limit: '5mb' }));
   app.use(helmet());
   app.enableCors({
     origin: c.CORS_ORIGINS.split(','),
@@ -111,6 +115,10 @@ export async function createApp() {
           .build(),
       ),
     );
+  const server = app.getHttpServer();
+  server.headersTimeout = 10000;
+  server.requestTimeout = 30000;
+  server.keepAliveTimeout = 5000;
   app.enableShutdownHooks();
   return app;
 }

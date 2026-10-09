@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { Category, Product, money, productSchema } from '@shiv/shared';
 import { Plus, Search, Pencil, Package, Upload } from 'lucide-react';
-import { api, errorMessage } from '../lib/api';
+import { api, errorMessage, uploadProductPhoto } from '../lib/api';
 import { Badge, Empty, Field, Modal } from './ui';
 import { Inventory } from './operations';
 
@@ -217,7 +217,7 @@ export function ProductEditor({
       active: f.get('active') === 'on',
       description: String(f.get('description')),
       recommendedUse: String(f.get('recommendedUse')),
-      images: image ? [image] : [],
+      images: [...(image ? [image] : []), ...(product?.images.slice(1) || [])],
     };
     const parsed = productSchema.safeParse(data);
     if (!parsed.success) {
@@ -345,17 +345,7 @@ export function ProductEditor({
               if (!file) return;
               setBusy(true);
               try {
-                const r = await api<{ uploadUrl: string; publicUrl: string }>(
-                  '/admin/uploads',
-                  'POST',
-                  { contentType: file.type, size: file.size },
-                );
-                const put = await fetch(r.uploadUrl, {
-                  method: 'PUT',
-                  headers: { 'Content-Type': file.type },
-                  body: file,
-                });
-                if (!put.ok) throw new Error('Image upload failed.');
+                const r = await uploadProductPhoto(file);
                 setImage(r.publicUrl);
               } catch (err) {
                 setError(errorMessage(err));
