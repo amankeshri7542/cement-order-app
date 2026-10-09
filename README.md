@@ -10,6 +10,18 @@ The [pilot implementation report](docs/PILOT_IMPLEMENTATION.md) covers inventory
 
 [Rate Studio](docs/RATE_STUDIO.md) adds private rate-sheet imports, reviewed bulk price publication and deterministic shareable rate cards. Manual workflows work without AI credentials.
 
+## Local review handoff
+
+[Current feature inventory and release evidence](docs/REVIEW_HANDOFF.md) · [Proposed V2 integration phases](docs/V2_INTEGRATION_ROADMAP.md).
+
+Start with [the tested local setup and manual checklist](docs/LOCAL_TESTING.md):
+`npm ci`, `npm run local:setup`, `npm run local:start`.
+Use separate customer/owner browser profiles. Practice accounts, exact ₹20,000 COD
+smoke test, recovery instructions and test-database isolation are documented there.
+See [progress and verification scope](docs/LOCAL_PROGRESS.md) and
+[Hindi family review / staging prerequisites](docs/FAMILY_REVIEW.md). Nothing is deployed.
+The [follow-up reliability review and build order](docs/RELIABILITY_REVIEW.md) records the cart report, additional fixes, tradeoffs and the recommended release sequence.
+
 ## Run locally
 
 Use Node.js 22.12+ and PostgreSQL 16+. From this repository:
@@ -56,7 +68,7 @@ Each staff sign-in requires phone OTP plus the staff passphrase. Re-running `adm
 
 - **Products:** edit specifications, selling units, pack description, minimum/step quantities, prices, visibility, and images. Record stock through the immutable **Stock ledger**, including purchases, walk-in sales, returns, damage, and signed manual corrections. Existing balances cannot be overwritten.
 - **Orders:** inspect customer/payment/history; prepare, dispatch, and deliver; record cash received; cancel eligible orders and restore stock; record cash refunds; reconcile verified Razorpay payments.
-- **Bulk quotes:** versioned prices, custom delivery charge, and expiry. Customer decisions and staff-recorded decisions have separate provenance; staff must record evidence. Accepted quotes still require manual store follow-up.
+- **Bulk quotes:** versioned prices, custom delivery charge, and expiry. Customer decisions and staff-recorded decisions have separate provenance; staff must record evidence. Accepted current revisions convert idempotently to managed COD orders after transport confirmation and availability checks. Changed terms require renewed consent.
 - **Customers:** recent orders, contact details, and audited contractor verification. Asking for contractor access does not grant pricing or credit privileges.
 - **Finance & settings:** contact/WhatsApp, online-payment switch, staff sessions, and delivery zones. Each pincode belongs to one zone with active status, charge, minimum order, free-delivery threshold, and delivery estimate.
 - **Store activity:** paginated audit history. Product, order, customer, and quotation lists use server-side pages.
@@ -71,11 +83,14 @@ Set `TEST_DATABASE_URL` to a **separate database whose name ends in `_test`**. T
 # First create the empty test database and apply migrations to it:
 DATABASE_URL="$TEST_DATABASE_URL" npm run db:migrate
 npm run lint
-npm run typecheck
+npm run typecheck --workspaces --if-present
 npm test
-npm run test:integration
+npm run test:integration -w @shiv/api
 npm run test:e2e
-npm run build
+npm run build -w @shiv/shared
+npm run build -w @shiv/api
+npm run build -w @shiv/admin
+npm run build -w @shiv/mobile
 ```
 
 Browser tests start separate API/admin/customer servers on 4010/3001/8082. They use Chrome (`npx playwright install chrome` if needed). Unit and integration tests cover server pricing, transaction races, OTP/session security, authorization, webhook replay, refunds and quote revisions. Browser tests cover ordering, admin management, quotations, localization, mobile sizing and network recovery. See [pilot implementation report](docs/PILOT_IMPLEMENTATION.md) for actual verification results and limits.

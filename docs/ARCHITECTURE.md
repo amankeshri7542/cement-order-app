@@ -29,7 +29,7 @@ Adding to cart records the current database price/version for later comparison. 
 
 Razorpay orders are created from saved order totals. Callback signature and provider verification cannot override amount/currency/order checks. Raw webhook HMAC is compared in constant time; event IDs and payload hashes are persisted transactionally. Captured payment changes state once. Uncertain gateway creation is kept pending for reconciliation, never blindly retried. Full refunds are verified through provider events; partial refunds are outside V1.
 
-Bulk requests record products/quantities, site, date, GST/company/contact, and notes. Admin can price/revise a quote with expiry. Customers accept only the revision they actually reviewed. Revisions remain audited. Accepted quotes are commercial agreements for store follow-up; automatic quote-to-paid-order conversion is outside this first implementation.
+Bulk requests record products/quantities, site, date, GST/company/contact and notes. Staff offers are revisioned; customers accept the revision they reviewed. An accepted current revision converts idempotently to one managed COD order after stock, material, quantity, date and transport checks. Negotiated prices, freight, pack sizes and consent provenance are retained. Changed terms require a fresh offer and acceptance; conversion does not record payment. See [the local readiness record](LOCAL_PROGRESS.md) for current owner workflows, interface changes and verification limits.
 
 ## Screens and visual direction
 
