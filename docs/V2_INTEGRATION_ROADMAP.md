@@ -1,6 +1,12 @@
 # V2 integration proposal — 9 October 2026
 
-**Proposal only.** No website redesign, live migration, provider setup or hosting/domain change was performed. V1 COD review remains separate from this roadmap. [REVIEW_HANDOFF.md](REVIEW_HANDOFF.md) lists what already exists.
+**Local foundation implemented, 9 October 2026.** The authorized `apps/storefront`
+direction now has a bounded read-only P2 prototype. See current source discovery in
+[V2_DISCOVERY_REGISTER.md](V2_DISCOVERY_REGISTER.md) and implementation/verification
+in [V2_STOREFRONT_FOUNDATION.md](V2_STOREFRONT_FOUNDATION.md). P1 business decisions and
+P2 family/content/device acceptance remain pending. No live migration, provider
+setup or hosting/domain change is authorized. V1 COD review remains separate;
+[REVIEW_HANDOFF.md](REVIEW_HANDOFF.md) records its baseline.
 
 ## Evidence inspected read-only
 
@@ -81,11 +87,16 @@ Hindi/English must cover form labels, errors, stock/price consent and delivery s
 | Priority / phase | Deliverable | Concrete exit criteria | Decision required |
 | --- | --- | --- | --- |
 | **P0 — close V1 review gates** | Review exact pushed SHA/CI, supervised family COD practice, dependency and infrastructure plan | Chrome/WebKit and backend evidence tied to source; real phones/zoom tested; business defaults signed off; staging TLS/OTP/storage/runtime roles/backups/alerts verified before public access; payments remain off | Approve a technical operator, pending-demand/return rules, test recipients and staging budget; separate staging authorization |
-| **P1 — discovery/data agreement** | Legacy usage inventory, source-of-truth contracts, approved real content and unit/contact catalogue | Every collection classified retain/migrate/archive; active attendance usage established; ambiguous amounts/units/phones quarantined; no production writes | Choose monorepo storefront vs separate repo; confirm attendance usage and physical-stock owner |
-| **P2 — public storefront prototype** | Proposed bilingual design and read-only catalogue against new API in an isolated preview | Family approves real content/design; no public cache of personal data; typed API/pagination/error contracts; keyboard/360px/200% zoom and performance budget measured on actual test devices | Approve theme/content and whether public pages show exact prices or request a reviewed quote |
+| **P1 — discovery/data agreement** | Legacy usage inventory, source-of-truth contracts, approved real content and unit/contact catalogue | Every collection classified retain/migrate/archive; active attendance usage established; ambiguous amounts/units/phones quarantined; no production writes | Monorepo storefront selected for local prototype; confirm attendance usage, approved content/units and physical-stock owner |
+| **P2 — public storefront prototype** | Bilingual read-only local prototype implemented; see foundation evidence, with family/device approval pending | Family approves real content/design; no public cache of personal data; typed API/pagination/error contracts; keyboard/360px/200% zoom and performance budget measured on actual test devices | Approve theme/content and whether public pages show exact prices or request a reviewed quote |
 | **P3 — shared commerce journeys** | Login, cart/review/COD, bulk quotes and customer history in storefront | Website/app see same price/version/history; concurrent last-stock, stale-price consent, idempotent retry, ownership/Origin/session/CSP tests pass across clients; owner receives one task; no live payments | Confirm customer account linking and delivery/wholesale policy |
 | **P4 — migration rehearsal** | Versioned importer/mapping ledger, archive and explicit opening-stock procedure | Two dry runs produce identical mappings; full reconciliation; family signs stock/units; backups restore; pre-write and post-write rollback rehearsed with synthetic data | Approve record dispositions/retention, import boundary and later cutover window |
 | **P5 — authorized staged cutover** | Controlled preview, provider/edge/storage/monitoring proof and one-writer rollout | Test recipients complete COD/quote/device cases; no public/dev data mix; observable alarms; rollback threshold/owner confirmed; signed acceptance before any domain switch | Explicit hosting/domain/migration authorization; none is granted by this roadmap |
 | **P6 — optional operations and AI** | Staff module/archive if justified; bounded AI FAQ assistance; later payment/credit/invoice work as separate proposals | Attendance preserves records/payroll meaning with restricted access; AI is read-only with source citations, no invented stock/rates/order acceptance, cost limits and human escalation; each additional feature has independent acceptance | Prioritize based on real usage, costs and legal/accounting needs |
 
-Do not promise dates before P1 establishes data quality and current staff use. The next product decision is **whether to use the recommended `apps/storefront` with one NestJS/PostgreSQL commerce backend**. Attendance usage is the first accompanying discovery question, not a reason to delete old records.
+Do not promise migration/cutover dates before P1 establishes data quality and
+current staff use. `apps/storefront` with one NestJS/PostgreSQL commerce backend
+is selected for this local phase. The next decisions are approved shop content,
+per-SKU units and attendance/payroll usage; unanswered questions preserve all
+legacy records and workflows. P0 external gates remain open without preventing
+this reversible local prototype.

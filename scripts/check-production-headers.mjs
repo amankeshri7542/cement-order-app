@@ -1,21 +1,24 @@
-/* global document */
+/* global document, performance */
 import { chromium, webkit } from '@playwright/test';
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:https';
 import { request } from 'node:http';
+import { gzipSync } from 'node:zlib';
 
 // API responses are simulated; only the one-day self-signed localhost TLS fixture bypasses certificate trust. CSP stays enforced.
 const evidence = [];
 const servers = [];
+const evidenceDir = process.env.HEADER_EVIDENCE_DIR || '.local/security-hardening';
 for (const [port, upstream] of [
   [3443, 3002],
   [8443, 8083],
+  [3445, 3005],
 ]) {
   const server = createServer(
     {
-      key: readFileSync('.local/security-hardening/tls.key'),
-      cert: readFileSync('.local/security-hardening/tls.crt'),
+      key: readFileSync(`${evidenceDir}/tls.key`),
+      cert: readFileSync(`${evidenceDir}/tls.crt`),
     },
     (req, res) => {
       const forward = request(
@@ -48,9 +51,22 @@ try {
       for (const [frontend, url] of [
         ['owner', 'https://localhost:3443'],
         ['customer', 'https://localhost:8443'],
+        ['storefront', 'https://localhost:3445'],
       ]) {
         const page = await browser.newPage({ ignoreHTTPSErrors: true });
         const errors = [];
+        const scripts = new Map();
+        const scriptReads = [];
+        const collectScript = (response) => {
+          if (response.request().resourceType() === 'script' && response.ok()) {
+            scriptReads.push(
+              response
+                .body()
+                .then((body) => scripts.set(response.url(), gzipSync(body).byteLength)),
+            );
+          }
+        };
+        if (frontend === 'storefront') page.on('response', collectScript);
         page.on('pageerror', (error) => errors.push(error.message));
         await page.route('https://api.security.invalid/**', (route) =>
           route.fulfill({
@@ -78,6 +94,30 @@ try {
         await page.waitForFunction(
           () => document.body.innerText.length > 40 && document.querySelector('button'),
         );
+        if (frontend === 'storefront') {
+          assert(headers['cache-control'].includes('no-store'));
+          await page.getByRole('button', { name: 'हिन्दी', exact: true }).click();
+          assert.equal(await page.locator('html').getAttribute('lang'), 'hi');
+          await page.getByRole('button', { name: 'English', exact: true }).click();
+          page.off('response', collectScript);
+          await Promise.all(scriptReads);
+          const gzipScriptBytes = [...scripts.values()].reduce((sum, size) => sum + size, 0);
+          assert(
+            gzipScriptBytes > 0 && gzipScriptBytes <= 450 * 1024,
+            'Storefront initial scripts exceed 450 KiB gzip budget',
+          );
+          const timing = await page.evaluate(() => ({
+            navigation: performance.getEntriesByType('navigation').map((entry) => entry.toJSON()),
+            paint: performance.getEntriesByType('paint').map((entry) => entry.toJSON()),
+          }));
+          evidence.push({
+            frontend,
+            engine,
+            gzipScriptBytes,
+            timing,
+            note: 'Local TLS, unthrottled production build; unavailable API simulated',
+          });
+        }
         const violations = [];
         page.on('console', (message) => {
           if (/Content Security Policy|script-src/i.test(message.text()))
@@ -107,7 +147,7 @@ try {
           assert(!next.headers()['content-security-policy'].includes(`'nonce-${nonce}'`));
         }
         await page.screenshot({
-          path: `.local/security-hardening/production-${engine}-${frontend}.png`,
+          path: `${evidenceDir}/production-${engine}-${frontend}.png`,
         });
         evidence.push({
           engine,
@@ -123,12 +163,9 @@ try {
       await browser.close();
     }
   }
-  writeFileSync(
-    '.local/security-hardening/production-headers.json',
-    JSON.stringify(evidence, null, 2),
-  );
+  writeFileSync(`${evidenceDir}/production-headers.json`, JSON.stringify(evidence, null, 2));
   console.log(
-    'PASS: production Chrome/WebKit owner and customer UI render with enforced CSP; injected scripts blocked. API responses simulated.',
+    'PASS: production Chrome/WebKit owner, customer and storefront UI render with enforced CSP; injected scripts blocked. API responses simulated.',
   );
 } finally {
   for (const server of servers) {

@@ -12,6 +12,12 @@ The [pilot implementation report](docs/PILOT_IMPLEMENTATION.md) covers inventory
 
 ## Local review handoff
 
+The [V2 storefront foundation](docs/V2_STOREFRONT_FOUNDATION.md) adds a bilingual,
+read-only Next.js shop in `apps/storefront`, sharing the existing commerce API.
+Run `LOCAL_ADMIN_PORT=3002 npm run local:start` on this machine; the storefront is
+at <http://localhost:3003>. This is a local review prototype; family content,
+physical-phone acceptance, hosting and transactional website flows remain pending.
+
 [Current feature inventory and release evidence](docs/REVIEW_HANDOFF.md) · [Proposed V2 integration phases](docs/V2_INTEGRATION_ROADMAP.md).
 
 Start with [the tested local setup and manual checklist](docs/LOCAL_TESTING.md):
@@ -49,6 +55,7 @@ Run each app in its own terminal:
 npm run dev:api    # API: http://localhost:4000/api/v1
 npm run dev:admin  # Admin: http://localhost:3000
 npm run dev:web    # Customer browser preview: http://localhost:8081
+npm run dev:storefront # Read-only public storefront: http://localhost:3003
 npm run dev:mobile # Expo customer app for Android/iOS
 ```
 
