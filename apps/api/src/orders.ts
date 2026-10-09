@@ -17,6 +17,7 @@ import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import {
   cartItemSchema,
+  cartMergeSchema,
   deliveryActionSchema,
   checkoutSchema,
   CheckoutReview,
@@ -108,6 +109,67 @@ export class OrdersService {
       });
     });
     return this.cart(userId);
+  }
+  async mergeCart(userId: string, input: z.infer<typeof cartMergeSchema>) {
+    const items = input.items
+      .map(({ productId, quantity }) => ({ productId, quantity }))
+      .sort((a, b) => a.productId.localeCompare(b.productId));
+    return this.db.atomic(async (tx) => {
+      // Serialize retries even when the receipt returns without changing cart rows.
+      await tx.user.update({ where: { id: userId }, data: { updatedAt: new Date() } });
+      const receiptId = `cart-merge:${userId}:${input.idempotencyKey}`;
+      const previous = await tx.auditLog.findUnique({ where: { id: receiptId } });
+      if (previous) {
+        if (
+          JSON.stringify((previous.details as { items: typeof items }).items.map((item) => [item.productId, item.quantity])) !==
+          JSON.stringify(items.map((item) => [item.productId, item.quantity]))
+        )
+          fail('IDEMPOTENCY_CONFLICT', 'This merge key was already used for another cart.', 409);
+        return this.cart(userId, tx);
+      }
+      const cart = await this.cart(userId, tx);
+      const quantities = new Map(cart.map((line) => [line.productId, line.quantity]));
+      for (const item of items)
+        quantities.set(item.productId, (quantities.get(item.productId) || 0) + item.quantity);
+      if (quantities.size > 50) fail('CART_LIMIT', 'A cart can contain up to 50 products.');
+      const products = new Map(
+        (await tx.product.findMany({ where: { id: { in: [...quantities.keys()] } } })).map(
+          (product) => [product.id, product],
+        ),
+      );
+      for (const [productId, quantity] of quantities) {
+        if (quantity > 10000) fail('INVALID_QUANTITY', 'A cart quantity cannot exceed 10000.');
+        const product = products.get(productId);
+        if (!product?.active || product.stock < quantity)
+          fail('OUT_OF_STOCK', 'That quantity is not available.', 409);
+        validateQuantity(product, quantity);
+      }
+      for (const item of items) {
+        const product = products.get(item.productId)!;
+        const quantity = quantities.get(item.productId)!;
+        await tx.cartItem.upsert({
+          where: { userId_productId: { userId, productId: item.productId } },
+          create: {
+            userId,
+            productId: item.productId,
+            quantity,
+            seenPricePaise: product.pricePaise,
+            seenPriceVersion: product.priceVersion,
+          },
+          update: { quantity },
+        });
+      }
+      await tx.auditLog.create({
+        data: {
+          id: receiptId,
+          actorId: userId,
+          event: 'CART_MERGED',
+          entityId: userId,
+          details: { items },
+        },
+      });
+      return this.cart(userId, tx);
+    });
   }
   async review(userId: string, input: z.infer<typeof checkoutSchema>, ip = 'internal') {
     validDelivery(input.deliveryDate);
@@ -594,6 +656,12 @@ export class OrdersController {
     @Req() req: AuthRequest,
   ) {
     return this.orders.setCart(req.user.id, body);
+  }
+  @Post('cart/merge') @Contract(cartMergeSchema) mergeCart(
+    @Input(cartMergeSchema) body: z.infer<typeof cartMergeSchema>,
+    @Req() req: AuthRequest,
+  ) {
+    return this.orders.mergeCart(req.user.id, body);
   }
   @Post('checkout/review') @Contract(checkoutSchema) review(
     @Input(checkoutSchema) body: z.infer<typeof checkoutSchema>,

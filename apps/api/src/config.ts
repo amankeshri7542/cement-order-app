@@ -21,6 +21,32 @@ export const configSchema = z.object({
   GOOGLE_VISION_API_KEY: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
   RATE_OPENAI_MODEL: z.string().max(200).optional(),
+  ASSISTANT_PROVIDER: z.enum(['fallback', 'openai', 'simulation']).default('fallback'),
+  ASSISTANT_OPENAI_API_KEY: z.string().min(1).optional(),
+  ASSISTANT_MODEL: z
+    .string()
+    .regex(/^[a-zA-Z0-9._-]{1,100}$/)
+    .optional(),
+  ASSISTANT_INPUT_MICRO_USD_PER_MILLION: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(1_000_000_000)
+    .optional(),
+  ASSISTANT_OUTPUT_MICRO_USD_PER_MILLION: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(1_000_000_000)
+    .optional(),
+  ASSISTANT_DAILY_BUDGET_MICRO_USD: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(1_000_000_000)
+    .default(1_000_000),
+  ASSISTANT_REQUESTS_PER_HOUR: z.coerce.number().int().min(1).max(1000).default(30),
+  ASSISTANT_REQUESTS_PER_DAY: z.coerce.number().int().min(1).max(100000).default(500),
   RATE_SOURCE_BUCKET: z.string().optional(),
   DEMAND_PAUSED: z
     .enum(['true', 'false'])
@@ -65,6 +91,18 @@ export function getConfig(): Config {
       `Invalid configuration: ${parsed.error.issues.map((i) => i.path.join('.')).join(', ')}`,
     );
   const candidate = parsed.data;
+  if (candidate.NODE_ENV === 'production' && candidate.ASSISTANT_PROVIDER === 'simulation')
+    throw new Error('Assistant simulation is forbidden in production');
+  if (
+    candidate.ASSISTANT_PROVIDER === 'openai' &&
+    !(
+      candidate.ASSISTANT_OPENAI_API_KEY &&
+      candidate.ASSISTANT_MODEL &&
+      candidate.ASSISTANT_INPUT_MICRO_USD_PER_MILLION &&
+      candidate.ASSISTANT_OUTPUT_MICRO_USD_PER_MILLION
+    )
+  )
+    throw new Error('Assistant requires its own credentials, model and approved token prices');
   for (const origin of candidate.CORS_ORIGINS.split(',')) {
     const u = new URL(origin);
     if (

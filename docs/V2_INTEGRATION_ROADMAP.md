@@ -1,12 +1,22 @@
-# V2 integration proposal — 9 October 2026
+# V2 integration roadmap — 9 October 2026
 
-**Local foundation implemented, 9 October 2026.** The authorized `apps/storefront`
-direction now has a bounded read-only P2 prototype. See current source discovery in
-[V2_DISCOVERY_REGISTER.md](V2_DISCOVERY_REGISTER.md) and implementation/verification
-in [V2_STOREFRONT_FOUNDATION.md](V2_STOREFRONT_FOUNDATION.md). P1 business decisions and
-P2 family/content/device acceptance remain pending. No live migration, provider
-setup or hosting/domain change is authorized. V1 COD review remains separate;
-[REVIEW_HANDOFF.md](REVIEW_HANDOFF.md) records its baseline.
+**Customer experience implementation in progress, 9 October 2026.** The revised
+brief authorizes the visual redesign, shared customer commerce and public Shiv
+Assistant with optional voice in this milestone. Their code is implemented on
+`codex/v2-customer-experience`; final browser, production, visual and exact-commit
+CI evidence is still being assembled. Implementation is not release acceptance.
+
+The read-only foundation remains preserved at commit
+`8816dd913fcb1b67a9102ea2163953f8959b19a2` on
+`codex/v2-storefront-foundation`, [draft PR #2](https://github.com/amankeshri7542/cement-order-app/pull/2).
+See [the foundation report](V2_STOREFRONT_FOUNDATION.md),
+[source discovery](V2_DISCOVERY_REGISTER.md),
+[feature parity](V2_CUSTOMER_FEATURE_PARITY.md),
+[design and motion](V2_DESIGN_MOTION.md) and [local review steps](LOCAL_TESTING.md).
+Code implementation, feature-branch publication and CI are authorized. Deployment,
+merge, domain cutover, production migration, real messages, payment activation and
+attendance replacement remain separate actions. Approved content, live-provider
+credentials and actual-phone acceptance are pending.
 
 ## Evidence inspected read-only
 
@@ -20,9 +30,9 @@ Git CLI could not clone the private projects with its current credentials; the e
 
 Source anchors: website `src/components/Products.tsx`, `QuotationBuilder.tsx`, `Hero.tsx`, `About.tsx`, `src/app/page.tsx`; backend `src/models/{Product,Quotation,Admin,Staff,Attendance}.js`, `src/controllers/{auth,quotation,attendance,chat}.controller.js`, `src/services/rag.service.js`, `src/app.js`. These are discovery findings, not a fresh security certification of the legacy systems.
 
-## Recommendation: one commerce backend, new storefront in the ordering monorepo
+## Selected architecture: one commerce backend, storefront in the ordering monorepo
 
-Add **`apps/storefront`** as a separate public Next.js frontend when V2 is authorized. Keep `apps/admin` for Father/Uncle, `apps/mobile` for the customer app, and the existing NestJS/PostgreSQL API as the only authority for products, prices, order ownership, stock and customer history. Reuse reviewed business content/assets from the old website after checking accuracy and image rights. Keep the legacy website deployable during discovery and cutover planning.
+**`apps/storefront`** is the separate public Next.js frontend. `apps/admin` remains for Father/Uncle, `apps/mobile` remains the customer app, and the existing NestJS/PostgreSQL API is the only authority for products, prices, order ownership, stock and customer history. Reuse reviewed business content/assets from the old website after checking accuracy and image rights. Keep the legacy website deployable during discovery and cutover planning. The alternatives below retain the original decision rationale.
 
 | Choice | Advantages | Costs / failure modes | Best fit |
 | --- | --- | --- | --- |
@@ -39,7 +49,8 @@ Both choices must call the same new commerce API. Do not run two stock masters o
 | Migrate selectively | Clean product metadata/images, approved categories/units and legacy enquiry archive; verified customer links where consent/ownership can be established | Human mapping and reconciliation; preserve source IDs/snapshots; image bytes pass new validation; no invented stock |
 | Replace | Website's client-priced enquiry cart for transactional commerce, legacy price/availability reads, bearer-JWT admin/short-PIN identity for new commerce access | New API review/consent/idempotency, rotating sessions, role/ownership checks and approved origins; do not reuse legacy tokens/PIN hashes |
 | Preserve pending usage decision | Staff, attendance, QR/location evidence and old operational records | Do not delete, merge into customers, recompute payroll or expose through public commerce API |
-| Defer | Public AI chat/voice, attendance rewrite, online payment activation, multiwarehouse, partial fulfilment, credit/deposits and statutory GST invoicing | Separate business/security acceptance, budget and provider/device proof; no hidden expansion of V1 |
+| Restore now | Public Shiv Assistant, contextual material questions, bounded conversation and explicit optional voice input | Separate NestJS public tool allowlist; approved FAQ/catalogue fallback; credentials and conservative persistent cost reservations on backend; provider simulations labelled; editable transcript before sending |
+| Defer | Attendance rewrite, online payment activation, multiwarehouse, partial fulfilment, credit/deposits and statutory GST invoicing | Separate business/security acceptance, budget and provider/device proof; no hidden expansion of V1 |
 
 ## Contract and data differences
 
@@ -74,13 +85,17 @@ The source contains real implementations for staff records, QR/location attendan
 
 Next discovery must ask Father/Uncle which staff use it, who corrects attendance and whether pay depends on it; then, with read-only data authorization, compare recent genuine records/logins against seed data. If active, integrate a separate restricted staff module after documented time-zone/privacy/payroll rules. If historical, keep an access-controlled read-only archive with agreed retention. Do not expose staff location/identity through the public website or AI tools.
 
-## Proposed design: a recognisable local construction shop
+## Current customer experience
 
-Use the real storefront and loading/material photos, an approved location/delivery map, factual opening hours and the family's own explanation of how ordering works. A warm concrete background, charcoal text, construction yellow for primary actions and restrained brick/steel accents fit the existing shop identity. Bold material names and tabular, large ₹ prices should dominate; avoid generic luxury gradients, stock-photo promises and decorative motion around essential tasks.
+The selected material sample-board direction uses mineral ivory, deep ink blue and restrained clay accents, a compact bilingual shop sign, distinct retail/bulk routes and category-specific illustrations. Two locally rendered explorations and live reference observations are recorded in [V2_DESIGN_MOTION.md](V2_DESIGN_MOTION.md). Approved product images take precedence; illustrations do not stand in for documentary shop photographs. Family/gallery/credentials and visiting information remain explicitly pending until accurate copy, asset rights, contact numbers and location are approved.
 
-Suggested page sequence: shop/location and **Browse materials / सामान देखें**, category/material grid, unit/pack/availability explanation, delivery-pincode check, how COD works, **Request bulk rate / थोक भाव पूछें**, verified shop/team/award content, contact/hours and legal terms. Product pages explain bag weight/grade/use, minimum/step, current price and delivery terms. Quote estimates must look different from accepted order totals. Phone/WhatsApp buttons are explicit user actions, not automatic messages.
+Implemented customer surfaces include discovery/search/filter/sort, product detail, two- or three-material comparison, phone sign-in, guest-cart merge, account/address management, COD review and uncertain-result recovery, order history/tracking/cancellation/reorder, and revisioned quotation request/accept/reject/conversion links. Guest merges and uncertain submissions retain their request keys; carts and orders do not create a second inventory authority. Shared cart reconciliation uses explicit refresh and online/focus/visibility recovery paths. Quotations remain enquiries/offers until the owner converts the accepted current revision to an order.
 
-Hindi/English must cover form labels, errors, stock/price consent and delivery status—not just headings. Use readable Devanagari, persistent language preference, large touch targets, visible focus, semantic buttons/labels, keyboard operation, reduced motion and polite status announcements. Acceptance includes 360px layouts, real 200% zoom, slow/offline recovery and Father/Uncle completing tasks on their actual phones. Verify founding year/contact/address/claims before copywriting; the older site's source and the newer store defaults do not yet establish one approved business profile.
+Shiv Assistant is lazy-loaded on explicit use, with contextual product entry points, bounded session conversation, cancel/retry/reset, accessible focus handling and text input throughout. Optional voice starts only when chosen and requires an editable transcript before sending. The NestJS dispatcher allows only public products, delivery, approved shop content and FAQs; staff, attendance, private quotations and customer records are excluded. Default approved-content/catalogue fallback is useful without AI credentials. Live OpenAI activation requires separately verified backend key/model/pricing configuration; simulated-provider tests are not evidence of live AI. Conservative budget reservations use configured approved pricing rather than provider-invoiced usage.
+
+Foundation fixes cover CLOSED event-stream recovery and stale delivery-result refresh. Production header verification now owns isolated temporary builds/listeners, tests applicable nonce presence/rotation and CSP in Chrome/WebKit, and records lazy assistant script cost separately from the unchanged **450 KiB gzip** core budget. CI includes the storefront production dependency audit. These are implemented verification paths; their final results belong in the customer-experience handoff. The original native WebKit hard-navigation diagnostic remains separately runnable with retained evidence.
+
+Hindi/English acceptance covers form labels, errors, stock/price consent and delivery status, readable Devanagari, persistent language preference, large touch targets, visible focus and polite announcements. Motion is brief and interruptible, with reduced-motion support. Review at 360px, 390px, tablet and desktop widths, enlarged text and real 200% zoom; inspect transactional screens as well as the homepage. Automated browser emulation cannot establish actual-phone keyboard, voice permission, call/WhatsApp or map handoffs. The [local guide](LOCAL_TESTING.md) includes Hindi family tasks and the separate real-device access plan.
 
 ## Phases and acceptance criteria
 
@@ -88,15 +103,17 @@ Hindi/English must cover form labels, errors, stock/price consent and delivery s
 | --- | --- | --- | --- |
 | **P0 — close V1 review gates** | Review exact pushed SHA/CI, supervised family COD practice, dependency and infrastructure plan | Chrome/WebKit and backend evidence tied to source; real phones/zoom tested; business defaults signed off; staging TLS/OTP/storage/runtime roles/backups/alerts verified before public access; payments remain off | Approve a technical operator, pending-demand/return rules, test recipients and staging budget; separate staging authorization |
 | **P1 — discovery/data agreement** | Legacy usage inventory, source-of-truth contracts, approved real content and unit/contact catalogue | Every collection classified retain/migrate/archive; active attendance usage established; ambiguous amounts/units/phones quarantined; no production writes | Monorepo storefront selected for local prototype; confirm attendance usage, approved content/units and physical-stock owner |
-| **P2 — public storefront prototype** | Bilingual read-only local prototype implemented; see foundation evidence, with family/device approval pending | Family approves real content/design; no public cache of personal data; typed API/pagination/error contracts; keyboard/360px/200% zoom and performance budget measured on actual test devices | Approve theme/content and whether public pages show exact prices or request a reviewed quote |
-| **P3 — shared commerce journeys** | Login, cart/review/COD, bulk quotes and customer history in storefront | Website/app see same price/version/history; concurrent last-stock, stale-price consent, idempotent retry, ownership/Origin/session/CSP tests pass across clients; owner receives one task; no live payments | Confirm customer account linking and delivery/wholesale policy |
+| **P2 — distinctive customer storefront** | Material sample-board redesign, bilingual discovery/detail/comparison, responsive transaction screens and motion implemented; rendered review in progress | Inspected English/Hindi screens at 360/390px, tablet/desktop, enlarged text and reduced motion; fixed visible defects; screenshots/motion evidence; core budget preserved; content/device limitations explicit | Approve authentic shop/family/gallery/contact content and final real-device design acceptance |
+| **P3 — shared commerce and Shiv Assistant — current milestone** | Login, durable cart merge, address/review/COD, quotations/history and bounded public assistant/optional voice implemented; verification in progress | Website/app share authoritative commerce; replay/concurrency/consent/session/ownership/security regressions pass; one owner task and stock movement; revised quote acceptance/conversion verified; assistant public-tool isolation, budget/failure/retry/voice cases proved with labelled simulations; exact-SHA CI inspected | Confirm business defaults and real-device acceptance; provide separately approved live OTP/assistant configuration; payments remain off |
 | **P4 — migration rehearsal** | Versioned importer/mapping ledger, archive and explicit opening-stock procedure | Two dry runs produce identical mappings; full reconciliation; family signs stock/units; backups restore; pre-write and post-write rollback rehearsed with synthetic data | Approve record dispositions/retention, import boundary and later cutover window |
 | **P5 — authorized staged cutover** | Controlled preview, provider/edge/storage/monitoring proof and one-writer rollout | Test recipients complete COD/quote/device cases; no public/dev data mix; observable alarms; rollback threshold/owner confirmed; signed acceptance before any domain switch | Explicit hosting/domain/migration authorization; none is granted by this roadmap |
-| **P6 — optional operations and AI** | Staff module/archive if justified; bounded AI FAQ assistance; later payment/credit/invoice work as separate proposals | Attendance preserves records/payroll meaning with restricted access; AI is read-only with source citations, no invented stock/rates/order acceptance, cost limits and human escalation; each additional feature has independent acceptance | Prioritize based on real usage, costs and legal/accounting needs |
+| **P6 — optional operations** | Staff module/archive if justified; later payment/credit/invoice work as separate proposals | Attendance preserves records/payroll meaning with restricted access; each additional feature has independent acceptance. Public assistant implementation belongs to P3, not this deferred phase | Prioritize based on real usage, costs and legal/accounting needs |
 
 Do not promise migration/cutover dates before P1 establishes data quality and
 current staff use. `apps/storefront` with one NestJS/PostgreSQL commerce backend
-is selected for this local phase. The next decisions are approved shop content,
-per-SKU units and attendance/payroll usage; unanswered questions preserve all
-legacy records and workflows. P0 external gates remain open without preventing
-this reversible local prototype.
+is selected for this customer-experience milestone. Finish verification, retain
+evidence, publish the feature branch and open a draft PR against the preserved
+foundation; inspect CI for the exact pushed commit. The next external decisions
+are approved shop content, per-SKU units, staging/provider/device acceptance and
+attendance/payroll usage. Unanswered questions preserve all legacy records and
+workflows. P0 external gates remain open without preventing local implementation.

@@ -61,6 +61,8 @@ export class AuthGuard implements CanActivate {
       fail('UNAUTHORIZED', 'Your session expired. Sign in again.', 401);
     await assertSession(this.db, session);
     req.user = session.user;
+    if (req.headers['x-shiv-account'] && req.headers['x-shiv-account'] !== session.user.id)
+      fail('ACCOUNT_CHANGED', 'The signed-in account changed. Refresh before continuing.', 409);
     req.sessionId = session.id;
     req.sessionAccessHash = session.accessHash;
     if (

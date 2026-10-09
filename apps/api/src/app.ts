@@ -1,4 +1,5 @@
 import { raw, json } from 'express';
+import { AssistantController, AssistantService, AssistantProvider } from './assistant';
 import { RateStudioController, RateStudioService } from './rate-studio/studio';
 import { RateProviders } from './rate-studio/providers';
 import { RateStorage } from './rate-studio/storage';
@@ -36,6 +37,7 @@ class HealthController {
     ThrottlerModule.forRoot([{ ttl: 60000, limit: process.env.NODE_ENV === 'test' ? 10000 : 120 }]),
   ],
   controllers: [
+    AssistantController,
     OwnerWorkController,
     AuthController,
     CatalogController,
@@ -50,6 +52,8 @@ class HealthController {
     RateStudioController,
   ],
   providers: [
+    AssistantService,
+    AssistantProvider,
     OwnerWorkService,
     Db,
     RateStudioService,

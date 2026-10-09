@@ -9,15 +9,32 @@ export function useLiveRefresh(refresh: () => void) {
   latest.current = refresh;
   const [connection, setConnection] = useState<Connection>('connecting');
   useEffect(() => {
-    let source: EventSource;
+    let source: EventSource | undefined;
+    let paused = false;
+    const updateConnection = () => {
+      setConnection(
+        !navigator.onLine
+          ? 'offline'
+          : source?.readyState === EventSource.OPEN
+            ? 'connected'
+            : source?.readyState === EventSource.CONNECTING
+              ? 'connecting'
+              : 'disconnected',
+      );
+    };
     const connect = () => {
-      source?.close();
+      if (paused) return;
+      if (!navigator.onLine || (source && source.readyState !== EventSource.CLOSED)) {
+        updateConnection();
+        return;
+      }
       source = new EventSource(`${API_URL}/events`, { withCredentials: false });
+      updateConnection();
       source.onopen = () => {
-        setConnection('connected');
+        updateConnection();
         latest.current();
       };
-      source.onerror = () => setConnection(navigator.onLine ? 'disconnected' : 'offline');
+      source.onerror = updateConnection;
       source.onmessage = (event) => {
         try {
           const message: unknown = JSON.parse(event.data);
@@ -35,27 +52,26 @@ export function useLiveRefresh(refresh: () => void) {
         }
       };
     };
-    const hide = () => source.close();
+    const hide = () => {
+      paused = true;
+      source?.close();
+    };
+    const resume = () => {
+      if (paused) return;
+      connect();
+      latest.current();
+    };
     const show = (event: PageTransitionEvent) => {
-      if (event.persisted) {
-        setConnection('connecting');
-        connect();
-      }
+      paused = false;
+      if (event.persisted) resume();
     };
     connect();
-    const focus = () => {
-      if (source.readyState === EventSource.CLOSED) connect();
-      latest.current();
-    };
+    const focus = resume;
     const offline = () => setConnection('offline');
-    const online = () => {
-      setConnection('connecting');
-      latest.current();
-    };
+    const online = resume;
     const visibility = () => {
-      if (document.visibilityState === 'visible') latest.current();
+      if (document.visibilityState === 'visible') resume();
     };
-    if (!navigator.onLine) setConnection('offline');
     window.addEventListener('focus', focus);
     window.addEventListener('online', online);
     window.addEventListener('offline', offline);
@@ -64,7 +80,7 @@ export function useLiveRefresh(refresh: () => void) {
     window.addEventListener('pageshow', show);
     document.addEventListener('visibilitychange', visibility);
     return () => {
-      source.close();
+      hide();
       window.removeEventListener('focus', focus);
       window.removeEventListener('online', online);
       window.removeEventListener('offline', offline);

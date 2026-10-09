@@ -60,6 +60,16 @@ export const cartItemSchema = z.strictObject({
   productId: id,
   quantity: z.number().int().min(0).max(10000),
 });
+export const cartMergeSchema = z.strictObject({
+  idempotencyKey: z.string().uuid(),
+  items: z
+    .array(cartItemSchema.extend({ quantity: z.number().int().min(1).max(10000) }))
+    .min(1)
+    .max(50)
+    .refine((items) => new Set(items.map((item) => item.productId)).size === items.length, {
+      message: 'Each product must appear only once.',
+    }),
+});
 export const checkoutSchema = z.strictObject({
   addressId: id,
   deliveryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),

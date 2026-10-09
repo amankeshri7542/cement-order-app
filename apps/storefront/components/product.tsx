@@ -8,8 +8,10 @@ import { dateLabel, timeLabel, price } from '../lib/catalog';
 import { useLanguage } from './language';
 import { MaterialArt } from './material-art';
 import type { Connection } from './live';
+import { BuyActions } from './commerce';
 
 export function ProductImage({ product, large = false }: { product: Product; large?: boolean }) {
+  const { t } = useLanguage();
   const photo = approvedPhoto(product);
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [photo]);
@@ -27,7 +29,15 @@ export function ProductImage({ product, large = false }: { product: Product; lar
           onError={() => setFailed(true)}
         />
       ) : (
-        <MaterialArt large={large} />
+        <>
+          <MaterialArt
+            large={large}
+            category={`${product.category.name} ${product.type} ${product.name}`}
+          />
+          <span className="illustration-label">
+            {product.category.name} · {t('Illustration', 'चित्रांकन')}
+          </span>
+        </>
       )}
     </div>
   );
@@ -62,6 +72,7 @@ export function ProductCard({ product }: { product: Product }) {
           </p>
         </div>
       </Link>
+      <BuyActions product={product} />
     </article>
   );
 }

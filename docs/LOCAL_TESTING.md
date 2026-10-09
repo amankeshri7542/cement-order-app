@@ -3,6 +3,13 @@
 This checkout is for local review. No deployment, real SMS or money movement has been performed.
 Use the **TEST — Cement PPC** practice product and **800099** practice pincode below; neither is a real commercial offer or coverage claim.
 
+The current V2 review branch is `codex/v2-customer-experience`, based on the preserved
+foundation `8816dd913fcb1b67a9102ea2163953f8959b19a2`. It adds the redesigned storefront,
+customer commerce and Shiv Assistant. Final verification is in progress: this
+checklist defines expected results and does not claim every step has passed. See
+[feature parity](V2_CUSTOMER_FEATURE_PARITY.md), [design/motion](V2_DESIGN_MOTION.md)
+and [the roadmap](V2_INTEGRATION_ROADMAP.md) for scope and open approvals.
+
 ## Start from a fresh Mac checkout
 
 Use Node **22.12 or newer** (verified here on 24.19.0), npm (verified 11.17.0), PostgreSQL **16**, and Google Chrome. The project retains Prisma 6, Next.js 16, Expo 55 and React 19; do not independently upgrade their major versions.
@@ -10,7 +17,7 @@ Use Node **22.12 or newer** (verified here on 24.19.0), npm (verified 11.17.0), 
 ```sh
 brew install node@22 postgresql@16
 export PATH="$(brew --prefix node@22)/bin:$(brew --prefix postgresql@16)/bin:$PATH"
-git clone --branch codex/v2-storefront-foundation https://github.com/amankeshri7542/cement-order-app.git
+git clone --branch codex/v2-customer-experience https://github.com/amankeshri7542/cement-order-app.git
 cd cement-order-app
 # For an exact review, check out the commit SHA supplied in the review handoff.
 npm ci
@@ -27,7 +34,7 @@ Apple Silicon and Intel Homebrew PostgreSQL paths are detected. For another inst
 | ----------------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------- |
 | Customer browser app    | http://localhost:8081               | `npm run dev:web`                                                                                  |
 | Owner desk              | http://localhost:3002 (configured)  | `npm exec -w @shiv/admin -- next dev --port 3002 --hostname 127.0.0.1`                             |
-| Public storefront       | http://localhost:3003               | `npm run dev:storefront`                                                                           |
+| Customer storefront     | http://localhost:3003               | `npm exec -w @shiv/storefront -- next dev --port 3003 --hostname 127.0.0.1`                          |
 | API health              | http://localhost:4000/api/v1/health | `CORS_ORIGINS='http://localhost:3002,http://localhost:8081,http://localhost:3003' npm run dev:api` |
 | OpenAPI                 | http://localhost:4000/api/docs      | API must be running                                                                                |
 | Native Expo development | terminal QR/device instructions     | `npm run dev:mobile`                                                                               |
@@ -81,6 +88,61 @@ That command safely ensures StoreSettings exists, assigns staff access, hashes t
 5. Open it → **ज़िम्मेदारी लें / Acknowledge**. Father’s name appears. Prepare → dispatch → record **₹20,000 actually received** → mark delivered. In local practice only, the collection button records simulated cash; no payment provider is called.
 6. Refresh both browsers. There is one order, one stock deduction of 50, one collection movement, and the customer sees Delivered.
 
+## V2 storefront review
+
+Use [the storefront](http://localhost:3003) for the following steps. Open
+[the owner desk](http://localhost:3002) in a separate browser profile; owner and
+customer cookies share the API origin and must not overwrite each other. The
+[Expo customer app](http://localhost:8081) is a second customer client, not the
+new storefront. All these `localhost` links refer to this development computer.
+
+1. **Browse as a guest.** Open Materials, search for a practice product, inspect its grade, selling unit, pack, minimum/step and current stock. Add a valid quantity to Basket, navigate away and reload. Compare two or three products; different selling units must remain explicit. Do not interpret illustrations as genuine shop/product photographs.
+2. **Sign in and recover the basket.** Choose Sign in and use Ravi's local fixture OTP. The guest selection should merge once with any existing authenticated basket. Reload once more. If a merge result is uncertain, use its recovery action before editing; a rejected minimum/stock rule should explain how to correct or remove that line.
+3. **Check shared cart state.** Enter a full multi-digit quantity in Basket and leave the field. Open the Expo customer app as the same customer in the same customer browser profile; refresh it to read the current cart. Change a quantity there, return focus to the storefront, and check reconciliation. Keep only one cart edit in flight while comparing the clients.
+4. **Complete COD review.** Use Account/checkout to add or edit a practice address, then choose TEST Site, a future date and delivery notes. Select **Review current order**. Verify current material quantities/units, price, address, fee, delivery terms and total, then consent and place once. The ₹20,000 smoke-test total applies only while the original ₹390 product and ₹500 fee fixtures remain unchanged. Record the persisted order number and check one matching task in the owner desk. Online payment must remain unavailable.
+5. **Exercise changed terms and recovery.** Before confirmation, have the owner change a practice price or delivery zone, or change the checkout address/date. Obtain a fresh review and renew consent. With a technical operator, simulate a lost response after a successful submission; reload and choose **Recover order result**. Match the same order number and a single inventory reservation. Do not create a new request while the outcome is unknown.
+6. **Review history.** Open Orders, inspect the current status and delivery updates after owner actions. On a fresh eligible order, test cancellation; inspect its resulting state and stock through the owner desk. Use **Reorder at current prices**, review any changed minimum/step/availability warnings, and confirm the new basket before ordering.
+7. **Request a bulk quotation.** Add at least two materials with **Add to quote**, open Bulk quotes, choose an address/date and enter optional company/GST/site details. Select **Request written quotation** and record the server reference. In the owner's Bulk quotes screen, acknowledge, price every line, set freight/date/expiry and confirm transport feasibility before sending. Refresh offers on the storefront, review all terms and accept. Revise the offer on the owner side and verify renewed customer acceptance is required; convert the accepted current revision and inspect the linked order. An estimate or accepted offer alone is not an order.
+8. **Try Shiv Assistant.** Open its launcher, ask about a material in English, Hindi or Hinglish, and follow a product link. Use the product-page **Ask about this material** entry, ask a follow-up, cancel/retry and clear the conversation. Only explicitly selected shopping actions may alter the basket or quote. Default responses are approved FAQ/catalogue fallback; labelled provider simulations are not live AI proof. Ask for staff/attendance/private-customer information and verify that it is unavailable.
+9. **Check voice and account boundaries.** Choose voice only deliberately. Confirm the transcript is editable before sending, then test stop/cancel, denied permission and closing the panel. Text chat must remain usable when speech recognition is unsupported. Sign out and use another fixture account; previous private cart/history/quote/assistant state must not appear. A technical operator can revoke a session in the owner desk and verify recovery without a redirect loop.
+10. **Inspect the design and recovery.** Repeat homepage, listing/detail, populated basket, checkout, tracking, quotation and assistant at 360px and 390px widths, tablet and desktop, in both languages. Test enlarged text, 200% browser zoom, keyboard focus and reduced motion. Check that sticky basket, assistant and keyboard do not hide actions. Try offline/online recovery and note visible errors. Missing approved shop contact/history/gallery content must remain clearly pending; no invented awards, years or contact links should appear.
+
+Keep a short record: browser/device, language, product and quantity, order/quote
+reference, observed result and screenshot of any defect. Use new practice orders
+for destructive or terminal transitions such as cancellation/return.
+
+## परिवार के लिए छोटा हिंदी समीक्षा क्रम
+
+1. इस कंप्यूटर पर `http://localhost:3003` खोलें और **हिन्दी** चुनें। सामग्री का नाम, भाव, इकाई, पैक, न्यूनतम मात्रा और स्टॉक पढ़कर बताएँ कि क्या स्पष्ट है और क्या नहीं।
+2. मेहमान के रूप में सामग्री **टोकरी** में डालें, दूसरा पन्ना खोलें और वापस आएँ। रवि के अभ्यास खाते से साइन इन करें; मात्रा एक ही बार जुड़नी चाहिए। दो अंक की सही मात्रा लिखकर पन्ना दोबारा खोलें।
+3. अभ्यास पता **TEST Site / 800099** चुनें। डिलीवरी तारीख, सामग्री का कुल, भाड़ा और अंतिम कुल जाँचें। शर्तें स्वीकार करके एक COD ऑर्डर करें और उसका नंबर लिखें। यह अभ्यास है; कोई असली भुगतान या डिलीवरी नहीं करनी है।
+4. पिता/चाचा अलग ब्राउज़र प्रोफ़ाइल में `http://localhost:3002` खोलें। वही ऑर्डर एक बार दिखना चाहिए। स्वीकार करने और आगे की स्थिति बदलने पर ग्राहक के **ऑर्डर** पन्ने में सही स्थिति देखें।
+5. दो सामग्री का **थोक भाव** माँगें। चाचा भाव, भाड़ा, तारीख और अवधि भरकर प्रस्ताव भेजें। ग्राहक पूरी शर्तें पढ़कर स्वीकार करे। नया प्रस्ताव आए तो दोबारा स्वीकृति लगे; दुकान के ऑर्डर में बदलने के बाद ही उसे पक्का ऑर्डर मानें।
+6. **शिव सहायक** से पूछें: “सीमेंट के पैक की तुलना कैसे करूँ?” जवाब और सामग्री लिंक जाँचें। आवाज़ बटन चाहें तभी दबाएँ; लिखी हुई बात सुधारने के बाद ही भेजें। माइक न चले तो लिखकर सवाल पूछें।
+7. छोटे और बड़े अक्षरों में देखें: कोई भाव, इकाई, बटन या हिंदी शब्द कट तो नहीं रहा? दुकान का सही पता, नंबर, समय, परिवार की जानकारी और असली तस्वीरें अलग सूची में स्वीकृत करें; अभी लंबित जानकारी को सही मानकर न चलें।
+
+## Separate real-device access plan
+
+Current services and mock OTP are loopback-only. A phone's `localhost` points to
+the phone, not this Mac. Do not bind the mock API to `0.0.0.0`, use a public tunnel,
+open router ports or disable the loopback guard to make phone testing work. The
+Expo QR/native command does not make this mock-auth environment safe for LAN use.
+
+Actual-phone acceptance requires a separately authorized staging setup: isolated
+synthetic data, no development/production database sharing, real OTP for approved
+test recipients, HTTPS with valid certificates, exact frontend/API origins and
+verified cookie/CORS/CSRF policies. Keep owner access controlled, payments off,
+staging excluded from indexing and secrets only on the backend. Provider setup,
+SMS sends, hosting and the test recipient list remain pending approval; this
+document does not start any of them.
+
+Once that setup is approved and verified, supply its actual HTTPS URLs and test
+COD/quote recovery on iPhone Safari and Android Chrome, native keyboard/zoom,
+network loss, speech supported/denied/unsupported states and panel cleanup. Test
+call, WhatsApp and map handoffs only after the family approves their settings;
+opening an app is separate from sending a message. Record device/OS/browser and
+results. Desktop emulation and simulated speech events cannot close these gates.
+
 ## Cart feedback and recovery checks
 
 1. Add the same material twice. Its card should show `2` with minus/plus controls and the header badge should increase to `2`. A second material increases the distinct-product count separately.
@@ -131,9 +193,9 @@ npm run typecheck --workspaces --if-present
 npm test                    # pure/unit + labelled provider-contract simulations
 npm run test:local # isolated launcher port/identity/ownership/lifecycle checks
 npm test -w @shiv/storefront # public data projection, exact money and query contracts
-npm run test:bootstrap      # migrations + staff setup, empty disposable PostgreSQL
+npm run test:bootstrap -w @shiv/api # migrations + staff setup, empty disposable PostgreSQL
 npm run test:integration -w @shiv/api # existing real PostgreSQL API suite
-npm run test:workflows      # new real PostgreSQL races and business workflows
+npm run test:workflows -w @shiv/api # real PostgreSQL races and business workflows
 npm run test:e2e -- --config=playwright.qa.config.ts --project=chrome
 TMPDIR=/private/tmp npm run test:e2e -- --config=playwright.qa.config.ts --project=webkit
 npm run local:stop
@@ -142,10 +204,34 @@ npm run build -w @shiv/api
 npm run build -w @shiv/admin
 npm run build -w @shiv/mobile # Expo Android/iOS/web JS exports
 NEXT_DIST_DIR=.next-e2e npm run build -w @shiv/storefront # after browser suites finish
+node scripts/check-production-headers.mjs --self-test
+node scripts/check-production-headers.mjs # owns temporary production builds/TLS ports
 npm run local:start
 ```
 
-Browser tests use installed Chrome and ports **4010 / 3001 / 8082 / 3004** (API / owner / customer / storefront), independent of manual dev servers. `npx playwright install chrome` installs it if missing. For WebKit, install the engine with `npx playwright install webkit`. Run exactly one project per invocation: global setup resets the shared disposable database. Firefox is currently blocked at native browser launch; see [the QA report](BROWSER_QA_REPORT.md). Their rate-extraction adapter is deliberately confined to `scripts/e2e-api.ts` and requires NODE_ENV=test plus a database ending `_test`. Razorpay/Twilio provider simulations do not establish live integration. Standard dev server has no fake provider fallback beyond explicitly selected mock OTP.
+Browser tests use installed Chrome and ports **4010 / 3001 / 8082 / 3004** (API / owner / customer / storefront), independent of manual dev servers. `npx playwright install chrome` installs it if missing. For WebKit, install the engine with `npx playwright install webkit`. Run exactly one project per invocation: global setup resets the shared disposable database. Firefox is currently blocked at native browser launch; see [the QA report](BROWSER_QA_REPORT.md). The rate-extraction test adapter is confined to `apps/api/scripts/e2e-api.ts` and requires NODE_ENV=test plus a database ending `_test`. Provider simulations do not establish live Razorpay, Twilio or OpenAI integration. The standard development assistant uses the approved FAQ/catalogue fallback unless explicitly configured otherwise; assistant simulation is rejected in production.
+
+For focused V2 review, run `tests/storefront.spec.ts` and
+`tests/storefront-commerce.spec.ts` through the same QA config, one engine at a
+time, with `--trace=on`. Set `UPDATE_REVIEW_EVIDENCE=1 REVIEW_VIDEO=1` to retain the
+commerce review captures. Keep application source stable while a suite runs.
+Run the original native WebKit navigation diagnostic separately, retain its
+trace/error even if it fails, and report it separately from journey results:
+
+```sh
+RUN_STOREFRONT_WEBKIT_DIAGNOSTIC=1 npm run test:e2e -- --config=playwright.qa.config.ts --project=webkit tests/storefront-webkit-diagnostic.spec.ts --trace=on
+```
+
+The production checker uses reserved ports **43120–43125**, temporary local TLS
+and simulated unavailable/signed-out API responses. It checks application
+identity, enforced CSP, applicable nonce presence/rotation, DOM nonce matching,
+no-store and microphone policy in Chrome/WebKit. It enforces the existing
+**450 KiB gzip** initial storefront script budget and records incremental lazy
+assistant JavaScript after an explicit click separately. Evidence is written to
+`.local/security-hardening` by default; `HEADER_EVIDENCE_DIR` selects another
+review directory. These unthrottled local results do not establish phone/network
+performance or live-provider acceptance. Run it after other build/browser work,
+not concurrently with files or output directories it owns.
 
 ## Reset and recovery
 
@@ -161,8 +247,8 @@ For family review and cloud prerequisites see [FAMILY_REVIEW.md](FAMILY_REVIEW.m
 
 ## Security hardening follow-up
 
-See [SECURITY_HARDENING_REPORT.md](SECURITY_HARDENING_REPORT.md) for the current evidence, exact security commands and staging gates. Run `npm run test:restore` only after a synthetic test suite, sequentially with other database tests; it creates/removes its own restore database and role. `npm run security:scan` is a limited working-tree credential-pattern check.
+See [SECURITY_HARDENING_REPORT.md](SECURITY_HARDENING_REPORT.md) for baseline evidence and staging gates. Run `npm exec -w @shiv/api -- tsx scripts/restore-rehearsal.ts` only after a synthetic test suite, sequentially with other database tests; it creates/removes its own restore database and role. `node scripts/security-scan.mjs` is a limited working-tree credential-pattern check. Current V2 pass/fail results must be tied to the final source revision; older reports do not certify the new customer screens.
 
-The local customer web command now puts security headers around Expo HTML. Browser port 8081 uses a private loopback Expo listener on 8091; the browser harness uses 8082/8092. Keep those pairs free. Production exports use `npm run serve:customer` behind a verified HTTPS proxy and need the same build/serve API origin. Use `expo export --clear` when changing API build variables to avoid cached bundles with old origins. Mock API authentication is loopback-only; real phone/staging access requires separately verified production authentication.
+The local customer web command puts security headers around Expo HTML. Browser port 8081 uses a private loopback Expo listener on 8091; the browser harness uses 8082/8092. Keep those pairs free. Production exports use `node scripts/serve-customer.mjs` behind a verified HTTPS proxy and need the same build/serve API origin. Use `expo export --clear` when changing API build variables to avoid cached bundles with old origins. Mock API authentication is loopback-only; real phone/staging access follows the separate plan above.
 
 Finance & settings → Booking limits shows demand warnings and audited one-request exceptions. Defaults are proposals requiring family agreement before staging; they do not cancel orders or release stock. Keep online payments off.

@@ -3,10 +3,12 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useLanguage } from './language';
+import { useCommerce } from './commerce';
 
 export function Header() {
   const { language, setLanguage, t } = useLanguage();
   const pathname = usePathname();
+  const c = useCommerce();
   return (
     <>
       <a className="skip-link" href="#main">
@@ -14,7 +16,7 @@ export function Header() {
       </a>
       <header className="site-header">
         <div className="header-inner">
-          <Link className="brand" href="/" aria-label="Shiv Cement Store — home">
+          <Link className="brand" href="/" prefetch={false} aria-label="Shiv Cement Store — home">
             <span className="brand-stamp" aria-hidden="true">
               शिव
             </span>
@@ -24,7 +26,7 @@ export function Header() {
             </span>
           </Link>
           <nav aria-label={t('Main navigation', 'मुख्य नेविगेशन')}>
-            <Link href="/" aria-current={pathname === '/' ? 'page' : undefined}>
+            <Link href="/" prefetch={false} aria-current={pathname === '/' ? 'page' : undefined}>
               {t('Home', 'होम')}
             </Link>
             <Link
@@ -33,7 +35,11 @@ export function Header() {
             >
               {t('Materials', 'सामग्री')}
             </Link>
-            <Link href="/#delivery">{t('Delivery', 'डिलीवरी')}</Link>
+            <Link href="/quotes">{t('Bulk quotes', 'थोक भाव')}</Link>
+            <Link href="/account">{c.user ? t('Account', 'खाता') : t('Sign in', 'साइन इन')}</Link>
+            <Link href="/cart" className="header-basket">
+              {t('Basket', 'टोकरी')} <span>{c.lines.length}</span>
+            </Link>
           </nav>
           <button
             className="language-button"
@@ -60,8 +66,8 @@ export function Footer() {
         </div>
         <p>
           {t(
-            'Browse materials and plan your purchase. Online ordering is not available on this website yet.',
-            'सामग्री देखें और खरीदारी की तैयारी करें। इस वेबसाइट पर अभी ऑनलाइन ऑर्डर उपलब्ध नहीं है।',
+            'Materials for your home and your next site. Review current terms, order COD or request a written quotation.',
+            'घर और अगली साइट के लिए सामग्री। मौजूदा शर्तें जाँचें, COD ऑर्डर करें या लिखित भाव माँगें।',
           )}
         </p>
         <Link href="/products">

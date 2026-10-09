@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import type { Page } from '@playwright/test';
+import type { DeliveryZone } from '@shiv/shared';
 import { mkdirSync } from 'node:fs';
 import { test, expect, observePage } from './fixtures';
 
@@ -15,8 +16,42 @@ test.beforeEach(async ({ page }) => {
 test.afterEach(async ({ page }) => {
   expect(pageErrors.get(page)).toEqual([]);
 });
+// Next.js streaming buffers can duplicate text outside the rendered main landmark.
 const cards = (page: Page) =>
-  page.locator('article').filter({ has: page.locator('a[href^="/products/"]') });
+  page
+    .getByRole('main')
+    .getByRole('article')
+    .filter({ has: page.locator('a[href^="/products/"]') });
+type StreamWindow = typeof window & { __storefrontStreams: EventSource[] };
+
+async function captureNativeStreams(page: Page) {
+  await page.addInitScript(() => {
+    const streams: EventSource[] = [];
+    Object.defineProperty(window, '__storefrontStreams', { value: streams });
+    const NativeEventSource = window.EventSource;
+    window.EventSource = class extends NativeEventSource {
+      constructor(url: string | URL, options?: EventSourceInit) {
+        super(url, options);
+        streams.push(this);
+      }
+    };
+  });
+}
+
+async function waitForNativeStreams(page: Page) {
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const active = (window as StreamWindow).__storefrontStreams.filter(
+          (source) => source.readyState !== EventSource.CLOSED,
+        );
+        return (
+          active.length > 0 && active.every((source) => source.readyState === EventSource.OPEN)
+        );
+      }),
+    )
+    .toBe(true);
+}
 
 function database() {
   const url = process.env.TEST_DATABASE_URL;
@@ -76,12 +111,20 @@ test('storefront renders real product HTML, metadata, integer-paise prices and s
   await expect(
     page.getByRole('heading', { name: 'TEST V2 Material 00', exact: true, level: 1 }),
   ).toBeVisible();
-  await expect(page.getByText('₹100.25', { exact: true })).toBeVisible();
-  await expect(page.getByText('50 kg', { exact: true })).toBeVisible();
-  await expect(page.getByText('PPC', { exact: true })).toBeVisible();
-  await expect(page.getByText(/minimum/i)).toBeVisible();
-  await expect(page.getByText('Quantity increment', { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: /cart|buy|order|pay/i })).toHaveCount(0);
+  await expect(page.getByRole('main').getByText('₹100.25', { exact: true })).toBeVisible();
+  await expect(page.getByRole('main').getByText('50 kg', { exact: true })).toBeVisible();
+  await expect(page.getByRole('main').getByText('PPC', { exact: true })).toBeVisible();
+  await expect(page.getByRole('main').getByText(/minimum/i)).toBeVisible();
+  await expect(
+    page.getByRole('main').getByText('Quantity increment', { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Add to basket', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Add to quote', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Compare', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Compare', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'false',
+  );
 });
 
 test('storefront filters, sorts and paginates without duplicates and restores browser Back', async ({
@@ -110,7 +153,7 @@ test('storefront filters, sorts and paginates without duplicates and restores br
   ).toBeVisible();
   await expect(page).toHaveURL(`${site}/products/test-v2-24`);
   await page.goBack();
-  await expect(page.getByLabel('Search materials')).toHaveValue('TEST V2');
+  await expect(page.getByRole('main').getByLabel('Search materials')).toHaveValue('TEST V2');
   await expect(cards(page)).toHaveCount(27);
 });
 
@@ -120,7 +163,7 @@ test('storefront keeps a normal product press intact when normalized search is u
   await page.clock.install();
   await page.goto(catalogue);
   await expect(cards(page)).toHaveCount(12);
-  await page.getByLabel('Search materials').fill('  TEST V2  ');
+  await page.getByRole('main').getByLabel('Search materials').fill('  TEST V2  ');
   const product = page.getByRole('link', { name: /TEST V2 Material 00/ });
   await product.hover();
   await page.mouse.down();
@@ -147,9 +190,9 @@ test('storefront rapid search and filter responses cannot replace a newer select
   const oldRequest = page.waitForRequest(
     (r) => new URL(r.url()).searchParams.get('q') === 'TEST V2 Material 01',
   );
-  await page.getByLabel('Search materials').fill('TEST V2 Material 01');
+  await page.getByRole('main').getByLabel('Search materials').fill('TEST V2 Material 01');
   await oldRequest;
-  await page.getByLabel('Search materials').fill('TEST V2 Material 25');
+  await page.getByRole('main').getByLabel('Search materials').fill('TEST V2 Material 25');
   await expect(cards(page)).toHaveCount(1);
   await expect(cards(page)).toContainText('TEST V2 Material 25');
   const oldResponse = page.waitForResponse(
@@ -179,13 +222,23 @@ test('storefront distinguishes out-of-stock, missing products and empty search',
     page.getByRole('heading', { name: 'This material is not available.', exact: true }),
   ).toBeVisible();
   await page.goto(`${site}/products/test-v2-26`);
-  await expect(page.getByText(/out of stock/i).first()).toBeVisible();
+  await expect(
+    page
+      .getByRole('main')
+      .getByText(/out of stock/i)
+      .first(),
+  ).toBeVisible();
   await page
     .getByRole('navigation', { name: 'Main navigation' })
     .getByRole('link', { name: 'Materials', exact: true })
     .click();
-  await page.getByLabel('Search materials').fill('NO-SUCH-TEST-V2-MATERIAL');
-  await expect(page.getByText(/no materials|no products/i).first()).toBeVisible();
+  await page.getByRole('main').getByLabel('Search materials').fill('NO-SUCH-TEST-V2-MATERIAL');
+  await expect(
+    page
+      .getByRole('main')
+      .getByText(/no materials|no products/i)
+      .first(),
+  ).toBeVisible();
   await expect(cards(page)).toHaveCount(0);
 });
 
@@ -210,7 +263,7 @@ test('storefront loading, network failure and retry do not fabricate catalogue d
     }
   });
   await page.goto(catalogue);
-  await expect(page.getByText(/loading materials/i)).toBeVisible();
+  await expect(page.getByRole('main').getByText(/loading materials/i)).toBeVisible();
   release();
   await expect(
     page.getByRole('region', { name: 'Materials catalogue', exact: true }).getByRole('alert'),
@@ -232,17 +285,7 @@ test('storefront refreshes on reconnect and focus without duplicate lists', asyn
   page,
   context,
 }) => {
-  await page.addInitScript(() => {
-    const streams: EventSource[] = [];
-    Object.defineProperty(window, '__storefrontStreams', { value: streams });
-    const NativeEventSource = window.EventSource;
-    window.EventSource = class extends NativeEventSource {
-      constructor(url: string | URL, options?: EventSourceInit) {
-        super(url, options);
-        streams.push(this);
-      }
-    };
-  });
+  await captureNativeStreams(page);
   await page.goto(catalogue);
   await expect(cards(page)).toHaveCount(12);
   const streamCount = await page.evaluate(() => {
@@ -276,7 +319,12 @@ test('storefront refreshes on reconnect and focus without duplicate lists', asyn
   await page.getByRole('button', { name: 'Show more materials' }).click();
   await expect(cards(page)).toHaveCount(24);
   await context.setOffline(true);
-  await expect(page.getByText(/offline|connection lost/i).first()).toBeVisible();
+  await expect(
+    page
+      .getByRole('main')
+      .getByText(/offline|connection lost/i)
+      .first(),
+  ).toBeVisible();
   const db = database();
   try {
     await db.product.update({
@@ -296,6 +344,120 @@ test('storefront refreshes on reconnect and focus without duplicate lists', asyn
   expect(new Set(names).size).toBe(24);
 });
 
+for (const recovery of ['online', 'visibilitychange'] as const) {
+  test(`storefront recovers CLOSED SSE on ${recovery} without duplicating CONNECTING or OPEN streams`, async ({
+    page,
+  }) => {
+    // Deterministic transport states; catalogue reads still use the real disposable API.
+    await page.addInitScript(() => {
+      const streams: ControlledSource[] = [];
+      class ControlledSource extends EventTarget {
+        static CONNECTING = 0;
+        static OPEN = 1;
+        static CLOSED = 2;
+        readyState = 0;
+        onopen: ((event: Event) => void) | null = null;
+        onerror: ((event: Event) => void) | null = null;
+        constructor() {
+          super();
+          streams.push(this);
+        }
+        close() {
+          this.readyState = 2;
+        }
+        setState(state: number) {
+          this.readyState = state;
+          if (state === 1) this.onopen?.(new Event('open'));
+          if (state === 2) this.onerror?.(new Event('error'));
+        }
+      }
+      Object.defineProperty(window, '__storefrontStreams', { value: streams });
+      window.EventSource = ControlledSource as unknown as typeof EventSource;
+    });
+    const snapshot = () =>
+      page.evaluate(() => {
+        const streams = (window as StreamWindow).__storefrontStreams;
+        return {
+          count: streams.length,
+          active: streams
+            .filter((source) => source.readyState !== EventSource.CLOSED)
+            .map((source) => source.readyState),
+        };
+      });
+    const setLatestState = (state: number) =>
+      page.evaluate((value) => {
+        const streams = (window as StreamWindow).__storefrontStreams as (EventSource & {
+          setState: (state: number) => void;
+        })[];
+        streams.at(-1)!.setState(value);
+      }, state);
+    const wake = () =>
+      page.evaluate(() => {
+        window.dispatchEvent(new Event('online'));
+        window.dispatchEvent(new Event('focus'));
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+    await page.goto(catalogue);
+    await expect(cards(page)).toHaveCount(12);
+    await expect.poll(snapshot).toMatchObject({ active: [0] });
+    const initial = (await snapshot()).count;
+    await wake();
+    await expect.poll(snapshot).toEqual({ count: initial, active: [0] });
+    await setLatestState(1);
+    await expect(page.getByRole('main').locator('.freshness')).toContainText('Checked ');
+    await wake();
+    await expect.poll(snapshot).toEqual({ count: initial, active: [1] });
+
+    await setLatestState(2);
+    await expect(page.getByRole('main').locator('.freshness')).toContainText(
+      'Live updates disconnected',
+    );
+    await expect(page.getByRole('main').locator('.freshness')).toHaveClass(/freshness-warning/);
+    if (recovery === 'visibilitychange') {
+      await page.evaluate(() => {
+        Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+      await expect.poll(snapshot).toEqual({ count: initial, active: [] });
+      await expect(page.getByRole('main').locator('.freshness')).toContainText(
+        'Live updates disconnected',
+      );
+    } else {
+      await page.evaluate(() => {
+        Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+        window.dispatchEvent(new Event('offline'));
+      });
+      await expect(page.getByRole('main').locator('.freshness')).toContainText('Offline');
+    }
+    await page.evaluate((event) => {
+      if (event === 'online') {
+        Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+        window.dispatchEvent(new Event('online'));
+      } else {
+        Object.defineProperty(document, 'visibilityState', {
+          configurable: true,
+          value: 'visible',
+        });
+        document.dispatchEvent(new Event('visibilitychange'));
+      }
+    }, recovery);
+    await expect.poll(snapshot).toEqual({ count: initial + 1, active: [0] });
+    await expect(page.getByRole('main').locator('.freshness')).not.toContainText(
+      /disconnected|Offline/,
+    );
+    await expect(page.getByRole('main').locator('.freshness')).not.toHaveClass(/freshness-warning/);
+    await wake();
+    await expect.poll(snapshot).toEqual({ count: initial + 1, active: [0] });
+    await setLatestState(1);
+    await expect(page.getByRole('main').locator('.freshness')).toContainText('Checked ');
+    await wake();
+    await expect.poll(snapshot).toEqual({ count: initial + 1, active: [1] });
+    await expect(cards(page)).toHaveCount(12);
+    const names = await cards(page).locator('h2, h3').allTextContents();
+    expect(new Set(names).size).toBe(12);
+  });
+}
+
 test('storefront checks supported and unsupported delivery pincodes read-only', async ({
   page,
 }) => {
@@ -309,18 +471,176 @@ test('storefront checks supported and unsupported delivery pincodes read-only', 
   });
   try {
     await page.goto(site, { waitUntil: 'commit' });
-    await expect(page.getByLabel('Delivery pincode')).toBeDisabled();
+    await expect(page.getByRole('main').getByLabel('Delivery pincode')).toBeDisabled();
   } finally {
     hydrate();
   }
-  await page.getByLabel('Delivery pincode').fill('800020');
+  await page.getByRole('main').getByLabel('Delivery pincode').fill('800020');
   await page.getByRole('button', { name: 'Check pincode' }).click();
-  await expect(page.getByText('Test delivery', { exact: false })).toBeVisible();
-  await page.getByLabel('Delivery pincode').fill('999999');
+  await expect(page.getByRole('main').getByText('Test delivery', { exact: false })).toBeVisible();
+  await page.getByRole('main').getByLabel('Delivery pincode').fill('999999');
   await page.getByRole('button', { name: 'Check pincode' }).click();
   await expect(
-    page.getByText('Delivery is not listed for this pincode.', { exact: true }),
+    page.getByRole('main').getByText('Delivery is not listed for this pincode.', { exact: true }),
   ).toBeVisible();
+});
+
+test('storefront delivery rechecks owner zone changes and rejects an older delayed result', async ({
+  page,
+  request,
+}) => {
+  const otp = await request.post(`${api}/auth/otp/request`, { data: { phone: '+919297513708' } });
+  expect(otp.status()).toBe(201);
+  const login = await request.post(`${api}/auth/otp/verify`, {
+    data: { phone: '+919297513708', code: (await otp.json()).devCode },
+  });
+  expect(login.status()).toBe(201);
+  const headers = { Authorization: `Bearer ${(await login.json()).accessToken}` };
+  const initial = {
+    name: 'TEST storefront revision zone',
+    active: true,
+    deliveryFeePaise: 12300,
+    minimumOrderPaise: 0,
+    freeDeliveryAbovePaise: null,
+    estimate: 'TEST storefront delivery estimate',
+    pincodes: ['880021'],
+  };
+  const created = await request.post(`${api}/admin/delivery-zones`, { headers, data: initial });
+  expect(created.status(), await created.text()).toBe(201);
+  let zone = (await created.json()) as DeliveryZone;
+  async function updateZone(active: boolean, deliveryFeePaise: number) {
+    const response = await request.patch(`${api}/admin/delivery-zones/${zone.id}`, {
+      headers,
+      data: { ...initial, active, deliveryFeePaise, expectedVersion: zone.version },
+    });
+    expect(response.ok(), await response.text()).toBe(true);
+    zone = (await response.json()) as DeliveryZone;
+  }
+  await captureNativeStreams(page);
+  await page.goto(site);
+  await waitForNativeStreams(page);
+  await page.getByRole('main').getByLabel('Delivery pincode').fill('880021');
+  await page.getByRole('button', { name: 'Check pincode', exact: true }).click();
+  const result = page.locator('#delivery .delivery-result');
+  await expect(result).toContainText('₹123.00');
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let captured!: () => void;
+  const oldCaptured = new Promise<void>((resolve) => {
+    captured = resolve;
+  });
+  let holdNext = true;
+  await page.route(`${api}/delivery/880021`, async (route) => {
+    if (!holdNext) return route.continue();
+    holdNext = false;
+    const response = await route.fetch();
+    captured();
+    await gate;
+    await route.fulfill({
+      response,
+      headers: { ...response.headers(), 'x-test-delayed': 'zone-revision' },
+    });
+  });
+  try {
+    await updateZone(true, 23400);
+    await oldCaptured;
+    await expect(result).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Checking…', exact: true })).toBeDisabled();
+    await updateZone(false, 34500);
+    await expect(result).toContainText('Delivery is not listed for this pincode.');
+    const oldResponse = page.waitForResponse(
+      (response) => response.headers()['x-test-delayed'] === 'zone-revision',
+    );
+    release();
+    await (await oldResponse).finished();
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    await expect(result).toContainText('Delivery is not listed for this pincode.');
+    await expect(result).not.toContainText('₹234.00');
+    await expect(page.getByRole('main').getByLabel('Delivery pincode')).toHaveValue('880021');
+  } finally {
+    release();
+  }
+});
+
+test('storefront delivery input edits invalidate pending responses and prevent old-pincode rechecks', async ({
+  page,
+}) => {
+  await captureNativeStreams(page);
+  await page.goto(site);
+  await waitForNativeStreams(page);
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let captured!: () => void;
+  const oldCaptured = new Promise<void>((resolve) => {
+    captured = resolve;
+  });
+  const checked: string[] = [];
+  await page.route(`${api}/delivery/*`, async (route) => {
+    const pincode = new URL(route.request().url()).pathname.split('/').at(-1)!;
+    checked.push(pincode);
+    if (pincode !== '800020') return route.continue();
+    const response = await route.fetch();
+    captured();
+    await gate;
+    await route.fulfill({
+      response,
+      headers: { ...response.headers(), 'x-test-delayed': 'input-edit' },
+    });
+  });
+  try {
+    await page.getByRole('main').getByLabel('Delivery pincode').fill('800020');
+    await page.getByRole('button', { name: 'Check pincode', exact: true }).click();
+    await oldCaptured;
+    await page.getByRole('main').getByLabel('Delivery pincode').fill('999999');
+    const result = page.locator('#delivery .delivery-result');
+    await expect(result).toHaveCount(0);
+    await page.getByRole('button', { name: 'Check pincode', exact: true }).click();
+    await expect(result).toContainText('Delivery is not listed for this pincode.');
+    const oldResponse = page.waitForResponse(
+      (response) => response.headers()['x-test-delayed'] === 'input-edit',
+    );
+    release();
+    await (await oldResponse).finished();
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    await expect(page.getByRole('main').getByLabel('Delivery pincode')).toHaveValue('999999');
+    await expect(result).toContainText('Delivery is not listed for this pincode.');
+    await expect(result).not.toContainText('Test delivery');
+    expect(checked).toEqual(['800020', '999999']);
+    await page.getByRole('main').getByLabel('Delivery pincode').fill('800099');
+    await page.evaluate(() => {
+      for (const source of (window as StreamWindow).__storefrontStreams) {
+        if (source.readyState === EventSource.OPEN)
+          source.dispatchEvent(
+            new MessageEvent('message', { data: JSON.stringify({ type: 'STORE_UPDATED' }) }),
+          );
+      }
+    });
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    await expect(result).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Check pincode', exact: true })).toBeEnabled();
+    expect(checked).toEqual(['800020', '999999']);
+  } finally {
+    release();
+  }
 });
 
 test('storefront persists Hindi, supports keyboard navigation and fits narrow enlarged text', async ({
@@ -337,7 +657,7 @@ test('storefront persists Hindi, supports keyboard navigation and fits narrow en
   mkdirSync('docs/screenshots/storefront', { recursive: true });
   await page.screenshot({ path: 'docs/screenshots/storefront/mobile-hindi.png', fullPage: true });
   await page.getByRole('button', { name: 'English', exact: true }).click();
-  await page.getByLabel('Search materials').focus();
+  await page.getByRole('main').getByLabel('Search materials').focus();
   await page.keyboard.press('ControlOrMeta+A');
   await page.keyboard.type('TEST V2 Material 00');
   await expect(cards(page)).toHaveCount(1);
@@ -387,7 +707,7 @@ test('owner price publication reaches storefront and existing customer app', asy
   observePage(cataloguePage, info);
   try {
     await page.goto(`${site}/products/test-v2-00`);
-    await expect(page.getByText('₹100.25', { exact: true })).toBeVisible();
+    await expect(page.getByRole('main').getByText('₹100.25', { exact: true })).toBeVisible();
     await cataloguePage.goto(catalogue);
     await expect(cards(cataloguePage)).toHaveCount(12);
     await customer.goto('http://localhost:8082');
@@ -415,7 +735,7 @@ test('owner price publication reaches storefront and existing customer app', asy
     await owner.getByLabel('Brand', { exact: true }).fill('TEST Brand Published');
     await owner.getByRole('button', { name: 'Save product', exact: true }).click();
     await expect(owner.getByText('₹137.45', { exact: true })).toBeVisible();
-    await expect(page.getByText('₹137.45', { exact: true })).toBeVisible();
+    await expect(page.getByRole('main').getByText('₹137.45', { exact: true })).toBeVisible();
     await expect(customer.getByText('₹137.45', { exact: true })).toBeVisible();
     await expect(
       cataloguePage
@@ -475,7 +795,22 @@ test('storefront public requests omit credentials, enforce CSP and never reserve
       page.getByRole('heading', { name: 'TEST V2 Material 01', exact: true, level: 1 }),
     ).toBeVisible();
     expect(requests.length).toBeGreaterThan(0);
-    expect(requests.every((r) => r.method === 'GET' && !r.cookie)).toBe(true);
+    const publicReads = requests.filter((r) =>
+      /^\/api\/v1\/(?:products(?:\/[^/]+)?|categories|brands|store|events|delivery\/\d{6})$/.test(
+        r.path,
+      ),
+    );
+    expect(publicReads.length).toBeGreaterThan(0);
+    expect(publicReads.every((r) => r.method === 'GET' && !r.cookie)).toBe(true);
+    const sessionRequests = requests.filter((r) => !publicReads.includes(r));
+    expect(sessionRequests.length).toBeGreaterThan(0);
+    expect(
+      sessionRequests.every(
+        (r) =>
+          (r.path === '/api/v1/auth/session' && r.method === 'GET') ||
+          (r.path === '/api/v1/auth/refresh' && r.method === 'POST'),
+      ),
+    ).toBe(true);
     expect(requests.some((r) => /admin|orders|cart|staff|attendance/.test(r.path))).toBe(false);
     const after = await Promise.all([
       db.order.count(),
@@ -527,5 +862,8 @@ test('storefront desktop shopping view records browser performance and screensho
   await expect(
     page.getByRole('heading', { name: 'TEST V2 Material 01', exact: true, level: 1 }),
   ).toBeVisible();
+  await expect(
+    page.getByRole('textbox', { name: 'Quantity for TEST V2 Material 01', exact: true }),
+  ).toBeEnabled();
   await page.screenshot({ path: 'docs/screenshots/storefront/product.png', fullPage: true });
 });

@@ -182,6 +182,21 @@ afterAll(async () => {
 });
 
 describe('Authentication and authorization over HTTP', () => {
+  it('rejects a stale account binding before reading or modifying the active account', async () => {
+    const result = await request(server)
+      .get('/api/v1/cart')
+      .set(auth())
+      .set('X-Shiv-Account', 'other')
+      .expect(409);
+    expect(result.body.error.code).toBe('ACCOUNT_CHANGED');
+    await request(server)
+      .put('/api/v1/cart/items')
+      .set(auth())
+      .set('X-Shiv-Account', 'other')
+      .send({ productId: 'cement', quantity: 5 })
+      .expect(409);
+    expect(await db.cartItem.count({ where: { userId: 'customer' } })).toBe(0);
+  });
   it('blocks unauthenticated access, customer admin access and role injection', async () => {
     await request(server).get('/api/v1/orders').expect(401);
     await request(server).get('/api/v1/admin/products').set(auth()).expect(403);
@@ -275,6 +290,90 @@ describe('Authentication and authorization over HTTP', () => {
     await request(server).get('/api/v1/me').set(auth()).expect(401);
   });
 });
+describe('Durable guest cart merge', () => {
+  const merge = (
+    idempotencyKey: string,
+    items = [{ productId: 'cement', quantity: 5 }],
+    who: keyof typeof tokens = 'customer',
+  ) => request(server).post('/api/v1/cart/merge').set(auth(who)).send({ idempotencyKey, items });
+
+  it('merges concurrent retries once and replays the current cart after subsequent edits', async () => {
+    await cart('customer', 10);
+    const key = randomUUID();
+    const [first, retry] = await Promise.all([merge(key).expect(201), merge(key).expect(201)]);
+    expect(first.body[0]).toMatchObject({ productId: 'cement', quantity: 15 });
+    expect(retry.body).toEqual(first.body);
+    expect(await db.auditLog.count({ where: { event: 'CART_MERGED' } })).toBe(1);
+    await cart('customer', 7);
+    const replay = await merge(key).expect(201);
+    expect(replay.body[0].quantity).toBe(7);
+    const nextIntent = await merge(randomUUID()).expect(201);
+    expect(nextIntent.body[0].quantity).toBe(12);
+    expect((await db.product.findUniqueOrThrow({ where: { id: 'cement' } })).stock).toBe(100);
+  });
+
+  it('rejects an altered payload for a used key without changing the cart', async () => {
+    const key = randomUUID();
+    await merge(key).expect(201);
+    const conflict = await merge(key, [{ productId: 'cement', quantity: 6 }]).expect(409);
+    expect(conflict.body.error.code).toBe('IDEMPOTENCY_CONFLICT');
+    expect(await db.cartItem.findFirstOrThrow()).toMatchObject({ quantity: 5 });
+  });
+
+  it('rolls back all lines and the receipt when one requested product exceeds stock', async () => {
+    await cart('customer', 10);
+    await db.product.create({ data: { ...product, id: 'steel', name: 'Test steel', stock: 2 } });
+    const key = randomUUID();
+    const result = await merge(key, [
+      { productId: 'cement', quantity: 5 },
+      { productId: 'steel', quantity: 3 },
+    ]).expect(409);
+    expect(result.body.error.code).toBe('OUT_OF_STOCK');
+    expect(await db.cartItem.findMany()).toMatchObject([{ productId: 'cement', quantity: 10 }]);
+    expect(await db.auditLog.count({ where: { event: 'CART_MERGED' } })).toBe(0);
+    await merge(key, [{ productId: 'cement', quantity: 5 }]).expect(201);
+    expect(await db.cartItem.findFirstOrThrow()).toMatchObject({ quantity: 15 });
+  });
+
+  it('scopes identical guest keys and quantities to the authenticated customer', async () => {
+    await cart('customer', 10);
+    const key = randomUUID();
+    await merge(key).expect(201);
+    const other = await merge(key, [{ productId: 'cement', quantity: 2 }], 'other').expect(201);
+    expect(other.body).toHaveLength(1);
+    expect(other.body[0]).toMatchObject({ userId: 'other', quantity: 2 });
+    expect(await db.cartItem.findFirstOrThrow({ where: { userId: 'customer' } })).toMatchObject({
+      quantity: 15,
+    });
+    await request(server)
+      .post('/api/v1/cart/merge')
+      .send({ idempotencyKey: randomUUID(), items: [{ productId: 'cement', quantity: 1 }] })
+      .expect(401);
+  });
+
+  it('validates unique positive lines and current selling multiples before persisting', async () => {
+    for (const items of [
+      [],
+      [{ productId: 'cement', quantity: 0 }],
+      [{ productId: 'cement', quantity: 1.5 }],
+      [{ productId: 'cement', quantity: 10001 }],
+      [
+        { productId: 'cement', quantity: 1 },
+        { productId: 'cement', quantity: 1 },
+      ],
+    ])
+      await merge(randomUUID(), items).expect(400);
+    await db.product.update({
+      where: { id: 'cement' },
+      data: { minQuantity: 10, quantityStep: 5 },
+    });
+    const invalid = await merge(randomUUID(), [{ productId: 'cement', quantity: 11 }]).expect(400);
+    expect(invalid.body.error.code).toBe('INVALID_QUANTITY');
+    expect(await db.cartItem.count()).toBe(0);
+    expect(await db.auditLog.count({ where: { event: 'CART_MERGED' } })).toBe(0);
+  });
+});
+
 describe('Checkout and stock transaction integrity', () => {
   it('calculates server totals and rejects money injection', async () => {
     await request(server)
