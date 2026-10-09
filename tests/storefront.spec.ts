@@ -348,13 +348,29 @@ test('storefront persists Hindi, supports keyboard navigation and fits narrow en
   await expect(
     page.getByRole('heading', { name: 'TEST V2 Material 00', exact: true, level: 1 }),
   ).toBeVisible();
+  await page.addStyleTag({
+    content: ':root { --body: Arial, sans-serif; --display: Arial, sans-serif; }',
+  });
   await page.evaluate(() => {
     const sizes = [...document.querySelectorAll<HTMLElement>('body *')].map(
       (element) => [element, parseFloat(getComputedStyle(element).fontSize)] as const,
     );
     for (const [element, size] of sizes) element.style.fontSize = `${size * 2}px`;
   });
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  const layout = await page.evaluate(() => ({
+    fits: document.documentElement.scrollWidth <= innerWidth,
+    width: document.documentElement.scrollWidth,
+    viewport: innerWidth,
+    overflow: [...document.querySelectorAll<HTMLElement>('body *')]
+      .filter((element) => element.getBoundingClientRect().right > innerWidth)
+      .map((element) => ({
+        tag: element.tagName,
+        class: element.className,
+        text: element.innerText?.slice(0, 80),
+        right: element.getBoundingClientRect().right,
+      })),
+  }));
+  expect(layout.fits, JSON.stringify(layout)).toBe(true);
 });
 
 test('owner price publication reaches storefront and existing customer app', async ({

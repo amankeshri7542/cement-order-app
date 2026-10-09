@@ -156,6 +156,12 @@ real browser zoom, screen-reader or family acceptance.
 
 Raw local evidence is kept under ignored `.local/v2-storefront/`.
 
+### CI portability correction
+
+The first review commit `e91ff25fa4cc6bed370303c2eed20106143a865a` passed CI setup, lint/typechecks and all backend/launcher/contract suites, but Chrome was **54/55**: doubled text on Linux caused horizontal overflow. Local reproduction with the wider Arial fallback confirmed a 368 px page at a 360 px viewport. The long “Recommended use” heading set the description grid's intrinsic minimum width. One `overflow-wrap: anywhere` rule on those headings fixes wrapping without clipping content. The browser test now deliberately covers the portable fallback font and reports offending element bounds while retaining its original fit assertion.
+
+The before-fix targeted Chrome case failed (`layout-before.json`); after-fix Chrome and WebKit each passed **1/1**, recorded in `layout-chrome-fixed.json` and `layout-webkit-fixed.json`. Lint, the browser-spec typecheck and the isolated production storefront rebuild passed. The final review SHA is validated again in CI; the first failed run remains linked in the review history. Earlier complete local suites above predate this one-line layout correction.
+
 ## Production checks and launcher lifecycle
 
 Production checks use separate Next output directories and reserved temporary ports after browser suites stop. Build the owner and storefront with `NEXT_DIST_DIR=.next-e2e`, `NEXT_PUBLIC_API_URL=https://api.security.invalid/api/v1` and `NEXT_PUBLIC_ASSET_ORIGIN=https://assets.security.invalid`:
