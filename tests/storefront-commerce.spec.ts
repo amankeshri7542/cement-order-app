@@ -68,13 +68,16 @@ async function token(request: APIRequestContext, phone = '+919297513709') {
 }
 async function login(page: Page, phone: string, next = '/cart') {
   await page.goto(`${site}/account?next=${encodeURIComponent(next)}`);
-  await expect(page.getByLabel('Mobile number', { exact: true })).toBeEnabled();
-  await page.getByLabel('Mobile number', { exact: true }).fill(phone);
+  await expect(page.getByRole('main').getByLabel('Mobile number', { exact: true })).toBeEnabled();
+  await page.getByRole('main').getByLabel('Mobile number', { exact: true }).fill(phone);
   const otp = page.waitForResponse((response) => response.url().endsWith('/auth/otp/request'));
   await page.getByRole('button', { name: 'Get sign-in code', exact: true }).click();
   const response = await otp;
   expect(response.status(), await response.text()).toBe(201);
-  await page.getByLabel('Six-digit code').fill((await response.json()).devCode);
+  await page
+    .getByRole('main')
+    .getByLabel('Six-digit code')
+    .fill((await response.json()).devCode);
   await page.getByRole('button', { name: 'Verify and continue', exact: true }).click();
   await expect(page).toHaveURL(`${site}${next}`);
 }
@@ -166,15 +169,17 @@ test('guest basket survives reload; a lost merge response replays once against a
     await db.$disconnect();
   }
   await page.goto(`${site}/products/${first}`);
-  await page.getByLabel('Quantity for TEST WEB Cement PPC').fill('3');
-  await page.getByLabel('Quantity for TEST WEB Cement PPC').press('Tab');
+  await page.getByRole('main').getByLabel('Quantity for TEST WEB Cement PPC').fill('3');
+  await page.getByRole('main').getByLabel('Quantity for TEST WEB Cement PPC').press('Tab');
   await page.getByRole('button', { name: 'Add to basket', exact: true }).click();
   await page.reload();
   await page.getByRole('link', { name: /^Basket 1$/ }).click();
   await expect(
     page.getByRole('heading', { name: 'Ready for the next step.', exact: true }),
   ).toBeVisible();
-  await expect(page.getByLabel('Quantity for TEST WEB Cement PPC')).toHaveValue('3');
+  await expect(page.getByRole('main').getByLabel('Quantity for TEST WEB Cement PPC')).toHaveValue(
+    '3',
+  );
   let dropped = false;
   await page.route(`${api}/cart/merge`, async (route) => {
     if (!dropped) {
@@ -189,9 +194,13 @@ test('guest basket survives reload; a lost merge response replays once against a
   await page.reload();
   await page.getByRole('button', { name: 'Recover saved basket' }).click();
   await expect(page.getByRole('button', { name: 'Recover saved basket' })).toHaveCount(0);
-  await expect(page.getByLabel('Quantity for TEST WEB Cement PPC')).toHaveValue('5');
+  await expect(page.getByRole('main').getByLabel('Quantity for TEST WEB Cement PPC')).toHaveValue(
+    '5',
+  );
   await page.reload();
-  await expect(page.getByLabel('Quantity for TEST WEB Cement PPC')).toHaveValue('5');
+  await expect(page.getByRole('main').getByLabel('Quantity for TEST WEB Cement PPC')).toHaveValue(
+    '5',
+  );
   expect((await (await page.request.get(`${api}/cart`)).json())[0].quantity).toBe(5);
   await screenshot(page, 'basket-desktop');
 });
@@ -221,7 +230,7 @@ test('rejected guest merge can be corrected and multidigit quantities persist th
   await page.unroute(`${api}/cart/merge`);
   await putCart(page, 2);
   await page.reload();
-  const quantity = page.getByLabel('Quantity for TEST WEB Cement PPC');
+  const quantity = page.getByRole('main').getByLabel('Quantity for TEST WEB Cement PPC');
   await quantity.fill('12');
   await expect(quantity).toHaveValue('12');
   await quantity.press('Tab');
@@ -317,11 +326,11 @@ test('saved address editing works; account switches and revocation clear private
   await seedAddress(page, phone);
   await page.goto(`${site}/account`);
   await page.getByRole('button', { name: 'Edit address', exact: true }).click();
-  await page.getByLabel('House / street / site').fill('Plot 19 edited');
+  await page.getByRole('main').getByLabel('House / street / site').fill('Plot 19 edited');
   await page.getByRole('button', { name: 'Save address', exact: true }).click();
   await expect(page.getByText(/Plot 19 edited/)).toBeVisible();
   await page.getByRole('button', { name: 'Edit address', exact: true }).click();
-  await page.getByLabel('Recipient name').fill('PRIVATE A DRAFT');
+  await page.getByRole('main').getByLabel('Recipient name').fill('PRIVATE A DRAFT');
   const otp = await page.request.post(`${api}/auth/otp/request`, {
     headers: { Origin: site },
     data: { phone: '+919888810006' },
@@ -340,7 +349,7 @@ test('saved address editing works; account switches and revocation clear private
   await expect(page.getByText(/Plot 19 edited/)).toHaveCount(0);
   await page.request.post(`${api}/auth/logout`, { headers: { Origin: site }, data: {} });
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await expect(page.getByLabel('Mobile number', { exact: true })).toBeVisible();
+  await expect(page.getByRole('main').getByLabel('Mobile number', { exact: true })).toBeVisible();
 });
 
 test('multi-material quotation recovers persisted reference, reviews revisions and converts once', async ({
@@ -355,11 +364,16 @@ test('multi-material quotation recovers persisted reference, reviews revisions a
   }
   await page.goto(`${site}/quotes`);
   await page.getByRole('radio', { name: 'Deliver here', exact: true }).check();
-  await page.getByLabel('Company (optional)').fill('TEST draft company');
-  await page.getByLabel('Site requirements (optional)').fill('TEST keep material list dry');
+  await page.getByRole('main').getByLabel('Company (optional)').fill('TEST draft company');
+  await page
+    .getByRole('main')
+    .getByLabel('Site requirements (optional)')
+    .fill('TEST keep material list dry');
   await page.reload();
-  await expect(page.getByLabel('Company (optional)')).toHaveValue('TEST draft company');
-  await expect(page.getByLabel('Site requirements (optional)')).toHaveValue(
+  await expect(page.getByRole('main').getByLabel('Company (optional)')).toHaveValue(
+    'TEST draft company',
+  );
+  await expect(page.getByRole('main').getByLabel('Site requirements (optional)')).toHaveValue(
     'TEST keep material list dry',
   );
   await expect(page.getByRole('radio', { name: 'Deliver here', exact: true })).toBeChecked();
@@ -612,7 +626,7 @@ test('comparison distinguishes selling units; Hindi and enlarged reduced-motion 
   await page.setViewportSize({ width: 360, height: 844 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto(`${site}/products/${first}`);
-  await expect(page.getByLabel('Quantity for TEST WEB Cement PPC')).toBeEnabled();
+  await expect(page.getByRole('main').getByLabel('Quantity for TEST WEB Cement PPC')).toBeEnabled();
   await page.evaluate(() => {
     const sizes = [...document.querySelectorAll<HTMLElement>('body *')].map(
       (element) => [element, parseFloat(getComputedStyle(element).fontSize)] as const,
@@ -691,14 +705,18 @@ test('product quantity stays disabled until hydration and preserves early multid
   });
   try {
     await page.goto(`${site}/products/${first}`, { waitUntil: 'commit' });
-    await expect(page.getByLabel('Quantity for TEST WEB Cement PPC')).toBeDisabled();
+    await expect(
+      page.getByRole('main').getByLabel('Quantity for TEST WEB Cement PPC'),
+    ).toBeDisabled();
     await expect(page.getByRole('button', { name: 'Add to quote', exact: true })).toBeDisabled();
   } finally {
     hydrate();
   }
-  await page.getByLabel('Quantity for TEST WEB Cement PPC').fill('12');
-  await page.getByLabel('Quantity for TEST WEB Cement PPC').press('Tab');
+  await page.getByRole('main').getByLabel('Quantity for TEST WEB Cement PPC').fill('12');
+  await page.getByRole('main').getByLabel('Quantity for TEST WEB Cement PPC').press('Tab');
   await page.getByRole('button', { name: 'Add to basket', exact: true }).click();
   await page.getByRole('link', { name: /^Basket 1$/ }).click();
-  await expect(page.getByLabel('Quantity for TEST WEB Cement PPC')).toHaveValue('12');
+  await expect(page.getByRole('main').getByLabel('Quantity for TEST WEB Cement PPC')).toHaveValue(
+    '12',
+  );
 });
