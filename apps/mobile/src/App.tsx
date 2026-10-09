@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react';
 import {
-  ActivityIndicator,
   BackHandler,
   Platform,
   Pressable,
@@ -33,20 +32,24 @@ function Shell() {
   const {
     route,
     navigate,
+    goBack,
     t,
     language,
     setLanguage,
     cart,
     user,
     error,
-    loading,
     refreshCatalog,
+    refreshCurrent,
+    refreshing,
+    pendingCheckout,
     toast,
     setToast,
     setLoginVisible,
   } = useStore();
   const scroll = useRef<ScrollView>(null);
   const { width } = useWindowDimensions();
+  const cartQuantity = cart.reduce((total, line) => total + line.quantity, 0);
   const primary = ['Home', 'Products', 'Orders', 'Account'].includes(route.screen);
   useEffect(() => {
     scroll.current?.scrollTo({ y: 0, animated: false });
@@ -55,11 +58,11 @@ function Shell() {
     if (Platform.OS === 'web') return;
     const listener = BackHandler.addEventListener('hardwareBackPress', () => {
       if (route.screen === 'Home') return false;
-      navigate({ screen: 'Home' });
+      goBack();
       return true;
     });
     return () => listener.remove();
-  }, [route, navigate]);
+  }, [route, goBack]);
   useEffect(() => {
     if (Platform.OS === 'web') document.title = 'Shiv Cement Store · Build with confidence';
   }, []);
@@ -79,7 +82,7 @@ function Shell() {
     ) : route.screen === 'Order' ? (
       <OrderDetail key={route.id} />
     ) : route.screen === 'Addresses' ? (
-      <Addresses />
+      <Addresses key={route.id || 'all'} />
     ) : route.screen === 'Quotes' ? (
       <Quotes />
     ) : route.screen === 'QuoteRequest' ? (
@@ -106,12 +109,22 @@ function Shell() {
               <Text style={a.brandSmall}>CEMENT STORE</Text>
             </View>
           </Pressable>
-          <View style={a.headerActions}>
+          <View style={[a.headerActions, width < 400 && { gap: 5 }]}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Refresh current screen"
+              accessibilityState={{ busy: refreshing }}
+              disabled={refreshing}
+              onPress={() => void refreshCurrent()}
+              style={a.cartButton}
+            >
+              <Icon name="refresh-outline" size={21} />
+            </Pressable>
             {width > 650 && (
               <View style={[s.row, { marginRight: 15 }]}>
                 <Icon name="location-outline" color="#7e94a5" size={20} />
                 <View>
-                  <Text style={{ color: '#93a1ab', fontSize: 9 }}>DELIVERING ACROSS</Text>
+                  <Text style={{ color: '#93a1ab', fontSize: 9 }}>BUILDING MATERIALS</Text>
                   <Text style={{ fontSize: 12, fontWeight: '600', color: C.ink, marginTop: 4 }}>
                     Patna & Bihar
                   </Text>
@@ -139,15 +152,15 @@ function Shell() {
             )}
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={`${t('cart')}, ${cart.length} products`}
+              accessibilityLabel={`${t('cart')}, ${cartQuantity} ${cartQuantity === 1 ? 'item' : 'items'}, ${cart.length} ${cart.length === 1 ? 'product' : 'products'}`}
               onPress={() => navigate({ screen: 'Cart' })}
               style={a.cartButton}
             >
               <Icon name="bag-outline" size={23} />
-              {cart.length > 0 && (
+              {cartQuantity > 0 && (
                 <View style={a.cartCount}>
-                  <Text style={{ fontSize: 8, fontWeight: '800', color: C.navy }}>
-                    {cart.length}
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: C.navy }}>
+                    {cartQuantity}
                   </Text>
                 </View>
               )}
@@ -160,7 +173,7 @@ function Shell() {
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ flexGrow: 1 }}
         refreshControl={
-          <RefreshControl refreshing={false} onRefresh={() => void refreshCatalog()} />
+          <RefreshControl refreshing={refreshing} onRefresh={() => void refreshCurrent()} />
         }
       >
         <View
@@ -176,18 +189,7 @@ function Shell() {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={t('back')}
-              onPress={() =>
-                navigate({
-                  screen:
-                    route.screen === 'Checkout'
-                      ? 'Cart'
-                      : route.screen === 'Product'
-                        ? 'Products'
-                        : route.screen === 'Order'
-                          ? 'Orders'
-                          : 'Account',
-                })
-              }
+              onPress={goBack}
               style={a.back}
             >
               <Icon name="arrow-back" size={19} />
@@ -202,14 +204,15 @@ function Shell() {
               </Button>
             </View>
           )}
-          {loading ? (
-            <View style={a.loading}>
-              <ActivityIndicator color={C.navy} size="large" />
-              <Text style={s.body}>{t('loading')}</Text>
+          {pendingCheckout && !['Checkout', 'Order'].includes(route.screen) && (
+            <View style={[s.stack, { marginBottom: 20 }]}>
+              <Notice>Your previous checkout still needs its result checked.</Notice>
+              <Button secondary onPress={() => navigate({ screen: 'Checkout' })}>
+                Check previous order request
+              </Button>
             </View>
-          ) : (
-            screen
           )}
+          {screen}
         </View>
       </ScrollView>
       <View style={a.nav}>
@@ -308,9 +311,10 @@ const a = StyleSheet.create({
     position: 'absolute',
     top: 3,
     right: 0,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
+    minWidth: 20,
+    paddingHorizontal: 4,
+    height: 20,
+    borderRadius: 10,
     backgroundColor: C.yellow,
     alignItems: 'center',
     justifyContent: 'center',

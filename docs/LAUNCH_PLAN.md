@@ -6,7 +6,7 @@ The repository is a tested MVP, not a deployed production service. Start with a 
 
 - Replace sample products, prices, stock and illustrations with your actual catalogue and permitted product photos. Confirm units, minimum quantities and unloading charges.
 - Set the store contact (currently 9297513707), delivery charges and free-delivery threshold in admin. The current ₹500/₹50,000 values are development examples.
-- Start with a delivery area your team can reliably fulfil, such as selected Patna pincodes. Expand across Bihar after proving transport costs and delivery times. The current flat delivery fee is not a distance quotation engine; confirm outstation transport before accepting an order.
+- Start with a delivery area your team can reliably fulfil, such as selected Patna pincodes. Expand across Bihar after proving transport costs and delivery times. Pincode zones now control serviceability and charges; they are not a distance quotation engine; confirm outstation transport before accepting an order.
 - Publish delivery, cancellation, return/refund, privacy and support policies. Ask your accountant to confirm GST treatment and invoice requirements: current order summaries are not statutory GST invoices.
 - Assign a person to verify stock, accept orders, reconcile collections and answer support calls each day. Document manual handling of bulk quotes, refunds and failed deliveries.
 
@@ -35,7 +35,7 @@ The repository is a tested MVP, not a deployed production service. Start with a 
 
 ## 5. Let evidence choose the next features
 
-Prioritize delivery zones and transport quotations if outstation orders grow; statutory invoicing when your accountant requires it; quote-to-order checkout when manual bulk conversion causes friction; pagination as records approach the current query limits; stronger staff authentication as the team expands. Improve Hindi coverage, accessibility and real-device usability based on customer feedback.
+Pincode delivery zones, cursor pagination, and staff OTP plus passphrase are implemented. Prioritize transport quotations if outstation orders grow; statutory invoicing when your accountant requires it; quote-to-order checkout when manual bulk conversion causes friction; staff recovery procedures as the team expands. Improve Hindi coverage, accessibility and real-device usability based on customer feedback.
 
 Revisit multiple API instances only when monitoring shows one instance cannot meet demand or availability requirements. First add shared rate limiting/event delivery and safe database worker claiming; the current architecture deliberately assumes a single instance.
 

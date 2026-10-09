@@ -1,3 +1,4 @@
+import { approvedAssets } from './product-assets';
 import {
   Controller,
   Delete,
@@ -24,6 +25,8 @@ import {
 } from '@shiv/shared';
 import { Db } from './db';
 import { Admin, AuthRequest, Contract, Input, Public, fail } from './http';
+import { paginate } from './pagination';
+import { moveStock } from './inventory';
 import { onlineReady } from './config';
 
 @Injectable()
@@ -42,24 +45,64 @@ export class CatalogController {
   ) {}
   @Public()
   @Get('products')
-  products(@Query('q') q?: string, @Query('category') category?: string) {
-    return this.db.product.findMany({
-      where: {
-        active: true,
-        ...(q
-          ? {
-              OR: [
-                { name: { contains: q.slice(0, 100), mode: 'insensitive' } },
-                { brand: { contains: q.slice(0, 100), mode: 'insensitive' } },
-              ],
-            }
-          : {}),
-        ...(category ? { category: { slug: category } } : {}),
-      },
-      include: { category: true },
-      orderBy: [{ stock: 'desc' }, { name: 'asc' }],
-      take: 200,
-    });
+  products(@Query() query: Record<string, string>) {
+    return this.productPage(query, false);
+  }
+  async productPage(query: Record<string, string>, admin: boolean) {
+    const parsed = z
+      .object({
+        q: z.string().trim().max(100).default(''),
+        category: z.string().max(60).default(''),
+        brand: z.string().max(80).default(''),
+        availability: z.enum(['all', 'in', 'out']).default('all'),
+        sort: z.enum(['name', 'price_asc', 'price_desc', 'newest']).default('name'),
+        lowStock: z.enum(['true', 'false']).optional(),
+      })
+      .safeParse(query);
+    if (!parsed.success) fail('INVALID_FILTER', 'Check the catalogue filters.');
+    const f = parsed.data;
+    const page = paginate(
+      query,
+      JSON.stringify({ admin, ...f }),
+      f.sort.startsWith('price') ? 'pricePaise' : f.sort === 'newest' ? 'createdAt' : 'name',
+      ['price_desc', 'newest'].includes(f.sort) ? 'desc' : 'asc',
+    );
+    return page.finish(
+      await this.db.product.findMany({
+        where: {
+          AND: [
+            admin ? {} : { active: true },
+            admin && f.lowStock === 'true' ? { active: true, stock: { lt: 25 } } : {},
+            page.after,
+            f.q
+              ? {
+                  OR: [
+                    { name: { contains: f.q, mode: 'insensitive' } },
+                    { brand: { contains: f.q, mode: 'insensitive' } },
+                    { grade: { contains: f.q, mode: 'insensitive' } },
+                  ],
+                }
+              : {},
+            f.category ? { category: { slug: f.category } } : {},
+            f.brand ? { brand: f.brand } : {},
+            f.availability === 'in'
+              ? { stock: { gt: 0 } }
+              : f.availability === 'out'
+                ? { stock: 0 }
+                : {},
+          ],
+        },
+        include: { category: true },
+        orderBy: page.orderBy,
+        take: page.take,
+      }),
+    );
+  }
+  @Public() @Get('brands') brands(@Query('q') q = '') {
+    if (typeof q !== 'string' || q.length > 80) fail('INVALID_FILTER', 'Check the brand search.');
+    return this.db.$queryRaw<
+      { brand: string }[]
+    >`SELECT DISTINCT brand FROM "Product" WHERE active=true AND brand ILIKE ${'%' + q + '%'} ORDER BY brand LIMIT 50`;
   }
   @Public()
   @Get('products/:id')
@@ -88,19 +131,31 @@ export class CatalogController {
     );
   }
 
-  @Admin() @Get('admin/products') adminProducts() {
-    return this.db.product.findMany({
-      include: { category: true },
-      orderBy: { createdAt: 'desc' },
-      take: 1000,
-    });
+  @Admin() @Get('admin/products') adminProducts(@Query() query: Record<string, string>) {
+    return this.productPage(query, true);
   }
   @Admin()
   @Post('admin/products')
   @Contract(productSchema)
   async create(@Input(productSchema) body: z.infer<typeof productSchema>, @Req() req: AuthRequest) {
+    if (body.minQuantity % body.quantityStep)
+      fail('INVALID_QUANTITY', 'Minimum quantity must be a multiple of the quantity step.');
     const product = await this.db.atomic(async (tx) => {
-      const p = await tx.product.create({ data: body, include: { category: true } });
+      await approvedAssets(tx, body.images);
+      const p = await tx.product.create({
+        data: { ...body, stock: 0 },
+        include: { category: true },
+      });
+      if (body.stock)
+        await moveStock(tx, {
+          productId: p.id,
+          kind: 'PURCHASE_IN',
+          quantity: body.stock,
+          actorId: req.user.id,
+          reference: 'Opening stock',
+          note: 'Initial product stock',
+          idempotencyKey: `opening:${p.id}`,
+        });
       await tx.auditLog.create({
         data: {
           actorId: req.user.id,
@@ -109,7 +164,7 @@ export class CatalogController {
           details: { pricePaise: p.pricePaise, stock: p.stock },
         },
       });
-      return p;
+      return tx.product.findUniqueOrThrow({ where: { id: p.id }, include: { category: true } });
     });
     this.events.publish({ type: 'CATALOG_UPDATED', productId: product.id });
     return product;
@@ -123,11 +178,26 @@ export class CatalogController {
     @Req() req: AuthRequest,
   ) {
     const { expectedVersion, ...data } = input;
+    if (data.minQuantity % data.quantityStep)
+      fail('INVALID_QUANTITY', 'Minimum quantity must be a multiple of the quantity step.');
     const product = await this.db.atomic(async (tx) => {
+      await approvedAssets(tx, data.images);
       const old = await tx.product.findUniqueOrThrow({ where: { id } });
       if (old.version !== expectedVersion)
         fail('CONFLICT', 'Product changed. Refresh before saving.', 409);
-      const changed = old.pricePaise !== data.pricePaise;
+      if (old.stock !== data.stock)
+        fail(
+          'USE_INVENTORY_MOVEMENT',
+          'Record a stock movement instead of replacing the balance.',
+          409,
+        );
+      const monetaryChanged = old.pricePaise !== data.pricePaise;
+      const changed =
+        monetaryChanged ||
+        old.unit !== data.unit ||
+        old.packSize !== data.packSize ||
+        old.minQuantity !== data.minQuantity ||
+        old.quantityStep !== data.quantityStep;
       const p = await tx.product.update({
         where: { id },
         data: {
@@ -137,7 +207,7 @@ export class CatalogController {
         },
         include: { category: true },
       });
-      if (changed)
+      if (monetaryChanged)
         await tx.productPriceHistory.create({
           data: {
             productId: id,
@@ -150,7 +220,11 @@ export class CatalogController {
       await tx.auditLog.create({
         data: {
           actorId: req.user.id,
-          event: changed ? 'PRICE_CHANGED' : 'PRODUCT_UPDATED',
+          event: monetaryChanged
+            ? 'PRICE_CHANGED'
+            : changed
+              ? 'PRODUCT_TERMS_CHANGED'
+              : 'PRODUCT_UPDATED',
           entityId: id,
           details: {
             oldPricePaise: old.pricePaise,
@@ -224,8 +298,8 @@ export class AccountController {
       data: {
         name: body.name,
         language: body.language,
-        ...(req.user.role !== 'ADMIN' && body.contractor !== undefined
-          ? { role: body.contractor ? 'CONTRACTOR' : 'CUSTOMER' }
+        ...(req.user.role !== 'ADMIN' && body.contractor && req.user.contractorStatus !== 'VERIFIED'
+          ? { contractorStatus: 'PENDING' }
           : {}),
       },
     });
@@ -242,10 +316,27 @@ export class AccountController {
     @Input(addressSchema) body: z.infer<typeof addressSchema>,
     @Req() req: AuthRequest,
   ) {
-    if ((await this.db.address.count({ where: { userId: req.user.id } })) >= 20)
-      fail('ADDRESS_LIMIT', 'You can save up to 20 addresses.');
-    return this.db.address.create({ data: { ...body, userId: req.user.id } });
+    return this.db.atomic(async (tx) => {
+      if ((await tx.address.count({ where: { userId: req.user.id } })) >= 20)
+        fail('ADDRESS_LIMIT', 'You can save up to 20 addresses.');
+      return tx.address.create({ data: { ...body, userId: req.user.id } });
+    });
   }
+  @Patch('addresses/:id')
+  @Contract(addressSchema)
+  async editAddress(
+    @Param('id') id: string,
+    @Input(addressSchema) body: z.infer<typeof addressSchema>,
+    @Req() req: AuthRequest,
+  ) {
+    const result = await this.db.address.updateMany({
+      where: { id, userId: req.user.id },
+      data: body,
+    });
+    if (!result.count) fail('NOT_FOUND', 'Address not found.', 404);
+    return this.db.address.findUniqueOrThrow({ where: { id } });
+  }
+
   @Delete('addresses/:id') async deleteAddress(@Param('id') id: string, @Req() req: AuthRequest) {
     const result = await this.db.address.deleteMany({ where: { id, userId: req.user.id } });
     if (!result.count) fail('NOT_FOUND', 'Address not found.', 404);

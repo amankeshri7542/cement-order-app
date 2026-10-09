@@ -1,13 +1,13 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { CheckoutReview, Order, money } from '@shiv/shared';
-import { useStore } from './store';
+import { makeKey, useStore } from './store';
 import { ApiError, api, message } from './api';
 import { Button, C, Empty, Field, Icon, Notice, Section, s } from './ui';
 import { Quantity } from './catalog';
 import { payOnline } from './payment';
 export function Cart() {
-  const { cart, t, navigate, setQuantity } = useStore();
+  const { cart, cartBusy, t, navigate, setQuantity } = useStore();
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   async function change(id: string, quantity: number) {
@@ -34,7 +34,10 @@ export function Cart() {
   return (
     <View style={s.stack}>
       <Text style={s.title}>{t('cart')}</Text>
-      <Text style={s.body}>{cart.length} products · Prices confirmed at checkout</Text>
+      <Text style={s.body}>
+        {cart.reduce((total, line) => total + line.quantity, 0)} items · {cart.length}{' '}
+        {cart.length === 1 ? 'product' : 'products'} · Prices confirmed at checkout
+      </Text>
       {cart.map((c) => (
         <View key={c.productId} style={s.card}>
           <View style={s.between}>
@@ -49,7 +52,7 @@ export function Cart() {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={`Remove ${c.product.name}`}
-              disabled={Boolean(busy)}
+              disabled={Boolean(busy) || cartBusy}
               onPress={() => void change(c.productId, 0)}
               style={{ padding: 12 }}
             >
@@ -59,8 +62,12 @@ export function Cart() {
           <View style={[s.between, { marginTop: 18 }]}>
             <Quantity
               value={c.quantity}
+              min={c.product.minQuantity}
+              step={c.product.quantityStep}
               max={Math.min(10000, c.product.stock)}
-              disabled={Boolean(busy)}
+              disabled={Boolean(busy) || cartBusy}
+              commitOnBlur
+              onInvalid={setError}
               change={(n) => void change(c.productId, n)}
             />
             <Text style={s.price}>{money(c.product.pricePaise * c.quantity)}</Text>
@@ -77,7 +84,7 @@ export function Cart() {
         The store will confirm today’s prices, stock and delivery fee before you place your order.
       </Notice>
       <Button
-        disabled={Boolean(busy)}
+        disabled={Boolean(busy) || cartBusy}
         onPress={() => navigate({ screen: 'Checkout' })}
         icon="arrow-forward"
       >
@@ -87,18 +94,41 @@ export function Cart() {
   );
 }
 export function Checkout() {
-  const { addresses, cart, settings, user, t, navigate, refreshAccount, refreshCatalog, setToast } =
-    useStore();
-  const [addressId, setAddressId] = useState(addresses[0]?.id || '');
-  const [date, setDate] = useState(new Date(Date.now() + 86400000).toISOString().slice(0, 10));
-  const [notes, setNotes] = useState('');
-  const [paymentMethod, setPayment] = useState<'COD' | 'ONLINE'>('COD');
+  const {
+    addresses,
+    cart,
+    settings,
+    user,
+    t,
+    navigate,
+    refreshAccount,
+    refreshCatalog,
+    setToast,
+    checkoutDraft,
+    updateCheckoutDraft,
+    pendingCheckout,
+    savePendingCheckout,
+    rememberOrder,
+    draftsLoading,
+    openAddresses,
+  } = useStore();
+  const { date, notes, paymentMethod } = checkoutDraft;
+  const addressId = addresses.some((address) => address.id === checkoutDraft.addressId)
+    ? checkoutDraft.addressId
+    : addresses[0]?.id || '';
+  const setAddressId = (value: string) => updateCheckoutDraft({ addressId: value });
+  const setDate = (value: string) => updateCheckoutDraft({ date: value });
+  const setNotes = (value: string) => updateCheckoutDraft({ notes: value });
+  const setPayment = (value: 'COD' | 'ONLINE') => updateCheckoutDraft({ paymentMethod: value });
   const [review, setReview] = useState<CheckoutReview | null>(null);
   const [accepted, setAccepted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [key, setKey] = useState('');
+  const submitting = useRef(false);
+  const reviewing = useRef(false);
   async function getReview() {
+    if (reviewing.current || submitting.current) return;
+    reviewing.current = true;
     setBusy(true);
     setError('');
     setAccepted(false);
@@ -111,26 +141,44 @@ export function Checkout() {
           paymentMethod,
         }),
       );
-      setKey(makeKey());
     } catch (e) {
       setReview(null);
       setError(message(e));
     } finally {
+      reviewing.current = false;
       setBusy(false);
     }
   }
   async function place() {
-    if (!review || !accepted) return;
+    if (submitting.current || (!pendingCheckout && (!review || !accepted))) return;
+    submitting.current = true;
     setBusy(true);
     setError('');
+    const submission = pendingCheckout || {
+      reviewId: review!.id,
+      idempotencyKey: makeKey(),
+      paymentMethod: review!.paymentMethod,
+      totalPaise: review!.totalPaise,
+    };
     try {
+      // Save the original request before sending it so an interrupted response is safe to retry.
+      await savePendingCheckout(submission);
       const order = await api<Order>('/orders', 'POST', {
-        reviewId: review.id,
-        idempotencyKey: key,
+        reviewId: submission.reviewId,
+        idempotencyKey: submission.idempotencyKey,
       });
-      await refreshAccount();
+      rememberOrder(order);
+      navigate({ screen: 'Order', id: order.id });
+      void savePendingCheckout(null).catch(() =>
+        setToast(
+          'Order received. The saved request could not be cleared; retrying it returns this same order.',
+        ),
+      );
+      void refreshAccount().catch(() =>
+        setToast('Order received. Cart refresh is temporarily unavailable.'),
+      );
       void refreshCatalog();
-      if (paymentMethod === 'ONLINE') {
+      if (submission.paymentMethod === 'ONLINE' && order.status === 'PENDING_PAYMENT') {
         try {
           const result = await payOnline(order.id, user!.phone);
           setToast(result.message);
@@ -138,9 +186,7 @@ export function Checkout() {
           setToast(message(e));
         }
       }
-      navigate({ screen: 'Order', id: order.id });
     } catch (e) {
-      setError(message(e));
       if (
         e instanceof ApiError &&
         [
@@ -149,15 +195,42 @@ export function Checkout() {
           'REVIEW_EXPIRED',
           'CART_CHANGED',
           'PAYMENTS_UNAVAILABLE',
+          'INVALID_DELIVERY_DATE',
+          'EMPTY_CART',
         ].includes(e.code)
       ) {
+        await savePendingCheckout(null).catch(() => {});
         setReview(null);
         setAccepted(false);
+        setError(message(e));
+      } else {
+        setError(
+          `We could not confirm the result. Check this same request before placing another order. ${message(e)}`,
+        );
       }
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   }
+  if (draftsLoading) return <Text style={s.body}>Restoring your checkout…</Text>;
+  if (pendingCheckout)
+    return (
+      <View style={s.stack}>
+        <Text style={s.title}>Check your order request</Text>
+        <Notice>
+          This checkout is for {money(pendingCheckout.totalPaise)}. Its result is not confirmed on
+          this device yet. Retrying checks the same request and will not create a second order.
+        </Notice>
+        {Boolean(error) && <Notice error>{error}</Notice>}
+        <Button loading={busy} onPress={() => void place()}>
+          Check order result
+        </Button>
+        <Button secondary disabled={busy} onPress={() => navigate({ screen: 'Orders' })}>
+          View my orders
+        </Button>
+      </View>
+    );
   if (!cart.length && !review)
     return (
       <Empty
@@ -184,8 +257,8 @@ export function Checkout() {
         <>
           <Section
             title={t('address')}
-            action="+ Add new"
-            onAction={() => navigate({ screen: 'Addresses' })}
+            action={busy ? undefined : '+ Add new'}
+            onAction={() => openAddresses()}
           />
           {!addresses.length ? (
             <Notice>Save your site or delivery address to continue.</Notice>
@@ -195,7 +268,8 @@ export function Checkout() {
                 key={a.id}
                 accessibilityRole="radio"
                 aria-checked={addressId === a.id}
-                accessibilityState={{ checked: addressId === a.id }}
+                accessibilityState={{ checked: addressId === a.id, disabled: busy }}
+                disabled={busy}
                 onPress={() => setAddressId(a.id)}
                 style={[
                   s.card,
@@ -215,12 +289,22 @@ export function Checkout() {
                     {a.line1}, {a.area}, {a.city} {a.pincode}
                   </Text>
                 </View>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Edit ${a.label} address`}
+                  disabled={busy}
+                  onPress={() => openAddresses(a.id)}
+                  style={{ padding: 12 }}
+                >
+                  <Icon name="create-outline" />
+                </Pressable>
               </Pressable>
             ))
           )}
           <Field
             label={`${t('deliveryDate')} (YYYY-MM-DD)`}
             value={date}
+            editable={!busy}
             onChangeText={setDate}
             placeholder="2026-10-03"
             maxLength={10}
@@ -228,6 +312,7 @@ export function Checkout() {
           <Field
             label={t('notes')}
             value={notes}
+            editable={!busy}
             onChangeText={setNotes}
             multiline
             maxLength={500}
@@ -237,8 +322,11 @@ export function Checkout() {
           <Pressable
             accessibilityRole="radio"
             aria-checked={paymentMethod === 'COD'}
-            accessibilityState={{ checked: paymentMethod === 'COD' }}
-            onPress={() => setPayment('COD')}
+            accessibilityState={{ checked: paymentMethod === 'COD', disabled: busy }}
+            disabled={busy}
+            onPress={() => {
+              if (!reviewing.current && !submitting.current) setPayment('COD');
+            }}
             style={[s.card, s.row]}
           >
             <Icon name={paymentMethod === 'COD' ? 'radio-button-on' : 'radio-button-off'} />
@@ -251,8 +339,11 @@ export function Checkout() {
             <Pressable
               accessibilityRole="radio"
               aria-checked={paymentMethod === 'ONLINE'}
-              accessibilityState={{ checked: paymentMethod === 'ONLINE' }}
-              onPress={() => setPayment('ONLINE')}
+              accessibilityState={{ checked: paymentMethod === 'ONLINE', disabled: busy }}
+              disabled={busy}
+              onPress={() => {
+                if (!reviewing.current && !submitting.current) setPayment('ONLINE');
+              }}
               style={[s.card, s.row]}
             >
               <Icon name={paymentMethod === 'ONLINE' ? 'radio-button-on' : 'radio-button-off'} />
@@ -319,7 +410,9 @@ export function Checkout() {
               {review.address.pincode}
               {'\n'}Delivery: {review.deliveryDate}
               {'\n'}
-              {paymentMethod === 'COD' ? t('cod') : 'Razorpay online payment'}
+              {review.deliveryEstimate}
+              {'\n'}
+              {review.paymentMethod === 'COD' ? t('cod') : 'Razorpay online payment'}
             </Text>
           </View>
           <Pressable
@@ -336,7 +429,9 @@ export function Checkout() {
           </Pressable>
           {Boolean(error) && <Notice error>{error}</Notice>}
           <Button loading={busy} disabled={!accepted} onPress={() => void place()} icon="checkmark">
-            {paymentMethod === 'COD' ? t('place') : `${t('pay')} · ${money(review.totalPaise)}`}
+            {review.paymentMethod === 'COD'
+              ? t('place')
+              : `${t('pay')} · ${money(review.totalPaise)}`}
           </Button>
           <Button
             secondary
@@ -355,13 +450,6 @@ export function Checkout() {
       )}
     </View>
   );
-}
-// Idempotency UUID is an identifier, not an authentication secret.
-function makeKey() {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const n = Math.floor(Math.random() * 16);
-    return (c === 'x' ? n : (n & 3) | 8).toString(16);
-  });
 }
 const ch = StyleSheet.create({
   steps: {

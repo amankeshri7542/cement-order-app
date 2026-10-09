@@ -21,7 +21,7 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: 'npm run dev:api',
+      command: 'npm exec -w @shiv/api -- tsx --env-file=.env scripts/e2e-api.ts',
       url: 'http://localhost:4010/api/v1/health',
       timeout: 120000,
       env: {
@@ -31,19 +31,28 @@ export default defineConfig({
         OTP_PROVIDER: 'mock',
         OTP_HASH_SECRET: 'browser-tests-only-secret-at-least-32-characters',
         CORS_ORIGINS: 'http://localhost:3001,http://localhost:8082',
+        R2_PUBLIC_URL: 'https://assets.example.invalid',
       },
     },
     {
       command: 'npm exec -w @shiv/admin -- next dev --port 3001',
       url: 'http://localhost:3001',
       timeout: 120000,
-      env: { NEXT_PUBLIC_API_URL: 'http://localhost:4010/api/v1', NEXT_DIST_DIR: '.next-e2e' },
+      env: {
+        NEXT_PUBLIC_API_URL: 'http://localhost:4010/api/v1',
+        NEXT_DIST_DIR: '.next-e2e',
+        NEXT_PUBLIC_ASSET_ORIGIN: 'https://assets.example.invalid',
+      },
     },
     {
-      command: 'npm exec -w @shiv/mobile -- expo start --web --port 8082',
+      command: 'npm run web -w @shiv/mobile -- --port 8082',
       url: 'http://localhost:8082',
       timeout: 120000,
-      env: { EXPO_PUBLIC_API_URL: 'http://localhost:4010/api/v1', CI: '1' },
+      env: {
+        EXPO_PUBLIC_API_URL: 'http://localhost:4010/api/v1',
+        EXPO_PUBLIC_ASSET_ORIGIN: 'https://assets.example.invalid',
+        CI: '1',
+      },
     },
   ],
 });
