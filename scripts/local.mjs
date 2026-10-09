@@ -6,18 +6,58 @@ import {
   openSync,
   closeSync,
   unlinkSync,
+  renameSync,
 } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseEnv } from 'node:util';
+import { createRequire } from 'node:module';
+import {
+  localPorts,
+  assertPortFree,
+  processInfo,
+  isManaged,
+  listenerPids,
+  stopManaged,
+  applicationIdentity,
+} from './local-services.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 process.chdir(root);
 const local = resolve('.local');
 mkdirSync(local, { recursive: true, mode: 0o700 });
 const command = process.argv[2] || 'status';
+const require = createRequire(import.meta.url);
+const ports = ['start', 'serve', 'status'].includes(command)
+  ? localPorts(
+      process.env,
+      existsSync('.local/ports.env') ? parseEnv(readFileSync('.local/ports.env', 'utf8')) : {},
+    )
+  : {};
+const savedServices = () =>
+  existsSync('.local/services.json')
+    ? JSON.parse(readFileSync('.local/services.json', 'utf8'))
+    : [];
+const saveServices = (services) => {
+  writeFileSync('.local/services.json.tmp', JSON.stringify(services, null, 2), { mode: 0o600 });
+  renameSync('.local/services.json.tmp', '.local/services.json');
+};
+if (['start', 'stop'].includes(command)) {
+  let lock;
+  try {
+    lock = openSync('.local/launcher.lock', 'wx', 0o600);
+  } catch (error) {
+    if (error.code === 'EEXIST')
+      throw new Error(
+        'Another launcher operation holds .local/launcher.lock. Wait for it to finish; after a crash, remove the lock only after checking no local start/stop command is running.',
+      );
+    throw error;
+  }
+  closeSync(lock);
+  process.on('exit', () => unlinkSync('.local/launcher.lock'));
+}
 function run(bin, args, options = {}) {
   const result = spawnSync(bin, args, { stdio: 'inherit', ...options });
   if (result.error || result.status !== 0)
@@ -130,25 +170,71 @@ if (command === 'setup') {
   run('npm', ['run', 'db:migrate'], { env: { ...process.env, DATABASE_URL: testUrl.toString() } });
   run('npm', ['run', 'local:fixtures', '-w', '@shiv/api'], { env: { ...process.env, ...env } });
   console.log('Ready. npm run local:start; see docs/LOCAL_TESTING.md for local accounts.');
-} else if (command === 'start') {
-  database();
-  const { env: apiEnv } = config();
-  if (String(apiEnv.PORT || '4000') !== '4000')
-    throw new Error(
-      'Local launcher expects API PORT=4000. Use individual service commands for custom ports.',
-    );
-  const environments = {
-    api: apiEnv,
-    admin: parseEnv(readFileSync('apps/admin/.env', 'utf8')),
-    customer: parseEnv(readFileSync('apps/mobile/.env', 'utf8')),
+} else if (command === 'serve') {
+  const name = process.argv[3];
+  const specs = {
+    api: ['apps/api', [require.resolve('tsx/cli'), 'watch', '--env-file=.env', 'src/main.ts']],
+    admin: [
+      'apps/admin',
+      [
+        require.resolve('next/dist/bin/next'),
+        'dev',
+        '--port',
+        String(ports.admin),
+        '--hostname',
+        '127.0.0.1',
+      ],
+    ],
+    customer: [
+      'apps/mobile',
+      [resolve('scripts/customer-web.mjs'), '--port', String(ports.customer)],
+    ],
+    storefront: [
+      'apps/storefront',
+      [
+        require.resolve('next/dist/bin/next'),
+        'dev',
+        '--port',
+        String(ports.storefront),
+        '--hostname',
+        '127.0.0.1',
+      ],
+    ],
   };
-  for (const [key, value] of [
-    ['NEXT_PUBLIC_API_URL', environments.admin.NEXT_PUBLIC_API_URL],
-    ['EXPO_PUBLIC_API_URL', environments.customer.EXPO_PUBLIC_API_URL],
-  ]) {
-    if (value !== 'http://localhost:4000/api/v1')
-      throw new Error(`${key} must be http://localhost:4000/api/v1 for the local launcher.`);
-  }
+  if (!specs[name]) throw new Error('Unknown local service.');
+  const [cwd, args] = specs[name];
+  const child = spawn(process.execPath, args, { cwd, stdio: 'inherit' });
+  // The launcher signals the whole group; retain the group leader until children exit.
+  process.on('SIGTERM', () => child.kill('SIGTERM'));
+  process.on('SIGINT', () => child.kill('SIGINT'));
+  child.on('error', (error) => {
+    console.error(error.message);
+    process.exitCode = 1;
+  });
+  child.on('exit', (code) => {
+    process.exitCode = code || 0;
+  });
+} else if (command === 'start') {
+  const previous = savedServices();
+  if (previous.some((record) => processInfo(record.pid)))
+    throw new Error(
+      'Recorded services are still running or their PIDs have been reused. Run local:status, then local:stop before starting.',
+    );
+  const { env: apiEnv } = config();
+  for (const port of [...Object.values(ports), ports.customer + 10]) await assertPortFree(port);
+  const apiUrl = `http://localhost:${ports.api}/api/v1`;
+  const environments = {
+    api: {
+      ...apiEnv,
+      PORT: String(ports.api),
+      CORS_ORIGINS: [ports.admin, ports.customer, ports.storefront]
+        .map((port) => `http://localhost:${port}`)
+        .join(','),
+    },
+    admin: { NEXT_PUBLIC_API_URL: apiUrl },
+    customer: { EXPO_PUBLIC_API_URL: apiUrl },
+    storefront: { NEXT_PUBLIC_API_URL: apiUrl },
+  };
   const cleanEnv = Object.fromEntries(
     Object.entries(process.env).filter(
       ([key]) =>
@@ -157,82 +243,113 @@ if (command === 'setup') {
         ),
     ),
   );
-  const { createServer } = await import('node:net');
-  for (const port of [4000, 3000, 8081])
-    await new Promise((ok, reject) => {
-      const server = createServer();
-      server.once('error', () =>
-        reject(
-          new Error(
-            `Port ${port} is occupied. Use npm run local:status; stop its existing service before starting.`,
-          ),
-        ),
-      );
-      server.listen(port, '127.0.0.1', () => server.close(ok));
-    });
+  const portEnv = Object.fromEntries(
+    Object.entries(ports).map(([name, port]) => [`LOCAL_${name.toUpperCase()}_PORT`, String(port)]),
+  );
+  database();
+  writeFileSync(
+    '.local/ports.env',
+    Object.entries(portEnv)
+      .map(([key, value]) => `${key}=${value}`)
+      .join('\n') + '\n',
+    { mode: 0o600 },
+  );
   const processes = [];
-  for (const [name, script] of [
-    ['api', 'dev:api'],
-    ['admin', 'dev:admin'],
-    ['customer', 'dev:web'],
-  ]) {
-    const fd = openSync(`.local/${name}.log`, 'a', 0o600);
-    const child = spawn('npm', ['run', script], {
-      detached: true,
-      stdio: ['ignore', fd, fd],
-      env: { ...cleanEnv, ...environments[name], CI: '1' },
-    });
-    child.unref();
-    closeSync(fd);
-    processes.push({
-      name,
-      pid: child.pid,
-      started: spawnSync('ps', ['-p', String(child.pid), '-o', 'lstart='], {
-        encoding: 'utf8',
-      }).stdout?.trim(),
-    });
+  try {
+    for (const name of Object.keys(ports)) {
+      const fd = openSync(`.local/${name}.log`, 'a', 0o600);
+      const child = spawn(process.execPath, [fileURLToPath(import.meta.url), 'serve', name], {
+        detached: true,
+        stdio: ['ignore', fd, fd],
+        env: { ...cleanEnv, ...environments[name], ...portEnv, CI: '1' },
+      });
+      closeSync(fd);
+      await new Promise((ok, reject) => {
+        child.once('spawn', ok);
+        child.once('error', reject);
+      });
+      let info;
+      try {
+        info = processInfo(child.pid);
+        if (!isManaged({ name, pid: child.pid, root, ...info }, root, info))
+          throw new Error(`${name} exited or its process identity could not be verified.`);
+      } catch (error) {
+        try {
+          process.kill(-child.pid, 'SIGTERM');
+        } catch (signalError) {
+          if (signalError.code !== 'ESRCH') throw signalError;
+        }
+        throw error;
+      }
+      processes.push({ name, port: ports[name], pid: child.pid, root, ...info });
+      saveServices(processes);
+      child.unref();
+    }
+  } catch (error) {
+    for (const record of processes) stopManaged(record, root);
+    throw error;
   }
-  writeFileSync('.local/services.json', JSON.stringify(processes), { mode: 0o600 });
+  console.log('Started managed processes. Run npm run local:status to verify readiness:');
+  for (const [name, port] of Object.entries(ports))
+    console.log(`${name}: http://localhost:${port}${name === 'api' ? '/api/v1/health' : ''}`);
   console.log(
-    'Starting: customer http://localhost:8081 · owners http://localhost:3000 · API http://localhost:4000/api/v1/health. Logs: .local/{api,admin,customer}.log',
+    'Logs: .local/{api,admin,customer,storefront}.log. Port choices saved in .local/ports.env.',
   );
 } else if (command === 'stop') {
-  if (existsSync('.local/services.json')) {
-    for (const { pid, name, started } of JSON.parse(readFileSync('.local/services.json', 'utf8'))) {
-      const args =
-        spawnSync('ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8' }).stdout || '';
-      const sameProcess =
-        !started ||
-        spawnSync('ps', ['-p', String(pid), '-o', 'lstart='], {
-          encoding: 'utf8',
-        }).stdout?.trim() === started;
-      if (sameProcess && args.includes('npm run dev:')) {
-        try {
-          process.kill(-pid, 'SIGTERM');
-          console.log(`Stopped ${name}.`);
-        } catch {
-          /* already stopped */
-        }
-      }
+  const retained = [];
+  for (const record of savedServices()) {
+    if (!processInfo(record.pid)) continue;
+    if (stopManaged(record, root)) {
+      const deadline = Date.now() + 8000;
+      while (processInfo(record.pid) && Date.now() < deadline)
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      if (processInfo(record.pid)) {
+        retained.push(record);
+        console.log(`${record.name} is still shutting down; its ownership record was retained.`);
+      } else console.log(`Stopped ${record.name} (managed group ${record.pid}).`);
+    } else {
+      retained.push(record);
+      console.log(
+        `Preserved ${record.name} PID ${record.pid}: ownership could not be verified. Inspect it manually; no signal sent.`,
+      );
     }
-    unlinkSync('.local/services.json');
   }
+  saveServices(retained);
+  if (retained.length) process.exitCode = 1;
   console.log(
     'Database retained. Stop it separately with node scripts/local.mjs db-stop when no tests/services use it.',
   );
 } else if (command === 'db-stop') {
   pgRun('pg_ctl', ['-D', '.local/postgres', '-m', 'fast', 'stop']);
 } else if (command === 'status') {
-  for (const [name, url] of [
-    ['API', 'http://localhost:4000/api/v1/health'],
-    ['Owners', 'http://localhost:3000'],
-    ['Customer', 'http://localhost:8081'],
-  ]) {
-    try {
-      const result = await fetch(url, { signal: globalThis.AbortSignal.timeout(5000) });
-      console.log(`${name}: ${result.status} ${url}`);
-    } catch {
-      console.log(`${name}: not responding ${url}`);
-    }
+  const records = savedServices();
+  for (const [name, configuredPort] of Object.entries(ports)) {
+    const record = records.find((service) => service.name === name);
+    const port = record?.port || configuredPort;
+    const listeners = listenerPids(port);
+    const owned =
+      !!record &&
+      isManaged(record, root) &&
+      listeners.length > 0 &&
+      listeners.every((pid) => processInfo(pid)?.group === record.pid);
+    const identities = await Promise.all(
+      ['127.0.0.1', '[::1]'].map(async (host) => ({
+        host,
+        ...(await applicationIdentity(name, `http://${host}:${port}`)),
+      })),
+    );
+    const ready =
+      owned &&
+      identities.some((identity) => identity.matches) &&
+      !identities.some(
+        (identity) => !identity.matches && identity.description.startsWith('wrong application'),
+      );
+    console.log(
+      `${name}: ${ready ? 'ready (verified, managed)' : listeners.length ? 'NOT READY / unverified or unrelated listener' : 'not listening'} http://localhost:${port}${name === 'api' ? '/api/v1/health' : ''}`,
+    );
+    console.log(
+      `  ${identities.map(({ host, description }) => `${host}: ${description}`).join(' · ')}; listener PIDs: ${listeners.join(', ') || 'none'}`,
+    );
+    if (!ready) process.exitCode = 1;
   }
 } else throw new Error('Use setup, start, stop, db-stop or status.');

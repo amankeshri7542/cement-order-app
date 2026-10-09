@@ -10,12 +10,12 @@ Use Node **22.12 or newer** (verified here on 24.19.0), npm (verified 11.17.0), 
 ```sh
 brew install node@22 postgresql@16
 export PATH="$(brew --prefix node@22)/bin:$(brew --prefix postgresql@16)/bin:$PATH"
-git clone --branch codex/pilot-readiness https://github.com/amankeshri7542/cement-order-app.git
+git clone --branch codex/v2-storefront-foundation https://github.com/amankeshri7542/cement-order-app.git
 cd cement-order-app
 # For an exact review, check out the commit SHA supplied in the review handoff.
 npm ci
 npm run local:setup
-npm run local:start
+LOCAL_ADMIN_PORT=3002 npm run local:start
 npm run local:status
 ```
 
@@ -23,17 +23,35 @@ npm run local:status
 
 Apple Silicon and Intel Homebrew PostgreSQL paths are detected. For another installation set `PG_BIN=/absolute/path/to/postgresql/bin`. Default database binds only `127.0.0.1:55439`. Default databases: `shiv_cement` for development, `shiv_cement_test` for existing integration/browser tests. The OTP hash secret is generated randomly; the database password is an intentional fixed local-only fixture. Both are for local development, never staging.
 
-| Service                 | URL                                 | Foreground command instead of `local:start` |
-| ----------------------- | ----------------------------------- | ------------------------------------------- |
-| Customer browser app    | http://localhost:8081               | `npm run dev:web`                           |
-| Owner desk              | http://localhost:3000               | `npm run dev:admin`                         |
-| API health              | http://localhost:4000/api/v1/health | `npm run dev:api`                           |
-| OpenAPI                 | http://localhost:4000/api/docs      | API must be running                         |
-| Native Expo development | terminal QR/device instructions     | `npm run dev:mobile`                        |
+| Service                 | URL                                 | Foreground command instead of `local:start`                                                        |
+| ----------------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Customer browser app    | http://localhost:8081               | `npm run dev:web`                                                                                  |
+| Owner desk              | http://localhost:3002 (configured)  | `npm exec -w @shiv/admin -- next dev --port 3002 --hostname 127.0.0.1`                             |
+| Public storefront       | http://localhost:3003               | `npm run dev:storefront`                                                                           |
+| API health              | http://localhost:4000/api/v1/health | `CORS_ORIGINS='http://localhost:3002,http://localhost:8081,http://localhost:3003' npm run dev:api` |
+| OpenAPI                 | http://localhost:4000/api/docs      | API must be running                                                                                |
+| Native Expo development | terminal QR/device instructions     | `npm run dev:mobile`                                                                               |
 
 Use **localhost consistently** for browser apps; do not mix it with 127.0.0.1. The apps use HTTP-only cookies and exact allowed origins. Open the customer in a separate browser profile or incognito window from owners: cookies are shared across localhost ports. To use father and uncle simultaneously, use two browser profiles.
 
-`local:start` leaves processes running with logs in `.local/api.log`, `.local/admin.log`, `.local/customer.log`. `npm run local:stop` stops only its recorded app process groups. `node scripts/local.mjs db-stop` stops this database cluster separately. Restart with `npm run local:start`; it starts the cluster when needed. Do not run build and development commands against the same Next output directory simultaneously.
+`local:start` leaves processes running with logs in `.local/{api,admin,customer,storefront}.log`. `npm run local:stop` checks the recorded start time, process group, project directory and command before signaling each managed group. It never kills an unrelated listener. A stale or unverified live record is retained for manual inspection. The database and development data are retained. `node scripts/local.mjs db-stop` stops the database cluster separately, when no tests or services need it.
+
+The launcher defaults to API **4000**, owner **3000**, customer **8081**, storefront **3003**. This Mac has an unrelated AptoPro listener on IPv6 `localhost:3000`, so the command above explicitly chooses owner **3002**. Set any of these on the start command:
+
+```sh
+LOCAL_API_PORT=4000 LOCAL_ADMIN_PORT=3002 LOCAL_CUSTOMER_PORT=8081 LOCAL_STOREFRONT_PORT=3003 npm run local:start
+npm run local:status
+npm run local:stop
+npm run local:start
+```
+
+Successful starts save the selected ports in ignored `.local/ports.env`, so subsequent status/start commands use the same selection. Environment variables override that saved selection. Stop running managed services before changing ports. API CORS origins and every frontend's API URL are derived from the selected ports at launch; existing secret-bearing `.env` files are preserved. These overrides apply to the launcher, not separate foreground commands.
+
+Start probes **both IPv4 and IPv6** for all four ports and the customer's private Metro port (`LOCAL_CUSTOMER_PORT + 10`). It refuses conflicts before starting the database or app processes, rather than picking a different port silently. All services remain on loopback, including mock authentication. Test ports **4010 / 3001 / 8082 / 3004**, plus Metro **8092**, are reserved and rejected for development.
+
+Status requires the expected application response **and** matching recorded process/listener ownership. An unrelated HTTP 200 is reported as unverified/wrong application. A service still compiling is not ready; check its log and rerun status. Status exits nonzero until all four applications are verified. Start/stop use `.local/launcher.lock` to prevent concurrent changes; after an interrupted launcher command, remove a leftover lock only after checking that no start/stop command is running. Do not run build and development commands against the same Next output directory simultaneously.
+
+For records written by the old launcher, use `LOCAL_ADMIN_PORT=3002 npm run local:status` before the first restart; old records did not contain their actual port. The new launcher accepts their ownership only when the recorded start time, process group, exact known command and this checkout's working directory still match.
 
 ## Test identities and OTP
 
@@ -111,6 +129,8 @@ Run database/browser suites **sequentially**. The existing integration suite and
 npm run lint
 npm run typecheck --workspaces --if-present
 npm test                    # pure/unit + labelled provider-contract simulations
+npm run test:local # isolated launcher port/identity/ownership/lifecycle checks
+npm test -w @shiv/storefront # public data projection, exact money and query contracts
 npm run test:bootstrap      # migrations + staff setup, empty disposable PostgreSQL
 npm run test:integration -w @shiv/api # existing real PostgreSQL API suite
 npm run test:workflows      # new real PostgreSQL races and business workflows
@@ -121,15 +141,16 @@ npm run build -w @shiv/shared
 npm run build -w @shiv/api
 npm run build -w @shiv/admin
 npm run build -w @shiv/mobile # Expo Android/iOS/web JS exports
+NEXT_DIST_DIR=.next-e2e npm run build -w @shiv/storefront # after browser suites finish
 npm run local:start
 ```
 
-Browser tests use installed Chrome and ports **4010 / 3001 / 8082**, independent of manual dev servers. `npx playwright install chrome` installs it if missing. For WebKit, install the engine with `npx playwright install webkit`. Run exactly one project per invocation: global setup resets the shared disposable database. Firefox is currently blocked at native browser launch; see [the QA report](BROWSER_QA_REPORT.md). Their rate-extraction adapter is deliberately confined to `scripts/e2e-api.ts` and requires NODE_ENV=test plus a database ending `_test`. Razorpay/Twilio provider simulations do not establish live integration. Standard dev server has no fake provider fallback beyond explicitly selected mock OTP.
+Browser tests use installed Chrome and ports **4010 / 3001 / 8082 / 3004** (API / owner / customer / storefront), independent of manual dev servers. `npx playwright install chrome` installs it if missing. For WebKit, install the engine with `npx playwright install webkit`. Run exactly one project per invocation: global setup resets the shared disposable database. Firefox is currently blocked at native browser launch; see [the QA report](BROWSER_QA_REPORT.md). Their rate-extraction adapter is deliberately confined to `scripts/e2e-api.ts` and requires NODE_ENV=test plus a database ending `_test`. Razorpay/Twilio provider simulations do not establish live integration. Standard dev server has no fake provider fallback beyond explicitly selected mock OTP.
 
 ## Reset and recovery
 
 - **Safe fixture rerun:** `npm run local:setup` does not replenish used stock, reset prices or rotate passwords. Record a Purchase in through the owner stock ledger to restore practice stock with evidence, or create a new clearly labelled test product. Run `npm run local:fixtures -w @shiv/api` to add missing fixture records only. Disposable test suites reset their own databases automatically. Never use `prisma migrate reset` on the development database to “fix” a migration.
-- **Occupied port:** run `npm run local:status` and `lsof -nP -iTCP:3000 -iTCP:4000 -iTCP:8081 -sTCP:LISTEN`. Stop the owning service yourself, or `local:stop` if this script started it. No command here kills an unrelated listener.
+- **Occupied port:** run `npm run local:status` and `lsof -nP -iTCP:3000 -iTCP:3002 -iTCP:3003 -iTCP:4000 -iTCP:8081 -iTCP:8091 -sTCP:LISTEN`. Preserve unrelated services and choose an explicit `LOCAL_*_PORT`. Use `local:stop` only for this launcher’s managed processes. An IPv6-only listener is a conflict even when IPv4 is free.
 - **Database unavailable:** `npm run local:start` starts the cluster; inspect `.local/postgres.log`. Ensure port 55439 matches DATABASE_URL. Do not remove a postmaster.pid until you have confirmed its process is absent. Database tools can require macOS permissions outside a restricted agent sandbox.
 - **Migration error:** stop app servers, back up first, inspect `npm exec -w @shiv/api -- prisma migrate status` so Prisma loads `apps/api/.env`. Fix permissions/connectivity; this app uses `pg_trgm`. Re-run `npm run db:migrate`. Do not mark a failed migration applied without reviewing its actual SQL/state.
 - **Login problem:** confirm mock OTP and CORS values in `apps/api/.env`, use localhost consistently, request a new OTP after five failed/expired attempts. Check browser profile: customer and owner cookies must be separate. Re-grant a local staff credential deliberately if it was changed; this revokes sessions.

@@ -1,0 +1,24 @@
+{
+  "name": "@shiv/storefront",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --port 3003",
+    "build": "next build --webpack",
+    "start": "next start --port 3003",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test lib/catalog.test.ts"
+  },
+  "dependencies": {
+    "@shiv/shared": "1.0.0",
+    "next": "^16.2.9",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "zod": "^4.3.5"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.0",
+    "@types/react-dom": "~19.2.0",
+    "tsx": "^4.21.0"
+  }
+}
