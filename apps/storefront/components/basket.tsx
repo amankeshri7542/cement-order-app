@@ -14,7 +14,7 @@ export function BasketPage() {
   return (
     <div className="commerce-page">
       <div className="page-heading">
-        <p className="eyebrow">{t('Your basket', 'आपकी सामग्री सूची')}</p>
+        <p className="eyebrow">{t('Your basket', 'आपकी टोकरी')}</p>
         <h1>
           {c.lines.length || !c.ready
             ? t('Ready for the next step.', 'अगले कदम के लिए तैयार।')

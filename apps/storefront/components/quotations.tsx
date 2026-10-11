@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { useCommerce, Quantity, saved, persist } from './commerce';
 import { AccountRequired, AddressBook } from './account';
 import { customerApi, CustomerError } from '../lib/customer-api';
-import { price } from '../lib/catalog';
+import { dayLabel, momentLabel, price } from '../lib/catalog';
 import { useLanguage } from './language';
 
 const draftSchema = z.object({
@@ -357,7 +357,8 @@ function QuoteAccount() {
                 {quote.address.pincode}
               </p>
               <p>
-                {t('Requested delivery', 'चाही डिलीवरी')}: {quote.deliveryDate} ·{' '}
+                {t('Requested delivery', 'चाही डिलीवरी')}: {dayLabel(quote.deliveryDate, language)}{' '}
+                ·{' '}
                 {quote.deliveryConfirmed
                   ? t('Delivery terms confirmed by shop', 'दुकान ने डिलीवरी शर्तें पुष्ट कीं')
                   : t('Delivery terms awaiting confirmation', 'डिलीवरी शर्तों की पुष्टि बाकी')}
@@ -371,7 +372,7 @@ function QuoteAccount() {
               {quote.validUntil && (
                 <p>
                   {t('Offer valid until', 'प्रस्ताव की अंतिम तारीख')}:{' '}
-                  {new Date(quote.validUntil).toLocaleString(language === 'hi' ? 'hi-IN' : 'en-IN')}
+                  {momentLabel(quote.validUntil, language)}
                 </p>
               )}
               {quote.adminNote && <p>{quote.adminNote}</p>}

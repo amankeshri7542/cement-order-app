@@ -80,3 +80,12 @@ export function ratesFrom(items: Product[], limit = 5): Rate[] {
     .sort((a, b) => rank(a.slug) - rank(b.slug) || a.name.localeCompare(b.name))
     .slice(0, limit);
 }
+
+// Delivery dates are calendar days (YYYY-MM-DD); show them in the reader's language without
+// shifting the day across time zones. Anything unexpected is shown exactly as received.
+export function dayLabel(value: string, language: 'en' | 'hi'): string {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? dateLabel(`${value}T00:00:00+05:30`, language) : value;
+}
+export function momentLabel(value: string, language: 'en' | 'hi'): string {
+  return `${dateLabel(value, language)} · ${timeLabel(value)}`;
+}

@@ -736,13 +736,13 @@ a.rate-row:hover .rate-price strong {
   height: 100%;
   width: 100%;
   object-fit: contain;
-  transition: transform 220ms;
+  transition: transform var(--base) var(--ease);
 }
 .product-image .material-art {
   height: 100%;
   width: 100%;
   max-width: 330px;
-  transition: transform 220ms;
+  transition: transform var(--base) var(--ease);
 }
 .product-card > a:hover .material-art,
 .product-card > a:hover img {
@@ -926,6 +926,10 @@ a.rate-row:hover .rate-price strong {
 }
 .delivery-mark {
   font-size: 40px;
+}
+.delivery-section .eyebrow,
+.assistant-dialog > header .eyebrow {
+  color: #f2b49c;
 }
 .delivery-heading h2 {
   margin: 14px 0 20px;
@@ -1298,6 +1302,34 @@ dd {
 .order-summary .text-link {
   justify-self: start;
 }
+.review-totals {
+  margin: 18px 0;
+  border-top: 1px solid var(--line);
+}
+.review-totals > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0;
+}
+.review-totals dd {
+  margin: 0;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.review-totals .review-total {
+  border-top: 2px solid var(--ink);
+  margin-top: 4px;
+  padding-top: 12px;
+}
+.review-total dt {
+  color: var(--ink);
+  font-weight: 650;
+}
+.review-total dd {
+  font-size: 24px;
+  font-weight: 700;
+}
 .review-items {
   list-style: none;
   padding: 0;
@@ -1428,6 +1460,9 @@ dd {
 .status-badge {
   font-size: 15px;
   padding: 7px 13px;
+  transition:
+    background-color var(--base) var(--ease),
+    color var(--base) var(--ease);
   background: var(--stone);
   border-radius: 30px;
   display: inline-block;
@@ -1564,7 +1599,7 @@ dd {
   gap: 15px;
   max-width: min(600px, calc(100% - 48px));
   box-shadow: 0 8px 24px #17334512;
-  animation: acknowledge 220ms ease-out;
+  animation: acknowledge var(--base) var(--ease);
 }
 .sticky-basket {
   position: fixed;
@@ -1635,7 +1670,7 @@ dd {
   color: var(--ink);
   overflow: hidden;
   box-shadow: 0 20px 80px #17334540;
-  animation: panel-in 200ms ease-out;
+  animation: panel-in var(--base) var(--ease);
 }
 .assistant-dialog[open] {
   display: flex;
@@ -1643,6 +1678,7 @@ dd {
 }
 .assistant-dialog::backdrop {
   background: #10232e66;
+  animation: fade var(--base) var(--ease);
 }
 .assistant-dialog > header {
   display: flex;
@@ -1658,7 +1694,7 @@ dd {
   margin-top: 4px;
 }
 .assistant-dialog header .eyebrow {
-  font-size: 10px;
+  font-size: 13px;
 }
 .assistant-dialog header button {
   background: transparent;
@@ -1695,6 +1731,7 @@ dd {
   font-size: 14px;
 }
 .chat-turn {
+  animation: rise var(--base) var(--ease) both;
   margin: 20px 0;
   border-radius: 8px;
   padding: 16px;
@@ -1778,6 +1815,11 @@ dd {
 .assistant-dialog > form > .text-link {
   font-size: 14px;
   margin-top: 5px;
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
 }
 @keyframes count {
   from {
@@ -1945,6 +1987,14 @@ dd {
   }
   .order-summary {
     padding: 24px;
+  }
+}
+@media (max-width: 900px) {
+  .hero {
+    grid-template-columns: 1fr;
+  }
+  .rate-board {
+    max-width: 640px;
   }
 }
 @media (max-width: 760px) {
@@ -2391,7 +2441,7 @@ dd {
     padding: 14px 16px;
   }
   .assistant-dialog header .eyebrow {
-    font-size: 10px;
+    font-size: 13px;
   }
   .chat-turn {
     padding: 14px;

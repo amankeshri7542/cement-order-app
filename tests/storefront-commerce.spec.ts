@@ -116,14 +116,16 @@ async function checkout(page: Page, phone: string) {
   await expect(page.getByRole('checkbox')).toBeVisible();
   await page.getByRole('checkbox').check();
 }
+// Each review milestone writes its own evidence folder so earlier evidence is preserved.
+const evidence = process.env.REVIEW_EVIDENCE_DIR || 'v2-customer';
 async function screenshot(page: Page, name: string) {
   if (process.env.UPDATE_REVIEW_EVIDENCE === '1') {
-    mkdirSync('docs/screenshots/v2-customer', { recursive: true });
-    await page.screenshot({ path: `docs/screenshots/v2-customer/${name}.png`, fullPage: true });
+    mkdirSync(`docs/screenshots/${evidence}`, { recursive: true });
+    await page.screenshot({ path: `docs/screenshots/${evidence}/${name}.png`, fullPage: true });
     if (name.startsWith('home-') || name.includes('enlarged') || name.startsWith('assistant'))
       return;
     const viewport = page.viewportSize()!;
-    mkdirSync('.local/v2-customer/rendered', { recursive: true });
+    mkdirSync(`.local/${evidence}/rendered`, { recursive: true });
     for (const width of [360, 390, 768, 1440]) {
       await page.setViewportSize({ width, height: 900 });
       for (const language of ['en', 'hi']) {
@@ -133,12 +135,12 @@ async function screenshot(page: Page, name: string) {
           .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
           .toBe(true);
         await page.screenshot({
-          path: `.local/v2-customer/rendered/${name}-${language}-${width}.png`,
+          path: `.local/${evidence}/rendered/${name}-${language}-${width}.png`,
           fullPage: true,
         });
         if (width === 390)
           await page.screenshot({
-            path: `docs/screenshots/v2-customer/${name}-${language}-phone.png`,
+            path: `docs/screenshots/${evidence}/${name}-${language}-phone.png`,
           });
         if (language === 'hi')
           await page.getByRole('button', { name: 'English', exact: true }).click();

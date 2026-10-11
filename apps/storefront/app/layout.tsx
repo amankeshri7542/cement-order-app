@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Anek_Devanagari } from 'next/font/google';
+import { Anek_Latin } from 'next/font/google';
 import { connection } from 'next/server';
 import type { ReactNode } from 'react';
 import { LanguageProvider } from '../components/language';
@@ -8,10 +8,10 @@ import { CommerceAlert, CommerceProvider, CommerceFeedback } from '../components
 import { AssistantLauncher } from '../components/assistant-launcher';
 import './globals.css';
 
-// One self-hosted variable face carries both scripts, so headings keep the same
-// signboard character on Android, iOS and desktop. Body copy stays on system fonts.
-const display = Anek_Devanagari({
-  subsets: ['latin', 'devanagari'],
+// Self-hosted condensed display face for Latin headings on every device. Devanagari falls back
+// to the phone's own Devanagari face: a Devanagari webfont would cost 280–730 KB on mobile data.
+const display = Anek_Latin({
+  subsets: ['latin'],
   axes: ['wdth'],
   display: 'swap',
   variable: '--font-anek',

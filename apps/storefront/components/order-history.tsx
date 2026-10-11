@@ -6,7 +6,7 @@ import type { Order, Page } from '@shiv/shared';
 import { useCommerce, saved, persist } from './commerce';
 import { AccountRequired } from './account';
 import { customerApi, CustomerError } from '../lib/customer-api';
-import { price } from '../lib/catalog';
+import { dayLabel, price } from '../lib/catalog';
 import { useLanguage } from './language';
 
 const statuses: Record<string, [string, string]> = {
@@ -165,7 +165,7 @@ function Orders({ orderId }: { orderId?: string }) {
   return (
     <div className="commerce-page">
       <div className="page-heading">
-        <p className="eyebrow">{t('Your orders', 'आपका शिव सीमेंट खाता')}</p>
+        <p className="eyebrow">{t('Your orders', 'आपके ऑर्डर')}</p>
         <h1>
           {orderId
             ? t('Your order, in progress.', 'आपका ऑर्डर, हर कदम पर।')
@@ -254,7 +254,8 @@ function Orders({ orderId }: { orderId?: string }) {
                 {order.address.city} {order.address.pincode}
               </p>
               <p>
-                {t('Requested delivery', 'चाही गई डिलीवरी')}: {order.deliveryDate}
+                {t('Requested delivery', 'चाही गई डिलीवरी')}:{' '}
+                {dayLabel(order.deliveryDate, language)}
               </p>
               <div className="action-row">
                 <button

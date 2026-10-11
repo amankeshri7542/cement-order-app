@@ -116,7 +116,7 @@ export function AccountPage() {
   return (
     <div className="account-page">
       <div className="page-heading">
-        <p className="eyebrow">{t('Your account', 'शिव सीमेंट · आपका खाता')}</p>
+        <p className="eyebrow">{t('Your account', 'आपका खाता')}</p>
         <h1>{t('Your next project, together.', 'आपका अगला काम, साथ मिलकर।')}</h1>
       </div>
       {c.user ? (
