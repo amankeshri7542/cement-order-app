@@ -64,6 +64,13 @@ function useCommerceValue() {
   const identity = useRef<User | null>(null);
   const generation = useRef(0);
   const [ready, setReady] = useState(false);
+  // True when the sign-in check failed for a reason other than "signed out" (offline, outage).
+  const [sessionUnknown, setSessionUnknown] = useState(false);
+  const sessionUnknownRef = useRef(false);
+  const markSessionUnknown = (value: boolean) => {
+    sessionUnknownRef.current = value;
+    setSessionUnknown(value);
+  };
   const [cart, setCart] = useState<CartLine[]>([]);
   const cartRef = useRef<CartLine[]>([]);
   const [guest, setGuest] = useState<Guest | null>(null);
@@ -161,11 +168,17 @@ function useCommerceValue() {
       }
       if (attempt !== sessionRequest.current || epoch !== generation.current) return;
       identify(session.user);
+      if (sessionUnknownRef.current) setError('');
+      markSessionUnknown(false);
       if (session.user.role !== 'ADMIN') await refresh();
     } catch (e) {
       if (attempt !== sessionRequest.current || epoch !== generation.current) return;
-      if (e instanceof CustomerError && e.status === 401) identify(null);
-      else if (!identity.current)
+      if (e instanceof CustomerError && e.status === 401) {
+        if (sessionUnknownRef.current) setError('');
+        markSessionUnknown(false);
+        identify(null);
+      } else if (!identity.current) {
+        markSessionUnknown(true);
         // A guest has not asked for anything yet; explain what still works instead of a raw failure.
         setError(
           t(
@@ -173,7 +186,7 @@ function useCommerceValue() {
             'आपका साइन इन अभी जाँचा नहीं जा सका। आप सामग्री देखते रहें; इस पेज पर लौटने पर फिर जाँचा जाएगा।',
           ),
         );
-      else showError(e);
+      } else showError(e);
     } finally {
       setReady(true);
     }
@@ -435,6 +448,8 @@ function useCommerceValue() {
   return {
     user,
     ready,
+    sessionUnknown,
+    retrySession: restore,
     cart,
     lines,
     guest,

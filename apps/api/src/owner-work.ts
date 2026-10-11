@@ -1,9 +1,10 @@
 import { Controller, Get, Inject, Injectable, Param, Post, Req, Sse } from '@nestjs/common';
-import { Subject, interval, map, merge, concatMap, takeWhile } from 'rxjs';
+import { Subject, concatMap, interval, map, merge, takeUntil, takeWhile } from 'rxjs';
 import { assertSession } from './security';
 import { pendingCod, pendingQuote } from './abuse';
 import { z } from 'zod';
 import { Db } from './db';
+import { Lifecycle } from './lifecycle';
 import { Admin, AuthRequest, Input, fail } from './http';
 
 export const ownerSelect = { id: true, name: true, phone: true } as const;
@@ -87,6 +88,7 @@ export class OwnerWorkController {
   constructor(
     @Inject(Db) private db: Db,
     @Inject(OwnerWorkService) private work: OwnerWorkService,
+    @Inject(Lifecycle) private lifecycle: Lifecycle,
   ) {}
 
   @Get('owners') owners() {
@@ -115,6 +117,8 @@ export class OwnerWorkController {
   @Sse('events')
   events(@Req() req: AuthRequest) {
     return merge(this.work.stream, interval(20000).pipe(map(() => ({ type: 'HEARTBEAT' })))).pipe(
+      // Ends the stream on shutdown; the owner desk reconnects to another instance or polls.
+      takeUntil(this.lifecycle.closing),
       concatMap(async (data) => {
         const session = await this.db.session.findUnique({
           where: { id: req.sessionId },

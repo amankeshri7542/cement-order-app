@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Image,
   Linking,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -855,6 +856,10 @@ export function Quantity({
   onInvalid?: (message: string) => void;
 }) {
   const [draft, setDraft] = useState(String(value));
+  const input = useRef<TextInput>(null);
+  // react-native-web applies selectTextOnFocus after a delay; if the customer has already typed
+  // a digit, that late select-all made the next keystroke replace it ("12" became "2").
+  const typedSinceFocus = useRef(false);
   useEffect(() => {
     if (!disabled) setDraft(String(value));
   }, [value, disabled]);
@@ -890,15 +895,25 @@ export function Quantity({
       <TextInput
         accessibilityLabel={label}
         accessibilityHint={`Minimum ${min}, step ${step}, maximum ${max}`}
+        ref={input}
         value={draft}
         keyboardType="number-pad"
-        selectTextOnFocus
+        selectTextOnFocus={Platform.OS !== 'web'}
+        onFocus={() => {
+          if (Platform.OS !== 'web') return;
+          typedSinceFocus.current = false;
+          setTimeout(() => {
+            if (!typedSinceFocus.current)
+              (input.current as unknown as { select?: () => void } | null)?.select?.();
+          }, 0);
+        }}
         editable={!disabled}
         onBlur={() => (commitOnBlur ? commit() : setDraft(String(value)))}
         onSubmitEditing={() => {
           if (commitOnBlur) commit();
         }}
         onChangeText={(text) => {
+          typedSinceFocus.current = true;
           if (!/^\d*$/.test(text)) return;
           setDraft(text);
           const next = Number(text);

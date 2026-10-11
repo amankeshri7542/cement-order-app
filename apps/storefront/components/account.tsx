@@ -25,6 +25,25 @@ export function AccountRequired({
         {t('Restoring your session…', 'आपका सत्र वापस ला रहे हैं…')}
       </p>
     );
+  if (!c.user && c.sessionUnknown)
+    // Offline or outage: the customer may well be signed in, so do not ask them to sign in again.
+    return (
+      <section className="account-gate" role="status">
+        <p className="eyebrow">{t('Your customer account', 'आपका ग्राहक खाता')}</p>
+        <Heading>
+          {t('We could not confirm your sign-in.', 'आपका साइन इन जाँचा नहीं जा सका।')}
+        </Heading>
+        <p>
+          {t(
+            'Check your connection, then try again. Your basket and saved requests are kept on this device.',
+            'इंटरनेट जाँचें, फिर कोशिश करें। आपकी टोकरी और सहेजे अनुरोध इसी उपकरण पर सुरक्षित हैं।',
+          )}
+        </p>
+        <button className="button" onClick={() => void c.retrySession()}>
+          {t('Try again', 'फिर कोशिश करें')}
+        </button>
+      </section>
+    );
   if (!c.user)
     return (
       <section className="account-gate">

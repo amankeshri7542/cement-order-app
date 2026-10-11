@@ -13,7 +13,7 @@ import {
   Sse,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { Subject, interval, map, merge } from 'rxjs';
+import { Subject, interval, map, merge, takeUntil } from 'rxjs';
 import { z } from 'zod';
 import {
   addressSchema,
@@ -24,6 +24,7 @@ import {
   settingsSchema,
 } from '@shiv/shared';
 import { Db } from './db';
+import { Lifecycle } from './lifecycle';
 import { Admin, AuthRequest, Contract, Input, Public, fail } from './http';
 import { paginate } from './pagination';
 import { moveStock } from './inventory';
@@ -42,6 +43,7 @@ export class CatalogController {
   constructor(
     @Inject(Db) private db: Db,
     @Inject(Events) private events: Events,
+    @Inject(Lifecycle) private lifecycle: Lifecycle,
   ) {}
   @Public()
   @Get('products')
@@ -127,6 +129,8 @@ export class CatalogController {
   }
   @Public() @Sse('events') eventsStream() {
     return merge(this.events.stream, interval(25000).pipe(map(() => ({ type: 'HEARTBEAT' })))).pipe(
+      // Ends open streams on shutdown so the server can drain; browsers reconnect automatically.
+      takeUntil(this.lifecycle.closing),
       map((data) => ({ data })),
     );
   }

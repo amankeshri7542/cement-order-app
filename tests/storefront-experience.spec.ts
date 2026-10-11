@@ -104,6 +104,25 @@ test('a failed sign-in check explains guest browsing without covering navigation
   await expect(page).toHaveURL(`${site}/products`);
 });
 
+test('an outage during checkout asks to retry, not to sign in again, and recovers', async ({
+  page,
+}) => {
+  await page.route(`${api}/auth/session`, (route) => route.abort('failed'));
+  await page.route(`${api}/auth/refresh`, (route) => route.abort('failed'));
+  await page.goto(`${site}/checkout`);
+  const main = page.getByRole('main');
+  await expect(
+    main.getByRole('heading', { name: 'We could not confirm your sign-in.', exact: true }),
+  ).toBeVisible();
+  await expect(main.getByRole('heading', { name: 'Pick up where you left off.' })).toHaveCount(0);
+  await page.unroute(`${api}/auth/session`);
+  await page.unroute(`${api}/auth/refresh`);
+  await main.getByRole('button', { name: 'Try again', exact: true }).click();
+  // The API now answers "signed out", so the normal sign-in prompt and no stale alert remain.
+  await expect(main.getByRole('heading', { name: 'Pick up where you left off.' })).toBeVisible();
+  await expect(page.getByRole('alert').filter({ hasText: 'could not be checked' })).toHaveCount(0);
+});
+
 test('basket feedback names the material; comparison survives reload; basket page has one summary', async ({
   page,
 }) => {
