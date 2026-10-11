@@ -2072,7 +2072,8 @@ dd {
     gap: 10px;
   }
   .hero-actions .button {
-    flex: 1 1 150px;
+    flex: 1 1 auto;
+    white-space: nowrap;
     font-size: 15px;
     padding: 11px 14px;
     min-height: 48px;
