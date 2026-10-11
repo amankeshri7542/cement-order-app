@@ -8,9 +8,17 @@ import { customerApi } from '../lib/customer-api';
 import { useCommerce } from './commerce';
 import { useLanguage } from './language';
 
-export function AccountRequired({ children }: { children: ReactNode }) {
+export function AccountRequired({
+  children,
+  nested = false,
+}: {
+  children: ReactNode;
+  // A page that already has its own h1 embeds the gate with a section heading.
+  nested?: boolean;
+}) {
   const c = useCommerce();
   const { t } = useLanguage();
+  const Heading = nested ? 'h2' : 'h1';
   if (!c.ready)
     return (
       <p className="loading-state" role="status">
@@ -20,8 +28,8 @@ export function AccountRequired({ children }: { children: ReactNode }) {
   if (!c.user)
     return (
       <section className="account-gate">
-        <p className="eyebrow">{t('YOUR CUSTOMER ACCOUNT', 'आपका ग्राहक खाता')}</p>
-        <h1>{t('Pick up where you left off.', 'जहाँ रुके थे, वहीं से शुरू करें।')}</h1>
+        <p className="eyebrow">{t('Your customer account', 'आपका ग्राहक खाता')}</p>
+        <Heading>{t('Pick up where you left off.', 'जहाँ रुके थे, वहीं से शुरू करें।')}</Heading>
         <p>
           {t(
             'Sign in to use your saved addresses, basket, orders and quotations. Your guest materials stay on this device.',
@@ -36,7 +44,7 @@ export function AccountRequired({ children }: { children: ReactNode }) {
   if (c.user.role === 'ADMIN')
     return (
       <section className="account-gate">
-        <h1>{t('Use your customer account.', 'ग्राहक खाता इस्तेमाल करें।')}</h1>
+        <Heading>{t('Use your customer account.', 'ग्राहक खाता इस्तेमाल करें।')}</Heading>
         <p>
           {t(
             'The owner desk has separate staff controls. Sign out here to shop with a customer phone number.',
@@ -108,7 +116,7 @@ export function AccountPage() {
   return (
     <div className="account-page">
       <div className="page-heading">
-        <p className="eyebrow">{t('SHIV CEMENT · YOUR ACCOUNT', 'शिव सीमेंट · आपका खाता')}</p>
+        <p className="eyebrow">{t('Your account', 'आपका खाता')}</p>
         <h1>{t('Your next project, together.', 'आपका अगला काम, साथ मिलकर।')}</h1>
       </div>
       {c.user ? (
@@ -128,7 +136,7 @@ export function AccountPage() {
               </button>
             </div>
           </section>
-          <AccountRequired>
+          <AccountRequired nested>
             <AddressBook />
           </AccountRequired>
         </>

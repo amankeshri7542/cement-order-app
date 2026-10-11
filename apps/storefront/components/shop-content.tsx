@@ -1,9 +1,10 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { z } from 'zod';
 import { useLanguage } from './language';
 import { publicGet } from '../lib/api';
+import { contentReview } from '../lib/review';
 const shopSchema = z.object({
   name: z.string(),
   city: z.string(),
@@ -17,7 +18,18 @@ const shopSchema = z.object({
   family: z.array(z.object({ name: z.string(), role: z.string(), image: z.string() })),
   gallery: z.array(z.object({ title: z.string(), image: z.string(), alt: z.string() })),
   credentials: z.array(z.object({ title: z.string(), issuer: z.string(), image: z.string() })),
+  pending: z.array(z.string().max(80)).max(20).optional(),
 });
+// Marks unapproved placeholders for the family's review; never rendered as a business fact.
+export function ReviewNote({ children }: { children: ReactNode }) {
+  if (!contentReview) return null;
+  return (
+    <aside className="review-note" aria-label="Internal content review note">
+      <strong>Review note · not shown to customers</strong>
+      <div>{children}</div>
+    </aside>
+  );
+}
 function ApprovedImage({ src, alt }: { src: string; alt: string }) {
   if (!/^\/shop-assets\/[a-zA-Z0-9_-]+\.(?:png|jpe?g|webp)$/.test(src)) return null;
   return <img src={src} alt={alt} width={640} height={480} loading="lazy" decoding="async" />;
@@ -55,7 +67,7 @@ export function ShopContent() {
           <strong>PATNA · BIHAR</strong>
         </div>
         <div>
-          <p className="eyebrow">{t('A FAMILY AT THE COUNTER', 'काउंटर पर एक परिवार')}</p>
+          <p className="eyebrow">{t('A family at the counter', 'काउंटर पर एक परिवार')}</p>
           <h2>{t('For the work that makes a home.', 'उस काम के लिए, जो घर बनाता है।')}</h2>
           <p>
             {shop?.story[language] ||
@@ -70,63 +82,70 @@ export function ShopContent() {
               'सामग्री का नाम, मात्रा और साइट का पिनकोड साथ रखें। खरीदारी की जानकारी पूरी करने में हम मदद करेंगे।',
             )}
           </p>
-          <details className="content-review">
-            <summary>
-              {hasGallery
-                ? t('Meet the family & see the shop', 'परिवार और दुकान से परिचय')
-                : t(
-                    'Family story & shop gallery · awaiting approval',
-                    'परिवार की कहानी और दुकान की तस्वीरें · मंज़ूरी बाकी',
-                  )}
-            </summary>
-            {!hasGallery && (
-              <p>
-                {t(
-                  'This local review area is reserved for family introductions, genuine shop photographs and verified credentials. No dates, awards or dealership claims have been published.',
-                  'इस स्थानीय समीक्षा क्षेत्र में परिवार का परिचय, असली दुकान की तस्वीरें और जाँचे प्रमाण रखे जाएँगे। अभी साल, पुरस्कार या डीलरशिप के दावे प्रकाशित नहीं हैं।',
-                )}
-              </p>
-            )}
-            <div className="approved-gallery">
-              {shop?.family.map((person) => (
-                <figure key={person.name}>
-                  <ApprovedImage src={person.image} alt={person.name} />
-                  <figcaption>
-                    {person.name} · {person.role}
-                  </figcaption>
-                </figure>
-              ))}
-              {shop?.gallery.map((item) => (
-                <figure key={item.title}>
-                  <ApprovedImage src={item.image} alt={item.alt} />
-                  <figcaption>{item.title}</figcaption>
-                </figure>
-              ))}
-              {shop?.credentials.map((item) => (
-                <figure key={item.title}>
-                  <ApprovedImage src={item.image} alt={item.title} />
-                  <figcaption>
-                    {item.title} · {item.issuer}
-                  </figcaption>
-                </figure>
-              ))}
-            </div>
-          </details>
+          {hasGallery ? (
+            <details className="content-review">
+              <summary>{t('Meet the family & see the shop', 'परिवार और दुकान से परिचय')}</summary>
+              <div className="approved-gallery">
+                {shop?.family.map((person) => (
+                  <figure key={person.name}>
+                    <ApprovedImage src={person.image} alt={person.name} />
+                    <figcaption>
+                      {person.name} · {person.role}
+                    </figcaption>
+                  </figure>
+                ))}
+                {shop?.gallery.map((item) => (
+                  <figure key={item.title}>
+                    <ApprovedImage src={item.image} alt={item.alt} />
+                    <figcaption>{item.title}</figcaption>
+                  </figure>
+                ))}
+                {shop?.credentials.map((item) => (
+                  <figure key={item.title}>
+                    <ApprovedImage src={item.image} alt={item.title} />
+                    <figcaption>
+                      {item.title} · {item.issuer}
+                    </figcaption>
+                  </figure>
+                ))}
+              </div>
+            </details>
+          ) : (
+            <ReviewNote>
+              Family introductions, genuine shop photographs and verified credentials appear here
+              once approved in <code>apps/api/src/public-content.ts</code>. Still pending:{' '}
+              {(shop?.pending || ['family history', 'shop photographs', 'credentials']).join(', ')}.
+              See <code>docs/FAMILY_CONTENT_CHECKLIST.md</code>.
+            </ReviewNote>
+          )}
         </div>
       </section>
       <section className="visit-section" id="visit">
         <div>
-          <p className="eyebrow">{t('COME BY. TALK IT THROUGH.', 'आइए। ज़रूरत पर बात करें।')}</p>
-          <h2>{t('Your shop in Patna.', 'पटना में आपकी दुकान।')}</h2>
-          <p>
-            {shop?.contactApproved
-              ? shop.address
-              : t(
-                  'Exact visiting address and hours are awaiting family approval in this local review.',
-                  'इस स्थानीय समीक्षा में आने का सटीक पता और समय परिवार की मंज़ूरी की प्रतीक्षा में हैं।',
+          <p className="eyebrow">{t('Questions before you buy', 'खरीदने से पहले सवाल')}</p>
+          {shop?.contactApproved ? (
+            <>
+              <h2>{t('Your shop in Patna.', 'पटना में आपकी दुकान।')}</h2>
+              <p>{shop.address}</p>
+              <p>{shop.hours}</p>
+            </>
+          ) : (
+            <>
+              <h2>{t('Talk it through first.', 'पहले बात कर लें।')}</h2>
+              <p>
+                {t(
+                  'Ask about a material, its selling unit or delivery. Shiv Assistant answers from the current catalogue and the shop’s written terms. For a site list, a bulk quote gets a written reply.',
+                  'किसी सामग्री, उसकी बिक्री इकाई या डिलीवरी के बारे में पूछें। शिव सहायक मौजूदा सूची और दुकान की लिखित शर्तों से जवाब देता है। साइट की सूची के लिए थोक भाव माँगें, जवाब लिखित में मिलेगा।',
                 )}
-          </p>
-          {shop?.contactApproved && <p>{shop.hours}</p>}
+              </p>
+            </>
+          )}
+          {!shop?.contactApproved && (
+            <ReviewNote>
+              Address, visiting hours, call/WhatsApp numbers and directions stay hidden until the
+              family confirms them and sets <code>contactApproved: true</code>.
+            </ReviewNote>
+          )}
         </div>
         <div className="visit-actions">
           {phone && (
@@ -146,20 +165,23 @@ export function ShopContent() {
           )}
           {directions && (
             <a className="text-link" href={directions} target="_blank" rel="noopener noreferrer">
-              {t('Open directions', 'रास्ता खोलें')} ↗
+              {t('Open directions in Google Maps', 'Google Maps में रास्ता खोलें')} ↗
             </a>
           )}
           {!phone && (
-            <Link className="button secondary" href="/quotes">
-              {t('Plan a material request', 'सामग्री का अनुरोध बनाएँ')} ↗
-            </Link>
+            <button
+              className="button"
+              onClick={(event) => {
+                event.currentTarget.focus();
+                window.dispatchEvent(new CustomEvent('shiv-ask-material', { detail: null }));
+              }}
+            >
+              <span aria-hidden="true">✳</span> {t('Ask a question', 'सवाल पूछें')}
+            </button>
           )}
-          <small>
-            {t(
-              'Directions open only when you choose them. No map loads in the background.',
-              'रास्ता आपके चुनने पर ही खुलता है। पीछे से कोई नक्शा लोड नहीं होता।',
-            )}
-          </small>
+          <Link className="button secondary" href="/quotes">
+            {t('Request bulk quote', 'थोक भाव माँगें')}
+          </Link>
         </div>
       </section>
     </>

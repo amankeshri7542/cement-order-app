@@ -31,6 +31,7 @@ export function Catalogue({ preview = false }: { preview?: boolean }) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [brands, setBrands] = useState<string[]>([]);
   const [filterError, setFilterError] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [items, setItems] = useState<Product[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -138,6 +139,12 @@ export function Catalogue({ preview = false }: { preview?: boolean }) {
     return () => clearTimeout(searchTimer.current);
   }, [query.q]);
 
+  const activeFilters = [
+    query.category,
+    query.brand,
+    query.availability !== 'all',
+    query.sort !== 'name',
+  ].filter(Boolean).length;
   function update(next: Partial<CatalogQuery>) {
     const updated = readQuery(
       new URLSearchParams(queryString({ ...queryRef.current, pages: 1, ...next })),
@@ -163,7 +170,7 @@ export function Catalogue({ preview = false }: { preview?: boolean }) {
       {preview ? (
         <div className="section-heading">
           <div>
-            <p className="eyebrow">{t('AT THE MATERIALS COUNTER', 'सामग्री काउंटर पर')}</p>
+            <p className="eyebrow">{t('From the catalogue', 'सामग्री सूची से')}</p>
             <h2>{t('Find what your site needs.', 'आपके काम की सामग्री।')}</h2>
           </div>
           <Link className="text-link" href="/products">
@@ -172,8 +179,12 @@ export function Catalogue({ preview = false }: { preview?: boolean }) {
         </div>
       ) : null}
       {categories.length ? (
-        <div className="category-links" aria-label={t('Browse categories', 'श्रेणियाँ देखें')}>
-          <Link href="/products" className={!query.category ? 'selected' : ''}>
+        <nav className="category-links" aria-label={t('Browse categories', 'श्रेणियाँ देखें')}>
+          <Link
+            href="/products"
+            className={!query.category ? 'selected' : ''}
+            aria-current={!query.category && !preview ? 'true' : undefined}
+          >
             {t('All materials', 'सारी सामग्री')}
           </Link>
           {categories.map((category) => (
@@ -181,11 +192,12 @@ export function Catalogue({ preview = false }: { preview?: boolean }) {
               href={`/products?category=${encodeURIComponent(category.slug)}`}
               key={category.id}
               className={query.category === category.slug ? 'selected' : ''}
+              aria-current={query.category === category.slug ? 'true' : undefined}
             >
               {category.name}
             </Link>
           ))}
-        </div>
+        </nav>
       ) : null}
       {!preview ? (
         <div className="catalogue-filters">
@@ -210,7 +222,22 @@ export function Catalogue({ preview = false }: { preview?: boolean }) {
               />
             </div>
           </form>
-          <div className="filter-fields">
+          <button
+            type="button"
+            className="filter-toggle"
+            aria-expanded={filtersOpen}
+            aria-controls="catalogue-filter-fields"
+            onClick={() => setFiltersOpen((open) => !open)}
+          >
+            {t('Filter & sort', 'फ़िल्टर और क्रम')}
+            {activeFilters ? <span>{activeFilters}</span> : null}
+            <b aria-hidden="true">{filtersOpen ? '−' : '+'}</b>
+          </button>
+          <div
+            className="filter-fields"
+            id="catalogue-filter-fields"
+            data-open={filtersOpen || undefined}
+          >
             <label>
               {t('Category', 'श्रेणी')}
               <select

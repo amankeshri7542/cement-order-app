@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { useCommerce, Quantity, saved, persist } from './commerce';
 import { AccountRequired, AddressBook } from './account';
 import { customerApi, CustomerError } from '../lib/customer-api';
-import { price } from '../lib/catalog';
+import { dayLabel, momentLabel, price } from '../lib/catalog';
 import { useLanguage } from './language';
 
 const draftSchema = z.object({
@@ -25,7 +25,7 @@ export function QuotationsPage() {
     <div className="commerce-page">
       <div className="page-heading">
         <p className="eyebrow">
-          {t('FOR YOUR SITE · BULK REQUIREMENTS', 'आपकी साइट के लिए · थोक ज़रूरतें')}
+          {t('For your site · bulk requirements', 'आपकी साइट के लिए · थोक ज़रूरतें')}
         </p>
         <h1>{t('One list. A considered offer.', 'एक सूची। सोच-समझकर दिया भाव।')}</h1>
         <p>
@@ -75,7 +75,7 @@ export function QuotationsPage() {
           </p>
         )}
       </section>
-      <AccountRequired>
+      <AccountRequired nested>
         <QuoteAccount />
       </AccountRequired>
     </div>
@@ -357,7 +357,8 @@ function QuoteAccount() {
                 {quote.address.pincode}
               </p>
               <p>
-                {t('Requested delivery', 'चाही डिलीवरी')}: {quote.deliveryDate} ·{' '}
+                {t('Requested delivery', 'चाही डिलीवरी')}: {dayLabel(quote.deliveryDate, language)}{' '}
+                ·{' '}
                 {quote.deliveryConfirmed
                   ? t('Delivery terms confirmed by shop', 'दुकान ने डिलीवरी शर्तें पुष्ट कीं')
                   : t('Delivery terms awaiting confirmation', 'डिलीवरी शर्तों की पुष्टि बाकी')}
@@ -371,7 +372,7 @@ function QuoteAccount() {
               {quote.validUntil && (
                 <p>
                   {t('Offer valid until', 'प्रस्ताव की अंतिम तारीख')}:{' '}
-                  {new Date(quote.validUntil).toLocaleString(language === 'hi' ? 'hi-IN' : 'en-IN')}
+                  {momentLabel(quote.validUntil, language)}
                 </p>
               )}
               {quote.adminNote && <p>{quote.adminNote}</p>}

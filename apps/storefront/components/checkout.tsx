@@ -7,7 +7,7 @@ import { placeOrderSchema } from '@shiv/shared';
 import { useCommerce, saved, persist } from './commerce';
 import { AccountRequired, AddressBook } from './account';
 import { customerApi, CustomerError } from '../lib/customer-api';
-import { price } from '../lib/catalog';
+import { dayLabel, price } from '../lib/catalog';
 import { useLanguage } from './language';
 import { useLiveRefresh } from './live';
 
@@ -37,7 +37,7 @@ export function CheckoutPage() {
 }
 function Checkout() {
   const c = useCommerce();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const router = useRouter();
   const id = c.user!.id;
   const [addressId, setAddress] = useState('');
@@ -150,7 +150,7 @@ function Checkout() {
   return (
     <div className="commerce-page">
       <div className="page-heading">
-        <p className="eyebrow">{t('DELIVERY & PAYMENT', 'डिलीवरी और भुगतान')}</p>
+        <p className="eyebrow">{t('Delivery and payment', 'डिलीवरी और भुगतान')}</p>
         <h1>{t('Every detail, before you order.', 'ऑर्डर से पहले हर जानकारी।')}</h1>
         <p>
           {t(
@@ -224,8 +224,8 @@ function Checkout() {
           <aside className="order-summary">
             {review ? (
               <>
-                <p className="eyebrow">{t('FRESH CHECKOUT REVIEW', 'चेकआउट की नई जाँच')}</p>
-                <h2>{price(review.totalPaise)}</h2>
+                <p className="eyebrow">{t('Fresh checkout review', 'चेकआउट की नई जाँच')}</p>
+                <h2>{t('Check, then confirm.', 'जाँचें, फिर पुष्टि करें।')}</h2>
                 <ul className="review-items">
                   {review.items.map((item) => (
                     <li key={item.productId}>
@@ -248,14 +248,23 @@ function Checkout() {
                   {review.address.phone}
                 </p>
                 <p>
-                  {review.deliveryDate} · {review.deliveryEstimate}
+                  {dayLabel(review.deliveryDate, language)} · {review.deliveryEstimate}
                 </p>
                 {review.notes && <p>{review.notes}</p>}
-                <p>
-                  {t('Materials', 'सामग्री')}: {price(review.subtotalPaise)}
-                  <br />
-                  {t('Delivery', 'डिलीवरी')}: {price(review.deliveryFeePaise)}
-                </p>
+                <dl className="review-totals">
+                  <div>
+                    <dt>{t('Materials', 'सामग्री')}</dt>
+                    <dd>{price(review.subtotalPaise)}</dd>
+                  </div>
+                  <div>
+                    <dt>{t('Delivery', 'डिलीवरी')}</dt>
+                    <dd>{price(review.deliveryFeePaise)}</dd>
+                  </div>
+                  <div className="review-total">
+                    <dt>{t('Pay on delivery', 'डिलीवरी पर भुगतान')}</dt>
+                    <dd>{price(review.totalPaise)}</dd>
+                  </div>
+                </dl>
                 {review.changes.length > 0 && (
                   <div className="notice" role="status">
                     {t(

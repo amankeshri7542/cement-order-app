@@ -56,3 +56,33 @@ Core production initial JavaScript budget remains 450KiB gzip. Assistant cost is
 3. Public bounded assistant, optional voice, approved content/contact capability.
 4. Foundation recovery fixes, API/browser/security/production checks and rendered review.
 5. Evidence, Hindi review tasks, real-device plan, draft feature PR and exact-SHA CI.
+
+## Phase 3 refinement, 11 October 2026
+
+The material-board identity is kept: mineral ivory, blueprint ink, clay for actions, limestone
+panels, category illustrations. What changed, after rendering the V2 site at five widths in
+both languages (details and evidence in [V3_UX_EXCELLENCE.md](V3_UX_EXCELLENCE.md)):
+
+- Type: Anek Latin (Ek Type, OFL; variable `wdth`/`wght`, self-hosted via `next/font`, one
+  103.6 KB preloaded file) replaces Trebuchet MS for Latin headings, so Android shows the same
+  condensed signboard voice as iOS and desktop. Devanagari headings use the phone's own face
+  (Noto Sans Devanagari on Android, Kohinoor Devanagari on Apple): the Anek Devanagari file
+  measured 726 KB (variable) or 283 KB (one static instance), too heavy for mobile data. h1 uses
+  `font-stretch: 84%`, the hero 78%; Hindi gets 1.12–1.18 line height. Body stays on system
+  fonts. Labels are sentence case at 14–15 px; no letter-spaced uppercase.
+- Signature: the stepped illustration board became a **current-rates board** (मौजूदा भाव). It
+  keeps the board's large rounded corner and the शिव stamp, now in ink with ruled rows of real
+  catalogue prices and units. Critique before building: a big-number hero would have been the
+  template answer; a rate board is what this shop's customers already read at the counter, and
+  it doubles as product discovery on a phone.
+- Composition: hero → "Two ways to buy" (retail and bulk side by side, divided by a rule) →
+  catalogue preview → delivery band → story sign → questions panel → two buying notes →
+  four-column footer. Only the catalogue and story use card or sign shapes.
+- Palette additions: `--ink-soft #3D5A69`, `--kraft #DDD5BA` (from the bag illustration),
+  `--clay-deep #8D422E` for labels on light surfaces; `#F2B49C` for labels on ink.
+
+Motion contract (supersedes the 180–220 ms note above): one curve
+`cubic-bezier(0.2, 0.7, 0.2, 1)`; `--quick` 160 ms for hover/press colour, `--base` 220 ms for
+acknowledgements, dialogs, chat turns and status chips; `--enter` 420 ms only for the hero's
+first paint (headline lines 0/70 ms, copy 120 ms, board 160 ms, rows 220 ms + 45 ms each).
+Nothing animates layout or blocks input; reduced motion disables all of it.

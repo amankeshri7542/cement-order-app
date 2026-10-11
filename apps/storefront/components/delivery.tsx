@@ -53,7 +53,7 @@ export function Delivery() {
           ↗
         </span>
         <div>
-          <p className="eyebrow">{t('BEFORE YOU PLAN A DELIVERY', 'डिलीवरी की तैयारी से पहले')}</p>
+          <p className="eyebrow">{t('Before you plan a delivery', 'डिलीवरी की तैयारी से पहले')}</p>
           <h2 id="delivery-title">{t('Start with your pincode.', 'अपने पिनकोड से शुरू करें।')}</h2>
           <p>
             {t(

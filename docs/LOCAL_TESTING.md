@@ -111,6 +111,27 @@ Keep a short record: browser/device, language, product and quantity, order/quote
 reference, observed result and screenshot of any defect. Use new practice orders
 for destructive or terminal transitions such as cancellation/return.
 
+## Phase 3 review additions
+
+Branch `codex/v3-ux-excellence`. See [V3_UX_EXCELLENCE.md](V3_UX_EXCELLENCE.md) for what changed.
+
+1. **Rates board.** On the homepage, each row of **Current rates / मौजूदा भाव** must match the
+   cheapest in-stock product of that material on the Materials page, with the same unit. Change
+   a practice price in the owner desk, return to the storefront tab and check the row updates.
+2. **Two ways to buy.** Read the retail and bulk columns aloud in Hindi. Each statement should be
+   something the shop actually does.
+3. **Review notes.** Dashed "Review note · not shown to customers" boxes are expected in local
+   development. They list what the family still has to approve
+   ([checklist](FAMILY_CONTENT_CHECKLIST.md)). A production build hides them; set
+   `NEXT_PUBLIC_CONTENT_REVIEW=on` only for a private review build.
+4. **Phone catalogue.** At 360/390 px, categories scroll sideways in one row and
+   **Filter & sort** opens brand, availability and sort.
+5. **Feedback.** Add a material: the message names it and its quantity and disappears after about
+   five seconds. Select two materials to compare, reload, and open Compare.
+6. **API unreachable.** In Chrome DevTools → Network request blocking, block
+   `localhost:4000/api/v1/auth/*` and reload. The message must appear below the header, say
+   browsing still works, and leave the menu usable. Remove the block and return to the tab.
+
 ## परिवार के लिए छोटा हिंदी समीक्षा क्रम
 
 1. इस कंप्यूटर पर `http://localhost:3003` खोलें और **हिन्दी** चुनें। सामग्री का नाम, भाव, इकाई, पैक, न्यूनतम मात्रा और स्टॉक पढ़कर बताएँ कि क्या स्पष्ट है और क्या नहीं।

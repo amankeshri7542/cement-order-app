@@ -14,8 +14,12 @@ export function BasketPage() {
   return (
     <div className="commerce-page">
       <div className="page-heading">
-        <p className="eyebrow">{t('YOUR MATERIAL LIST', 'आपकी सामग्री सूची')}</p>
-        <h1>{t('Ready for the next step.', 'अगले कदम के लिए तैयार।')}</h1>
+        <p className="eyebrow">{t('Your basket', 'आपकी टोकरी')}</p>
+        <h1>
+          {c.lines.length || !c.ready
+            ? t('Ready for the next step.', 'अगले कदम के लिए तैयार।')
+            : t('Your basket is empty.', 'आपकी टोकरी खाली है।')}
+        </h1>
         <p>
           {t(
             'Check the quantity and selling unit. Prices and delivery are reviewed before you order.',
@@ -84,7 +88,8 @@ export function BasketPage() {
                     <Link href={`/products/${product.id}`}>{product.name}</Link>
                   </h2>
                   <p>
-                    {product.grade} · {product.packSize || t('Pack not specified', 'पैक दर्ज नहीं')}
+                    {product.grade}
+                    {product.packSize ? ` · ${product.packSize}` : ''}
                   </p>
                   <p>
                     {price(product.pricePaise)} / {product.unit}
@@ -98,7 +103,7 @@ export function BasketPage() {
                   />
                   <p className="quantity-rule">
                     {t('Minimum', 'न्यूनतम')} {product.minQuantity} · {t('Step', 'बढ़ोतरी')}{' '}
-                    {product.quantityStep} {product.unit}
+                    {product.quantityStep} × {product.unit}
                   </p>
                   <button
                     className="text-link"
@@ -113,7 +118,7 @@ export function BasketPage() {
             ))}
           </div>
           <aside className="order-summary">
-            <p className="eyebrow">{t('MATERIALS ESTIMATE', 'सामग्री का अनुमान')}</p>
+            <p className="eyebrow">{t('Materials estimate', 'सामग्री का अनुमान')}</p>
             <h2>
               {price(
                 c.lines.reduce((sum, line) => sum + line.product.pricePaise * line.quantity, 0),
@@ -153,17 +158,22 @@ export function BasketPage() {
           </aside>
         </div>
       ) : (
-        <section className="empty-state">
+        <section className="empty-state empty-basket">
           <h2>{t('Start with one material.', 'एक सामग्री से शुरू करें।')}</h2>
           <p>
             {t(
-              'Your selections will stay here while you browse.',
-              'सामग्री देखते समय आपके चयन यहाँ बने रहेंगे।',
+              'Your selections stay here while you browse, even before you sign in.',
+              'सामग्री देखते समय आपके चयन यहाँ बने रहते हैं, साइन इन से पहले भी।',
             )}
           </p>
-          <Link className="button" href="/products">
-            {t('Shop materials', 'सामग्री खरीदें')}
-          </Link>
+          <div className="empty-actions">
+            <Link className="button" href="/products">
+              {t('Shop materials', 'सामग्री खरीदें')}
+            </Link>
+            <Link className="button secondary" href="/quotes">
+              {t('Request bulk quote', 'थोक भाव माँगें')}
+            </Link>
+          </div>
         </section>
       )}
     </div>
@@ -203,15 +213,28 @@ export function ComparePage() {
         </p>
       </div>
       {products.length < 2 ? (
-        <p>
-          {t(
-            'Choose at least two materials using Compare in the catalogue.',
-            'सामग्री सूची में तुलना से कम से कम दो सामग्री चुनें।',
-          )}{' '}
-          <Link className="text-link" href="/products">
-            {t('Open materials', 'सामग्री खोलें')}
-          </Link>
-        </p>
+        ids.split(',').filter(Boolean).length >= 2 && !products.length ? (
+          <p className="loading-state" role="status">
+            {t('Loading the selected materials…', 'चुनी गई सामग्री लोड हो रही है…')}
+          </p>
+        ) : (
+          <section className="empty-state">
+            <h2>
+              {products.length === 1
+                ? t(`${products[0]!.name} is selected.`, `${products[0]!.name} चुनी गई है।`)
+                : t('Nothing to compare yet.', 'तुलना के लिए अभी कुछ नहीं।')}
+            </h2>
+            <p>
+              {t(
+                'Choose Compare on two or three materials in the catalogue.',
+                'सामग्री सूची में दो या तीन सामग्री पर तुलना करें चुनें।',
+              )}
+            </p>
+            <Link className="button" href="/products">
+              {t('Open materials', 'सामग्री खोलें')}
+            </Link>
+          </section>
+        )
       ) : (
         <div className="comparison">
           {products.map((p) => (
@@ -223,10 +246,10 @@ export function ComparePage() {
                   [t('Brand', 'ब्रांड'), p.brand],
                   [t('Grade', 'ग्रेड'), p.grade],
                   [t('Price / unit', 'कीमत / इकाई'), `${price(p.pricePaise)} / ${p.unit}`],
-                  [t('Pack', 'पैक'), p.packSize || t('Not specified', 'दर्ज नहीं')],
+                  [t('Pack', 'पैक'), p.packSize || t('Not listed', 'दर्ज नहीं')],
                   [
                     t('Minimum / step', 'न्यूनतम / बढ़ोतरी'),
-                    `${p.minQuantity} / ${p.quantityStep} ${p.unit}`,
+                    `${p.minQuantity} / ${p.quantityStep} × ${p.unit}`,
                   ],
                   [
                     t('Recommended use', 'इस्तेमाल की सलाह'),
@@ -249,9 +272,11 @@ export function ComparePage() {
           ))}
         </div>
       )}
-      <button className="text-link" onClick={c.clearCompare}>
-        {t('Clear comparison', 'तुलना साफ करें')}
-      </button>
+      {c.compare.length ? (
+        <button className="text-link" onClick={c.clearCompare}>
+          {t('Clear comparison', 'तुलना साफ करें')}
+        </button>
+      ) : null}
     </div>
   );
 }

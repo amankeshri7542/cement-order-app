@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import type { CartLine, Product, User } from '@shiv/shared';
 import { z } from 'zod';
 import { productResponse } from '../lib/api';
@@ -28,6 +29,16 @@ type Guest = z.infer<typeof guestSchema>;
 const mergeSchema = guestSchema.extend({ uncertain: z.boolean() });
 type MergeDraft = z.infer<typeof mergeSchema>;
 const fresh = (): Guest => ({ key: crypto.randomUUID(), lines: [] });
+// The comparison is public catalogue data kept for this tab only, so a reload keeps the choice.
+const compareSchema = z.array(productResponse).max(3);
+const compareKey = 'shiv_compare_v1';
+function keepCompare(items: Product[]) {
+  try {
+    sessionStorage.setItem(compareKey, JSON.stringify(items));
+  } catch {
+    /* Comparison still works for this page view without storage. */
+  }
+}
 function readGuest(key: string): Guest {
   try {
     return guestSchema.parse(JSON.parse(localStorage.getItem(key) || 'null'));
@@ -70,6 +81,20 @@ function useCommerceValue() {
   const sessionRequest = useRef(0);
   const mergeLock = useRef(false);
   const [compare, setCompare] = useState<Product[]>([]);
+  useEffect(() => {
+    try {
+      const saved = compareSchema.safeParse(JSON.parse(sessionStorage.getItem(compareKey) || '[]'));
+      if (saved.success) setCompare(saved.data);
+    } catch {
+      /* Start with an empty comparison. */
+    }
+  }, []);
+  useEffect(() => {
+    if (!message) return;
+    // Status confirmations clear themselves; errors stay until dismissed or resolved.
+    const timer = setTimeout(() => setMessage(''), 5000);
+    return () => clearTimeout(timer);
+  }, [message]);
   const showError = useCallback(
     (e: unknown) => setError(errorText(e, language === 'hi')),
     [language],
@@ -140,11 +165,19 @@ function useCommerceValue() {
     } catch (e) {
       if (attempt !== sessionRequest.current || epoch !== generation.current) return;
       if (e instanceof CustomerError && e.status === 401) identify(null);
+      else if (!identity.current)
+        // A guest has not asked for anything yet; explain what still works instead of a raw failure.
+        setError(
+          t(
+            'Your sign-in could not be checked just now. You can keep browsing; it is checked again when you return to this page.',
+            'आपका साइन इन अभी जाँचा नहीं जा सका। आप सामग्री देखते रहें; इस पेज पर लौटने पर फिर जाँचा जाएगा।',
+          ),
+        );
       else showError(e);
     } finally {
       setReady(true);
     }
-  }, [identify, refresh, showError]);
+  }, [identify, refresh, showError, t]);
   useEffect(() => {
     const intent = readGuest('shiv_guest_cart_v2');
     guestRef.current = intent;
@@ -289,6 +322,13 @@ function useCommerceValue() {
       setBusy(false);
     }
   }
+  const basketNote = (product: Product, count: number) =>
+    count
+      ? t(
+          `${product.name}: ${count} × ${product.unit} in your basket.`,
+          `${product.name}: टोकरी में ${count} × ${product.unit}।`,
+        )
+      : t(`${product.name} removed from your basket.`, `${product.name} टोकरी से हटाई गई।`);
   async function quantity(product: Product, value: number, add = false) {
     setError('');
     if (!ready || mergeLock.current || mergePending) return;
@@ -324,7 +364,7 @@ function useCommerceValue() {
       }
       try {
         updateGuest({ key: crypto.randomUUID(), lines });
-        setMessage(t('Basket updated.', 'टोकरी अपडेट हो गई।'));
+        setMessage(basketNote(product, next));
       } catch {
         setError(
           t(
@@ -353,7 +393,9 @@ function useCommerceValue() {
         );
         if (epoch === generation.current) {
           updateCart(lines);
-          setMessage(t('Basket updated.', 'टोकरी अपडेट हो गई।'));
+          setMessage(
+            basketNote(product, lines.find((line) => line.productId === product.id)?.quantity || 0),
+          );
         }
       });
     tail.current = run;
@@ -417,15 +459,20 @@ function useCommerceValue() {
     mergeDraft,
     editMerge,
     compare,
-    toggleCompare: (p: Product) =>
-      setCompare((old) =>
-        old.some((item) => item.id === p.id)
-          ? old.filter((item) => item.id !== p.id)
-          : old.length < 3
-            ? [...old, p]
-            : old,
-      ),
-    clearCompare: () => setCompare([]),
+    toggleCompare: (p: Product) => {
+      const old = compare;
+      const next = old.some((item) => item.id === p.id)
+        ? old.filter((item) => item.id !== p.id)
+        : old.length < 3
+          ? [...old, p]
+          : old;
+      keepCompare(next);
+      setCompare(next);
+    },
+    clearCompare: () => {
+      keepCompare([]);
+      setCompare([]);
+    },
   };
 }
 const Commerce = createContext<ReturnType<typeof useCommerceValue> | null>(null);
@@ -576,19 +623,29 @@ export function BuyActions({ product }: { product: Product }) {
   );
 }
 
+// Rendered in the page flow below the header so an error never hides navigation.
+export function CommerceAlert() {
+  const c = useCommerce();
+  const { t } = useLanguage();
+  if (!c.error) return null;
+  return (
+    <div className="commerce-alert" role="alert">
+      <span>{c.error}</span>
+      <button onClick={() => c.setError('')} aria-label={t('Dismiss message', 'संदेश हटाएँ')}>
+        ×
+      </button>
+    </div>
+  );
+}
+
 export function CommerceFeedback() {
   const c = useCommerce();
   const { t } = useLanguage();
+  const pathname = usePathname();
+  // The basket and checkout pages already show the full list; a second summary would cover it.
+  const showBasket = c.lines.length > 0 && !['/cart', '/checkout'].includes(pathname);
   return (
     <>
-      {c.error && (
-        <div className="commerce-alert" role="alert">
-          <span>{c.error}</span>
-          <button onClick={() => c.setError('')} aria-label={t('Dismiss message', 'संदेश हटाएँ')}>
-            ×
-          </button>
-        </div>
-      )}
       {c.message && (
         <div className="basket-feedback" role="status" key={c.message}>
           {c.message}
@@ -600,10 +657,11 @@ export function CommerceFeedback() {
           </button>
         </div>
       )}
-      {c.lines.length > 0 && (
+      {showBasket && (
         <Link className="sticky-basket" href="/cart">
           <span>
-            {t('Basket', 'टोकरी')} · {c.lines.length} {t('materials', 'सामग्री')}
+            {t('Basket', 'टोकरी')} · {c.lines.length}{' '}
+            {c.lines.length === 1 ? t('material', 'सामग्री') : t('materials', 'सामग्री')}
           </span>
           <strong>
             {price(c.lines.reduce((sum, line) => sum + line.product.pricePaise * line.quantity, 0))}{' '}
