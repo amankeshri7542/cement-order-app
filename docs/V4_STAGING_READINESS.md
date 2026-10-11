@@ -62,12 +62,94 @@ re-validated server-side in a serializable transaction.
 
 ## Changes in this phase
 
-{{CHANGES}}
+**API runtime (`apps/api`)**
+
+- `src/lifecycle.ts`: drained shutdown (stop accepting, end event streams, close idle sockets,
+  8 s budget, then Nest teardown), redacted error messages, safe correlation IDs.
+- `src/main.ts`: `API_STARTED` / `API_STARTUP_FAILED` / `API_STOPPING` / `API_STOPPED` events;
+  SIGTERM/SIGINT handled once.
+- `src/app.ts`: `/health/live`, `/health/ready`; request logs with route pattern and duration;
+  `X-Request-Id` reuse only behind a trusted proxy.
+- `src/catalog.ts`, `src/owner-work.ts`: event streams end on shutdown.
+- `src/auth.ts`, `src/config.ts`: mock OTP refuses tunnelled/foreign-host requests and trusted
+  proxies; production refuses placeholder OTP secrets.
+- `Dockerfile`: liveness healthcheck, explicit `STOPSIGNAL SIGTERM`.
+- `staging.env.example`; tests `runtime-unit`, `runtime` (DB-backed, serial with the
+  integration suite), `env-templates`.
+- `scripts/restore-rehearsal.ts`: boots the production-mode API on the restored copy.
+
+**Frontends**
+
+- `apps/storefront/instrumentation.ts`, `apps/admin/instrumentation.ts`: exit at startup on a
+  non-HTTPS production origin.
+- `apps/storefront/.env.example`.
+- Account-gated storefront pages (checkout, orders, quotes) show **"We could not confirm your
+  sign-in"** with **Try again** during an outage, instead of asking a possibly signed-in
+  customer to sign in again. Before/after: `docs/screenshots/v4/before-checkout-outage-en-360.png`,
+  `checkout-outage-en-360.png`, `checkout-outage-hi-360.png`.
+
+**CI and tooling**
+
+- CI: backup/restore rehearsal after the browser suites; container smoke after the Docker build
+  (`scripts/ci-container-smoke.sh` + `scripts/api-process-smoke.mjs`).
+- New browser journeys: double-tap **Place COD order** → one order and one owner task; remove
+  the last basket line → empty shared cart; outage gate → retry → normal state.
+
+**Documentation**
+
+- [STAGING_RUNBOOK.md](STAGING_RUNBOOK.md), [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md), this
+  report; content approval workflow and register in
+  [FAMILY_CONTENT_CHECKLIST.md](FAMILY_CONTENT_CHECKLIST.md); updates to DEPLOYMENT, SECURITY
+  and LOCAL_TESTING.
 
 ## Automated checks
 
-{{RESULTS}}
+Local runs on commit `c29dd81` content, 11 October 2026, disposable databases only. The
+exact-SHA GitHub Actions result for the pushed head is recorded on the draft PR.
+
+| Check                                                              | Command                                                                 | Result                                                                                                                            |
+| ------------------------------------------------------------------ | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Lint                                                               | `npm run lint`                                                          | Pass (exit 0)                                                                                                                     |
+| Typechecks, all 5 workspaces                                       | `npm run typecheck --workspaces --if-present`                           | Pass                                                                                                                              |
+| API unit (adds runtime + template tests)                           | `npm test`                                                              | 98/98                                                                                                                             |
+| Storefront unit / launcher                                         | `npm test -w @shiv/storefront`, `npm run test:local`                    | 8/8, 10/10                                                                                                                        |
+| API integration + runtime (serial)                                 | `npm run test:integration -w @shiv/api`                                 | 77/77 in 2 of 3 runs; the third hit the pre-existing intermittent 401 (R12), also reproduced at `ba6c372` without Phase 4 changes |
+| Workflows / bootstrap                                              | `npm run test:workflows`, `npm run test:bootstrap`                      | 20/20, PASS                                                                                                                       |
+| Full Playwright, Chrome                                            | `npm run test:e2e -- --config=playwright.qa.config.ts --project=chrome` | **77/77** (75 + 2 new), none flaky or skipped                                                                                     |
+| Full Playwright, WebKit                                            | same, `--project=webkit`                                                | **77/77**, none flaky or skipped                                                                                                  |
+| Backup/restore rehearsal                                           | `npm run test:restore`                                                  | PASS: 37 tables matched; runtime role CRUD only; production-mode API ready on the restored copy                                   |
+| Real entry point, graceful stop                                    | `scripts/api-process-smoke.mjs`                                         | Ready; open event stream ended; exit 0 in 115 ms after SIGTERM; no secrets logged                                                 |
+| Startup refusals                                                   | same, `--expect=refuse`                                                 | Superuser runtime role refused; placeholder/mock config refused; no secrets logged                                                |
+| Next apps origin check                                             | manual production start                                                 | HTTP API URL → exit 1 `FRONTEND_STARTUP_FAILED`; HTTPS → 200                                                                      |
+| All production builds                                              | `npm run build --workspaces --if-present`                               | Pass                                                                                                                              |
+| Production headers, CSP, nonces (Chrome + WebKit, three frontends) | `node scripts/check-production-headers.mjs` (+ `--self-test`)           | Pass                                                                                                                              |
+| Storefront core JS                                                 | same checker                                                            | **297,417 B gzip** (Phase 3: 297,368 B); budget 450 KiB unchanged; lazy assistant 5,019 B                                         |
+| Credential scan / production audit                                 | `npm run security:scan`, `npm audit --omit=dev …`                       | 0 findings (335 files) / 0 vulnerabilities                                                                                        |
+| Development data                                                   | read-only count                                                         | Unchanged: 6 users, 8 products, 0 orders, 0 quotations, online payments off; no migration added or edited                         |
+
+**Could not run here:** Docker build and the container smoke (no Docker on this machine; both
+run in CI); physical-device tests (no devices or remote-device service); Lighthouse and field
+Core Web Vitals (not run); any provider-backed check (no Twilio, hosting or managed database
+credentials, by design).
 
 ## Still pending (owner actions)
 
-{{PENDING}}
+In priority order. Owners are proposals; the shop decides.
+
+1. **Choose hosting, database plan and domain** for staging (runbook §3). Owner. Blocks
+   everything below.
+2. **Twilio Verify for India**: account, sender registration, approved test numbers and a cost
+   ceiling. Owner + technical operator.
+3. **Confirm the support number `+91 9297513707`** (already public in the Expo app and privacy
+   page) and whether WhatsApp is read on it. Father.
+4. **Staging delivery zones** (pincodes, fee, minimum, estimate) and plain-language
+   cancellation and quotation terms. Uncle.
+5. **Who may use staging** (family, named test customers) and the date staging data is deleted.
+   Owner.
+6. **Physical-device acceptance** (release checklist §C) on the family's Android phone and one
+   iPhone, after staging exists. Family + developer.
+7. Approve or replace the shop story; business identity and retention text for the privacy
+   page. Family.
+8. Fix the pre-existing intermittent integration-test failure (R12) before relying on CI as a
+   release gate. Developer (separate task offered).
+9. Later, optional: live assistant provider; product photos and brand permissions.
