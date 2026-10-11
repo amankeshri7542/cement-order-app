@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { categoryResponse, deliveryResponse, productResponse } from './api';
-import { MAX_PAGES, timeLabel, price, queryString, readQuery, uniqueProducts } from './catalog';
+import {
+  MAX_PAGES,
+  timeLabel,
+  price,
+  queryString,
+  ratesFrom,
+  readQuery,
+  uniqueProducts,
+} from './catalog';
 
 // Isolated synthetic contract fixture: never used as storefront fallback content.
 const fixture = {
@@ -116,4 +124,39 @@ test('delivery requires a consistent serviceability flag and nonnegative paise',
 test('IST time is stable across runtime day-period conventions', () => {
   assert.equal(timeLabel('2026-10-09T09:36:00.000Z'), '15:06');
   assert.equal(timeLabel('2026-10-09T18:45:00.000Z'), '00:15');
+});
+
+test('rate board keeps the cheapest in-stock item per material with its own selling unit', () => {
+  const item = (id: string, slug: string, pricePaise: number, stock: number, unit = 'bag') =>
+    productResponse.parse({
+      ...fixture,
+      id,
+      unit,
+      pricePaise,
+      stock,
+      categoryId: slug,
+      category: { id: slug, name: `TEST ${slug}`, slug },
+    });
+  const rates = ratesFrom([
+    item('steel-a', 'steel', 6800, 10, 'kg'),
+    item('cement-cheap-but-empty', 'cement', 30000, 0),
+    item('cement-b', 'cement', 41000, 4),
+    item('cement-a', 'cement', 39000, 4),
+    item('custom', 'zinc-sheets', 100, 3, 'sheet'),
+    item('sand', 'sand', 680000, 1, '100 cu ft'),
+  ]);
+  assert.deepEqual(
+    rates.map((rate) => [rate.slug, rate.product.id, rate.product.unit]),
+    [
+      ['cement', 'cement-a', 'bag'],
+      ['steel', 'steel-a', 'kg'],
+      ['sand', 'sand', '100 cu ft'],
+      ['zinc-sheets', 'custom', 'sheet'],
+    ],
+  );
+  assert.equal(ratesFrom([item('only-empty', 'cement', 100, 0)]).length, 0);
+  assert.equal(
+    ratesFrom(['a', 'b', 'c', 'd', 'e', 'f'].map((slug) => item(slug, slug, 100, 1))).length,
+    5,
+  );
 });

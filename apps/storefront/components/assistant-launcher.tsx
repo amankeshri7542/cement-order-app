@@ -29,10 +29,7 @@ export function AssistantLauncher() {
         }}
       >
         <span aria-hidden="true">✳</span>
-        <span>
-          {t('Shiv Assistant', 'शिव सहायक')}
-          <small>{t('Material questions? Ask here.', 'सामग्री का सवाल? यहाँ पूछें।')}</small>
-        </span>
+        <span>{t('Ask Shiv Assistant', 'शिव सहायक से पूछें')}</span>
       </button>
       {open && (
         <Assistant key={user?.id || 'guest'} context={context} close={() => setOpen(false)} />

@@ -25,7 +25,7 @@ export function QuotationsPage() {
     <div className="commerce-page">
       <div className="page-heading">
         <p className="eyebrow">
-          {t('FOR YOUR SITE · BULK REQUIREMENTS', 'आपकी साइट के लिए · थोक ज़रूरतें')}
+          {t('For your site · bulk requirements', 'आपकी साइट के लिए · थोक ज़रूरतें')}
         </p>
         <h1>{t('One list. A considered offer.', 'एक सूची। सोच-समझकर दिया भाव।')}</h1>
         <p>
@@ -75,7 +75,7 @@ export function QuotationsPage() {
           </p>
         )}
       </section>
-      <AccountRequired>
+      <AccountRequired nested>
         <QuoteAccount />
       </AccountRequired>
     </div>

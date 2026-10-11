@@ -610,13 +610,28 @@ test('comparison distinguishes selling units; Hindi and enlarged reduced-motion 
   for (const width of [360, 390, 768, 1440]) {
     await page.setViewportSize({ width, height: 950 });
     await page.goto(site);
-    await expect(page.getByRole('heading', { name: /Good materials/ })).toBeVisible();
+    await expect(
+      page.getByRole('heading', {
+        level: 1,
+        name: /Building materials, every rate in plain sight/,
+      }),
+    ).toBeVisible();
+    // The hero rate board reads real catalogue prices, so it must list at least one material.
+    await expect(
+      page
+        .getByRole('complementary', { name: /Current rates/ })
+        .getByRole('link')
+        .first(),
+    ).toBeVisible();
     await expect
       .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
       .toBe(true);
     await screenshot(page, `home-en-${width}`);
     await page.getByRole('button', { name: 'हिन्दी', exact: true }).click();
     await expect(page.locator('html')).toHaveAttribute('lang', 'hi');
+    await expect(
+      page.getByRole('heading', { level: 1, name: /निर्माण सामग्री, हर भाव साफ़-साफ़/ }),
+    ).toBeVisible();
     await expect
       .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
       .toBe(true);

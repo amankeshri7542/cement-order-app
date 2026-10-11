@@ -152,18 +152,21 @@ export function ProductDetail({
                 </div>
                 <div>
                   <dt>{t('Pack size', 'पैक का आकार')}</dt>
-                  <dd>{product.packSize || t('Not specified', 'दर्ज नहीं')}</dd>
+                  <dd className={product.packSize ? undefined : 'spec-missing'}>
+                    {product.packSize ||
+                      t('Not listed — ask the shop', 'दर्ज नहीं — दुकान से पूछें')}
+                  </dd>
                 </div>
                 <div>
                   <dt>{t('Minimum quantity', 'न्यूनतम मात्रा')}</dt>
                   <dd>
-                    {product.minQuantity} {product.unit}
+                    {product.minQuantity} × {product.unit}
                   </dd>
                 </div>
                 <div>
                   <dt>{t('Quantity increment', 'मात्रा की बढ़ोतरी')}</dt>
                   <dd>
-                    {product.quantityStep} {product.unit}
+                    {product.quantityStep} × {product.unit}
                   </dd>
                 </div>
                 <div>
@@ -176,15 +179,22 @@ export function ProductDetail({
                 </div>
               </dl>
               <div className="purchase-note">
-                <strong>{t('Planning to buy?', 'खरीदारी की तैयारी है?')}</strong>
+                <strong>{t('How buying works', 'खरीदारी कैसे होती है')}</strong>
                 <p>
                   {t(
-                    'Note the material and quantity. Confirm the final price, availability and delivery with the store before purchase.',
-                    'सामग्री और मात्रा लिख लें। खरीदारी से पहले अंतिम कीमत, उपलब्धता और डिलीवरी की दुकान से पुष्टि करें।',
+                    'Add it to your basket and pay cash on delivery. Checkout shows the current price, delivery fee and date again before you confirm.',
+                    'टोकरी में डालें और डिलीवरी पर नकद भुगतान करें। पुष्टि से पहले चेकआउट में मौजूदा भाव, डिलीवरी शुल्क और तारीख फिर दिखती है।',
+                  )}
+                </p>
+                <p>
+                  {t(
+                    'Buying for a site? Add it to a bulk quote for a written offer with freight.',
+                    'साइट के लिए खरीद रहे हैं? भाड़े सहित लिखित प्रस्ताव के लिए इसे थोक भाव सूची में जोड़ें।',
                   )}
                 </p>
                 <Link className="text-link" href="/#delivery">
-                  {t('Check delivery pincode', 'डिलीवरी पिनकोड जाँचें')} ↗
+                  {t('Check delivery for your pincode', 'अपने पिनकोड पर डिलीवरी जाँचें')}{' '}
+                  <span aria-hidden="true">→</span>
                 </Link>
               </div>
             </div>
@@ -213,7 +223,7 @@ export function Unavailable() {
   const { t } = useLanguage();
   return (
     <div className="empty-state">
-      <p className="eyebrow">{t('MATERIAL UNAVAILABLE', 'सामग्री उपलब्ध नहीं')}</p>
+      <p className="eyebrow">{t('Material unavailable', 'सामग्री उपलब्ध नहीं')}</p>
       <h1>{t('This material is not available.', 'यह सामग्री उपलब्ध नहीं है।')}</h1>
       <p>
         {t(

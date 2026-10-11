@@ -63,13 +63,12 @@ export function ProductCard({ product }: { product: Product }) {
           <div className="product-price">
             <strong>{price(product.pricePaise)}</strong>
             <span>/ {product.unit}</span>
-            <span className="card-arrow" aria-hidden="true">
-              ↗
-            </span>
           </div>
-          <p className="pack-size">
-            {t('Pack', 'पैक')}: {product.packSize || t('Not specified', 'दर्ज नहीं')}
-          </p>
+          {product.packSize ? (
+            <p className="pack-size">
+              {t('Pack', 'पैक')}: {product.packSize}
+            </p>
+          ) : null}
         </div>
       </Link>
       <BuyActions product={product} />

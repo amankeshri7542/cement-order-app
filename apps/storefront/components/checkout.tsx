@@ -150,7 +150,7 @@ function Checkout() {
   return (
     <div className="commerce-page">
       <div className="page-heading">
-        <p className="eyebrow">{t('DELIVERY & PAYMENT', 'डिलीवरी और भुगतान')}</p>
+        <p className="eyebrow">{t('Delivery and payment', 'डिलीवरी और भुगतान')}</p>
         <h1>{t('Every detail, before you order.', 'ऑर्डर से पहले हर जानकारी।')}</h1>
         <p>
           {t(
@@ -224,7 +224,7 @@ function Checkout() {
           <aside className="order-summary">
             {review ? (
               <>
-                <p className="eyebrow">{t('FRESH CHECKOUT REVIEW', 'चेकआउट की नई जाँच')}</p>
+                <p className="eyebrow">{t('Fresh checkout review', 'चेकआउट की नई जाँच')}</p>
                 <h2>{price(review.totalPaise)}</h2>
                 <ul className="review-items">
                   {review.items.map((item) => (
