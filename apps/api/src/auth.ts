@@ -24,6 +24,35 @@ import { getConfig } from './config';
 import { AuthRequest, Contract, Input, Public, cookie, fail, hash, safeEqual } from './http';
 import { assertSession, limitOtp, refreshLifetime, verifyPassword } from './security';
 
+// Headers added by TLS-terminating tunnels and proxies (ngrok, cloudflared, nginx and similar).
+// A bare X-Forwarded-For is not listed: Express ignores it while TRUST_PROXY_HOPS=0, and the
+// OTP budget tests rely on spoofed values reaching (and being ignored by) the rate limiter.
+const forwardingHeaders = [
+  'forwarded',
+  'x-forwarded-proto',
+  'x-forwarded-host',
+  'x-real-ip',
+  'cf-connecting-ip',
+  'cf-ray',
+  'true-client-ip',
+  'x-original-host',
+];
+/**
+ * Mock OTP shows sign-in codes on screen, so it must only serve this computer directly. A
+ * tunnel or reverse proxy on the same machine also connects from 127.0.0.1, so requests that
+ * carry tunnel/proxy headers or a non-loopback Host (tunnel hostname, DNS rebinding) are
+ * refused. A local proxy that adds no headers and rewrites Host cannot be detected here; mock
+ * OTP therefore also binds to loopback and refuses TRUST_PROXY_HOPS > 0 at startup.
+ */
+export function directLoopback(req: Pick<AuthRequest, 'socket' | 'headers'>) {
+  if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress || ''))
+    return false;
+  if (forwardingHeaders.some((name) => req.headers[name] !== undefined)) return false;
+  const host = (req.headers.host || '').toLowerCase().replace(/:\d+$/, '');
+  return (
+    host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host.endsWith('.localhost')
+  );
+}
 @Injectable()
 export class AuthGuard implements CanActivate {
   constructor(
@@ -32,10 +61,7 @@ export class AuthGuard implements CanActivate {
   ) {}
   async canActivate(ctx: ExecutionContext) {
     const req = ctx.switchToHttp().getRequest<AuthRequest>();
-    if (
-      getConfig().OTP_PROVIDER === 'mock' &&
-      !['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress || '')
-    )
+    if (getConfig().OTP_PROVIDER === 'mock' && !directLoopback(req))
       fail('FORBIDDEN', 'Mock authentication is restricted to local loopback requests.', 403);
     // Cookie-authenticated writes require an exact trusted Origin, including login/logout.
     const origin = req.headers.origin;

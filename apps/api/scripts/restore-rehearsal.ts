@@ -107,6 +107,40 @@ async function main() {
     await assert.rejects(runtime.$executeRawUnsafe('UPDATE "InventoryMovement" SET note = note'));
     const user = await runtime.user.findFirstOrThrow();
     await runtime.user.update({ where: { id: user.id }, data: { name: user.name } });
+    // Boot the real API on the restored copy with production startup guards and the restricted
+    // role, then check readiness and the public catalogue. No provider is contacted at startup.
+    Object.assign(process.env, {
+      NODE_ENV: 'production',
+      DATABASE_URL: runtimeUrl.href,
+      OTP_PROVIDER: 'twilio',
+      TWILIO_ACCOUNT_SID: 'rehearsal-placeholder',
+      TWILIO_AUTH_TOKEN: 'rehearsal-placeholder',
+      TWILIO_VERIFY_SERVICE_SID: 'rehearsal-placeholder',
+      OTP_HASH_SECRET: randomBytes(32).toString('hex'),
+      CORS_ORIGINS: 'https://shop.rehearsal.invalid',
+      TRUST_PROXY_HOPS: '0',
+      ASSISTANT_PROVIDER: 'fallback',
+    });
+    const { createApp } = await import('../src/app');
+    const { shutdown } = await import('../src/lifecycle');
+    const api = await createApp();
+    let catalogueServed = false;
+    try {
+      await api.listen(0, '127.0.0.1');
+      const port = (api.getHttpServer().address() as { port: number }).port;
+      const ready = await fetch(`http://127.0.0.1:${port}/api/v1/health/ready`);
+      assert.equal(ready.status, 200, 'restored API is not ready');
+      const page = (await (
+        await fetch(`http://127.0.0.1:${port}/api/v1/products?limit=100`)
+      ).json()) as {
+        items: unknown[];
+      };
+      assert(page.items.length > 0, 'restored API served no products');
+      catalogueServed = true;
+    } finally {
+      await shutdown(api, 5000);
+    }
+    assert(catalogueServed);
     writeFileSync(
       resolve(directory, 'restore-result.json'),
       JSON.stringify(
@@ -119,13 +153,15 @@ async function main() {
           ddlDenied: true,
           migrationTableDenied: true,
           immutableLedgerPreserved: true,
+          productionStartupOnRestore: true,
+          readinessOnRestore: true,
         },
         null,
         2,
       ),
     );
     console.log(
-      'PASS: disposable dump/restore matches every table; restricted runtime CRUD works; DDL, migration metadata and ledger mutation denied.',
+      'PASS: disposable dump/restore matches every table; restricted runtime CRUD works; DDL, migration metadata and ledger mutation denied; production-mode API starts on the restored copy and reports ready.',
     );
   } finally {
     await runtime?.$disconnect();

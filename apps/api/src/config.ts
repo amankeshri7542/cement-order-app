@@ -143,9 +143,12 @@ export function getConfig(): Config {
     candidate.NODE_ENV === 'production' &&
     (candidate.OTP_PROVIDER === 'mock' ||
       candidate.CORS_ORIGINS.split(',').some((o) => !o.startsWith('https://')) ||
-      /development|change-me/.test(candidate.OTP_HASH_SECRET))
+      /development|change-me|replace|example|placeholder/i.test(candidate.OTP_HASH_SECRET))
   )
     throw new Error('Production requires real OTP, HTTPS origins, and a unique OTP hash secret');
+  // Mock OTP displays codes on screen; it must never sit behind a proxy or tunnel.
+  if (candidate.OTP_PROVIDER === 'mock' && candidate.TRUST_PROXY_HOPS > 0)
+    throw new Error('Mock OTP cannot run behind a trusted proxy (TRUST_PROXY_HOPS must be 0)');
   if (
     candidate.OTP_PROVIDER === 'twilio' &&
     !(

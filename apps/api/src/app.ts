@@ -16,20 +16,46 @@ import { AuthController, AuthGuard, AuthService } from './auth';
 import { AccountController, CatalogController, Events } from './catalog';
 import { Db } from './db';
 import { OwnerWorkController, OwnerWorkService } from './owner-work';
-import { Errors, Public } from './http';
+import { Errors, Public, fail } from './http';
 import { getConfig } from './config';
 import { OrdersController, OrdersService } from './orders';
 import { PaymentsController, PaymentsService } from './payments';
 import { QuotesController } from './quotes';
 import { AdminController } from './admin';
 import { IntegrationsController, Maintenance } from './integrations';
+import { Lifecycle, requestId } from './lifecycle';
 
 @Controller('health')
 class HealthController {
-  constructor(@Inject(Db) private db: Db) {}
+  constructor(
+    @Inject(Db) private db: Db,
+    @Inject(Lifecycle) private lifecycle: Lifecycle,
+  ) {}
+  // Kept for existing platform checks: process up and database reachable.
   @Public() @Get() async health() {
     await this.db.$queryRaw`SELECT 1`;
     return { status: 'ok' };
+  }
+  // Liveness: the process answers. Never touches the database, so a database outage does not
+  // make an orchestrator restart a healthy process in a loop.
+  @Public() @Get('live') live() {
+    return { status: 'ok' };
+  }
+  // Readiness: safe to route customers here. Fails while draining or when the database does not
+  // answer within two seconds. Migration state is checked by the release job, because the
+  // restricted runtime role intentionally cannot read _prisma_migrations.
+  @Public() @Get('ready') async ready() {
+    if (this.lifecycle.draining) fail('DRAINING', 'This instance is shutting down.', 503);
+    const timeout = new Promise<never>((_, reject) => {
+      const timer = setTimeout(() => reject(new Error('timeout')), 2000);
+      timer.unref();
+    });
+    try {
+      await Promise.race([this.db.$queryRaw`SELECT 1`, timeout]);
+    } catch {
+      fail('DATABASE_UNAVAILABLE', 'The database is not reachable.', 503);
+    }
+    return { status: 'ready' };
   }
 }
 @Module({
@@ -64,6 +90,7 @@ class HealthController {
     OrdersService,
     PaymentsService,
     Maintenance,
+    Lifecycle,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: AuthGuard },
   ],
@@ -88,7 +115,10 @@ export async function createApp() {
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
   });
   app.use((req: Request & { requestId?: string }, res: Response, next: NextFunction) => {
-    req.requestId = randomUUID();
+    const started = process.hrtime.bigint();
+    // Reuse a proxy's correlation ID only when a trusted proxy is configured.
+    req.requestId =
+      c.TRUST_PROXY_HOPS > 0 ? requestId(req.headers['x-request-id'], randomUUID) : randomUUID();
     res.setHeader('X-Request-Id', req.requestId);
     res.setHeader('Cache-Control', 'no-store');
     res.on('finish', () => {
@@ -98,7 +128,10 @@ export async function createApp() {
             event: 'HTTP_REQUEST',
             requestId: req.requestId,
             method: req.method,
+            // Route pattern, not the URL: no query strings, search terms or record IDs in logs.
+            route: req.route?.path ? `${req.baseUrl}${req.route.path}` : 'unmatched',
             status: res.statusCode,
+            durationMs: Number((process.hrtime.bigint() - started) / 1_000_000n),
             timestamp: new Date().toISOString(),
           }),
         );
@@ -123,6 +156,6 @@ export async function createApp() {
   server.headersTimeout = 10000;
   server.requestTimeout = 30000;
   server.keepAliveTimeout = 5000;
-  app.enableShutdownHooks();
+  // Signal handling lives in main.ts (see lifecycle.ts) so HTTP drains before teardown.
   return app;
 }

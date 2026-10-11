@@ -40,12 +40,18 @@ jobs:
       - run: npx playwright install --with-deps chrome webkit
       - run: npm run test:e2e -- --config=playwright.qa.config.ts --project=chrome
       - run: npm run test:e2e -- --config=playwright.qa.config.ts --project=webkit
+      - name: Backup and restore rehearsal on a disposable copy
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends postgresql-client-16
+          PG_BIN=/usr/lib/postgresql/16/bin npm run test:restore
       - run: npm run build --workspaces --if-present
       - name: Verify isolated production headers and storefront bundle
         run: node scripts/check-production-headers.mjs --self-test && node scripts/check-production-headers.mjs
       - run: npm run security:scan
       - run: npm audit --omit=dev --workspace @shiv/api --workspace @shiv/shared --workspace @shiv/storefront
       - run: docker build -t shiv-cement-api:ci .
+      - name: Container starts with a restricted role, drains on SIGTERM and refuses a superuser
+        run: bash scripts/ci-container-smoke.sh
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
