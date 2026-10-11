@@ -95,3 +95,19 @@ Use separate staging resources and secrets. Give the release job migration/exten
 Before staging, assign a backup/incident operator. Proposed family-staging target: encrypted daily backups, 7-day retention, RPO 24 hours, RTO 4 hours; the family must approve and the provider must demonstrate them. For real backup: use PostgreSQL 16 tools, a restricted `PGSERVICE`/0600 `PGPASSFILE` (not credentials in argv), `pg_dump --format=custom --no-owner --no-privileges --file=STAGING.dump`, encrypt immediately to the approved backup destination, and test restoration into a new isolated database with providers disabled. Verify row counts, stock/financial invariants, migration version and a test login. Never overwrite the live database to rehearse.
 
 Incident sequence: technical operator pauses the affected feature or stops public ingress; preserve redacted logs/audit/backup evidence; revoke affected sessions and provider keys; rotate staff passphrases as appropriate; reconcile orders, stock and provider receipts with owners; restore only to a separate database; verify before switching traffic. Never auto-refund, cancel paid/dispatched work or replay provider operations to fix an uncertain outcome. For SMS/OCR cost abuse, use provider-side emergency disable too. Resume only after root-cause and invariant checks. No real messages or payment operations were used to test this sequence.
+
+## Staging readiness review (11 October 2026)
+
+See [V4_STAGING_READINESS.md](V4_STAGING_READINESS.md) for the full risk register.
+
+- Mock OTP now also refuses requests that arrive through a tunnel or reverse proxy (tunnel and
+  proxy headers such as `X-Forwarded-Proto`, `X-Forwarded-Host`, `Forwarded`, `Cf-*`) or that
+  name a non-loopback `Host` (DNS rebinding), and refuses to start with `TRUST_PROXY_HOPS > 0`.
+  A local proxy that adds no headers and rewrites `Host` remains undetectable: never put a proxy
+  or tunnel in front of a mock-OTP stack.
+- Production refuses placeholder OTP hash secrets (`REPLACE`, `example`, `placeholder`,
+  `change-me`, `development`).
+- Startup failures and request logs are redacted: connection-string credentials and
+  `key=value` secrets are removed; request logs carry only route patterns, status and duration.
+- Graceful shutdown drains HTTP before the database disconnects; open event streams end cleanly.
+- Next.js apps exit at startup when a production build points at a non-HTTPS origin.

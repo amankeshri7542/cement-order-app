@@ -111,6 +111,17 @@ Keep a short record: browser/device, language, product and quantity, order/quote
 reference, observed result and screenshot of any defect. Use new practice orders
 for destructive or terminal transitions such as cancellation/return.
 
+## Phase 4 operational checks
+
+- Health: <http://localhost:4000/api/v1/health/live> (process) and
+  <http://localhost:4000/api/v1/health/ready> (database reachable, not draining).
+- Restore rehearsal on a disposable copy of the test database: `npm run test:restore`.
+- Real entry point, graceful stop with an open event stream (uses the test database on a spare
+  port; build the API first with `npm run build -w @shiv/api`):
+  `NODE_ENV=development PORT=4020 DATABASE_URL="$TEST_DATABASE_URL" OTP_HASH_SECRET=local-smoke-secret-with-32-characters CORS_ORIGINS=http://localhost:3003 node scripts/api-process-smoke.mjs --url=http://127.0.0.1:4020 -- node apps/api/dist/main.js`
+- Mock sign-in is refused through tunnels/proxies. Do not expose this stack with ngrok,
+  cloudflared or a LAN reverse proxy; use the staging plan instead.
+
 ## Phase 3 review additions
 
 Branch `codex/v3-ux-excellence`. See [V3_UX_EXCELLENCE.md](V3_UX_EXCELLENCE.md) for what changed.

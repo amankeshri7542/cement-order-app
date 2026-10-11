@@ -15,6 +15,49 @@ How to use: for each row, the family writes the exact wording or attaches the fi
 approved it and the date, and ticks the permission box. Leave anything uncertain blank. Do not
 copy wording from the old website without checking it; that site contains unverified claims.
 
+## Approval workflow (Phase 4)
+
+1. **Request.** A developer adds a row to the register below with the item, where it would be
+   shown and its source (who supplied it, or which legacy file it came from).
+2. **Decide.** The named owner (usually the father for the shop counter, the uncle for bulk
+   and transport terms) approves, rejects or edits the exact wording or file. A spoken "looks
+   fine" is not approval: write the decision, the name and the date in the row.
+3. **Record.** Only after approval does a developer copy the value into its source of truth
+   (`public-content.ts`, `shop-assets/`, owner-desk settings) in a reviewable commit that
+   links the row.
+4. **Restrict.** Note any limit (for example "family photo: website only, not social media",
+   "number shown for calls only, no WhatsApp"). Withdrawal is handled the same way and is
+   removed in the next release.
+
+Status values: **Pending** (not decided), **Approved** (exact value recorded), **Rejected**
+(must not be shown), **Live-unconfirmed** (already visible somewhere, needs confirmation or
+removal).
+
+### Approval register
+
+| #   | Content item                                                                              | Source                                                                             | Decision owner              | Status               | Where it may appear                                                                                           | Restrictions / notes                                                                                                   |
+| --- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | --------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| C1  | Short shop story (EN/HI): "A family shop for the materials your next project needs."      | Written for V2; already in `public-content.ts`                                     | Family                      | Live-unconfirmed     | Storefront story section, assistant `shop` answers                                                            | Generic wording, no factual claims; confirm or replace.                                                                |
+| C2  | Support phone `+91 9297513707`                                                            | Original project brief (ARCHITECTURE.md); schema default for `StoreSettings.phone` | Father                      | **Live-unconfirmed** | Already shown: Expo customer app call/WhatsApp buttons, owner-desk privacy page. Not shown on the storefront. | Confirm it is the right public number and whether WhatsApp is read on it. Every new database starts with this default. |
+| C3  | Business identity, retention periods, support contact on `/privacy` and `/delete-account` | DEPLOYMENT.md requirement                                                          | Father + technical operator | Pending              | Owner-desk public privacy pages                                                                               | Page currently says "the current setup contact is 9297513707"; legal identity and retention still blank.               |
+| C4  | Family history, names, roles, founding year                                               | Legacy site (conflicting years)                                                    | Family                      | Pending              | Storefront story/gallery                                                                                      | Each person's own consent.                                                                                             |
+| C5  | Shop and family photographs                                                               | Legacy `group.jpeg`; `store-front.png` is a marked placeholder                     | Family                      | Pending              | Storefront gallery                                                                                            | Consent from everyone pictured; no customer faces/vehicle numbers.                                                     |
+| C6  | Brand names, logos, dealership wording                                                    | Legacy `brands-we-sell/*`                                                          | Family + manufacturers      | Pending              | Catalogue brand list (from live products only), product photos                                                | Written authorisation before "authorised dealer".                                                                      |
+| C7  | Awards / credentials                                                                      | Legacy award images                                                                | Family                      | Pending              | Storefront credentials                                                                                        | Recipient, issuer, date, display right.                                                                                |
+| C8  | Visiting address, hours, directions link                                                  | Not supplied                                                                       | Father                      | Pending              | Storefront visit section (`contactApproved`)                                                                  | Exact Google Maps link checked by the family.                                                                          |
+| C9  | Delivery pincodes, fees, minimums, estimates                                              | Owner desk settings (practice pincode `800099` is test data)                       | Uncle                       | Pending              | Checkout, delivery checker, assistant                                                                         | Configure in staging/production separately; never copy test zones.                                                     |
+| C10 | Cancellation and quotation terms (validity, what freight covers)                          | Not supplied                                                                       | Uncle                       | Pending              | Checkout and quotation screens, footer                                                                        | Plain-language wording in Hindi and English.                                                                           |
+
+### Decisions needed from the family now
+
+1. Is `+91 9297513707` the number customers should call, and is WhatsApp read on it (C2)?
+2. Approve or replace the one-sentence shop story in both languages (C1).
+3. Who answers customer calls and WhatsApp during and after shop hours (C2, C8)?
+4. The exact visiting address, hours and a Google Maps link you have opened yourselves (C8).
+5. Which pincodes you will actually deliver to in staging, with fee, minimum and estimate (C9).
+6. Business name/identity and data-retention period for the privacy page (C3).
+7. Photos, family introductions, brands and awards can wait; nothing is shown until approved.
+
 ## 1. Shop and family story — दुकान और परिवार की कहानी
 
 | Item                 | What we need                                                                                                                   | Approved by / date | Status  |

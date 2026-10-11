@@ -284,6 +284,36 @@ test('COD lost success recovers exactly one owner task and inventory movement af
   await screenshot(page, 'order-confirmation');
 });
 
+test('double-tapping Place COD order creates one order; removing the last basket line empties the shared cart', async ({
+  page,
+}) => {
+  const phone = '9888810011';
+  await checkout(page, phone);
+  // Two taps in quick succession, as on a slow phone: one order, one owner task.
+  await page.getByRole('button', { name: 'Place COD order', exact: true }).dblclick();
+  await expect(page).toHaveURL(/\/orders\//);
+  await expect(page.getByText('Confirmed', { exact: true }).first()).toBeVisible();
+  const db = database();
+  try {
+    const user = await db.user.findUniqueOrThrow({ where: { phone: `+91${phone}` } });
+    expect(await db.order.count({ where: { userId: user.id } })).toBe(1);
+    const order = await db.order.findFirstOrThrow({ where: { userId: user.id } });
+    expect(await db.ownerWork.count({ where: { orderId: order.id } })).toBe(1);
+  } finally {
+    await db.$disconnect();
+  }
+  await putCart(page, 3);
+  await page.goto(`${site}/cart`);
+  await expect(page.getByRole('main').getByLabel('Quantity for TEST WEB Cement PPC')).toHaveValue(
+    '3',
+  );
+  await page.getByRole('main').getByRole('button', { name: 'Remove', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Your basket is empty.', exact: true }),
+  ).toBeVisible();
+  expect(await (await page.request.get(`${api}/cart`)).json()).toEqual([]);
+});
+
 test('successful COD remains visible when ancillary cart refresh fails; terms changes require renewed consent', async ({
   page,
   request,
