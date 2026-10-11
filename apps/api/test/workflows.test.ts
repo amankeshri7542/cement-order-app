@@ -97,7 +97,8 @@ beforeAll(async () => {
   });
   const { createApp } = await import('../src/app');
   app = await createApp();
-  await app.init();
+  // Listen once on 127.0.0.1; see integration.test.ts for the per-request port collision.
+  await app.listen(0, '127.0.0.1');
   server = app.getHttpServer();
   db = app.get(Db);
   orders = app.get(OrdersService);

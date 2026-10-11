@@ -287,7 +287,7 @@ test('COD lost success recovers exactly one owner task and inventory movement af
 test('double-tapping Place COD order creates one order; removing the last basket line empties the shared cart', async ({
   page,
 }) => {
-  const phone = '9888810011';
+  const phone = '9888810021'; // unique: 9888810011 is the second account in the late-checkout test
   await checkout(page, phone);
   // Two taps in quick succession, as on a slow phone: one order, one owner task.
   await page.getByRole('button', { name: 'Place COD order', exact: true }).dblclick();

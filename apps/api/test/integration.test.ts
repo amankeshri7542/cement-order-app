@@ -122,7 +122,10 @@ const capture = {
 beforeAll(async () => {
   const { createApp } = await import('../src/app');
   app = await createApp();
-  await app.init();
+  // Listen once on 127.0.0.1. Given an idle server, supertest calls listen(0) per request on the
+  // wildcard address; on macOS another local process bound to 127.0.0.1 on that same port then
+  // receives the request, producing random 401/200/400 failures.
+  await app.listen(0, '127.0.0.1');
   server = app.getHttpServer();
   db = app.get(Db);
 }, 30000);
