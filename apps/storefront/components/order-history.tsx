@@ -8,23 +8,13 @@ import { AccountRequired } from './account';
 import { customerApi, CustomerError } from '../lib/customer-api';
 import { dayLabel, price } from '../lib/catalog';
 import { useLanguage } from './language';
+import { orderStatusText } from '@shiv/shared';
 
-const statuses: Record<string, [string, string]> = {
-  CONFIRMED: ['Confirmed', 'पक्का हुआ'],
-  PREPARING: ['Preparing', 'तैयारी हो रही है'],
-  OUT_FOR_DELIVERY: ['Out for delivery', 'डिलीवरी के लिए निकला'],
-  DELIVERY_EXCEPTION: ['Delivery needs attention', 'डिलीवरी पर ध्यान चाहिए'],
-  DELIVERED: ['Delivered', 'डिलीवरी हो गई'],
-  CANCELLED: ['Cancelled', 'रद्द'],
-  REFUND_PENDING: ['Refund pending', 'वापसी बाकी'],
-  REFUNDED: ['Refunded', 'राशि वापस'],
-  PENDING_PAYMENT: ['Payment pending', 'भुगतान बाकी'],
-};
 export function Status({ status }: { status: string }) {
-  const { t } = useLanguage();
+  const { language } = useLanguage();
   return (
     <span className={`status-badge status-${status.toLowerCase()}`}>
-      {statuses[status] ? t(...statuses[status]) : status}
+      {orderStatusText(status, language)}
     </span>
   );
 }

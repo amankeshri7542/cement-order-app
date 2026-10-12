@@ -22,6 +22,7 @@ import {
   listenerPids,
   stopManaged,
   applicationIdentity,
+  pgEnv,
 } from './local-services.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -70,7 +71,7 @@ const pg =
   );
 function pgRun(bin, args) {
   if (!pg) throw new Error('Install PostgreSQL 16 with brew install postgresql@16, or set PG_BIN.');
-  run(`${pg}/${bin}`, args);
+  run(`${pg}/${bin}`, args, { env: pgEnv() });
 }
 function saveIfMissing(path, content) {
   if (!existsSync(path)) writeFileSync(path, content, { mode: 0o600 });

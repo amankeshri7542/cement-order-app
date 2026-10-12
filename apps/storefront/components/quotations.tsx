@@ -9,6 +9,7 @@ import { AccountRequired, AddressBook } from './account';
 import { customerApi, CustomerError } from '../lib/customer-api';
 import { dayLabel, momentLabel, price } from '../lib/catalog';
 import { useLanguage } from './language';
+import { quoteStatusText } from '@shiv/shared';
 
 const draftSchema = z.object({
   addressId: z.string(),
@@ -236,13 +237,6 @@ function QuoteAccount() {
       setBusy(false);
     }
   }
-  const labels: Record<string, [string, string]> = {
-    REQUESTED: ['Requested · awaiting shop', 'अनुरोध · दुकान का जवाब बाकी'],
-    SENT: ['Offer ready for review', 'प्रस्ताव जाँच के लिए तैयार'],
-    ACCEPTED: ['Accepted · awaiting conversion', 'स्वीकार · ऑर्डर बनना बाकी'],
-    REJECTED: ['Rejected', 'अस्वीकार'],
-    EXPIRED: ['Expired', 'समय समाप्त'],
-  };
   return (
     <>
       {pending ? (
@@ -333,9 +327,7 @@ function QuoteAccount() {
                     {t('Revision', 'संस्करण')} {quote.revision}
                   </p>
                 </div>
-                <span className="status-badge">
-                  {labels[status] ? t(...labels[status]) : status}
-                </span>
+                <span className="status-badge">{quoteStatusText(status, language)}</span>
               </div>
               <ul className="review-items">
                 {quote.items.map((item) => (

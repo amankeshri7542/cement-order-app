@@ -14,6 +14,7 @@ import {
   listenerPids,
   stopManaged,
   applicationIdentity,
+  pgEnv,
 } from './local-services.mjs';
 
 async function server(t, handler, host = '127.0.0.1', port = 0) {
@@ -173,4 +174,11 @@ test('managed fixture lifecycle verifies listeners and never signals an unowned 
   assert.equal(processInfo(child.pid), null);
   assert.deepEqual(listenerPids(port), []);
   await assertPortFree(port);
+});
+
+test('PostgreSQL tools get a locale when the shell has none, and keep an existing one', () => {
+  assert.equal(pgEnv({ PATH: '/bin' }).LC_ALL, 'en_US.UTF-8');
+  assert.equal(pgEnv({ PATH: '/bin' }).PATH, '/bin');
+  assert.equal(pgEnv({ LANG: 'hi_IN.UTF-8' }).LC_ALL, undefined);
+  assert.equal(pgEnv({ LC_ALL: 'C' }).LC_ALL, 'C');
 });

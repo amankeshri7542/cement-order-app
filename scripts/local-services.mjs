@@ -153,3 +153,9 @@ export async function applicationIdentity(name, origin) {
     return { matches: false, description: 'not responding / invalid identity' };
   }
 }
+
+// On macOS, PostgreSQL refuses to start ("postmaster became multithreaded during startup")
+// when the shell has no locale, e.g. a fresh terminal or app session. Supply one if missing.
+export function pgEnv(env = process.env) {
+  return env.LC_ALL || env.LANG ? env : { ...env, LC_ALL: 'en_US.UTF-8', LANG: 'en_US.UTF-8' };
+}
