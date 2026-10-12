@@ -80,6 +80,19 @@ export const configSchema = z.object({
   FIREBASE_PROJECT_ID: z.string().optional(),
   FIREBASE_CLIENT_EMAIL: z.string().optional(),
   FIREBASE_PRIVATE_KEY: z.string().optional(),
+  // App versions below the minimum must update before use; below latest see a gentle prompt.
+  ANDROID_MINIMUM_VERSION: z
+    .string()
+    .regex(/^\d+\.\d+\.\d+$/)
+    .default('1.0.0'),
+  ANDROID_LATEST_VERSION: z
+    .string()
+    .regex(/^\d+\.\d+\.\d+$/)
+    .default('1.0.0'),
+  ANDROID_STORE_URL: z
+    .url()
+    .startsWith('https://')
+    .default('https://play.google.com/store/apps/details?id=in.shivcement.store'),
 });
 export type Config = z.infer<typeof configSchema>;
 let config: Config;

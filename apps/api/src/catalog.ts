@@ -28,7 +28,7 @@ import { Lifecycle } from './lifecycle';
 import { Admin, AuthRequest, Contract, Input, Public, fail } from './http';
 import { paginate } from './pagination';
 import { moveStock } from './inventory';
-import { onlineReady } from './config';
+import { getConfig, onlineReady } from './config';
 
 @Injectable()
 export class Events {
@@ -118,6 +118,16 @@ export class CatalogController {
   }
   @Public() @Get('categories') categories() {
     return this.db.category.findMany({ orderBy: { name: 'asc' } });
+  }
+  @Public() @Get('client-config') clientConfig() {
+    const c = getConfig();
+    return {
+      android: {
+        minimumVersion: c.ANDROID_MINIMUM_VERSION,
+        latestVersion: c.ANDROID_LATEST_VERSION,
+        storeUrl: c.ANDROID_STORE_URL,
+      },
+    };
   }
   @Public() @Get('store') async store() {
     const settings = await this.db.storeSettings.findUniqueOrThrow({ where: { id: 'store' } });
