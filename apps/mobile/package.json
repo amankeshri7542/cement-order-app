@@ -7,10 +7,12 @@
     "start": "expo start",
     "web": "node ../../scripts/customer-web.mjs",
     "build": "expo export --platform all",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:maestro": "maestro test .maestro"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
+    "@sentry/react-native": "~7.11.0",
     "@shiv/shared": "1.0.0",
     "expo": "~55.0.0",
     "expo-dev-client": "~55.0.40",

@@ -52,7 +52,8 @@ export default ts.config(
         {
           object: 'AbortSignal',
           property: 'timeout',
-          message: 'React Native has no AbortSignal.timeout(); use AbortController with setTimeout.',
+          message:
+            'React Native has no AbortSignal.timeout(); use AbortController with setTimeout.',
         },
         {
           object: 'AbortSignal',
@@ -63,8 +64,8 @@ export default ts.config(
     },
   },
   {
-    // Expo config plugins are loaded with require().
-    files: ['apps/mobile/plugins/**/*.js'],
+    // Expo config plugins and Metro config are loaded with require().
+    files: ['apps/mobile/plugins/**/*.js', 'apps/mobile/metro.config.js'],
     languageOptions: { sourceType: 'commonjs' },
     rules: { '@typescript-eslint/no-require-imports': 'off' },
   },

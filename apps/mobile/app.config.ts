@@ -7,6 +7,16 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   plugins: [
     ...(config.plugins ?? []),
     ...(process.env.APP_VARIANT === 'local' ? ['./plugins/local-cleartext'] : []),
+    // Uploads source maps so crash reports show real file and line numbers. Only release builds
+    // with Sentry credentials (EAS/CI) load it; local builds need no Sentry account.
+    ...(process.env.SENTRY_AUTH_TOKEN
+      ? [
+          [
+            '@sentry/react-native/expo',
+            { organization: process.env.SENTRY_ORG, project: process.env.SENTRY_PROJECT },
+          ] as [string, unknown],
+        ]
+      : []),
   ],
   android: {
     ...config.android,
