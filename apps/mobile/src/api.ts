@@ -1,10 +1,15 @@
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
-import type { User } from '@shiv/shared';
+import { errorText, type Language, type User } from '@shiv/shared';
 export const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
 let accessToken = '';
 let refreshToken = '';
 let refreshing: Promise<boolean> | null = null;
+// Called when a signed-in request fails because the session ended and could not be renewed.
+let sessionEnded: (() => void) | null = null;
+export function onSessionEnded(callback: (() => void) | null) {
+  sessionEnded = callback;
+}
 export class ApiError extends Error {
   constructor(
     public code: string,
@@ -96,8 +101,18 @@ export async function api<T>(
       refreshing = null;
     });
     if (await refreshing) return api(path, method, body, false);
+    if (accessToken || Platform.OS === 'web') sessionEnded?.();
   }
-  const data = await response.json();
+  let data: { error?: { code?: string; message?: string; details?: unknown } } & unknown;
+  try {
+    data = await response.json();
+  } catch {
+    // A proxy error page, captive Wi-Fi portal or cut-off reply is not the store's JSON.
+    throw new ApiError(
+      response.ok ? 'NETWORK_ERROR' : 'REQUEST_FAILED',
+      'Cannot reach the store. Check your connection and try again.',
+    );
+  }
   if (!response.ok)
     throw new ApiError(
       data.error?.code || 'REQUEST_FAILED',
@@ -106,5 +121,10 @@ export async function api<T>(
     );
   return data as T;
 }
-export const message = (error: unknown) =>
-  error instanceof Error ? error.message : 'Something went wrong. Try again.';
+/** Customer-facing text for any failure, in the chosen language. */
+export const message = (error: unknown, language: Language = 'en') =>
+  error instanceof ApiError
+    ? errorText(error.code, language, error.message)
+    : error instanceof Error && language === 'en'
+      ? error.message
+      : errorText('REQUEST_FAILED', language);

@@ -6,9 +6,48 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "ios": { "bundleIdentifier": "in.shivcement.store", "supportsTablet": true },
-    "android": { "package": "in.shivcement.store" },
-    "web": { "bundler": "metro", "name": "Shiv Cement Store" },
-    "plugins": ["expo-secure-store", "expo-notifications"]
+    "ios": {
+      "bundleIdentifier": "in.shivcement.store",
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "in.shivcement.store",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "monochromeImage": "./assets/adaptive-monochrome.png",
+        "backgroundColor": "#173345"
+      },
+      "blockedPermissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.SYSTEM_ALERT_WINDOW"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "name": "Shiv Cement Store"
+    },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#173345",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 160
+        }
+      ],
+      "expo-secure-store",
+      "expo-notifications",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Shiv Cement Store uses the microphone only when you tap the mic to speak a question. / आप माइक दबाकर सवाल बोलें, तभी ऐप माइक इस्तेमाल करता है।",
+          "speechRecognitionPermission": "Turns your spoken question into text. / आपका बोला सवाल लिखे शब्दों में बदलता है।",
+          "androidSpeechServicePackages": ["com.google.android.googlequicksearchbox"]
+        }
+      ]
+    ],
+    "icon": "./assets/icon.png",
+    "backgroundColor": "#F5F3ED"
   }
 }
