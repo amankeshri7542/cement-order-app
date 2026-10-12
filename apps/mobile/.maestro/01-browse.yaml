@@ -1,0 +1,28 @@
+# Smoke + tap budgets: rates on the first screen (0 taps); a product's main action needs no
+# scrolling; Back from a product keeps the search.
+appId: in.shivcement.store
+tags: [smoke]
+---
+- launchApp:
+    clearState: true
+- tapOn: English
+- extendedWaitUntil:
+    visible: Current rates
+    timeout: 15000
+- assertVisible: .*/ 50 kg bag
+- assertNotVisible: Cannot reach the store.*
+- tapOn:
+    text: Materials
+    index: 0
+- tapOn: Search materials
+- inputText: UltraTech
+- hideKeyboard
+- extendedWaitUntil:
+    visible: View UltraTech Super
+    timeout: 10000
+- tapOn: View UltraTech Super
+- assertVisible: Add to basket
+- assertVisible: Total
+- tapOn: Back
+- assertVisible: UltraTech
+- assertVisible: View UltraTech Super

@@ -110,7 +110,7 @@ export function ProductRow({ product }: { product: Product }) {
   const inBasket = basketQuantity(product.id);
   const available = product.active && product.stock >= product.minQuantity;
   return (
-    <View style={cs.row}>
+    <View style={cs.row} testID={`product-${product.id}`}>
       <View style={[s.row, { gap: space.sm }]}>
         <Pressable
           accessibilityRole="button"
@@ -372,34 +372,35 @@ function RateBoard() {
   );
 }
 
+/** Compact, first on Home for returning customers: where is my order, and order it again. */
 function LatestOrder() {
   const { latestOrder, t, language, navigate } = useStore();
   const reorder = useReorder(latestOrder);
   if (!latestOrder) return null;
   return (
-    <View style={[s.card, { gap: space.md }]}>
+    <View style={[s.card, { gap: space.sm, padding: space.md }]}>
       <View style={s.between}>
-        <View style={{ flex: 1 }}>
-          <Text style={s.small}>{t('Your latest order', 'आपका पिछला ऑर्डर')}</Text>
-          <Text style={s.h3}>{latestOrder.number}</Text>
-        </View>
+        <Text style={s.h3} numberOfLines={1}>
+          {t('Your latest order', 'आपका पिछला ऑर्डर')}
+        </Text>
         <OrderStatusTag status={latestOrder.status} language={language} />
       </View>
-      <Text style={s.small} numberOfLines={2}>
+      <Text style={s.small} numberOfLines={1}>
+        {latestOrder.number} ·{' '}
         {latestOrder.items.map((item) => `${item.name} × ${item.quantity}`).join(', ')}
       </Text>
       <View style={[s.row, { gap: space.sm }]}>
         <Button
           secondary
           icon="navigate-outline"
-          style={{ flex: 1 }}
+          style={{ flex: 1, minHeight: 48 }}
           onPress={() => navigate({ screen: 'Order', id: latestOrder.id })}
         >
           {t('Track', 'ट्रैक करें')}
         </Button>
         <Button
           icon="repeat"
-          style={{ flex: 1 }}
+          style={{ flex: 1, minHeight: 48 }}
           loading={reorder.busy}
           disabled={!reorder.ready}
           onPress={() => void reorder.run()}
@@ -445,8 +446,8 @@ export function Home() {
   ];
   return (
     <Screen onRefresh={() => void refreshCurrent()} refreshing={refreshing}>
-      <RateBoard />
       {user && <LatestOrder />}
+      <RateBoard />
       <View style={cs.actions}>
         {actions.map(([label, icon, onPress]) => (
           <Pressable

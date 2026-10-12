@@ -9,6 +9,7 @@ import {
   StyleSheet,
   Switch,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import * as Notifications from 'expo-notifications';
@@ -83,10 +84,8 @@ export function Login() {
       animationType="slide"
       onRequestClose={() => setLoginVisible(false)}
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={ac.overlay}
-      >
+      {/* A modal has its own window, so Android's resize-for-keyboard does not reach it. */}
+      <KeyboardAvoidingView behavior="padding" style={ac.overlay}>
         <SafeAreaView edges={['bottom']} style={ac.sheet}>
           <ScrollView
             keyboardShouldPersistTaps="handled"
@@ -122,6 +121,10 @@ export function Login() {
               maxLength={10}
               editable={!sent && !busy}
               placeholder={t('10-digit mobile number', '10 अंकों का मोबाइल नंबर')}
+              returnKeyType="send"
+              onSubmitEditing={() => {
+                if (!sent && phone.length === 10 && !busy) void submit();
+              }}
               autoFocus
             />
             {sent && (
@@ -134,6 +137,10 @@ export function Login() {
                 textContentType="oneTimeCode"
                 maxLength={6}
                 placeholder={t('6-digit code', '6 अंकों का कोड')}
+                returnKeyType="done"
+                onSubmitEditing={() => {
+                  if (code.length === 6 && !busy) void submit();
+                }}
                 autoFocus
               />
             )}
@@ -543,6 +550,7 @@ export function Addresses() {
     };
   }
   const [form, setForm] = useState(() => addressForm(routedAddress));
+  const inputs = useRef<(TextInput | null)[]>([]);
   function edit(address?: Address) {
     initialized.current = true;
     setEditingId(address?.id || null);
@@ -588,15 +596,16 @@ export function Addresses() {
       setBusy(false);
     }
   }
+  // What the driver needs first; the label and landmark are optional extras at the end.
   const fields = [
-    { key: 'label', label: t('Name this address (Home / Site)', 'पते का नाम (घर / साइट)') },
-    { key: 'name', label: t('Person receiving', 'सामान लेने वाले का नाम') },
-    { key: 'phone', label: t('Mobile number (+91)', 'मोबाइल नंबर (+91)') },
     { key: 'line1', label: t('House, plot or street', 'मकान, प्लॉट या गली') },
     { key: 'area', label: t('Area / locality', 'इलाक़ा / मोहल्ला') },
-    { key: 'city', label: t('City / district', 'शहर / ज़िला') },
     { key: 'pincode', label: t('Pincode', 'पिनकोड') },
+    { key: 'name', label: t('Person receiving', 'सामान लेने वाले का नाम') },
+    { key: 'phone', label: t('Mobile number (+91)', 'मोबाइल नंबर (+91)') },
+    { key: 'city', label: t('City / district', 'शहर / ज़िला') },
     { key: 'landmark', label: t('Landmark (optional)', 'पहचान का स्थान (वैकल्पिक)') },
+    { key: 'label', label: t('Name this address (Home / Site)', 'पते का नाम (घर / साइट)') },
   ] as const;
   return (
     <Screen
@@ -701,11 +710,19 @@ export function Addresses() {
               ? t('Edit address', 'पता बदलें')
               : t('Add a delivery address', 'डिलीवरी का पता जोड़ें')}
           </Text>
-          {fields.map((x) => (
+          {fields.map((x, index) => (
             <Field
               key={x.key}
+              ref={(input) => {
+                inputs.current[index] = input;
+              }}
               label={x.label}
               value={form[x.key]}
+              returnKeyType={index < fields.length - 1 ? 'next' : 'done'}
+              submitBehavior={index < fields.length - 1 ? 'submit' : 'blurAndSubmit'}
+              onSubmitEditing={() =>
+                index < fields.length - 1 ? inputs.current[index + 1]?.focus() : void save()
+              }
               keyboardType={
                 x.key === 'phone' ? 'phone-pad' : x.key === 'pincode' ? 'number-pad' : 'default'
               }

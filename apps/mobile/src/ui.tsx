@@ -1,4 +1,4 @@
-import { useEffect, useState, type ComponentProps, type ReactNode } from 'react';
+import { useEffect, useState, type ComponentProps, type ReactNode, type Ref } from 'react';
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -153,12 +153,14 @@ export function IconButton({
 export function Field({
   label,
   hint,
+  ref,
   ...props
-}: TextInputProps & { label: string; hint?: string }) {
+}: TextInputProps & { label: string; hint?: string; ref?: Ref<TextInput> }) {
   return (
     <View style={s.field}>
       <Text style={s.label}>{label}</Text>
       <TextInput
+        ref={ref}
         accessibilityLabel={label}
         accessibilityHint={hint}
         placeholderTextColor={C.muted}

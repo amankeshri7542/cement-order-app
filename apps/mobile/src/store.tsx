@@ -214,7 +214,9 @@ function useStoreValue() {
   const routeHistory = useRef<Route[]>([]);
   const addressOrigin = useRef<Route | null>(null);
   const pendingRoute = useRef<Route | null>(null);
-  const screenRefresh = useRef<(() => Promise<void>) | null>(null);
+  // Visible screens register a refresh; the newest (topmost) one runs. A stack, so closing a
+  // detail screen hands refresh back to the tab underneath.
+  const screenRefresh = useRef<(() => Promise<void>)[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const languageTail = useRef<Promise<unknown>>(Promise.resolve());
   const catalogRequest = useRef(0);
@@ -390,9 +392,9 @@ function useStoreValue() {
     if (origin && ['Checkout', 'Cart', 'QuoteRequest'].includes(origin.screen)) goBack();
   }
   const registerRefresh = useCallback((callback: () => Promise<void>) => {
-    screenRefresh.current = callback;
+    screenRefresh.current = [...screenRefresh.current, callback];
     return () => {
-      if (screenRefresh.current === callback) screenRefresh.current = null;
+      screenRefresh.current = screenRefresh.current.filter((item) => item !== callback);
     };
   }, []);
   const refreshCatalog = useCallback(async () => {
@@ -444,7 +446,7 @@ function useStoreValue() {
   const refreshCurrent = useCallback(async () => {
     setRefreshing(true);
     try {
-      await Promise.all([refreshCatalog(), refreshAccount(), screenRefresh.current?.()]);
+      await Promise.all([refreshCatalog(), refreshAccount(), screenRefresh.current.at(-1)?.()]);
     } catch (e) {
       setToast(say(e));
     } finally {

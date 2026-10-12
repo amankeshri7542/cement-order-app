@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   BackHandler,
+  Keyboard,
+  KeyboardAvoidingView,
   Linking,
   Platform,
   Pressable,
@@ -105,6 +107,17 @@ function Shell() {
     if (Platform.OS === 'web')
       document.title = t('Shiv Cement Store · Patna', 'शिव सीमेंट स्टोर · पटना');
   }, [t]);
+  // Edge-to-edge Android does not resize for the keyboard, so the content avoids it itself and
+  // the tab bar steps aside while typing.
+  const [typing, setTyping] = useState(false);
+  useEffect(() => {
+    const shown = Keyboard.addListener('keyboardDidShow', () => setTyping(true));
+    const hidden = Keyboard.addListener('keyboardDidHide', () => setTyping(false));
+    return () => {
+      shown.remove();
+      hidden.remove();
+    };
+  }, []);
   const basketCount = basket.reduce((total, line) => total + line.quantity, 0);
   const activeTab: Tab = isTab(route) ? (route.screen as Tab) : (tabRoute.screen as Tab);
   const detail = isTab(route) ? null : route;
@@ -210,7 +223,10 @@ function Shell() {
           </Text>
         </Pressable>
       )}
-      <View style={{ flex: 1, backgroundColor: C.paper }}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'web' ? undefined : 'padding'}
+        style={{ flex: 1, backgroundColor: C.paper }}
+      >
         <View style={[{ flex: 1 }, detail ? a.hidden : null]}>
           <TabScreen route={tabRoute} />
         </View>
@@ -232,8 +248,8 @@ function Shell() {
             <Icon name="close" color={C.paper} size={18} />
           </Pressable>
         ) : null}
-      </View>
-      <View style={a.nav} accessibilityRole="tablist">
+      </KeyboardAvoidingView>
+      <View style={[a.nav, typing && a.hidden]} accessibilityRole="tablist">
         {(
           [
             ['Home', t('Home', 'होम'), 'home'],
