@@ -69,6 +69,9 @@ export async function api<T>(
   retry = true,
 ): Promise<T> {
   let response: Response;
+  // React Native has no AbortSignal.timeout(); calling it throws before any request is sent.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
   try {
     response = await fetch(`${API_URL}${path}`, {
       method,
@@ -78,13 +81,15 @@ export async function api<T>(
         ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      signal: AbortSignal.timeout(20000),
+      signal: controller.signal,
     });
   } catch {
     throw new ApiError(
       'NETWORK_ERROR',
       'Cannot reach the store. Check your connection and try again.',
     );
+  } finally {
+    clearTimeout(timer);
   }
   if (response.status === 401 && retry && !path.startsWith('/auth/')) {
     refreshing ??= refresh().finally(() => {

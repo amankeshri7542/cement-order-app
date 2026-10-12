@@ -17,6 +17,7 @@ import { productResponse } from '../lib/api';
 import { customerApi, CustomerError, errorText } from '../lib/customer-api';
 import { price } from '../lib/catalog';
 import { useLanguage } from './language';
+import { MAX_LINE_QUANTITY, quantityProblem } from '@shiv/shared';
 
 type Intent = { product: Product; quantity: number };
 const guestSchema = z.object({
@@ -287,10 +288,7 @@ function useCommerceValue() {
     if (!owner || !draft || draft.uncertain || mergeLock.current) return;
     if (
       quantity &&
-      (!Number.isInteger(quantity) ||
-        quantity < product.minQuantity ||
-        quantity % product.quantityStep ||
-        quantity > Math.min(product.stock, 10000))
+      quantityProblem(product, quantity, Math.min(product.stock, MAX_LINE_QUANTITY))
     ) {
       showError(new CustomerError('INVALID_QUANTITY', 'Check quantity and stock.'));
       return;
@@ -359,13 +357,7 @@ function useCommerceValue() {
       const intent = guestRef.current || fresh();
       const old = intent.lines.find((line) => line.product.id === product.id)?.quantity || 0;
       const next = add ? old + value : value;
-      if (
-        next &&
-        (!Number.isInteger(next) ||
-          next < product.minQuantity ||
-          next % product.quantityStep ||
-          next > Math.min(product.stock, 10000))
-      ) {
+      if (next && quantityProblem(product, next, Math.min(product.stock, MAX_LINE_QUANTITY))) {
         showError(new CustomerError('INVALID_QUANTITY', 'Check minimum, increment and stock.'));
         return;
       }
@@ -421,13 +413,8 @@ function useCommerceValue() {
     }
   }
   function quoteQuantity(product: Product, value: number) {
-    if (
-      value &&
-      (!Number.isInteger(value) ||
-        value < product.minQuantity ||
-        value % product.quantityStep ||
-        value > 100000)
-    ) {
+    // Quotes may exceed current stock; the shop prices the whole site requirement.
+    if (value && quantityProblem(product, value, 100000)) {
       showError(new CustomerError('INVALID_QUANTITY', 'Check quantity.'));
       return;
     }
@@ -523,12 +510,7 @@ export function Quantity({
   }, [value]);
   const commit = () => {
     const next = Number(draft);
-    if (
-      !/^\d+$/.test(draft) ||
-      next < product.minQuantity ||
-      next % product.quantityStep ||
-      next > max
-    ) {
+    if (!/^\d+$/.test(draft) || quantityProblem(product, next, max)) {
       setInvalid(true);
       return;
     }

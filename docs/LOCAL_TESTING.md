@@ -175,6 +175,42 @@ call, WhatsApp and map handoffs only after the family approves their settings;
 opening an app is separate from sending a message. Record device/OS/browser and
 results. Desktop emulation and simulated speech events cannot close these gates.
 
+## Android app on an emulator or USB phone
+
+`adb reverse` connects the device's `localhost:4000` to this Mac's loopback API
+over the USB/emulator link. Nothing listens on the LAN and the mock-OTP loopback
+guard still applies. Use only your own phone, unlocked and connected by cable.
+
+One-time tools (already installed on the development Mac): JDK 17, Android SDK
+(`~/Library/Android/sdk`), emulator AVDs `shiv_budget_api29` (Android 10,
+low-end profile) and an API 35 image, and Maestro.
+
+```bash
+export JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
+export ANDROID_HOME=$HOME/Library/Android/sdk LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
+export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
+npm run local:start
+"$ANDROID_HOME/emulator/emulator" -avd shiv_budget_api29 -no-snapshot-save &
+adb reverse tcp:4000 tcp:4000
+cd apps/mobile
+APP_VARIANT=local CI=1 npx expo prebuild --platform android --clean --no-install
+APP_VARIANT=local CI=1 npx expo run:android --variant release --no-bundler --device shiv_budget_api29
+```
+
+`APP_VARIANT=local` permits plain HTTP to `localhost`/`127.0.0.1` only; production
+prebuilds keep Android's HTTPS-only default. Re-run `adb reverse` after the
+emulator or phone reconnects.
+
+- Smoke flows: `npm run test:maestro -w @shiv/mobile` (launch and browse, Hindi
+  switch and restart, sign-in with the local code and add to cart).
+- Performance: `npm run android:baseline` saves cold start, scrolling, memory and
+  APK size to `.local/android/baseline-<device>.json`. Emulators on Apple
+  silicon are much faster than budget phones; repeat on a real phone before
+  calling a target met.
+- Crash reports: set `EXPO_PUBLIC_SENTRY_DSN` (and `EXPO_PUBLIC_APP_ENV`) at build
+  time. Without it the app sends nothing. Source maps upload only when
+  `SENTRY_AUTH_TOKEN`, `SENTRY_ORG` and `SENTRY_PROJECT` are set for the build.
+
 ## Cart feedback and recovery checks
 
 1. Add the same material twice. Its card should show `2` with minus/plus controls and the header badge should increase to `2`. A second material increases the distinct-product count separately.

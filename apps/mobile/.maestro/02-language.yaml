@@ -1,0 +1,23 @@
+# Smoke: Hindi switch changes the navigation and survives a restart.
+appId: in.shivcement.store
+tags: [smoke]
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: Browse materials
+    timeout: 15000
+- tapOn: Switch language
+- extendedWaitUntil:
+    visible: सामग्री देखें
+    timeout: 5000
+- assertVisible: खाता
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible: सामग्री देखें
+    timeout: 15000
+- tapOn: Switch language
+- extendedWaitUntil:
+    visible: Browse materials
+    timeout: 5000

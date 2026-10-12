@@ -16,3 +16,7 @@ playwright-report/
 *.log
 google-services.json
 GoogleService-Info.plist
+
+# Expo prebuild output (regenerated from app.config.ts; never edited by hand)
+apps/mobile/android/
+apps/mobile/ios/
