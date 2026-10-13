@@ -72,9 +72,16 @@ test('SSE outage: polling finds new work and competing owners keep one durable a
   browser,
 }) => {
   test.setTimeout(120000);
-  const fatherContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  // This transport-fault test needs routed requests; the alert worker is tested separately.
+  const fatherContext = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    serviceWorkers: 'block',
+  });
   await skipLanguageChooser(fatherContext);
-  const uncleContext = await browser.newContext({ viewport: { width: 360, height: 800 } });
+  const uncleContext = await browser.newContext({
+    viewport: { width: 360, height: 800 },
+    serviceWorkers: 'block',
+  });
   await skipLanguageChooser(uncleContext);
   const father = await fatherContext.newPage();
   const uncle = await uncleContext.newPage();
@@ -98,15 +105,30 @@ test('SSE outage: polling finds new work and competing owners keep one durable a
     // No owner reload, navigation, focus or manual refresh after order submission.
     await openOrder(father, order);
     await openOrder(uncle, order);
+    // Hold both real requests until both clicks arrive: polling can otherwise remove
+    // the second owner's button before WebKit finishes its click.
+    let release = () => {};
+    let arrivals = 0;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    for (const owner of [father, uncle])
+      await owner.route(`**/orders/${order.id}/acknowledge`, async (route) => {
+        if (route.request().method() !== 'POST') return route.continue();
+        if (++arrivals === 2) release();
+        await gate;
+        await route.continue();
+      });
     const responses = [father, uncle].map((owner) =>
       owner.waitForResponse((r) => r.url().endsWith(`/orders/${order.id}/acknowledge`)),
     );
-    await Promise.all(
-      [father, uncle].map((owner) =>
-        owner.getByRole('button', { name: 'Acknowledge', exact: true }).click(),
-      ),
-    );
+    for (const owner of [father, uncle])
+      await owner
+        .getByRole('dialog')
+        .getByRole('button', { name: 'Acknowledge', exact: true })
+        .click();
     for (const response of await Promise.all(responses)) expect(response.status()).toBe(201);
+    expect(arrivals).toBe(2);
     const work = await db.ownerWork.findUniqueOrThrow({
       where: { orderId: order.id },
       include: { assignedTo: true },

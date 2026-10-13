@@ -14,7 +14,7 @@ stay factual: no awards, rankings or dealership wording until the certificates a
 | Contact email            | **(owner)**                                                                 |                                                                             |
 | Contact phone            | **(owner)**: the confirmed shop number                                      |                                                                             |
 | Website                  | **(owner)**: `https://<domain>` once bought (phase 5)                       |                                                                             |
-| Privacy policy           | `https://<domain>/privacy` (the website's page)                             |                                                                             |
+| Privacy policy           | **(owner)**: `https://<admin-domain>/privacy` (public owner-desk page)      |                                                                             |
 
 ### Full description: English
 
@@ -77,7 +77,7 @@ All graphics are generated from code: `node scripts/make-app-icons.mjs`.
 - Data is encrypted in transit (HTTPS only; the build refuses a non-HTTPS API).
 - Data is not sold or shared with third parties for advertising.
 - Account deletion: in the app (Account → Delete account) and on the website
-  (`/account-deletion`). Order records without personal details are kept for the shop's accounts.
+  (`/delete-account` on the admin domain). Order records without personal details are kept for the shop's accounts.
 
 ## Content rating and release
 
@@ -85,3 +85,6 @@ All graphics are generated from code: `node scripts/make-app-icons.mjs`.
   "Everyone".
 - Target audience: 18+ (purchasing).
 - Personal developer account: 14-day closed test with at least 12 testers before production.
+
+The [Phase 5 handoff](../P5_STAGING_SETUP.md#family-apk-and-play-closed-test) documents
+the staging APK, closed-test AAB, draft submission and public privacy/deletion URLs.

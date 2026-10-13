@@ -1,5 +1,9 @@
 # Shiv Cement Store
 
+[Phase 5 staging setup and family demo](docs/P5_STAGING_SETUP.md) prepares Render hosting,
+EAS APK/closed-test builds and a read-only `npm run staging:smoke` gate. No resources have
+been purchased or deployed; account, domain and physical-phone steps remain pending.
+
 Planning your first release? See the [launch plan for 50–100 customers](docs/LAUNCH_PLAN.md).
 
 An Expo customer app, Next.js store dashboard, and NestJS/PostgreSQL commerce backend for **Shiv Cement Store**, serving **Patna and Bihar**. Contact/WhatsApp initially **9297513707**, editable under **Finance & settings**.
