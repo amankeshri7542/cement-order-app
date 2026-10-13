@@ -6,6 +6,8 @@ import { z } from 'zod';
 import { Db } from './db';
 import { Lifecycle } from './lifecycle';
 import { Admin, AuthRequest, Input, fail } from './http';
+import { enqueueWhatsApp } from './alerts';
+import { money } from '@shiv/shared';
 
 export const ownerSelect = { id: true, name: true, phone: true } as const;
 export const workInclude = {
@@ -36,7 +38,7 @@ export class OwnerWorkService {
           if (!current || current.deliveredAt || current.nextAttemptAt > new Date()) return;
           const owners = await tx.user.findMany({
             where: { role: 'ADMIN', deletedAt: null },
-            select: { id: true },
+            select: { id: true, phone: true, whatsappAlerts: true },
           });
           if (!owners.length) throw new Error('NO_OWNER');
           for (const owner of owners)
@@ -53,6 +55,44 @@ export class OwnerWorkService {
                 orderId: work.orderId,
               },
             });
+          // WhatsApp copies for owners who switched them on (sent by the outbox worker).
+          const alerted = owners.filter((owner) => owner.whatsappAlerts);
+          if (alerted.length) {
+            const order = work.orderId
+              ? await tx.order.findUnique({
+                  where: { id: work.orderId },
+                  select: { number: true, totalPaise: true, address: true },
+                })
+              : null;
+            const quote = work.quoteId
+              ? await tx.quote.findUnique({
+                  where: { id: work.quoteId },
+                  select: { number: true, _count: { select: { items: true } } },
+                })
+              : null;
+            for (const owner of alerted) {
+              if (order)
+                await enqueueWhatsApp(tx, {
+                  userId: owner.id,
+                  phone: owner.phone,
+                  template: 'shiv_new_order',
+                  params: [
+                    order.number,
+                    money(order.totalPaise).replace('₹', '').trim(),
+                    String((order.address as { area?: string } | null)?.area || 'Patna'),
+                  ],
+                  dedupeKey: `wa:owner:${work.id}:${owner.id}`,
+                });
+              else if (quote)
+                await enqueueWhatsApp(tx, {
+                  userId: owner.id,
+                  phone: owner.phone,
+                  template: 'shiv_new_quote',
+                  params: [quote.number, String(quote._count.items)],
+                  dedupeKey: `wa:owner:${work.id}:${owner.id}`,
+                });
+            }
+          }
           await tx.ownerWork.update({
             where: { id: work.id },
             data: {

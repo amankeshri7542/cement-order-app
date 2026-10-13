@@ -74,7 +74,9 @@ export class CatalogController {
         where: {
           AND: [
             admin ? {} : { active: true },
-            admin && f.lowStock === 'true' ? { active: true, stock: { lt: 25 } } : {},
+            admin && f.lowStock === 'true'
+              ? { active: true, stock: { lte: this.db.product.fields.lowStockAt } }
+              : {},
             page.after,
             f.q
               ? {

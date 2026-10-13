@@ -24,6 +24,8 @@ import { QuotesController } from './quotes';
 import { AdminController } from './admin';
 import { IntegrationsController, Maintenance } from './integrations';
 import { Lifecycle, requestId } from './lifecycle';
+import { AlertsController, AlertsService } from './alerts';
+import { ReportsController } from './reports';
 
 @Controller('health')
 class HealthController {
@@ -76,6 +78,8 @@ class HealthController {
     HealthController,
     OperationsController,
     RateStudioController,
+    AlertsController,
+    ReportsController,
   ],
   providers: [
     AssistantService,
@@ -90,6 +94,7 @@ class HealthController {
     OrdersService,
     PaymentsService,
     Maintenance,
+    AlertsService,
     Lifecycle,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: AuthGuard },

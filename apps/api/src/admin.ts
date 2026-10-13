@@ -40,7 +40,8 @@ export class AdminController {
       this.db.order.count({ where: { status: 'OUT_FOR_DELIVERY' } }),
       this.db.quote.count({ where: { status: 'REQUESTED' } }),
       this.db.product.findMany({
-        where: { active: true, stock: { lt: 25 } },
+        // Each product has its own "running low" level.
+        where: { active: true, stock: { lte: this.db.product.fields.lowStockAt } },
         orderBy: { stock: 'asc' },
         take: 20,
       }),
@@ -87,7 +88,8 @@ export class AdminController {
     const page = paginate(query, 'customers');
     return page.finish(
       await this.db.user.findMany({
-        where: { deletedAt: null, ...page.after },
+        // Shop staff are listed on the Staff screen, not as customers.
+        where: { deletedAt: null, role: { not: 'ADMIN' }, ...page.after },
         select: {
           id: true,
           name: true,

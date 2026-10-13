@@ -1978,3 +1978,227 @@ describe('security hardening extraction provider budget (simulated OCR/AI)', () 
     }
   });
 });
+
+describe('Owner desk operations (Phase 4)', () => {
+  const admin = () => auth('admin');
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+
+  it('records how cash-on-delivery money was paid and reports cash, UPI and net', async () => {
+    const o = await order();
+    await request(server)
+      .post(`/api/v1/admin/orders/${o.id}/cod-received`)
+      .set(admin())
+      .send({ channel: 'UPI' })
+      .expect(201);
+    const sale = await request(server)
+      .post('/api/v1/admin/products/cement/movements')
+      .set(admin())
+      .send({
+        kind: 'WALK_IN_SALE',
+        quantity: 2,
+        note: 'Counter',
+        idempotencyKey: randomUUID(),
+        unitPricePaise: 39000,
+        channel: 'CASH',
+        counterParty: 'Ramesh, mason',
+      })
+      .expect(201);
+    expect(sale.body.quantity).toBe(-2);
+    const report = await request(server)
+      .get(`/api/v1/admin/reports/money?from=${today}&to=${today}`)
+      .set(admin())
+      .expect(200);
+    expect(report.body.collections).toMatchObject({ upiPaise: o.totalPaise, cashPaise: 0 });
+    // The negotiated counter price is used, not the ₹410 list price.
+    expect(report.body.counter).toMatchObject({ sales: 1, cashPaise: 78000 });
+    expect(report.body.netPaise).toBe(o.totalPaise + 78000);
+    expect(report.body.orders).toMatchObject({ placed: 1, valuePaise: o.totalPaise });
+    expect(report.body.days).toEqual([
+      {
+        date: today,
+        orders: 1,
+        collectedPaise: o.totalPaise,
+        counterPaise: 78000,
+        refundsPaise: 0,
+      },
+    ]);
+    const csv = await request(server)
+      .get(`/api/v1/admin/reports/money.csv?from=${today}&to=${today}`)
+      .set(admin())
+      .expect(200);
+    expect(csv.headers['content-type']).toContain('text/csv');
+    expect(csv.text.startsWith('\uFEFFतारीख / Date')).toBe(true);
+    expect(csv.text).toContain(`UPI collected,${(o.totalPaise / 100).toFixed(2)}`);
+    await request(server)
+      .get('/api/v1/admin/reports/money?from=2026-02-01&to=2026-01-01')
+      .set(admin())
+      .expect(400);
+    await request(server)
+      .get(`/api/v1/admin/reports/money?from=${today}&to=${today}`)
+      .set(auth())
+      .expect(403);
+  });
+
+  it('counts cash still to collect and refuses counter details on other stock movements', async () => {
+    const o = await order();
+    const report = await request(server)
+      .get(`/api/v1/admin/reports/money?from=${today}&to=${today}`)
+      .set(admin())
+      .expect(200);
+    expect(report.body.pendingCash).toEqual({ orders: 1, amountPaise: o.totalPaise });
+    await request(server)
+      .post('/api/v1/admin/products/cement/movements')
+      .set(admin())
+      .send({
+        kind: 'PURCHASE_IN',
+        quantity: 5,
+        note: 'Truck',
+        idempotencyKey: randomUUID(),
+        unitPricePaise: 30000,
+      })
+      .expect(400);
+  });
+
+  it('uses each product’s own low-stock level and keeps staff out of the customer list', async () => {
+    let dashboard = await request(server).get('/api/v1/admin/dashboard').set(admin()).expect(200);
+    expect(dashboard.body.lowStock).toEqual([]);
+    await db.product.update({ where: { id: 'cement' }, data: { lowStockAt: 150 } });
+    dashboard = await request(server).get('/api/v1/admin/dashboard').set(admin()).expect(200);
+    expect(dashboard.body.lowStock.map((p: { id: string }) => p.id)).toEqual(['cement']);
+    const low = await request(server)
+      .get('/api/v1/admin/products?lowStock=true')
+      .set(admin())
+      .expect(200);
+    expect(low.body.items.map((p: { id: string }) => p.id)).toEqual(['cement']);
+    const customers = await request(server).get('/api/v1/admin/customers').set(admin()).expect(200);
+    expect(customers.body.items.map((u: { id: string }) => u.id).sort()).toEqual([
+      'customer',
+      'other',
+    ]);
+  });
+
+  it('shows delivery terms for a zone and a quote to the customer', async () => {
+    const zone = await db.deliveryZone.findUniqueOrThrow({ where: { id: 'test-zone' } });
+    await request(server)
+      .patch('/api/v1/admin/delivery-zones/test-zone')
+      .set(admin())
+      .send({
+        name: zone.name,
+        active: true,
+        deliveryFeePaise: 50000,
+        minimumOrderPaise: 0,
+        freeDeliveryAbovePaise: null,
+        estimate: zone.estimate,
+        terms: 'Unloading at ground level; tractor for narrow lanes.',
+        pincodes: ['800020', '800001'],
+        expectedVersion: zone.version,
+      })
+      .expect(200);
+    const check = await request(server).get('/api/v1/delivery/800020').expect(200);
+    expect(check.body.zone.terms).toBe('Unloading at ground level; tractor for narrow lanes.');
+    const quote = await request(server)
+      .post('/api/v1/quotes')
+      .set(auth())
+      .send({
+        items: [{ productId: 'cement', quantity: 200 }],
+        addressId: 'customer-address',
+        deliveryDate: date,
+        idempotencyKey: randomUUID(),
+      })
+      .expect(201);
+    await request(server)
+      .post(`/api/v1/admin/quotes/${quote.body.id}/offer`)
+      .set(admin())
+      .send({
+        expectedRevision: 0,
+        items: [{ productId: 'cement', unitPricePaise: 38000 }],
+        deliveryFeePaise: 120000,
+        validUntil: new Date(Date.now() + 3 * 86400000).toISOString(),
+        deliveryTerms: 'Two trips; unloading to first floor included.',
+      })
+      .expect(201);
+    const mine = await request(server).get('/api/v1/quotes').set(auth()).expect(200);
+    expect(mine.body.items[0].deliveryTerms).toBe('Two trips; unloading to first floor included.');
+  });
+
+  it('lets staff set names, roles and WhatsApp alerts, then queues one alert per new order', async () => {
+    const staff = await request(server).get('/api/v1/admin/staff').set(admin()).expect(200);
+    expect(staff.body.map((s: { id: string }) => s.id)).toEqual(['admin']);
+    await request(server)
+      .patch('/api/v1/admin/staff/admin')
+      .set(admin())
+      .send({ name: 'Papa', staffTitle: 'Retail counter', whatsappAlerts: true })
+      .expect(200);
+    await request(server)
+      .patch('/api/v1/admin/staff/customer')
+      .set(admin())
+      .send({ name: 'Not staff' })
+      .expect(404);
+    const o = await order();
+    const work = app.get((await import('../src/owner-work')).OwnerWorkService);
+    await work.dispatch();
+    await work.dispatch();
+    const messages = await db.outboundMessage.findMany();
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      template: 'shiv_new_order',
+      recipient: '919999999993',
+      status: 'PENDING',
+      userId: 'admin',
+    });
+    expect(messages[0]!.params).toEqual([o.number, '4,600.00', 'Kankarbagh']);
+    const alerts = app.get((await import('../src/alerts')).AlertsService);
+    const logs = vi.spyOn(console, 'log').mockImplementation(() => {});
+    let logged = '';
+    try {
+      await alerts.deliver();
+      logged = logs.mock.calls.map(([line]) => String(line)).join('\n');
+    } finally {
+      logs.mockRestore();
+    }
+    // The fake provider never contacts Meta; it records the message as sent and logs a masked number.
+    expect(logged).toContain('"to":"…9993"');
+    expect(logged).not.toContain('9999999993');
+    expect(await db.outboundMessage.findFirstOrThrow()).toMatchObject({ status: 'SENT' });
+    const list = await request(server)
+      .get('/api/v1/admin/alerts/messages')
+      .set(admin())
+      .expect(200);
+    expect(list.body.items[0]).toMatchObject({ recipient: '…9993', status: 'SENT' });
+  });
+
+  it('skips WhatsApp messages past the daily limit and refuses push without server keys', async () => {
+    process.env.WHATSAPP_DAILY_LIMIT = '1';
+    const { resetConfigForTests } = await import('../src/config');
+    resetConfigForTests();
+    try {
+      await db.user.update({ where: { id: 'admin' }, data: { whatsappAlerts: true } });
+      await order();
+      await order();
+      const work = app.get((await import('../src/owner-work')).OwnerWorkService);
+      await work.dispatch();
+      const alerts = app.get((await import('../src/alerts')).AlertsService);
+      const logs = vi.spyOn(console, 'log').mockImplementation(() => {});
+      try {
+        await alerts.deliver();
+      } finally {
+        logs.mockRestore();
+      }
+      const statuses = (await db.outboundMessage.findMany()).map((m) => m.status).sort();
+      expect(statuses).toEqual(['SENT', 'SKIPPED']);
+    } finally {
+      delete process.env.WHATSAPP_DAILY_LIMIT;
+      resetConfigForTests();
+    }
+    await request(server)
+      .post('/api/v1/admin/push/subscriptions')
+      .set(admin())
+      .send({
+        endpoint: 'https://push.example.invalid/abc',
+        keys: { p256dh: 'p'.repeat(40), auth: 'a'.repeat(16) },
+      })
+      .expect(503);
+    const key = await request(server).get('/api/v1/admin/push/key').set(admin()).expect(200);
+    expect(key.body).toEqual({ publicKey: null });
+  });
+});
