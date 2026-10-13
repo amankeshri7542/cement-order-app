@@ -157,10 +157,10 @@ function Shell() {
         >
           <Stamp size={38} tone="clay" />
           <View style={{ flexShrink: 1 }}>
-            <Text style={a.brandName} numberOfLines={1}>
+            <Text style={a.brandName} numberOfLines={1} maxFontSizeMultiplier={1.15}>
               {t('Shiv Cement', 'शिव सीमेंट')}
             </Text>
-            <Text style={a.brandPlace} numberOfLines={1}>
+            <Text style={a.brandPlace} numberOfLines={1} maxFontSizeMultiplier={1.15}>
               {t('Store · Patna, Bihar', 'स्टोर · पटना, बिहार')}
             </Text>
           </View>
@@ -194,9 +194,11 @@ function Shell() {
           accessibilityRole="button"
           accessibilityLabel={t('Switch language to Hindi', 'भाषा अंग्रेज़ी में बदलें')}
           onPress={() => setLanguage(language === 'en' ? 'hi' : 'en')}
-          style={a.language}
+          style={a.languageTarget}
         >
-          <Text style={a.languageText}>{language === 'en' ? 'हिं' : 'EN'}</Text>
+          <View style={a.language}>
+            <Text style={a.languageText}>{language === 'en' ? 'हिं' : 'EN'}</Text>
+          </View>
         </Pressable>
       </View>
       {detail && (
@@ -359,10 +361,10 @@ const a = StyleSheet.create({
   brand: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.sm, minHeight: 48 },
   brandName: { color: C.paper, fontSize: textSize.lead, fontWeight: '800' },
   brandPlace: { color: C.clayOnInk, fontSize: 13 },
+  languageTarget: { minWidth: 52, height: 48, alignItems: 'center', justifyContent: 'center' },
   language: {
     minWidth: 48,
     height: 40,
-    marginLeft: 4,
     borderRadius: 8,
     borderWidth: 1.5,
     borderColor: C.clayOnInk,

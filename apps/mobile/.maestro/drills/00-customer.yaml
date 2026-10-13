@@ -1,0 +1,43 @@
+# Drill setup: a fresh customer (PHONE from the drill script) with a saved site address.
+appId: in.shivcement.store
+---
+- launchApp:
+    clearState: true
+- tapOn: English
+- extendedWaitUntil:
+    visible: Current rates
+    timeout: 20000
+- tapOn:
+    text: Account
+    index: 0
+- tapOn: Sign in
+- tapOn: 10-digit mobile number
+- inputText: ${PHONE}
+- tapOn: Get verification code
+- hideKeyboard
+- extendedWaitUntil:
+    visible: Local development code.*
+    timeout: 15000
+- copyTextFrom:
+    text: Local development code.*
+- evalScript: ${output.code = maestro.copiedText.match(/\d{6}/)[0]}
+- tapOn: 6-digit code
+- inputText: ${output.code}
+- pressKey: Enter
+- extendedWaitUntil:
+    visible: Saved addresses
+    timeout: 15000
+- tapOn: Saved addresses
+- tapOn: House, plot or street
+- inputText: Plot 9, Drill Road
+- pressKey: Enter
+- inputText: Boring Road
+- pressKey: Enter
+- inputText: '800001'
+- pressKey: Enter
+- inputText: Drill Customer
+- hideKeyboard
+- tapOn: Save address
+- extendedWaitUntil:
+    visible: Address saved
+    timeout: 10000

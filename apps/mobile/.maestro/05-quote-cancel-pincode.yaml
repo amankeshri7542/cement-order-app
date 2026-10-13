@@ -1,0 +1,47 @@
+# Runs after 04 (same customer, saved site). Bulk quote within its budget (≤ 5 taps),
+# cancelling an order, and the pincode check.
+appId: in.shivcement.store
+tags: [order]
+---
+- launchApp
+- extendedWaitUntil:
+    visible: Current rates
+    timeout: 15000
+# Bulk quote: 3 taps (Bulk quote, add material, Send); site and date are preset.
+- scrollUntilVisible:
+    element: Bulk quote
+- tapOn: Bulk quote                      # 1
+- tapOn: Find a material to add
+- inputText: UltraTech
+- hideKeyboard
+- tapOn: 'Add to quote: UltraTech Super'  # 2
+- tapOn: Send bulk request               # 3
+- extendedWaitUntil:
+    visible: Requested · awaiting shop
+    timeout: 15000
+# Cancel the latest order, with a confirmation.
+- tapOn:
+    text: Orders
+    index: 0
+- tapOn:
+    text: Open .*
+    index: 0
+- scrollUntilVisible:
+    element: Cancel order
+- tapOn: Cancel order
+- tapOn: (?i)cancel order
+- extendedWaitUntil:
+    visible: Cancelled
+    timeout: 15000
+# Pincode check runs by itself at six digits.
+- tapOn:
+    text: Home
+    index: 0
+- scrollUntilVisible:
+    element: Delivery pincode
+- tapOn: Delivery pincode
+- inputText: '800001'
+- hideKeyboard
+- extendedWaitUntil:
+    visible: Delivery available.*
+    timeout: 15000

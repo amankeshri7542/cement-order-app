@@ -34,7 +34,7 @@ Apple Silicon and Intel Homebrew PostgreSQL paths are detected. For another inst
 | ----------------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------- |
 | Customer browser app    | http://localhost:8081               | `npm run dev:web`                                                                                  |
 | Owner desk              | http://localhost:3002 (configured)  | `npm exec -w @shiv/admin -- next dev --port 3002 --hostname 127.0.0.1`                             |
-| Customer storefront     | http://localhost:3003               | `npm exec -w @shiv/storefront -- next dev --port 3003 --hostname 127.0.0.1`                          |
+| Customer storefront     | http://localhost:3003               | `npm exec -w @shiv/storefront -- next dev --port 3003 --hostname 127.0.0.1`                        |
 | API health              | http://localhost:4000/api/v1/health | `CORS_ORIGINS='http://localhost:3002,http://localhost:8081,http://localhost:3003' npm run dev:api` |
 | OpenAPI                 | http://localhost:4000/api/docs      | API must be running                                                                                |
 | Native Expo development | terminal QR/device instructions     | `npm run dev:mobile`                                                                               |
@@ -201,8 +201,12 @@ APP_VARIANT=local CI=1 npx expo run:android --variant release --no-bundler --dev
 prebuilds keep Android's HTTPS-only default. Re-run `adb reverse` after the
 emulator or phone reconnects.
 
-- Smoke flows: `npm run test:maestro -w @shiv/mobile` (launch and browse, Hindi
-  switch and restart, sign-in with the local code and add to cart).
+- Journeys: `npm run test:maestro -w @shiv/mobile` (browse, Hindi first launch, a guest
+  basket through sign-in to an order, tap budgets, quote, cancel, pincode, compare, assistant).
+- Failure drills: `scripts/android-drills.sh` (lost reply, offline and killed app at
+  Place order, slow 2G, ended session, microphone refused, largest font, forced update, Back,
+  and an accessibility audit of the main screens). Results: `.local/android/drills.txt`.
+- Accessibility of the current screen: `node scripts/android-a11y-audit.mjs --name <screen>`.
 - Performance: `npm run android:baseline` saves cold start, scrolling, memory and
   APK size to `.local/android/baseline-<device>.json`. Emulators on Apple
   silicon are much faster than budget phones; repeat on a real phone before

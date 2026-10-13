@@ -1,0 +1,23 @@
+# Largest system font: main actions stay visible without scrolling.
+appId: in.shivcement.store
+---
+- launchApp
+- extendedWaitUntil:
+    visible: Current rates
+    timeout: 30000
+- takeScreenshot: large-text-home
+- tapOn:
+    text: Materials
+    index: 0
+- tapOn: Search materials
+- inputText: UltraTech
+- hideKeyboard
+- tapOn: View UltraTech Super
+- assertVisible: Add to basket
+- takeScreenshot: large-text-product
+- tapOn: Add to basket
+- tapOn: Basket.*
+# Signed in or not, the basket's main action is on screen.
+- assertVisible: (Review order|Sign in to order)
+- takeScreenshot: large-text-basket
+- tapOn: Remove UltraTech Super

@@ -1,0 +1,22 @@
+# Basket with one bag of UltraTech, then the order review (signed-in drill customer).
+appId: in.shivcement.store
+---
+- launchApp
+- extendedWaitUntil:
+    visible: Current rates
+    timeout: 30000
+- tapOn:
+    text: Materials
+    index: 0
+- tapOn: Search materials
+- inputText: UltraTech
+- hideKeyboard
+- extendedWaitUntil:
+    visible: View UltraTech Super
+    timeout: 30000
+- tapOn: Add to basket
+- tapOn: Basket.*
+- tapOn: Review order
+- extendedWaitUntil:
+    visible: Place order.*
+    timeout: 30000

@@ -1233,7 +1233,7 @@ const cs = StyleSheet.create({
     borderRadius: radius.md,
     backgroundColor: C.surface,
   },
-  stepButton: { width: 44, height: 48, alignItems: 'center', justifyContent: 'center' },
+  stepButton: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
   quantityValue: {
     width: 64,
     minWidth: 40,

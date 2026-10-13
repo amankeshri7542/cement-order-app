@@ -1,4 +1,4 @@
-# 04 continues as the customer created by 03, so the order is fixed.
+# 04 and 05 continue as the customer created by 03, so the order is fixed.
 flows:
   - '*.yaml'
 executionOrder:
@@ -8,3 +8,5 @@ executionOrder:
     - 02-language
     - 03-guest-order
     - 04-tap-budgets
+    - 05-quote-cancel-pincode
+    - 06-compare-assistant

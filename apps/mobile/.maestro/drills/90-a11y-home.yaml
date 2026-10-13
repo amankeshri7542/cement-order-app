@@ -1,0 +1,8 @@
+# Opens the home screen for scripts/android-a11y-audit.mjs (48dp targets, spoken names).
+appId: in.shivcement.store
+---
+- launchApp
+- extendedWaitUntil:
+    visible: Current rates
+    timeout: 30000
+
