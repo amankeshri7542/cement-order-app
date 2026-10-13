@@ -1,0 +1,9 @@
+# The shop requires a newer app: the old one stops before any ordering.
+appId: in.shivcement.store
+---
+- launchApp
+- extendedWaitUntil:
+    visible: Please update the app
+    timeout: 30000
+- assertVisible: Update on Google Play
+- assertNotVisible: Current rates

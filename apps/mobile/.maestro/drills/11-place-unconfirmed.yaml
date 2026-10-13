@@ -1,0 +1,8 @@
+# Place the order while the reply cannot arrive; the app must say the result is unconfirmed.
+appId: in.shivcement.store
+---
+- tapOn: Place order.*
+- extendedWaitUntil:
+    visible: Check order result
+    timeout: 30000
+- assertVisible: .*could not confirm the result.*
