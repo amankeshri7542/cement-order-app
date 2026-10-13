@@ -126,7 +126,10 @@ export class AdminController {
     // Names instead of IDs, so the activity log reads in plain language.
     const ids = [...new Set(rows.flatMap((row) => [row.actorId, row.entityId]))];
     const [users, orders, quotes, products] = await Promise.all([
-      this.db.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, role: true } }),
+      this.db.user.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, name: true, role: true },
+      }),
       this.db.order.findMany({ where: { id: { in: ids } }, select: { id: true, number: true } }),
       this.db.quote.findMany({ where: { id: { in: ids } }, select: { id: true, number: true } }),
       this.db.product.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } }),

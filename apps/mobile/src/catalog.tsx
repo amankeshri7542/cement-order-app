@@ -569,6 +569,9 @@ export function Catalogue() {
   const visibleItems = useRef(items);
   visibleItems.current = items;
   const inFlight = useRef(false);
+  // The list reports reaching its end only once per content length. If that happens while a
+  // page is still loading, remember it and fetch the next page as soon as that load finishes.
+  const endPending = useRef(false);
   useEffect(() => {
     if (route.screen === 'Products') setCategory(route.category || '');
   }, [route.screen, route.category]);
@@ -657,7 +660,24 @@ export function Catalogue() {
   useEffect(() => {
     void load(undefined, true);
   }, [load, refreshedProducts]);
+  useEffect(() => {
+    if (!endPending.current || loading || more) return;
+    endPending.current = false;
+    if (nextCursor) void load(nextCursor);
+  }, [loading, more, nextCursor, load]);
   useEffect(() => registerRefresh(() => load(undefined, true)), [load, registerRefresh]);
+  // Scroll events can arrive faster than re-renders; ask for each page once.
+  const requested = useRef<string | null>(null);
+  useEffect(() => {
+    if (!more) requested.current = null;
+  }, [more]);
+  const loadMore = () => {
+    if (nextCursor && !more && !loading) {
+      if (requested.current === nextCursor) return;
+      requested.current = nextCursor;
+      void load(nextCursor);
+    } else if (items.length && (more || loading)) endPending.current = true;
+  };
   const filtered = brand || availability !== 'all' || sort !== 'name';
   const header = (
     <View style={{ gap: space.md, paddingBottom: space.md }}>
@@ -804,9 +824,14 @@ export function Catalogue() {
       windowSize={7}
       removeClippedSubviews={Platform.OS === 'android'}
       onEndReachedThreshold={0.6}
-      onEndReached={() => {
-        if (nextCursor && !more && !loading) void load(nextCursor);
+      onEndReached={loadMore}
+      // A fast fling can reach the bottom before the list draws its last rows; the list then
+      // never reports its end, so the scroll position is checked as well.
+      onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
+        const left = contentSize.height - contentOffset.y - layoutMeasurement.height;
+        if (items.length && left < layoutMeasurement.height * 0.6) loadMore();
       }}
+      scrollEventThrottle={100}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}

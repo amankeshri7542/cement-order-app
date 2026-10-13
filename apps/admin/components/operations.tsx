@@ -267,7 +267,9 @@ export function CounterSale({
               idempotencyKey: key,
               ...counterBody(f),
             });
-            await done(t(`Counter sale recorded · ${money(total)}`, `काउंटर बिक्री दर्ज · ${money(total)}`));
+            await done(
+              t(`Counter sale recorded · ${money(total)}`, `काउंटर बिक्री दर्ज · ${money(total)}`),
+            );
           } catch (err) {
             setError(say(err));
           } finally {
@@ -386,7 +388,11 @@ export function DeliveryZones() {
       )}
       {editing && (
         <Modal
-          title={zone ? t('Edit delivery zone', 'क्षेत्र बदलें') : t('Add delivery zone', 'क्षेत्र जोड़ें')}
+          title={
+            zone
+              ? t('Edit delivery zone', 'क्षेत्र बदलें')
+              : t('Add delivery zone', 'क्षेत्र जोड़ें')
+          }
           close={() => setEditing(null)}
         >
           <form
@@ -455,7 +461,12 @@ export function DeliveryZones() {
                   required
                 />
               </Field>
-              <Field label={t('Free delivery above (₹), optional', 'इससे ऊपर भाड़ा मुफ़्त (₹), वैकल्पिक')}>
+              <Field
+                label={t(
+                  'Free delivery above (₹), optional',
+                  'इससे ऊपर भाड़ा मुफ़्त (₹), वैकल्पिक',
+                )}
+              >
                 <input
                   name="free"
                   type="number"
@@ -473,10 +484,15 @@ export function DeliveryZones() {
                 defaultValue={zone?.estimate}
                 required
                 maxLength={200}
-                placeholder={t('Usually 1–2 days; confirmed by phone', 'आमतौर पर 1–2 दिन; फ़ोन पर पक्का')}
+                placeholder={t(
+                  'Usually 1–2 days; confirmed by phone',
+                  'आमतौर पर 1–2 दिन; फ़ोन पर पक्का',
+                )}
               />
             </Field>
-            <Field label={t('Delivery terms shown to customers', 'ग्राहक को दिखने वाली डिलीवरी शर्तें')}>
+            <Field
+              label={t('Delivery terms shown to customers', 'ग्राहक को दिखने वाली डिलीवरी शर्तें')}
+            >
               <textarea
                 name="terms"
                 defaultValue={zone?.terms || ''}
@@ -630,7 +646,8 @@ function auditSummary(details: Audit['details'], t: T, status: (value: string) =
   if (typeof details.oldPricePaise === 'number' && typeof details.newPricePaise === 'number')
     parts.push(`${money(details.oldPricePaise)} → ${money(details.newPricePaise)}`);
   if (typeof details.quantity === 'number') parts.push(`${t('qty', 'मात्रा')} ${details.quantity}`);
-  if (typeof details.channel === 'string') parts.push(details.channel === 'CASH' ? t('cash', 'नकद') : details.channel);
+  if (typeof details.channel === 'string')
+    parts.push(details.channel === 'CASH' ? t('cash', 'नकद') : details.channel);
   return parts.join(' · ');
 }
 export function AuditHistory() {
@@ -669,7 +686,11 @@ export function AuditHistory() {
           <li key={r.id}>
             <strong>{events[r.event] || r.event.toLowerCase().replaceAll('_', ' ')}</strong>
             <span>
-              {[r.actorName || t('System', 'सिस्टम'), r.entityLabel, auditSummary(r.details, t, status)]
+              {[
+                r.actorName || t('System', 'सिस्टम'),
+                r.entityLabel,
+                auditSummary(r.details, t, status),
+              ]
                 .filter(Boolean)
                 .join(' · ')}
             </span>

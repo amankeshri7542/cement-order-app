@@ -47,12 +47,7 @@ import { SecurityControls } from '../components/security-controls';
 import { Settings } from '../components/settings';
 import { MoneyReport } from '../components/money';
 import { StaffAlerts, soundOn } from '../components/staff';
-import {
-  AuditHistory,
-  CounterSale,
-  DeliveryZones,
-  StaffSessions,
-} from '../components/operations';
+import { AuditHistory, CounterSale, DeliveryZones, StaffSessions } from '../components/operations';
 
 type Tab =
   | 'More'
@@ -85,17 +80,79 @@ type Words = (en: string, hi: string) => string;
 // Every screen's name and one-line purpose, in both languages. The English names are also the
 // screens' stable identifiers in links and tests.
 const screens: Record<Tab, { hi: string; en: string; sub: [string, string] }> = {
-  Overview: { en: 'Today', hi: 'आज', sub: ['Here’s what’s happening at your store today.', 'आज दुकान में क्या चल रहा है।'] },
-  Orders: { en: 'Orders', hi: 'ऑर्डर', sub: ['From the first bag to the final delivery.', 'पहली बोरी से डिलीवरी तक।'] },
-  Products: { en: 'Prices & stock', hi: 'भाव और स्टॉक', sub: ['Keep your prices current and your stock ready.', 'भाव ताज़ा रखें, स्टॉक तैयार रखें।'] },
-  More: { en: 'More', hi: 'और', sub: ['Money, quotes, rates, people and store settings.', 'हिसाब, थोक भाव, भाव सूची, लोग और सेटिंग।'] },
-  Money: { en: 'Money', hi: 'हिसाब', sub: ['Cash, UPI, counter sales and refunds for any days.', 'किसी भी दिन का नकद, UPI, काउंटर बिक्री और वापसी।'] },
-  'Rate Studio': { en: 'Rate Studio', hi: 'भाव की सूची', sub: ['Review prices. Publish with confidence. Share your rates.', 'भाव जाँचें, लागू करें, शेयर करें।'] },
-  'Bulk quotes': { en: 'Bulk quotes', hi: 'थोक भाव', sub: ['Better prices for bigger plans.', 'बड़े काम के लिए सही भाव।'] },
-  Customers: { en: 'Customers', hi: 'ग्राहक', sub: ['The people building with you.', 'आपके साथ घर बनाने वाले लोग।'] },
-  'Staff & alerts': { en: 'Staff & alerts', hi: 'स्टाफ़ और अलर्ट', sub: ['Who works the desk and how they hear about new work.', 'कौन डेस्क चलाता है और नए काम की ख़बर कैसे मिलती है।'] },
-  'Finance & settings': { en: 'Finance & settings', hi: 'दुकान की सेटिंग', sub: ['Your store, your delivery charges, your controls.', 'आपकी दुकान, आपका भाड़ा, आपके नियम।'] },
-  'Store activity': { en: 'Store activity', hi: 'दुकान का हिसाब-किताब', sub: ['A record of changes, decisions and staff actions.', 'हर बदलाव, फ़ैसले और स्टाफ़ के काम का रिकॉर्ड।'] },
+  Overview: {
+    en: 'Today',
+    hi: 'आज',
+    sub: ['Here’s what’s happening at your store today.', 'आज दुकान में क्या चल रहा है।'],
+  },
+  Orders: {
+    en: 'Orders',
+    hi: 'ऑर्डर',
+    sub: ['From the first bag to the final delivery.', 'पहली बोरी से डिलीवरी तक।'],
+  },
+  Products: {
+    en: 'Prices & stock',
+    hi: 'भाव और स्टॉक',
+    sub: ['Keep your prices current and your stock ready.', 'भाव ताज़ा रखें, स्टॉक तैयार रखें।'],
+  },
+  More: {
+    en: 'More',
+    hi: 'और',
+    sub: [
+      'Money, quotes, rates, people and store settings.',
+      'हिसाब, थोक भाव, भाव सूची, लोग और सेटिंग।',
+    ],
+  },
+  Money: {
+    en: 'Money',
+    hi: 'हिसाब',
+    sub: [
+      'Cash, UPI, counter sales and refunds for any days.',
+      'किसी भी दिन का नकद, UPI, काउंटर बिक्री और वापसी।',
+    ],
+  },
+  'Rate Studio': {
+    en: 'Rate Studio',
+    hi: 'भाव की सूची',
+    sub: [
+      'Review prices. Publish with confidence. Share your rates.',
+      'भाव जाँचें, लागू करें, शेयर करें।',
+    ],
+  },
+  'Bulk quotes': {
+    en: 'Bulk quotes',
+    hi: 'थोक भाव',
+    sub: ['Better prices for bigger plans.', 'बड़े काम के लिए सही भाव।'],
+  },
+  Customers: {
+    en: 'Customers',
+    hi: 'ग्राहक',
+    sub: ['The people building with you.', 'आपके साथ घर बनाने वाले लोग।'],
+  },
+  'Staff & alerts': {
+    en: 'Staff & alerts',
+    hi: 'स्टाफ़ और अलर्ट',
+    sub: [
+      'Who works the desk and how they hear about new work.',
+      'कौन डेस्क चलाता है और नए काम की ख़बर कैसे मिलती है।',
+    ],
+  },
+  'Finance & settings': {
+    en: 'Finance & settings',
+    hi: 'दुकान की सेटिंग',
+    sub: [
+      'Your store, your delivery charges, your controls.',
+      'आपकी दुकान, आपका भाड़ा, आपके नियम।',
+    ],
+  },
+  'Store activity': {
+    en: 'Store activity',
+    hi: 'दुकान का हिसाब-किताब',
+    sub: [
+      'A record of changes, decisions and staff actions.',
+      'हर बदलाव, फ़ैसले और स्टाफ़ के काम का रिकॉर्ड।',
+    ],
+  },
 };
 const secondaryNavigation = [
   { label: 'Money', icon: IndianRupee },
@@ -514,7 +571,9 @@ function StoreDesk({ recoverSession }: { recoverSession: () => void }) {
               className="icon-button"
               aria-label={t('Sign out', 'साइन आउट')}
               onClick={async () => {
-                if (!window.confirm(t('Sign out of the store desk?', 'दुकान डेस्क से साइन आउट करें?')))
+                if (
+                  !window.confirm(t('Sign out of the store desk?', 'दुकान डेस्क से साइन आउट करें?'))
+                )
                   return;
                 try {
                   await api('/auth/logout', 'POST', {});
@@ -607,7 +666,9 @@ function StoreDesk({ recoverSession }: { recoverSession: () => void }) {
                   recoverSession();
                 }}
               >
-                {sessionExpired ? t('Sign in again', 'फिर साइन इन करें') : t('Try again', 'फिर कोशिश करें')}
+                {sessionExpired
+                  ? t('Sign in again', 'फिर साइन इन करें')
+                  : t('Try again', 'फिर कोशिश करें')}
               </button>
             </div>
           )}
@@ -647,12 +708,18 @@ function StoreDesk({ recoverSession }: { recoverSession: () => void }) {
                   <Package size={19} /> {t('Low stock', 'कम स्टॉक')} · {dashboard.lowStock.length}
                 </button>
               </section>
-              <section className="stats-grid" aria-label={t("Today's store metrics", 'आज के आँकड़े')}>
+              <section
+                className="stats-grid"
+                aria-label={t("Today's store metrics", 'आज के आँकड़े')}
+              >
                 {[
                   {
                     label: t('App collections', 'आज की वसूली'),
                     value: money(dashboard.todaySalesPaise),
-                    note: t('Cash/UPI received + verified online payments', 'मिला नकद/UPI + जाँचा ऑनलाइन भुगतान'),
+                    note: t(
+                      'Cash/UPI received + verified online payments',
+                      'मिला नकद/UPI + जाँचा ऑनलाइन भुगतान',
+                    ),
                     icon: IndianRupee,
                   },
                   {
@@ -687,7 +754,10 @@ function StoreDesk({ recoverSession }: { recoverSession: () => void }) {
                   </article>
                 ))}
               </section>
-              <section className="panel padded" aria-label={t('Collection breakdown', 'वसूली का ब्योरा')}>
+              <section
+                className="panel padded"
+                aria-label={t('Collection breakdown', 'वसूली का ब्योरा')}
+              >
                 <p>
                   {t('Counter collections', 'काउंटर बिक्री')}:{' '}
                   <strong>{money(dashboard.todayCounterSalesPaise)}</strong> ·{' '}
@@ -939,7 +1009,8 @@ function StoreDesk({ recoverSession }: { recoverSession: () => void }) {
           )}
           <footer className="page-footer">
             <span>
-              <ShieldCheck size={14} /> {t('Your store. Built on trust.', 'आपकी दुकान। भरोसे पर बनी।')}
+              <ShieldCheck size={14} />{' '}
+              {t('Your store. Built on trust.', 'आपकी दुकान। भरोसे पर बनी।')}
             </span>
             <span>{t('Shiv Cement Store · Patna, Bihar', 'शिव सीमेंट स्टोर · पटना, बिहार')}</span>
           </footer>
@@ -962,7 +1033,10 @@ function StoreDesk({ recoverSession }: { recoverSession: () => void }) {
         <div className="toast" role="status">
           <Check size={18} />
           {message}
-          <button aria-label={t('Dismiss notification', 'सूचना हटाएँ')} onClick={() => setMessage('')}>
+          <button
+            aria-label={t('Dismiss notification', 'सूचना हटाएँ')}
+            onClick={() => setMessage('')}
+          >
             <X size={16} />
           </button>
         </div>
@@ -1019,7 +1093,9 @@ function StoreDesk({ recoverSession }: { recoverSession: () => void }) {
               >
                 <Field label={t('Decision', 'फ़ैसला')}>
                   <select name="status">
-                    <option value="VERIFIED">{t('Verify contractor', 'ठेकेदार सत्यापित करें')}</option>
+                    <option value="VERIFIED">
+                      {t('Verify contractor', 'ठेकेदार सत्यापित करें')}
+                    </option>
                     <option value="REJECTED">
                       {t('Reject / revoke verification', 'अस्वीकार / सत्यापन हटाएँ')}
                     </option>
@@ -1131,7 +1207,9 @@ function Login({ onLogin, forbidden }: { onLogin: (u: User) => void; forbidden: 
           </div>
           <span className="eyebrow">{t('STORE DESK', 'दुकान डेस्क')}</span>
           <h2>{t('Welcome back.', 'नमस्ते।')}</h2>
-          <p className="muted">{t('Sign in to manage your store.', 'दुकान सँभालने के लिए साइन इन करें।')}</p>
+          <p className="muted">
+            {t('Sign in to manage your store.', 'दुकान सँभालने के लिए साइन इन करें।')}
+          </p>
           <form onSubmit={submit} className="form-stack">
             <Field label={t('Staff mobile number', 'स्टाफ़ का मोबाइल नंबर')}>
               <div className="phone-input">
@@ -1210,7 +1288,10 @@ function Login({ onLogin, forbidden }: { onLogin: (u: User) => void; forbidden: 
           </form>
           <p className="login-security">
             <ShieldCheck size={16} />
-            {t('Only authorised store staff can sign in.', 'सिर्फ़ दुकान का अधिकृत स्टाफ़ साइन इन कर सकता है।')}
+            {t(
+              'Only authorised store staff can sign in.',
+              'सिर्फ़ दुकान का अधिकृत स्टाफ़ साइन इन कर सकता है।',
+            )}
           </p>
         </div>
       </section>

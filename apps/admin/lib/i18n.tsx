@@ -110,8 +110,10 @@ export function useWords() {
     // Owner-only errors may have no Hindi wording yet; the server's reason is kept, not hidden.
     error: (e: unknown) => {
       if (e instanceof ApiError) {
+        // In English the server's own reason is the most specific wording.
+        if (language === 'en' && e.message) return e.message;
         const desk = deskErrors[e.code];
-        if (language === 'hi' && desk) return desk;
+        if (desk) return desk;
         const text = errorText(e.code, language, e.message);
         return language === 'hi' && text === errorText('REQUEST_FAILED', 'hi') && e.message
           ? `काम नहीं हो सका: ${e.message}`

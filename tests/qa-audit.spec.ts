@@ -65,7 +65,7 @@ test('staff can correct a wrong passphrase using the same OTP', async ({ page })
   ).toBe(false);
   await page.getByLabel('Staff passphrase', { exact: true }).fill(password);
   await page.getByRole('button', { name: 'Open store desk' }).click();
-  await expect(page.getByRole('heading', { name: 'आज / Today', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
   expect(
     (await db.otpChallenge.findUniqueOrThrow({ where: { phone: '+919297513760' } })).consumed,
   ).toBe(true);
@@ -108,10 +108,10 @@ test('revoked staff session offers sign-in recovery without a page reload', asyn
   await page.getByRole('textbox', { name: 'Verification code', exact: true }).fill(code);
   await page.getByLabel('Staff passphrase', { exact: true }).fill(password);
   await page.getByRole('button', { name: 'Open store desk' }).click();
-  await expect(page.getByRole('heading', { name: 'आज / Today', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
   await page
     .getByRole('navigation', { name: 'Phone navigation' })
-    .getByRole('button', { name: 'और', exact: true })
+    .getByRole('button', { name: 'More', exact: true })
     .click();
   await page.getByRole('button', { name: /Rate Studio$/ }).click();
   await page.getByRole('button', { name: /Enter prices manually/ }).click();

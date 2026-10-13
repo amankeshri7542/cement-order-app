@@ -63,7 +63,9 @@ export function MoneyReport() {
               type="date"
               value={range.from}
               max={range.to}
-              onChange={(e) => e.target.value && setRange((old) => ({ ...old, from: e.target.value }))}
+              onChange={(e) =>
+                e.target.value && setRange((old) => ({ ...old, from: e.target.value }))
+              }
             />
           </Field>
           <Field label={t('To', 'तक')}>
@@ -72,7 +74,9 @@ export function MoneyReport() {
               value={range.to}
               min={range.from}
               max={today}
-              onChange={(e) => e.target.value && setRange((old) => ({ ...old, to: e.target.value }))}
+              onChange={(e) =>
+                e.target.value && setRange((old) => ({ ...old, to: e.target.value }))
+              }
             />
           </Field>
         </div>
@@ -142,7 +146,8 @@ export function MoneyReport() {
               </dd>
               <dt>{t('Counter sales', 'काउंटर बिक्री')}</dt>
               <dd>
-                {r.counter.sales} · {money(r.counter.cashPaise + r.counter.upiPaise + r.counter.unrecordedPaise)}
+                {r.counter.sales} ·{' '}
+                {money(r.counter.cashPaise + r.counter.upiPaise + r.counter.unrecordedPaise)}
               </dd>
               {r.collections.onlinePaise > 0 && (
                 <>
@@ -158,7 +163,9 @@ export function MoneyReport() {
               )}
               <dt>{t('Refunds returned', 'लौटाया पैसा')}</dt>
               <dd>{money(r.refundsPaise)}</dd>
-              <dt>{t('Quotes asked / sent / won / lost', 'भाव माँगे / भेजे / मंज़ूर / नामंज़ूर')}</dt>
+              <dt>
+                {t('Quotes asked / sent / won / lost', 'भाव माँगे / भेजे / मंज़ूर / नामंज़ूर')}
+              </dt>
               <dd>
                 {r.quotes.requested} / {r.quotes.sent} / {r.quotes.accepted} /{' '}
                 {r.quotes.rejected + r.quotes.expired}

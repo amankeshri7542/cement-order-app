@@ -89,11 +89,15 @@ export function OrdersTable({ orders, select }: { orders: Order[]; select: (id: 
               </span>
             </div>
             <small>
-              {age(o.createdAt)} · {o.work?.assignedTo?.name || t('Not assigned', 'ज़िम्मेदारी बाकी')}
+              {age(o.createdAt)} ·{' '}
+              {o.work?.assignedTo?.name || t('Not assigned', 'ज़िम्मेदारी बाकी')}
             </small>
             {o.work?.lastError && (
               <p className="warning">
-                {t(`Alert failed (${o.work.attempts} tries).`, `अलर्ट नहीं पहुँचा (${o.work.attempts} बार)।`)}
+                {t(
+                  `Alert failed (${o.work.attempts} tries).`,
+                  `अलर्ट नहीं पहुँचा (${o.work.attempts} बार)।`,
+                )}
               </p>
             )}
             <button
@@ -126,7 +130,8 @@ export function OrdersTable({ orders, select }: { orders: Order[]; select: (id: 
                 <td>
                   <strong>{o.number}</strong>
                   <small>
-                    {age(o.createdAt)} · {t(`${o.items.length} products`, `${o.items.length} सामग्री`)}
+                    {age(o.createdAt)} ·{' '}
+                    {t(`${o.items.length} products`, `${o.items.length} सामग्री`)}
                   </small>
                 </td>
                 <td>
@@ -359,10 +364,13 @@ function OrderDetail({
       )
     )
       return;
-    void run(async () => {
-      await call('cod-received', { channel });
-      await call('status', { status: 'DELIVERED', note });
-    }, t('Payment recorded and delivery completed', 'पैसा दर्ज हुआ और डिलीवरी पूरी हुई'));
+    void run(
+      async () => {
+        await call('cod-received', { channel });
+        await call('status', { status: 'DELIVERED', note });
+      },
+      t('Payment recorded and delivery completed', 'पैसा दर्ज हुआ और डिलीवरी पूरी हुई'),
+    );
   }
   function collectOnly(channel: 'CASH' | 'UPI') {
     const how = channel === 'CASH' ? t('cash', 'नकद') : 'UPI';
@@ -448,8 +456,8 @@ function OrderDetail({
           </button>
         </div>
         <p className="hint">
-          {t('Order summary · not a GST tax invoice', 'ऑर्डर सारांश · GST बिल नहीं')} ·{' '}
-          {age(order.createdAt)}
+          <span>{t('Order summary · not a GST tax invoice', 'ऑर्डर सारांश · GST बिल नहीं')}</span> ·{' '}
+          {t(`placed ${age(order.createdAt)} ago`, `${age(order.createdAt)} पहले आया`)}
         </p>
         {order.work && (
           <section className="detail-block">
@@ -537,10 +545,18 @@ function OrderDetail({
         {settlementNote(order, t) && <p className="notice">{settlementNote(order, t)}</p>}
         {codDue && order.status === 'OUT_FOR_DELIVERY' && (
           <section className="form-stack" aria-label={t('Finish delivery', 'डिलीवरी पूरी करें')}>
-            <button className="primary wide" disabled={busy} onClick={() => collectAndDeliver('CASH')}>
+            <button
+              className="primary wide"
+              disabled={busy}
+              onClick={() => collectAndDeliver('CASH')}
+            >
               {t('Cash received · delivered', 'नकद मिला · डिलीवरी पूरी')}
             </button>
-            <button className="primary wide" disabled={busy} onClick={() => collectAndDeliver('UPI')}>
+            <button
+              className="primary wide"
+              disabled={busy}
+              onClick={() => collectAndDeliver('UPI')}
+            >
               {t('UPI received · delivered', 'UPI मिला · डिलीवरी पूरी')}
             </button>
           </section>
@@ -602,9 +618,7 @@ function OrderDetail({
               onSubmit={(e) => {
                 e.preventDefault();
                 const razorpayOrderId = new FormData(e.currentTarget).get('provider');
-                void run(() =>
-                  call('reconcile-payment', { razorpayOrderId }).then(() => {}),
-                );
+                void run(() => call('reconcile-payment', { razorpayOrderId }).then(() => {}));
               }}
             >
               <p className="warning">
@@ -613,7 +627,9 @@ function OrderDetail({
                   `रसीद ${order.id} से Razorpay ऑर्डर खोजें। राशि और मुद्रा जाँचें। पहला परिणाम पक्का न हो तो नया भुगतान न बनाएँ।`,
                 )}
               </p>
-              <Field label={t('Razorpay order ID for reconciliation', 'मिलान के लिए Razorpay ऑर्डर ID')}>
+              <Field
+                label={t('Razorpay order ID for reconciliation', 'मिलान के लिए Razorpay ऑर्डर ID')}
+              >
                 <input
                   name="provider"
                   defaultValue={order.payment.razorpayOrderId || ''}
@@ -633,7 +649,9 @@ function OrderDetail({
             <form className="form-stack" onSubmit={(e) => void delivery(e, 'REPORT')}>
               <Field label={t('Reason', 'कारण')}>
                 <select name="reason">
-                  <option value="UNAVAILABLE">{t('Customer unavailable', 'ग्राहक नहीं मिला')}</option>
+                  <option value="UNAVAILABLE">
+                    {t('Customer unavailable', 'ग्राहक नहीं मिला')}
+                  </option>
                   <option value="REFUSED">{t('Refused', 'ग्राहक ने मना किया')}</option>
                   <option value="INACCESSIBLE">{t('Site inaccessible', 'रास्ता बंद')}</option>
                 </select>
@@ -760,7 +778,9 @@ function OrderDetail({
                   className={s === 'CANCELLED' ? 'danger' : 'primary'}
                   onClick={() => {
                     if (window.confirm(confirmStatus[s] || statusText(s)))
-                      void run(() => call('status', { status: s as OrderStatus, note }).then(() => {}));
+                      void run(() =>
+                        call('status', { status: s as OrderStatus, note }).then(() => {}),
+                      );
                   }}
                 >
                   {statusButton[s] || statusText(s)}

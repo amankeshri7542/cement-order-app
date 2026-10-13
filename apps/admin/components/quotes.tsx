@@ -38,10 +38,7 @@ export function Quotes({
     return () => window.removeEventListener('beforeunload', warn);
   }, [dirty]);
   const close = () => {
-    if (
-      dirty &&
-      !window.confirm(t('Discard unsaved quotation edits?', 'बिना भेजे बदलाव हटाएँ?'))
-    )
+    if (dirty && !window.confirm(t('Discard unsaved quotation edits?', 'बिना भेजे बदलाव हटाएँ?')))
       return;
     setSelected(null);
     setDirty(false);
@@ -596,10 +593,7 @@ function QuoteEditor({
         ) : (
           <p className="notice">
             {quote.order
-              ? t(
-                  'This quotation has one linked supply order.',
-                  'इस भाव का ऑर्डर बन चुका है।',
-                )
+              ? t('This quotation has one linked supply order.', 'इस भाव का ऑर्डर बन चुका है।')
               : t(
                   'Accepted terms are kept; revised terms need fresh consent.',
                   'मंज़ूर शर्तें सुरक्षित हैं; बदली शर्तों पर नई मंज़ूरी चाहिए।',
@@ -626,7 +620,10 @@ export function AlertRetry({
   const [error, setError] = useState('');
   return (
     <div className="warning">
-      {t(`The alert did not go out (${attempts} tries).`, `अलर्ट नहीं पहुँचा (${attempts} बार कोशिश)।`)}{' '}
+      {t(
+        `The alert did not go out (${attempts} tries).`,
+        `अलर्ट नहीं पहुँचा (${attempts} बार कोशिश)।`,
+      )}{' '}
       <button
         type="button"
         className="text-button"

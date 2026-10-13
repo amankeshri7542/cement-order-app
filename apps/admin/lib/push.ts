@@ -31,12 +31,21 @@ export async function pushEnabled() {
 
 export async function enablePush() {
   if (!pushSupported())
-    throw new ApiError('PUSH_UNSUPPORTED', 'This browser cannot show alerts. Use Chrome on Android.');
+    throw new ApiError(
+      'PUSH_UNSUPPORTED',
+      'This browser cannot show alerts. Use Chrome on Android.',
+    );
   const { publicKey } = await api<{ publicKey: string | null }>('/admin/push/key');
   if (!publicKey)
-    throw new ApiError('PUSH_UNAVAILABLE', 'Alerts on this device are not set up on the server yet.');
+    throw new ApiError(
+      'PUSH_UNAVAILABLE',
+      'Alerts on this device are not set up on the server yet.',
+    );
   if ((await Notification.requestPermission()) !== 'granted')
-    throw new ApiError('PUSH_DENIED', 'Alerts are blocked. Allow notifications in the browser settings.');
+    throw new ApiError(
+      'PUSH_DENIED',
+      'Alerts are blocked. Allow notifications in the browser settings.',
+    );
   await registerWorker();
   const registration = await navigator.serviceWorker.ready;
   const subscription =

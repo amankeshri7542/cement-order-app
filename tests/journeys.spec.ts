@@ -85,7 +85,7 @@ test('admin changes price and finance policy, fulfils an order and replies to a 
   await adminLogin(page);
   await expect(page.getByRole('heading', { name: 'Today' })).toBeVisible();
   await expect(page.getByRole('region', { name: "Today's work", exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: /^नया काम \/ New work/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^New work/ })).toBeVisible();
   await page.screenshot({ path: 'test-results/admin-overview.png', fullPage: true });
   await page
     .getByRole('navigation', { name: 'Main navigation', exact: true })
@@ -111,11 +111,11 @@ test('admin changes price and finance policy, fulfils an order and replies to a 
     .getByRole('button', { name: /^Open SC-/ })
     .first()
     .click();
-  await page.getByRole('button', { name: 'Mark preparing' }).click();
-  await page.getByRole('button', { name: 'Mark out for delivery' }).click();
   page.on('dialog', (dialog) => dialog.accept());
-  await page.getByRole('button', { name: 'Record cash payment received' }).click();
-  await page.getByRole('button', { name: 'Mark delivered' }).click();
+  await page.getByRole('button', { name: 'Start preparing' }).click();
+  await page.getByRole('button', { name: 'Dispatch', exact: true }).click();
+  // Cash is collected at the door: one step records it and completes the delivery.
+  await page.getByRole('button', { name: 'Cash received · delivered' }).click();
   await expect(
     page.getByRole('dialog').getByText('Delivered', { exact: true }).first(),
   ).toBeVisible();

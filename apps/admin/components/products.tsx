@@ -95,15 +95,15 @@ export function Products({
                 <td>{p.category.name}</td>
                 <td>
                   <strong>{money(p.pricePaise)}</strong>
-                  <small>{t('Price version', 'भाव संस्करण')} {p.priceVersion}</small>
+                  <small>
+                    {t('Price version', 'भाव संस्करण')} {p.priceVersion}
+                  </small>
                 </td>
                 <td>
                   <span className={p.stock <= p.lowStockAt ? 'low-stock' : ''}>
                     {p.stock.toLocaleString('en-IN')} {p.unit}
                   </span>
-                  <small>
-                    {t(`Alert at ${p.lowStockAt}`, `${p.lowStockAt} पर चेतावनी`)}
-                  </small>
+                  <small>{t(`Alert at ${p.lowStockAt}`, `${p.lowStockAt} पर चेतावनी`)}</small>
                 </td>
                 <td>
                   <Badge value={!p.active ? 'INACTIVE' : p.stock ? 'IN_STOCK' : 'OUT_OF_STOCK'} />
@@ -256,7 +256,10 @@ export function ProductEditor({
     }
   }
   return (
-    <Modal title={product ? t('Edit product', 'सामग्री बदलें') : t('Add a product', 'नई सामग्री जोड़ें')} close={close}>
+    <Modal
+      title={product ? t('Edit product', 'सामग्री बदलें') : t('Add a product', 'नई सामग्री जोड़ें')}
+      close={close}
+    >
       <form onSubmit={submit} className="form-stack">
         <div className="form-grid">
           <Field label={t('Product name', 'सामग्री का नाम')}>
@@ -324,7 +327,10 @@ export function ProductEditor({
           <Field
             label={
               product
-                ? t('Available stock · use stock ledger to change', 'उपलब्ध स्टॉक · बदलने के लिए स्टॉक खाता')
+                ? t(
+                    'Available stock · use stock ledger to change',
+                    'उपलब्ध स्टॉक · बदलने के लिए स्टॉक खाता',
+                  )
                 : t('Opening stock', 'शुरुआती स्टॉक')
             }
           >

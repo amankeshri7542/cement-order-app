@@ -11,6 +11,10 @@ const deskStates: Record<string, [string, string]> = {
   CUSTOMER: ['Customer', 'ग्राहक'],
   CONTRACTOR: ['Contractor', 'ठेकेदार'],
   ADMIN: ['Staff', 'स्टाफ़'],
+  // Quote states from the shop's side (the shared labels speak to the customer).
+  REQUESTED: ['Requested', 'अनुरोध आया'],
+  SENT: ['Sent', 'भाव भेजा'],
+  ACCEPTED: ['Accepted · create the order', 'मंज़ूर · ऑर्डर बनाएँ'],
 };
 export function Badge({ value }: { value: string }) {
   const { status, language, t } = useWords();

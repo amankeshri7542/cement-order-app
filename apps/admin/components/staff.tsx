@@ -117,10 +117,13 @@ export function StaffAlerts({ me }: { me: string }) {
                 className="secondary"
                 disabled={busy}
                 onClick={() =>
-                  void act(async () => {
-                    await disablePush();
-                    setDevice(false);
-                  }, t('Alerts turned off on this device.', 'इस डिवाइस पर अलर्ट बंद।'))
+                  void act(
+                    async () => {
+                      await disablePush();
+                      setDevice(false);
+                    },
+                    t('Alerts turned off on this device.', 'इस डिवाइस पर अलर्ट बंद।'),
+                  )
                 }
               >
                 {t('Turn off alerts here', 'यहाँ अलर्ट बंद करें')}
@@ -130,10 +133,13 @@ export function StaffAlerts({ me }: { me: string }) {
                 className="primary"
                 disabled={busy}
                 onClick={() =>
-                  void act(async () => {
-                    await enablePush();
-                    setDevice(true);
-                  }, t('Alerts are on for this device.', 'इस डिवाइस पर अलर्ट चालू।'))
+                  void act(
+                    async () => {
+                      await enablePush();
+                      setDevice(true);
+                    },
+                    t('Alerts are on for this device.', 'इस डिवाइस पर अलर्ट चालू।'),
+                  )
                 }
               >
                 {t('Turn on alerts here', 'यहाँ अलर्ट चालू करें')}
@@ -171,7 +177,10 @@ export function StaffAlerts({ me }: { me: string }) {
             }}
           />{' '}
           <Volume2 size={16} />{' '}
-          {t('Ring a bell for new work while the desk is open', 'डेस्क खुला हो तो नए काम पर घंटी बजे')}
+          {t(
+            'Ring a bell for new work while the desk is open',
+            'डेस्क खुला हो तो नए काम पर घंटी बजे',
+          )}
         </label>
         {note && <p role="status">{note}</p>}
         {error && (
@@ -234,7 +243,11 @@ export function StaffAlerts({ me }: { me: string }) {
             <li key={m.id}>
               <strong>{templateText[m.template] || m.template}</strong>
               <span>
-                {[m.recipient, statusText[m.status], m.attempts > 1 ? `${t('tries', 'कोशिश')} ${m.attempts}` : '']
+                {[
+                  m.recipient,
+                  statusText[m.status],
+                  m.attempts > 1 ? `${t('tries', 'कोशिश')} ${m.attempts}` : '',
+                ]
                   .filter(Boolean)
                   .join(' · ')}
               </span>
@@ -257,7 +270,9 @@ export function StaffAlerts({ me }: { me: string }) {
             </li>
           ))}
         </ol>
-        {!messages.length && <p>{t('No WhatsApp messages yet.', 'अभी कोई WhatsApp संदेश नहीं।')}</p>}
+        {!messages.length && (
+          <p>{t('No WhatsApp messages yet.', 'अभी कोई WhatsApp संदेश नहीं।')}</p>
+        )}
       </section>
       {editing && (
         <Modal title={t('Edit staff', 'स्टाफ़ बदलें')} close={() => setEditing(null)}>
@@ -266,14 +281,17 @@ export function StaffAlerts({ me }: { me: string }) {
             onSubmit={(e) => {
               e.preventDefault();
               const f = new FormData(e.currentTarget);
-              void act(async () => {
-                await api(`/admin/staff/${editing.id}`, 'PATCH', {
-                  name: String(f.get('name')),
-                  staffTitle: String(f.get('title') || ''),
-                  whatsappAlerts: f.get('whatsapp') === 'on',
-                });
-                setEditing(null);
-              }, t('Staff details saved.', 'स्टाफ़ की जानकारी सहेजी।'));
+              void act(
+                async () => {
+                  await api(`/admin/staff/${editing.id}`, 'PATCH', {
+                    name: String(f.get('name')),
+                    staffTitle: String(f.get('title') || ''),
+                    whatsappAlerts: f.get('whatsapp') === 'on',
+                  });
+                  setEditing(null);
+                },
+                t('Staff details saved.', 'स्टाफ़ की जानकारी सहेजी।'),
+              );
             }}
           >
             <Field label={t('Name', 'नाम')}>

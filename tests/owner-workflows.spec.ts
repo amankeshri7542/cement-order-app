@@ -1,5 +1,5 @@
 import { type Page, type Response } from '@playwright/test';
-import { test, expect, observePage } from './fixtures';
+import { test, expect, observePage, skipLanguageChooser } from './fixtures';
 import { appLogin, fillAddress, openBasket, openMaterial } from './app';
 import { PrismaClient } from '@prisma/client';
 import { mkdir } from 'node:fs/promises';
@@ -73,7 +73,9 @@ test('SSE outage: polling finds new work and competing owners keep one durable a
 }) => {
   test.setTimeout(120000);
   const fatherContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  await skipLanguageChooser(fatherContext);
   const uncleContext = await browser.newContext({ viewport: { width: 360, height: 800 } });
+  await skipLanguageChooser(uncleContext);
   const father = await fatherContext.newPage();
   const uncle = await uncleContext.newPage();
   try {
@@ -95,7 +97,7 @@ test('SSE outage: polling finds new work and competing owners keep one durable a
     );
     await Promise.all(
       [father, uncle].map((owner) =>
-        owner.getByRole('button', { name: 'ज़िम्मेदारी लें / Acknowledge', exact: true }).click(),
+        owner.getByRole('button', { name: 'Acknowledge', exact: true }).click(),
       ),
     );
     for (const response of await Promise.all(responses)) expect(response.status()).toBe(201);
@@ -115,9 +117,10 @@ test('SSE outage: polling finds new work and competing owners keep one durable a
     await expect(
       father.getByRole('dialog').locator('strong').filter({ hasText: work.assignedTo!.name }),
     ).toBeVisible();
-    await expect(
-      father.getByRole('dialog').getByRole('link', { name: /फ़ोन \/ Call/ }),
-    ).toHaveAttribute('href', /^tel:\+91/);
+    await expect(father.getByRole('dialog').getByRole('link', { name: /^Call/ })).toHaveAttribute(
+      'href',
+      /^tel:\+91/,
+    );
     await expect(
       father.getByRole('dialog').getByRole('link', { name: /WhatsApp/ }),
     ).toHaveAttribute('href', /^https:\/\/wa\.me\/91/);
@@ -143,20 +146,21 @@ test('collected COD cancellation records one cash refund and restores stock once
 }) => {
   test.setTimeout(120000);
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  await skipLanguageChooser(context);
   const owner = await context.newPage();
   try {
     await ownerLogin(owner, 36);
     await customerLogin(page, 36);
     const { order } = await submitOrder(page, products[4]!, 5);
     await openOrder(owner, order);
-    await owner.getByRole('button', { name: /Record cash payment received/ }).click();
-    await expect(owner.getByRole('dialog').getByText('Captured', { exact: true })).toBeVisible();
+    await owner.getByRole('button', { name: 'Cash received', exact: true }).click();
+    await expect(owner.getByRole('dialog').getByText('Paid', { exact: true })).toBeVisible();
     await owner.getByRole('button', { name: 'Cancel order', exact: true }).click();
-    await expect(owner.getByRole('button', { name: /Record cash refund returned/ })).toBeVisible();
+    await expect(owner.getByRole('button', { name: 'Cash refund returned' })).toBeVisible();
     const refunded = owner.waitForResponse((r) =>
       r.url().endsWith(`/orders/${order.id}/cash-refunded`),
     );
-    await owner.getByRole('button', { name: /Record cash refund returned/ }).click();
+    await owner.getByRole('button', { name: 'Cash refund returned' }).click();
     await replay(owner, await refunded);
     const payment = await db.payment.findUniqueOrThrow({ where: { orderId: order.id } });
     expect(payment.status).toBe('REFUNDED');
@@ -225,7 +229,7 @@ async function ownerLogin(page: Page, suffix: number) {
     .getByRole('textbox', { name: 'Verification code', exact: true })
     .fill((await (await sent).json()).devCode);
   await page.getByRole('button', { name: 'Open store desk' }).click();
-  await expect(page.getByRole('heading', { name: 'आज / Today', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
   page.on('dialog', (dialog) => dialog.accept());
 }
 async function submitOrder(page: Page, product: (typeof products)[number], quantity: number) {
@@ -269,13 +273,13 @@ async function openOrder(owner: Page, order: Order) {
 }
 async function acknowledgeAndDispatch(owner: Page) {
   const dialog = owner.getByRole('dialog');
-  await dialog.getByRole('button', { name: 'ज़िम्मेदारी लें / Acknowledge', exact: true }).click();
-  await expect(
-    dialog.getByRole('button', { name: 'ज़िम्मेदारी लें / Acknowledge', exact: true }),
-  ).toHaveCount(0);
-  await dialog.getByRole('button', { name: 'Mark preparing', exact: true }).click();
-  await dialog.getByRole('button', { name: 'Mark out for delivery', exact: true }).click();
-  await expect(dialog.getByRole('button', { name: 'Mark delivered', exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Acknowledge', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'Acknowledge', exact: true })).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Start preparing', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Dispatch', exact: true }).click();
+  // Cash is still due, so delivery completes together with the money.
+  await expect(dialog.getByRole('button', { name: 'Cash received · delivered' })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Complete delivery' })).toHaveCount(0);
 }
 
 // Separate customers, owners, products and delivery coverage avoid coupling to older journeys.
@@ -285,17 +289,20 @@ test('phone COD: automatic owner queue, acknowledgment, actual collection, deliv
 }) => {
   test.setTimeout(120000);
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  await skipLanguageChooser(context);
   const owner = await context.newPage();
   const errors: string[] = [];
   owner.on('pageerror', (error) => errors.push(error.message));
   page.on('pageerror', (error) => errors.push(error.message));
   try {
     await ownerLogin(owner, 31);
-    await owner.getByRole('button', { name: 'Switch owner language' }).click();
+    await owner.getByRole('button', { name: 'हिन्दी में देखें' }).click();
     await owner.reload();
+    // The chosen language survives a reload.
+    await expect(owner.getByRole('heading', { name: 'आज', exact: true })).toBeVisible();
+    await owner.getByRole('button', { name: 'Switch to English' }).click();
     await expect(owner.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
-    await owner.getByRole('button', { name: 'Switch owner language' }).click();
-    await owner.getByRole('button', { name: /^नया काम \/ New work/ }).click();
+    await owner.getByRole('button', { name: /^New work/ }).click();
     await customerLogin(page, 31);
     const { order, response } = await submitOrder(page, products[0]!, 50);
     expect(order.totalPaise).toBe(2000000);
@@ -316,9 +323,8 @@ test('phone COD: automatic owner queue, acknowledgment, actual collection, deliv
       (r) =>
         r.url().endsWith(`/orders/${order.id}/cod-received`) && r.request().method() === 'POST',
     );
-    await owner.getByRole('button', { name: /Record cash payment received/ }).click();
+    await owner.getByRole('button', { name: 'Cash received · delivered' }).click();
     await replay(owner, await collected);
-    await owner.getByRole('button', { name: 'Mark delivered', exact: true }).click();
     await expect
       .poll(async () => (await db.order.findUniqueOrThrow({ where: { id: order.id } })).status)
       .toBe('DELIVERED');
@@ -348,24 +354,23 @@ test('phone refused delivery: retry and physical return without fake collection,
 }) => {
   test.setTimeout(120000);
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  await skipLanguageChooser(context);
   const owner = await context.newPage();
   try {
     await ownerLogin(owner, 32);
-    await owner.getByRole('button', { name: /^नया काम \/ New work/ }).click();
+    await owner.getByRole('button', { name: /^New work/ }).click();
     await customerLogin(page, 32);
     const { order } = await submitOrder(page, products[1]!, 10);
     await openOrder(owner, order);
     await acknowledgeAndDispatch(owner);
     const dialog = owner.getByRole('dialog');
     async function refuse(note: string) {
-      await dialog.getByText('डिलीवरी में समस्या / Delivery problem', { exact: true }).click();
-      await dialog.getByLabel(/कारण \/ Reason/).selectOption('REFUSED');
-      await dialog.getByLabel('क्या हुआ / What happened', { exact: true }).fill(note);
-      await dialog
-        .getByRole('button', { name: 'समस्या दर्ज करें / Record exception', exact: true })
-        .click();
+      await dialog.getByText('Delivery problem', { exact: true }).click();
+      await dialog.getByLabel('Reason').selectOption('REFUSED');
+      await dialog.getByLabel('What happened', { exact: true }).fill(note);
+      await dialog.getByRole('button', { name: 'Record problem', exact: true }).click();
       await expect(
-        dialog.getByRole('button', { name: 'फिर भेजें / Schedule retry', exact: true }),
+        dialog.getByRole('button', { name: 'Schedule retry', exact: true }),
       ).toBeVisible();
       expect((await db.product.findUniqueOrThrow({ where: { id: products[1]!.id } })).stock).toBe(
         490,
@@ -375,29 +380,25 @@ test('phone refused delivery: retry and physical return without fake collection,
       );
     }
     await refuse('Customer refused today; requested another delivery attempt.');
-    await dialog.getByLabel('दोबारा भेजने की तारीख / Retry date', { exact: true }).fill(tomorrow());
+    await dialog.getByLabel('Retry date', { exact: true }).fill(tomorrow());
     await dialog
-      .getByLabel('ग्राहक से तय बात / Retry arrangement', { exact: true })
+      .getByLabel('Arrangement with the customer', { exact: true })
       .fill('Customer confirmed tomorrow by phone.');
-    await dialog.getByRole('button', { name: 'फिर भेजें / Schedule retry', exact: true }).click();
-    await expect(dialog.getByRole('button', { name: 'Mark delivered', exact: true })).toBeVisible();
+    await dialog.getByRole('button', { name: 'Schedule retry', exact: true }).click();
+    await expect(dialog.getByRole('button', { name: 'Cash received · delivered' })).toBeVisible();
     await refuse('Second visit refused; vehicle returned all ten bags.');
+    await dialog.getByText('Confirm physical return', { exact: true }).click();
+    await dialog.getByLabel('Sellable returned', { exact: true }).fill('8');
+    await dialog.getByLabel('Damaged returned', { exact: true }).fill('2');
     await dialog
-      .getByText('दुकान में माल वापस मिला / Confirm physical return', { exact: true })
-      .click();
-    await dialog.getByLabel('सही माल / Sellable returned', { exact: true }).fill('8');
-    await dialog.getByLabel('खराब माल / Damaged returned', { exact: true }).fill('2');
-    await dialog
-      .getByLabel('वापसी का विवरण / Return evidence', { exact: true })
+      .getByLabel('Return details', { exact: true })
       .fill('Owner counted eight dry bags and two water-damaged bags at the shop.');
     const returned = owner.waitForResponse(
       (r) =>
         r.url().endsWith(`/orders/${order.id}/delivery`) &&
         r.request().postDataJSON()?.action === 'RETURN',
     );
-    await dialog
-      .getByRole('button', { name: 'वापसी की पुष्टि / Confirm returned stock', exact: true })
-      .click();
+    await dialog.getByRole('button', { name: 'Confirm returned stock', exact: true }).click();
     await replay(owner, await returned);
     await expect
       .poll(async () => (await db.order.findUniqueOrThrow({ where: { id: order.id } })).status)
@@ -424,10 +425,11 @@ test('wholesale UI: freight confirmation, renewed consent and one order at the n
 }) => {
   test.setTimeout(120000);
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  await skipLanguageChooser(context);
   const owner = await context.newPage();
   try {
     await ownerLogin(owner, 33);
-    await owner.getByRole('button', { name: /थोक अनुरोध \/ New quotations/ }).click();
+    await owner.getByRole('button', { name: /^New quotations/ }).click();
     await customerLogin(page, 33);
     await page.getByRole('tab', { name: 'Home' }).click();
     await page.getByRole('button', { name: 'Bulk quote', exact: true }).click();
@@ -447,9 +449,7 @@ test('wholesale UI: freight confirmation, renewed consent and one order at the n
       .locator('.owner-order-cards')
       .getByRole('button', { name: `Open quote ${quote.number}`, exact: true })
       .click();
-    await owner
-      .getByRole('button', { name: 'ज़िम्मेदारी लें / Acknowledge quotation', exact: true })
-      .click();
+    await owner.getByRole('button', { name: 'Acknowledge quotation', exact: true }).click();
     await owner
       .locator('.owner-order-cards')
       .getByRole('button', { name: `Open quote ${quote.number}`, exact: true })
@@ -474,7 +474,7 @@ test('wholesale UI: freight confirmation, renewed consent and one order at the n
       .getByRole('button', { name: `Open quote ${quote.number}`, exact: true })
       .click();
     await owner
-      .getByRole('button', { name: 'बात बदली है / Revise terms for fresh consent', exact: true })
+      .getByRole('button', { name: 'Revise terms for fresh consent', exact: true })
       .click();
     await owner.getByLabel(/Family Bulk Cement.*price per unit/).fill('381');
     await owner.getByLabel('Delivery charge (₹)', { exact: true }).fill('760');
@@ -504,9 +504,7 @@ test('wholesale UI: freight confirmation, renewed consent and one order at the n
     const converted = owner.waitForResponse(
       (r) => r.url().endsWith(`/quotes/${quote.id}/convert`) && r.request().method() === 'POST',
     );
-    await owner
-      .getByRole('button', { name: 'ऑर्डर बनाएँ / Create supply order', exact: true })
-      .click();
+    await owner.getByRole('button', { name: 'Create supply order', exact: true }).click();
     const response = await converted;
     expect(response.status()).toBe(201);
     const order = (await response.json()) as Order;
