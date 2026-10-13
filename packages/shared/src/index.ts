@@ -183,7 +183,9 @@ export type User = {
   deletedAt?: string | null;
 };
 export type Category = { id: string; name: string; slug: string };
-export type Product = z.infer<typeof productSchema> & {
+// `lowStockAt` is an owner setting: staff endpoints include it, customer responses never do.
+export type Product = Omit<z.infer<typeof productSchema>, 'lowStockAt'> & {
+  lowStockAt?: number;
   id: string;
   category: Category;
   priceVersion: number;

@@ -2070,6 +2070,13 @@ describe('Owner desk operations (Phase 4)', () => {
       .set(admin())
       .expect(200);
     expect(low.body.items.map((p: { id: string }) => p.id)).toEqual(['cement']);
+    expect(low.body.items[0].lowStockAt).toBe(150);
+    // The level is an owner setting: customers never receive it.
+    const publicList = await request(server).get('/api/v1/products').expect(200);
+    expect(publicList.body.items.length).toBeGreaterThan(0);
+    for (const item of publicList.body.items) expect(item).not.toHaveProperty('lowStockAt');
+    const publicItem = await request(server).get('/api/v1/products/cement').expect(200);
+    expect(publicItem.body).not.toHaveProperty('lowStockAt');
     const customers = await request(server).get('/api/v1/admin/customers').set(admin()).expect(200);
     expect(customers.body.items.map((u: { id: string }) => u.id).sort()).toEqual([
       'customer',

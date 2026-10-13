@@ -130,6 +130,26 @@ test.describe('signed in', () => {
     expect(csv).toContain('UPI');
   });
 
+  test('the desk installs: manifest and alert worker load under the security policy', async ({
+    page,
+    browserName,
+  }) => {
+    const manifest = await page.evaluate(async () => {
+      const link = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
+      return link ? (await fetch(link.href)).json() : null;
+    });
+    expect(manifest).toMatchObject({ short_name: 'शिव डेस्क', display: 'standalone', lang: 'hi' });
+    // Playwright's WebKit has no service workers; Chrome proves the policy allows the worker.
+    test.skip(browserName !== 'chromium', 'service workers are checked in Chrome');
+    await expect
+      .poll(() =>
+        page.evaluate(
+          async () => (await navigator.serviceWorker.getRegistration('/'))?.active?.state ?? null,
+        ),
+      )
+      .toBe('activated');
+  });
+
   test('a per-product low-stock level drives the warning', async ({ page }) => {
     await page
       .getByRole('navigation', { name: 'Main navigation', exact: true })

@@ -3,7 +3,8 @@ import type { Metadata, Viewport } from 'next';
 import './styles.css';
 import './rate-studio.css';
 export const metadata: Metadata = {
-  title: 'शिव सीमेंट स्टोर · दुकान डेस्क',
+  // Local tooling recognises the desk by this title; the home-screen name comes from the manifest.
+  title: 'Shiv Cement Store · Store desk',
   description: 'Orders, quotes, stock and money for Shiv Cement Store.',
   icons: { icon: '/icon-192.png', apple: '/icon-192.png' },
   appleWebApp: { capable: true, title: 'शिव डेस्क', statusBarStyle: 'default' },

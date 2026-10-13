@@ -100,10 +100,12 @@ export function Products({
                   </small>
                 </td>
                 <td>
-                  <span className={p.stock <= p.lowStockAt ? 'low-stock' : ''}>
+                  <span className={p.stock <= (p.lowStockAt ?? 25) ? 'low-stock' : ''}>
                     {p.stock.toLocaleString('en-IN')} {p.unit}
                   </span>
-                  <small>{t(`Alert at ${p.lowStockAt}`, `${p.lowStockAt} पर चेतावनी`)}</small>
+                  <small>
+                    {t(`Alert at ${p.lowStockAt ?? 25}`, `${p.lowStockAt ?? 25} पर चेतावनी`)}
+                  </small>
                 </td>
                 <td>
                   <Badge value={!p.active ? 'INACTIVE' : p.stock ? 'IN_STOCK' : 'OUT_OF_STOCK'} />
