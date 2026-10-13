@@ -1,8 +1,14 @@
-import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { Prisma, PrismaClient } from '@prisma/client';
 
 @Injectable()
 export class Db extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+  // Scripts pass their own database URL; Nest passes nothing.
+  constructor(@Optional() options: { datasourceUrl?: string } = {}) {
+    // Owner-only product settings stay out of every customer response unless a staff endpoint
+    // asks for them with `omit: { lowStockAt: false }`.
+    super({ ...options, omit: { product: { lowStockAt: true } } });
+  }
   async onModuleInit() {
     await this.$connect();
     if (process.env.NODE_ENV === 'production') await this.assertRuntimeRole();

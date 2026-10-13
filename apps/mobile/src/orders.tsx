@@ -14,6 +14,7 @@ import {
 import {
   dateLabel,
   dayLabel,
+  historyNote,
   momentLabel,
   money,
   orderStatusText,
@@ -700,7 +701,9 @@ export function OrderDetail() {
           <Text style={[s.body, { color: C.ink, fontWeight: '700' }]}>
             {orderStatusText(h.status, language)}
           </Text>
-          {h.note ? <Text style={s.small}>{h.note}</Text> : null}
+          {historyNote(h.note, language) ? (
+            <Text style={s.small}>{historyNote(h.note, language)}</Text>
+          ) : null}
           <Text style={s.small}>{momentLabel(h.createdAt, language)}</Text>
         </View>
       ))}

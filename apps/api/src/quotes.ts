@@ -212,6 +212,7 @@ export class QuotesController {
           totalPaise: total.totalPaise,
           deliveryFeePaise: body.deliveryFeePaise,
           adminNote: body.note,
+          deliveryTerms: body.deliveryTerms,
         },
         include: {
           work: { include: workInclude },

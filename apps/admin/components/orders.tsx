@@ -1,70 +1,73 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { Order, OrderStatus, User, money, statusLabel, transitions } from '@shiv/shared';
+import { Order, OrderStatus, User, dayLabel, historyNote, money, transitions } from '@shiv/shared';
 import { ArrowUpRight, Search, Printer } from 'lucide-react';
-import { api, errorMessage } from '../lib/api';
+import { api } from '../lib/api';
+import { useWords } from '../lib/i18n';
 import { Badge, Empty, Modal, Field } from './ui';
+import { AlertRetry } from './quotes';
 
-const queueLabels = {
-  new: 'नया काम / New work',
-  dispatch: 'भेजना है / Dispatch due',
-  payments: 'पैसा लेना है / Money to confirm',
-  issues: 'समस्या / Issues',
-};
+type T = (en: string, hi: string) => string;
 const remaining = (order: Order) =>
   order.payment.status === 'PENDING' && !['CANCELLED', 'REFUNDED'].includes(order.status)
     ? order.totalPaise
     : 0;
-const nextAction = (order: Order) =>
+const nextAction = (order: Order, t: T) =>
   !order.work?.acknowledgedAt && order.work
-    ? 'ज़िम्मेदारी लें / Acknowledge'
+    ? t('Acknowledge', 'ज़िम्मेदारी लें')
     : (
         {
-          CONFIRMED: 'तैयार करें / Prepare',
-          PREPARING: 'रवाना करें / Dispatch',
+          CONFIRMED: t('Prepare', 'तैयार करें'),
+          PREPARING: t('Dispatch', 'रवाना करें'),
           OUT_FOR_DELIVERY: remaining(order)
-            ? 'पैसा मिलने की पुष्टि / Confirm collection'
-            : 'डिलीवरी पूरी / Complete delivery',
-          DELIVERY_EXCEPTION: 'समस्या हल करें / Resolve delivery',
+            ? t('Money received · finish delivery', 'पैसा मिला · डिलीवरी पूरी करें')
+            : t('Complete delivery', 'डिलीवरी पूरी करें'),
+          DELIVERY_EXCEPTION: t('Resolve delivery', 'समस्या हल करें'),
         } as Partial<Record<OrderStatus, string>>
-      )[order.status] || 'ऑर्डर देखें / View order';
-function settlementNote(order: Order) {
+      )[order.status] || t('View order', 'ऑर्डर देखें');
+function settlementNote(order: Order, t: T) {
   if (order.payment.status === 'REFUND_PENDING')
-    return `दुकान को ${money(order.totalPaise)} लौटाना है। / Store owes a full refund of ${money(order.totalPaise)}.`;
+    return t(
+      `The store owes a full refund of ${money(order.totalPaise)}.`,
+      `दुकान को ${money(order.totalPaise)} पूरा लौटाना है।`,
+    );
   if (order.payment.status === 'REFUNDED')
-    return 'पूरा पैसा लौटा दिया गया। / Fully refunded; no collection is due.';
+    return t('Fully refunded; nothing to collect.', 'पूरा पैसा लौटा दिया गया; कुछ लेना नहीं है।');
   if (
     order.status === 'CANCELLED' &&
     order.payment.method === 'COD' &&
     order.payment.status === 'PENDING'
   )
-    return 'ऑर्डर रद्द है। नकद नहीं मिला और अब लेना नहीं है। / Cancelled before cash collection; no cash is due.';
+    return t(
+      'Cancelled before payment; nothing to collect.',
+      'ऑर्डर पैसा मिलने से पहले रद्द हुआ; कुछ लेना नहीं है।',
+    );
   return '';
 }
 function CustomerContact({ phone }: { phone: string }) {
+  const { t } = useWords();
   if (!phone.trim())
     return (
       <p className="hint">
-        खाता हटाने पर संपर्क जानकारी हटा दी गई। / Contact details were removed with the customer
-        account.
+        {t(
+          'Contact details were removed with the customer account.',
+          'खाता हटाने पर संपर्क जानकारी हटा दी गई।',
+        )}
       </p>
     );
   return (
     <div className="owner-actions">
-      <a href={`tel:${phone}`}>फ़ोन / Call {phone}</a>
+      <a href={`tel:${phone}`}>
+        {t('Call', 'फ़ोन')} {phone}
+      </a>
       <a href={`https://wa.me/${phone.replace(/\D/g, '')}`} target="_blank" rel="noreferrer">
         WhatsApp
       </a>
     </div>
   );
 }
-const hindiStatusAction: Partial<Record<OrderStatus, string>> = {
-  PREPARING: 'तैयार करना शुरू करें',
-  OUT_FOR_DELIVERY: 'माल रवाना करें',
-  DELIVERED: 'डिलीवरी पूरी करें',
-  CANCELLED: 'ऑर्डर रद्द करें',
-};
 export function OrdersTable({ orders, select }: { orders: Order[]; select: (id: string) => void }) {
+  const { t, age, language } = useWords();
   return (
     <>
       <div className="owner-order-cards">
@@ -76,30 +79,35 @@ export function OrdersTable({ orders, select }: { orders: Order[]; select: (id: 
             </div>
             <h3>{o.user?.name || o.address.name}</h3>
             <p>
-              {o.address.area}, {o.address.city} · {o.deliveryDate}
+              {o.address.area}, {o.address.city} · {dayLabel(o.deliveryDate, language)}
             </p>
             <p>{o.items.map((i) => `${i.name}: ${i.quantity} ${i.unit}`).join(' · ')}</p>
             <div className="row-between">
               <strong>{money(o.totalPaise)}</strong>
-              <span>बाकी / Remaining: {money(remaining(o))}</span>
+              <span>
+                {t('To collect', 'बाकी')}: {money(remaining(o))}
+              </span>
             </div>
             <small>
-              {Math.max(0, Math.floor((Date.now() - Date.parse(o.createdAt)) / 60000))} मिनट / min ·{' '}
-              {o.work?.assignedTo?.name || 'ज़िम्मेदारी बाकी / Unassigned'}
+              {age(o.createdAt)} ·{' '}
+              {o.work?.assignedTo?.name || t('Not assigned', 'ज़िम्मेदारी बाकी')}
             </small>
             {o.work?.lastError && (
               <p className="warning">
-                सूचना नहीं पहुँची / Alert failed. {o.work.attempts} attempts.
+                {t(
+                  `Alert failed (${o.work.attempts} tries).`,
+                  `अलर्ट नहीं पहुँचा (${o.work.attempts} बार)।`,
+                )}
               </p>
             )}
             <button
               className="primary wide owner-next-action"
-              aria-label={`Open ${o.number}`}
+              aria-label={`${t('Open', 'खोलें')} ${o.number}`}
               onClick={() => select(o.id)}
             >
-              {nextAction(o)}
+              {nextAction(o, t)}
             </button>
-            {settlementNote(o) && <p className="hint">{settlementNote(o)}</p>}
+            {settlementNote(o, t) && <p className="hint">{settlementNote(o, t)}</p>}
             <CustomerContact phone={o.address.phone} />
           </article>
         ))}
@@ -108,11 +116,11 @@ export function OrdersTable({ orders, select }: { orders: Order[]; select: (id: 
         <table>
           <thead>
             <tr>
-              <th>Order</th>
-              <th>Customer</th>
-              <th>Delivery</th>
-              <th>Total</th>
-              <th>Status</th>
+              <th>{t('Order', 'ऑर्डर')}</th>
+              <th>{t('Customer', 'ग्राहक')}</th>
+              <th>{t('Delivery', 'डिलीवरी')}</th>
+              <th>{t('Total', 'कुल')}</th>
+              <th>{t('Status', 'स्थिति')}</th>
               <th />
             </tr>
           </thead>
@@ -122,11 +130,8 @@ export function OrdersTable({ orders, select }: { orders: Order[]; select: (id: 
                 <td>
                   <strong>{o.number}</strong>
                   <small>
-                    {new Date(o.createdAt).toLocaleDateString('en-IN', {
-                      day: 'numeric',
-                      month: 'short',
-                    })}{' '}
-                    · {o.items.length} products
+                    {age(o.createdAt)} ·{' '}
+                    {t(`${o.items.length} products`, `${o.items.length} सामग्री`)}
                   </small>
                 </td>
                 <td>
@@ -134,17 +139,18 @@ export function OrdersTable({ orders, select }: { orders: Order[]; select: (id: 
                   <small>{o.address.city}</small>
                 </td>
                 <td>
-                  {new Date(`${o.deliveryDate}T12:00:00`).toLocaleDateString('en-IN', {
-                    day: 'numeric',
-                    month: 'short',
-                  })}
+                  {dayLabel(o.deliveryDate, language)}
                   <small>
-                    {o.payment.method === 'COD' ? 'Cash on delivery' : 'Online payment'}
+                    {o.payment.method === 'COD'
+                      ? t('Cash on delivery', 'डिलीवरी पर भुगतान')
+                      : t('Online payment', 'ऑनलाइन भुगतान')}
                   </small>
                 </td>
                 <td>
                   <strong>{money(o.totalPaise)}</strong>
-                  <small>{statusLabel(o.payment.status)}</small>
+                  <small>
+                    <Badge value={o.payment.status} />
+                  </small>
                 </td>
                 <td>
                   <Badge value={o.status} />
@@ -152,7 +158,7 @@ export function OrdersTable({ orders, select }: { orders: Order[]; select: (id: 
                 <td>
                   <button
                     className="icon-button"
-                    aria-label={`Open ${o.number}`}
+                    aria-label={`${t('Open', 'खोलें')} ${o.number}`}
                     onClick={() => select(o.id)}
                   >
                     <ArrowUpRight size={18} />
@@ -165,8 +171,11 @@ export function OrdersTable({ orders, select }: { orders: Order[]; select: (id: 
       </div>
       {!orders.length && (
         <Empty
-          title="Your next order starts here"
-          body="Customer orders will appear here as soon as they are placed."
+          title={t('No orders here', 'यहाँ कोई ऑर्डर नहीं')}
+          body={t(
+            'Customer orders appear here as soon as they are placed.',
+            'ग्राहक के ऑर्डर देते ही यहाँ दिखेंगे।',
+          )}
         />
       )}
     </>
@@ -191,10 +200,17 @@ export function Orders({
   selectedId: string | null;
   setSelectedId: (id: string | null) => void;
 }) {
+  const { t, status, error: say } = useWords();
   const params = new URLSearchParams(query);
   const filter = params.get('status') || '';
   const search = params.get('q') || '';
   const queue = params.get('queue') || '';
+  const queueLabels = {
+    new: t('New work', 'नया काम'),
+    dispatch: t('Dispatch due', 'भेजना है'),
+    payments: t('Money to confirm', 'पैसा लेना है'),
+    issues: t('Issues', 'समस्या'),
+  };
   const updateFilter = (key: string, value: string) => {
     const next = new URLSearchParams(query);
     if (value) next.set(key, value);
@@ -209,7 +225,7 @@ export function Orders({
         .then((o) => {
           if (live) setDetail(o);
         })
-        .catch((e) => notice(errorMessage(e)));
+        .catch((e) => notice(say(e)));
     else setDetail(null);
     return () => {
       live = false;
@@ -218,9 +234,9 @@ export function Orders({
   const selected = detail?.id === selectedId ? detail : null;
   return (
     <>
-      <div className="owner-queue-tabs" aria-label="Order queues">
+      <div className="owner-queue-tabs" aria-label={t('Order queues', 'ऑर्डर की कतार')}>
         <button className={!queue ? 'primary' : 'secondary'} onClick={() => onQueue('')}>
-          सभी / All
+          {t('All', 'सभी')}
         </button>
         {Object.entries(queueLabels).map(([key, label]) => (
           <button
@@ -236,21 +252,21 @@ export function Orders({
         <label className="search">
           <Search size={18} />
           <input
-            aria-label="Search orders"
-            placeholder="Search order number or customer"
+            aria-label={t('Search orders', 'ऑर्डर खोजें')}
+            placeholder={t('Search order number or customer', 'ऑर्डर नंबर या ग्राहक खोजें')}
             value={search}
             onChange={(e) => updateFilter('q', e.target.value)}
           />
         </label>
         <select
-          aria-label="Filter order status"
+          aria-label={t('Filter order status', 'स्थिति से छाँटें')}
           value={filter}
           onChange={(e) => updateFilter('status', e.target.value)}
         >
-          <option value="">All orders</option>
+          <option value="">{t('All orders', 'सभी ऑर्डर')}</option>
           {Object.keys(transitions).map((s) => (
             <option key={s} value={s}>
-              {statusLabel(s)}
+              {status(s)}
             </option>
           ))}
         </select>
@@ -280,6 +296,7 @@ function OrderDetail({
   refresh: () => Promise<void>;
   notice: (s: string) => void;
 }) {
+  const { t, status: statusText, error: say, age, moment, language } = useWords();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [note, setNote] = useState('');
@@ -289,24 +306,27 @@ function OrderDetail({
   useEffect(() => {
     void api<User[]>('/admin/owners')
       .then(setOwners)
-      .catch((e) => setError(errorMessage(e)));
+      .catch((e) => setError(say(e)));
   }, []);
-  async function action(path: string, body?: unknown) {
+  async function run(steps: () => Promise<void>, done = t('Order updated', 'ऑर्डर अपडेट हुआ')) {
     if (saving.current) return;
     saving.current = true;
     setBusy(true);
     setError('');
     try {
-      await api(`/admin/orders/${order.id}/${path}`, path === 'status' ? 'PATCH' : 'POST', body);
-      await refresh();
-      notice('Order updated');
+      await steps();
+      notice(done);
     } catch (e) {
-      setError(errorMessage(e));
+      setError(say(e));
     } finally {
+      // Refresh even after a partial failure so the screen shows what was saved.
+      await refresh().catch(() => {});
       saving.current = false;
       setBusy(false);
     }
   }
+  const call = (path: string, body?: unknown) =>
+    api(`/admin/orders/${order.id}/${path}`, path === 'status' ? 'PATCH' : 'POST', body);
   async function delivery(
     e: React.FormEvent<HTMLFormElement>,
     kind: 'REPORT' | 'RETRY' | 'RETURN',
@@ -330,13 +350,101 @@ function OrderDetail({
     };
     const signature = JSON.stringify(body);
     const idempotencyKey = (deliveryKeys.current[signature] ||= crypto.randomUUID());
-    await action('delivery', { ...body, idempotencyKey });
+    await run(() => call('delivery', { ...body, idempotencyKey }).then(() => {}));
   }
+  /** Money first, then the delivery: one tap for the common case at the site. */
+  function collectAndDeliver(channel: 'CASH' | 'UPI') {
+    const how = channel === 'CASH' ? t('cash', 'नकद') : 'UPI';
+    if (
+      !window.confirm(
+        t(
+          `Received ${money(order.totalPaise)} by ${how} in full, and the materials are delivered?`,
+          `${money(order.totalPaise)} पूरा ${how} में मिला और माल पहुँच गया?`,
+        ),
+      )
+    )
+      return;
+    void run(
+      async () => {
+        await call('cod-received', { channel });
+        await call('status', { status: 'DELIVERED', note });
+      },
+      t('Payment recorded and delivery completed', 'पैसा दर्ज हुआ और डिलीवरी पूरी हुई'),
+    );
+  }
+  function collectOnly(channel: 'CASH' | 'UPI') {
+    const how = channel === 'CASH' ? t('cash', 'नकद') : 'UPI';
+    if (
+      !window.confirm(
+        t(
+          `Confirm you received ${money(order.totalPaise)} by ${how} in full?`,
+          `${money(order.totalPaise)} पूरा ${how} में मिलने की पुष्टि करें?`,
+        ),
+      )
+    )
+      return;
+    void run(
+      () => call('cod-received', { channel }).then(() => {}),
+      t('Payment recorded', 'भुगतान दर्ज हुआ'),
+    );
+  }
+  const confirmStatus: Partial<Record<OrderStatus, string>> = {
+    PREPARING: t('Start preparing this order?', 'यह ऑर्डर तैयार करना शुरू करें?'),
+    OUT_FOR_DELIVERY: t(
+      'Dispatch this order now? The customer will see it is on the way.',
+      'ऑर्डर अभी रवाना करें? ग्राहक को दिखेगा कि माल रास्ते में है।',
+    ),
+    DELIVERED: t('Mark the materials as delivered?', 'माल पहुँच गया, डिलीवरी पूरी करें?'),
+    CANCELLED: t(
+      'Cancel this order and return its stock?',
+      'यह ऑर्डर रद्द करें और स्टॉक वापस जोड़ें?',
+    ),
+  };
+  const statusButton: Partial<Record<OrderStatus, string>> = {
+    PREPARING: t('Start preparing', 'तैयार करना शुरू करें'),
+    OUT_FOR_DELIVERY: t('Dispatch', 'माल रवाना करें'),
+    DELIVERED: t('Complete delivery', 'डिलीवरी पूरी करें'),
+    CANCELLED: t('Cancel order', 'ऑर्डर रद्द करें'),
+  };
+  const codDue =
+    order.payment.method === 'COD' &&
+    order.payment.status === 'PENDING' &&
+    ['CONFIRMED', 'PREPARING', 'OUT_FOR_DELIVERY'].includes(order.status);
   const allowed = transitions[order.status].filter(
     (s) =>
       !['CONFIRMED', 'REFUND_PENDING', 'REFUNDED', 'DELIVERY_EXCEPTION'].includes(s) &&
-      order.status !== 'DELIVERY_EXCEPTION',
+      order.status !== 'DELIVERY_EXCEPTION' &&
+      // Delivery is completed together with the money while cash is still due.
+      !(s === 'DELIVERED' && codDue),
   );
+  const ownerSelect = (technical: boolean, label: string) =>
+    order.work && (
+      <Field label={label}>
+        <select
+          defaultValue={technical ? order.work.technicalOwner?.id || '' : ''}
+          disabled={busy}
+          onChange={(e) => {
+            const ownerId = e.target.value;
+            if (!ownerId) return;
+            void run(
+              () =>
+                api(`/admin/work/${order.work!.id}/assign`, 'POST', {
+                  ownerId,
+                  ...(technical ? { technical: true } : {}),
+                }).then(() => {}),
+              t('Assigned', 'ज़िम्मेदारी बदली'),
+            );
+          }}
+        >
+          <option value="">{t('Choose owner', 'मालिक चुनें')}</option>
+          {owners.map((owner) => (
+            <option key={owner.id} value={owner.id}>
+              {owner.name || owner.phone}
+            </option>
+          ))}
+        </select>
+      </Field>
+    );
   return (
     <Modal title={order.number} close={close}>
       <div className="form-stack">
@@ -344,57 +452,39 @@ function OrderDetail({
           <Badge value={order.status} />
           <button className="text-button" onClick={() => window.print()}>
             <Printer size={16} />
-            Print summary
+            {t('Print summary', 'सारांश छापें')}
           </button>
         </div>
-        <p className="hint">Order summary · not a GST tax invoice</p>
+        <p className="hint">
+          <span>{t('Order summary · not a GST tax invoice', 'ऑर्डर सारांश · GST बिल नहीं')}</span> ·{' '}
+          {t(`placed ${age(order.createdAt)} ago`, `${age(order.createdAt)} पहले आया`)}
+        </p>
         {order.work && (
           <section className="detail-block">
             <p>
-              ज़िम्मेदारी / Assigned: <strong>{order.work.assignedTo?.name || 'Unassigned'}</strong>
+              {t('Assigned', 'ज़िम्मेदारी')}:{' '}
+              <strong>{order.work.assignedTo?.name || t('Nobody yet', 'अभी किसी की नहीं')}</strong>
             </p>
             {!order.work.acknowledgedAt && (
               <button
                 className="primary wide"
                 disabled={busy}
-                onClick={() => void action('acknowledge', {})}
+                onClick={() => void run(() => call('acknowledge', {}).then(() => {}))}
               >
-                ज़िम्मेदारी लें / Acknowledge
+                {t('Acknowledge', 'ज़िम्मेदारी लें')}
               </button>
             )}
             {order.work.lastError && (
-              <p className="warning">
-                सूचना भेजने में समस्या / Notification failed. Retry attempts: {order.work.attempts}
-              </p>
-            )}
-            <Field label="ज़िम्मेदारी बदलें / Assign owner">
-              <select
-                defaultValue=""
-                disabled={busy}
-                onChange={async (e) => {
-                  const ownerId = e.target.value;
-                  if (!ownerId || saving.current) return;
-                  saving.current = true;
-                  setBusy(true);
-                  try {
-                    await api(`/admin/work/${order.work!.id}/assign`, 'POST', { ownerId });
-                    await refresh();
-                  } catch (e) {
-                    setError(errorMessage(e));
-                  } finally {
-                    saving.current = false;
-                    setBusy(false);
-                  }
+              <AlertRetry
+                workId={order.work.id}
+                attempts={order.work.attempts}
+                done={async (text) => {
+                  await refresh();
+                  if (text) notice(text);
                 }}
-              >
-                <option value="">Choose owner</option>
-                {owners.map((owner) => (
-                  <option key={owner.id} value={owner.id}>
-                    {owner.name || owner.phone}
-                  </option>
-                ))}
-              </select>
-            </Field>
+              />
+            )}
+            {ownerSelect(false, t('Assign owner', 'ज़िम्मेदारी बदलें'))}
           </section>
         )}
         <div className="detail-block">
@@ -406,17 +496,17 @@ function OrderDetail({
             {order.address.landmark && (
               <>
                 <br />
-                पहचान / Landmark: {order.address.landmark}
+                {t('Landmark', 'पहचान')}: {order.address.landmark}
               </>
             )}
           </p>
           <CustomerContact phone={order.address.phone} />
           <p>
-            Delivery: {order.deliveryDate}
+            {t('Delivery', 'डिलीवरी')}: {dayLabel(order.deliveryDate, language)}
             {order.notes && (
               <>
                 <br />
-                Note: {order.notes}
+                {t('Note', 'निर्देश')}: {order.notes}
               </>
             )}
           </p>
@@ -433,133 +523,113 @@ function OrderDetail({
           </div>
         ))}
         <div className="row-between">
-          <span>Delivery</span>
+          <span>{t('Delivery charge', 'भाड़ा')}</span>
           <span>{money(order.deliveryFeePaise)}</span>
         </div>
         <div className="row-between total">
-          <b>Total</b>
+          <b>{t('Total', 'कुल')}</b>
           <b>{money(order.totalPaise)}</b>
         </div>
         <p>
-          Payment: {order.payment.method} · <Badge value={order.payment.status} />
+          {t('Payment', 'भुगतान')}:{' '}
+          {order.payment.method === 'COD'
+            ? t('Cash on delivery', 'डिलीवरी पर भुगतान')
+            : t('Online', 'ऑनलाइन')}{' '}
+          · <Badge value={order.payment.status} />
         </p>
         <p>
-          <strong>बाकी / Remaining collection: {money(remaining(order))}</strong>
+          <strong>
+            {t('To collect', 'बाकी पैसा')}: {money(remaining(order))}
+          </strong>
         </p>
-        {settlementNote(order) && <p className="notice">{settlementNote(order)}</p>}
-        {order.payment.method === 'COD' &&
-          order.payment.status === 'PENDING' &&
-          ['CONFIRMED', 'PREPARING', 'OUT_FOR_DELIVERY'].includes(order.status) && (
+        {settlementNote(order, t) && <p className="notice">{settlementNote(order, t)}</p>}
+        {codDue && order.status === 'OUT_FOR_DELIVERY' && (
+          <section className="form-stack" aria-label={t('Finish delivery', 'डिलीवरी पूरी करें')}>
             <button
+              className="primary wide"
               disabled={busy}
-              className="secondary"
-              onClick={() => {
-                if (window.confirm(`Confirm you received ${money(order.totalPaise)} in full?`))
-                  void action('cod-received');
-              }}
+              onClick={() => collectAndDeliver('CASH')}
             >
-              Record cash payment received · नकद मिल गया
+              {t('Cash received · delivered', 'नकद मिला · डिलीवरी पूरी')}
             </button>
-          )}
+            <button
+              className="primary wide"
+              disabled={busy}
+              onClick={() => collectAndDeliver('UPI')}
+            >
+              {t('UPI received · delivered', 'UPI मिला · डिलीवरी पूरी')}
+            </button>
+          </section>
+        )}
+        {codDue && order.status !== 'OUT_FOR_DELIVERY' && (
+          <div className="button-row">
+            <button className="secondary" disabled={busy} onClick={() => collectOnly('CASH')}>
+              {t('Cash received', 'नकद मिल गया')}
+            </button>
+            <button className="secondary" disabled={busy} onClick={() => collectOnly('UPI')}>
+              {t('UPI received', 'UPI मिल गया')}
+            </button>
+          </div>
+        )}
         {order.payment.method === 'COD' && order.payment.status === 'REFUND_PENDING' && (
           <button
             disabled={busy}
             className="secondary"
             onClick={() => {
-              if (window.confirm('Confirm the full cash refund has been returned to the customer?'))
-                void action('cash-refunded');
+              if (
+                window.confirm(
+                  t(
+                    'Confirm the full cash refund has been returned to the customer?',
+                    'ग्राहक को पूरा नकद पैसा लौटा दिया गया, पुष्टि करें?',
+                  ),
+                )
+              )
+                void run(
+                  () => call('cash-refunded').then(() => {}),
+                  t('Refund recorded', 'वापसी दर्ज हुई'),
+                );
             }}
           >
-            Record cash refund returned · नकद लौटाया
+            {t('Cash refund returned', 'नकद लौटाया')}
           </button>
         )}
         {order.payment.method === 'ONLINE' && order.payment.status === 'REFUND_PENDING' && (
           <section className="form-stack">
             <p className="warning">
-              रिफंड बाकी है / Refund pending. A named technical operator must issue the full refund
-              in Razorpay. Only its verified webhook confirms the result.
+              {t(
+                'Refund pending. A named technical operator must issue the full refund in Razorpay; only its verified webhook confirms it.',
+                'वापसी बाकी है। तकनीकी ज़िम्मेदार व्यक्ति Razorpay में पूरा पैसा लौटाए; उसकी पक्की सूचना ही इसे पूरा मानेगी।',
+              )}
             </p>
-            {order.work && (
-              <Field label="रिफंड की ज़िम्मेदारी / Refund technical operator">
-                <select
-                  defaultValue={order.work.technicalOwner?.id || ''}
-                  disabled={busy}
-                  onChange={async (e) => {
-                    if (!e.target.value || saving.current) return;
-                    saving.current = true;
-                    setBusy(true);
-                    try {
-                      await api(`/admin/work/${order.work!.id}/assign`, 'POST', {
-                        ownerId: e.target.value,
-                        technical: true,
-                      });
-                      await refresh();
-                    } catch (e) {
-                      setError(errorMessage(e));
-                    } finally {
-                      saving.current = false;
-                      setBusy(false);
-                    }
-                  }}
-                >
-                  <option value="">Choose technical operator</option>
-                  {owners.map((owner) => (
-                    <option key={owner.id} value={owner.id}>
-                      {owner.name || owner.phone}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            )}
+            {ownerSelect(true, t('Refund technical operator', 'वापसी की तकनीकी ज़िम्मेदारी'))}
           </section>
         )}
         {order.payment.method === 'ONLINE' && order.payment.status === 'PENDING' && (
           <details>
-            <summary>तकनीकी सहायता / Technical payment recovery</summary>
+            <summary>{t('Technical payment recovery', 'तकनीकी सहायता')}</summary>
             <p>
-              Automation cannot confirm this payment. Assign a named technical operator; do not
-              accept a screenshot as proof.
+              {t(
+                'Automation cannot confirm this payment. Assign a named technical operator; never accept a screenshot as proof.',
+                'यह भुगतान अपने आप पक्का नहीं हुआ। किसी तकनीकी व्यक्ति को ज़िम्मेदारी दें; स्क्रीनशॉट को सबूत न मानें।',
+              )}
             </p>
-            {order.work && (
-              <Field label="Technical operator">
-                <select
-                  defaultValue={order.work.technicalOwner?.id || ''}
-                  disabled={busy}
-                  onChange={async (e) => {
-                    if (!e.target.value) return;
-                    try {
-                      await api(`/admin/work/${order.work!.id}/assign`, 'POST', {
-                        ownerId: e.target.value,
-                        technical: true,
-                      });
-                      await refresh();
-                    } catch (e) {
-                      setError(errorMessage(e));
-                    }
-                  }}
-                >
-                  <option value="">Choose technical operator</option>
-                  {owners.map((owner) => (
-                    <option key={owner.id} value={owner.id}>
-                      {owner.name || owner.phone}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            )}
+            {ownerSelect(true, t('Technical operator', 'तकनीकी ज़िम्मेदार'))}
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                void action('reconcile-payment', {
-                  razorpayOrderId: new FormData(e.currentTarget).get('provider'),
-                });
+                const razorpayOrderId = new FormData(e.currentTarget).get('provider');
+                void run(() => call('reconcile-payment', { razorpayOrderId }).then(() => {}));
               }}
             >
               <p className="warning">
-                Find the Razorpay order by receipt {order.id}. Verify its amount and currency. Do
-                not create a replacement payment order when the first result is uncertain.
+                {t(
+                  `Find the Razorpay order by receipt ${order.id}. Check its amount and currency. Do not create a replacement payment while the first result is uncertain.`,
+                  `रसीद ${order.id} से Razorpay ऑर्डर खोजें। राशि और मुद्रा जाँचें। पहला परिणाम पक्का न हो तो नया भुगतान न बनाएँ।`,
+                )}
               </p>
-              <Field label="Razorpay order ID for reconciliation">
+              <Field
+                label={t('Razorpay order ID for reconciliation', 'मिलान के लिए Razorpay ऑर्डर ID')}
+              >
                 <input
                   name="provider"
                   defaultValue={order.payment.razorpayOrderId || ''}
@@ -568,27 +638,29 @@ function OrderDetail({
                 />
               </Field>
               <button className="secondary" disabled={busy}>
-                Verify gateway payment
+                {t('Verify gateway payment', 'भुगतान जाँचें')}
               </button>
             </form>
           </details>
         )}
         {order.status === 'OUT_FOR_DELIVERY' && (
           <details>
-            <summary>डिलीवरी में समस्या / Delivery problem</summary>
+            <summary>{t('Delivery problem', 'डिलीवरी में समस्या')}</summary>
             <form className="form-stack" onSubmit={(e) => void delivery(e, 'REPORT')}>
-              <Field label="कारण / Reason">
+              <Field label={t('Reason', 'कारण')}>
                 <select name="reason">
-                  <option value="UNAVAILABLE">ग्राहक नहीं मिला / Customer unavailable</option>
-                  <option value="REFUSED">ग्राहक ने मना किया / Refused</option>
-                  <option value="INACCESSIBLE">रास्ता बंद / Site inaccessible</option>
+                  <option value="UNAVAILABLE">
+                    {t('Customer unavailable', 'ग्राहक नहीं मिला')}
+                  </option>
+                  <option value="REFUSED">{t('Refused', 'ग्राहक ने मना किया')}</option>
+                  <option value="INACCESSIBLE">{t('Site inaccessible', 'रास्ता बंद')}</option>
                 </select>
               </Field>
-              <Field label="क्या हुआ / What happened">
+              <Field label={t('What happened', 'क्या हुआ')}>
                 <textarea name="note" required minLength={1} maxLength={500} />
               </Field>
               <button className="secondary" disabled={busy}>
-                समस्या दर्ज करें / Record exception
+                {t('Record problem', 'समस्या दर्ज करें')}
               </button>
             </form>
           </details>
@@ -596,41 +668,51 @@ function OrderDetail({
         {order.status === 'DELIVERY_EXCEPTION' && (
           <section className="form-stack">
             <p className="warning">
-              डिलीवरी पूरी नहीं हुई। स्टॉक अभी बाहर है। / Delivery is incomplete; stock remains with
-              the delivery.
+              {t(
+                'Delivery is incomplete; the stock is still with the delivery.',
+                'डिलीवरी पूरी नहीं हुई। माल अभी गाड़ी के साथ है।',
+              )}
             </p>
             <form className="form-stack" onSubmit={(e) => void delivery(e, 'RETRY')}>
-              <Field label="दोबारा भेजने की तारीख / Retry date">
+              <Field label={t('Retry date', 'दोबारा भेजने की तारीख')}>
                 <input type="date" name="retryDate" required />
               </Field>
-              <Field label="ग्राहक से तय बात / Retry arrangement">
+              <Field label={t('Arrangement with the customer', 'ग्राहक से तय बात')}>
                 <textarea name="note" required maxLength={500} />
               </Field>
               <button className="primary" disabled={busy}>
-                फिर भेजें / Schedule retry
+                {t('Schedule retry', 'फिर भेजें')}
               </button>
             </form>
             <details>
-              <summary>दुकान में माल वापस मिला / Confirm physical return</summary>
+              <summary>{t('Confirm physical return', 'दुकान में माल वापस मिला')}</summary>
               <form
                 className="form-stack"
                 onSubmit={(e) => {
                   if (
                     window.confirm(
-                      'Confirm these materials are physically back at the shop? केवल वास्तव में वापस मिला माल दर्ज करें।',
+                      t(
+                        'Confirm these materials are physically back at the shop?',
+                        'क्या यह माल सच में दुकान में वापस आ गया है?',
+                      ),
                     )
                   )
                     void delivery(e, 'RETURN');
                   else e.preventDefault();
                 }}
               >
-                <p>Count every unit. Only sellable returned units go back into available stock.</p>
+                <p>
+                  {t(
+                    'Count every unit. Only sellable returned units go back into stock.',
+                    'हर इकाई गिनें। सिर्फ़ बेचने लायक माल ही स्टॉक में वापस जुड़ेगा।',
+                  )}
+                </p>
                 {order.items.map((item) => (
                   <fieldset key={item.productId}>
                     <legend>
                       {item.name} · {item.quantity} {item.unit}
                     </legend>
-                    <Field label="सही माल / Sellable returned">
+                    <Field label={t('Sellable returned', 'सही माल')}>
                       <input
                         name={`sellable-${item.productId}`}
                         type="number"
@@ -641,7 +723,7 @@ function OrderDetail({
                         defaultValue={item.quantity}
                       />
                     </Field>
-                    <Field label="खराब माल / Damaged returned">
+                    <Field label={t('Damaged returned', 'खराब माल')}>
                       <input
                         name={`damaged-${item.productId}`}
                         type="number"
@@ -654,11 +736,11 @@ function OrderDetail({
                     </Field>
                   </fieldset>
                 ))}
-                <Field label="वापसी का विवरण / Return evidence">
+                <Field label={t('Return details', 'वापसी का विवरण')}>
                   <textarea name="note" required maxLength={500} />
                 </Field>
                 <button className="danger" disabled={busy}>
-                  वापसी की पुष्टि / Confirm returned stock
+                  {t('Confirm returned stock', 'वापसी की पुष्टि')}
                 </button>
               </form>
             </details>
@@ -666,7 +748,7 @@ function OrderDetail({
         )}
         {!!order.deliveryAttempts?.length && (
           <details>
-            <summary>डिलीवरी कोशिशें / Delivery attempts</summary>
+            <summary>{t('Delivery attempts', 'डिलीवरी की कोशिशें')}</summary>
             <ol className="timeline">
               {order.deliveryAttempts.map((attempt) => (
                 <li key={attempt.id}>
@@ -677,7 +759,7 @@ function OrderDetail({
                     {attempt.note}
                     {attempt.retryDate && ` · ${attempt.retryDate}`}
                   </p>
-                  <small>{new Date(attempt.createdAt).toLocaleString('en-IN')}</small>
+                  <small>{moment(attempt.createdAt)}</small>
                 </li>
               ))}
             </ol>
@@ -685,33 +767,23 @@ function OrderDetail({
         )}
         {!!allowed.length && (
           <>
-            <Field label="Status update note">
-              <input
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                maxLength={500}
-                placeholder="Optional note for the customer"
-              />
+            <Field label={t('Note for the customer (optional)', 'ग्राहक के लिए संदेश (वैकल्पिक)')}>
+              <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} />
             </Field>
             <div className="button-row">
               {allowed.map((s) => (
                 <button
                   key={s}
-                  aria-label={
-                    s === 'CANCELLED' ? 'Cancel order' : `Mark ${statusLabel(s).toLowerCase()}`
-                  }
                   disabled={busy}
                   className={s === 'CANCELLED' ? 'danger' : 'primary'}
                   onClick={() => {
-                    if (
-                      s !== 'CANCELLED' ||
-                      window.confirm('Cancel this order and return its stock?')
-                    )
-                      void action('status', { status: s as OrderStatus, note });
+                    if (window.confirm(confirmStatus[s] || statusText(s)))
+                      void run(() =>
+                        call('status', { status: s as OrderStatus, note }).then(() => {}),
+                      );
                   }}
                 >
-                  {hindiStatusAction[s] && `${hindiStatusAction[s]} / `}
-                  {s === 'CANCELLED' ? 'Cancel order' : `Mark ${statusLabel(s).toLowerCase()}`}
+                  {statusButton[s] || statusText(s)}
                 </button>
               ))}
             </div>
@@ -722,13 +794,13 @@ function OrderDetail({
             {error}
           </p>
         )}
-        <h3>Order history</h3>
+        <h3>{t('Order history', 'ऑर्डर का इतिहास')}</h3>
         <ol className="timeline">
           {order.history.map((h) => (
             <li key={h.id}>
-              <strong>{statusLabel(h.status)}</strong>
-              <p>{h.note}</p>
-              <small>{new Date(h.createdAt).toLocaleString('en-IN')}</small>
+              <strong>{statusText(h.status)}</strong>
+              {historyNote(h.note, language) && <p>{historyNote(h.note, language)}</p>}
+              <small>{moment(h.createdAt)}</small>
             </li>
           ))}
         </ol>

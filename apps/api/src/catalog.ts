@@ -74,7 +74,9 @@ export class CatalogController {
         where: {
           AND: [
             admin ? {} : { active: true },
-            admin && f.lowStock === 'true' ? { active: true, stock: { lt: 25 } } : {},
+            admin && f.lowStock === 'true'
+              ? { active: true, stock: { lte: this.db.product.fields.lowStockAt } }
+              : {},
             page.after,
             f.q
               ? {
@@ -95,6 +97,7 @@ export class CatalogController {
           ],
         },
         include: { category: true },
+        ...(admin ? { omit: { lowStockAt: false } } : {}),
         orderBy: page.orderBy,
         take: page.take,
       }),
@@ -178,7 +181,11 @@ export class CatalogController {
           details: { pricePaise: p.pricePaise, stock: p.stock },
         },
       });
-      return tx.product.findUniqueOrThrow({ where: { id: p.id }, include: { category: true } });
+      return tx.product.findUniqueOrThrow({
+        where: { id: p.id },
+        include: { category: true },
+        omit: { lowStockAt: false },
+      });
     });
     this.events.publish({ type: 'CATALOG_UPDATED', productId: product.id });
     return product;
@@ -220,6 +227,7 @@ export class CatalogController {
           ...(changed ? { priceVersion: { increment: 1 }, priceUpdatedAt: new Date() } : {}),
         },
         include: { category: true },
+        omit: { lowStockAt: false },
       });
       if (monetaryChanged)
         await tx.productPriceHistory.create({

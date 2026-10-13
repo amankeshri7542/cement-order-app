@@ -21,6 +21,7 @@ import { getConfig } from './config';
 import { Db } from './db';
 import { OrdersService } from './orders';
 import { OwnerWorkService } from './owner-work';
+import { AlertsService } from './alerts';
 
 @Injectable()
 export class Maintenance implements OnModuleInit, OnModuleDestroy {
@@ -30,6 +31,7 @@ export class Maintenance implements OnModuleInit, OnModuleDestroy {
     @Inject(Db) private db: Db,
     @Inject(OrdersService) private orders: OrdersService,
     @Inject(OwnerWorkService) private ownerWork: OwnerWorkService,
+    @Inject(AlertsService) private alerts: AlertsService,
   ) {}
   onModuleInit() {
     if (getConfig().NODE_ENV === 'test') return;
@@ -73,6 +75,7 @@ export class Maintenance implements OnModuleInit, OnModuleDestroy {
         where: { expiresAt: { lt: new Date(Date.now() - 30 * 86400000) } },
       });
       await this.ownerWork.dispatch();
+      await this.alerts.deliver();
       await this.orders.expireReservations();
       await this.db.quote.updateMany({
         where: { status: 'SENT', validUntil: { lt: new Date() } },

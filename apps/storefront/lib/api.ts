@@ -8,15 +8,19 @@ export const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:400
 const id = z.string().min(1).max(100);
 export const categoryResponse = categorySchema.strip().extend({ id });
 // Strip unknown fields at the public boundary before passing data into rendering or RSC props.
-export const productResponse = productSchema.strip().extend({
-  id,
-  // Public records can lack an optional merchandising note even though new edits require one.
-  recommendedUse: z.string().trim().max(500),
-  category: categoryResponse,
-  version: z.number().int().positive(),
-  priceVersion: z.number().int().positive(),
-  priceUpdatedAt: z.iso.datetime(),
-});
+// The low-stock level is an owner setting the API never sends to customers.
+export const productResponse = productSchema
+  .omit({ lowStockAt: true })
+  .strip()
+  .extend({
+    id,
+    // Public records can lack an optional merchandising note even though new edits require one.
+    recommendedUse: z.string().trim().max(500),
+    category: categoryResponse,
+    version: z.number().int().positive(),
+    priceVersion: z.number().int().positive(),
+    priceUpdatedAt: z.iso.datetime(),
+  });
 export const pageResponse = z.object({
   items: z.array(productResponse).max(100),
   nextCursor: z.string().max(2000).nullable(),
@@ -34,6 +38,7 @@ export const deliveryResponse = z
         minimumOrderPaise: amount,
         freeDeliveryAbovePaise: amount.nullable(),
         estimate: z.string(),
+        terms: z.string().default(''),
       })
       .nullable(),
   })

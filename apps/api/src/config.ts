@@ -80,6 +80,32 @@ export const configSchema = z.object({
   FIREBASE_PROJECT_ID: z.string().optional(),
   FIREBASE_CLIENT_EMAIL: z.string().optional(),
   FIREBASE_PRIVATE_KEY: z.string().optional(),
+  // Owner alerts. WhatsApp stays on the fake provider (logs only) until Meta approves the
+  // business number and its message templates; customer updates are opt-in for the shop.
+  WHATSAPP_PROVIDER: z.enum(['fake', 'meta']).default('fake'),
+  WHATSAPP_ACCESS_TOKEN: z.string().min(20).optional(),
+  WHATSAPP_PHONE_NUMBER_ID: z
+    .string()
+    .regex(/^\d{5,30}$/)
+    .optional(),
+  WHATSAPP_TEMPLATE_LANGUAGE: z.enum(['hi', 'en']).default('hi'),
+  // Meta retires Graph API versions about two years after release; keep this current.
+  WHATSAPP_API_VERSION: z
+    .string()
+    .regex(/^v\d{2,3}\.0$/)
+    .default('v23.0'),
+  WHATSAPP_DAILY_LIMIT: z.coerce.number().int().min(1).max(100000).default(200),
+  WHATSAPP_CUSTOMER_UPDATES: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  // Web Push for the installed owner desk (generate once: npx web-push generate-vapid-keys).
+  WEB_PUSH_PUBLIC_KEY: z.string().min(40).max(200).optional(),
+  WEB_PUSH_PRIVATE_KEY: z.string().min(20).max(200).optional(),
+  WEB_PUSH_SUBJECT: z
+    .string()
+    .regex(/^(mailto:|https:\/\/)/)
+    .default('mailto:owner@example.invalid'),
   // App versions below the minimum must update before use; below latest see a gentle prompt.
   ANDROID_MINIMUM_VERSION: z
     .string()
@@ -95,7 +121,11 @@ export const configSchema = z.object({
     .default('https://play.google.com/store/apps/details?id=in.shivcement.store'),
 });
 export type Config = z.infer<typeof configSchema>;
-let config: Config;
+let config: Config | undefined;
+/** Tests that change environment settings re-read them; the running API never calls this. */
+export function resetConfigForTests() {
+  config = undefined;
+}
 export function getConfig(): Config {
   if (config) return config;
   const parsed = configSchema.safeParse(process.env);
@@ -104,6 +134,13 @@ export function getConfig(): Config {
       `Invalid configuration: ${parsed.error.issues.map((i) => i.path.join('.')).join(', ')}`,
     );
   const candidate = parsed.data;
+  if (
+    candidate.WHATSAPP_PROVIDER === 'meta' &&
+    !(candidate.WHATSAPP_ACCESS_TOKEN && candidate.WHATSAPP_PHONE_NUMBER_ID)
+  )
+    throw new Error('WhatsApp needs its access token and phone number ID');
+  if (Boolean(candidate.WEB_PUSH_PUBLIC_KEY) !== Boolean(candidate.WEB_PUSH_PRIVATE_KEY))
+    throw new Error('Web Push needs both its public and private key');
   if (candidate.NODE_ENV === 'production' && candidate.ASSISTANT_PROVIDER === 'simulation')
     throw new Error('Assistant simulation is forbidden in production');
   if (

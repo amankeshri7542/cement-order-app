@@ -367,6 +367,11 @@ function QuoteAccount() {
                   {momentLabel(quote.validUntil, language)}
                 </p>
               )}
+              {quote.deliveryTerms && (
+                <p>
+                  {t('Delivery terms', 'डिलीवरी शर्तें')}: {quote.deliveryTerms}
+                </p>
+              )}
               {quote.adminNote && <p>{quote.adminNote}</p>}
               {status === 'SENT' && (
                 <>

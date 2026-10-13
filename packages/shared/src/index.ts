@@ -89,6 +89,8 @@ export const productSchema = z.strictObject({
   unit: text(50),
   pricePaise: paise.refine((v) => v > 0),
   stock: z.number().int().min(0).max(1_000_000),
+  // "Running low" at or below this many units (each material has its own level).
+  lowStockAt: z.number().int().min(0).max(1_000_000).default(25),
   active: z.boolean(),
   description: text(1500),
   recommendedUse: text(500),
@@ -143,6 +145,8 @@ export const quoteOfferSchema = z.strictObject({
   deliveryFeePaise: paise,
   validUntil: z.iso.datetime(),
   note: z.string().trim().max(1500).default(''),
+  // Unloading, floors, vehicle and time window, shown to the customer with the offer.
+  deliveryTerms: z.string().trim().max(500).default(''),
 });
 export const quoteRespondSchema = z.strictObject({
   revision: z.number().int().min(1),
@@ -179,7 +183,9 @@ export type User = {
   deletedAt?: string | null;
 };
 export type Category = { id: string; name: string; slug: string };
-export type Product = z.infer<typeof productSchema> & {
+// `lowStockAt` is an owner setting: staff endpoints include it, customer responses never do.
+export type Product = Omit<z.infer<typeof productSchema>, 'lowStockAt'> & {
+  lowStockAt?: number;
   id: string;
   category: Category;
   priceVersion: number;
@@ -268,6 +274,7 @@ export type Quote = {
   gstin: string;
   notes: string;
   adminNote: string;
+  deliveryTerms?: string;
   address: Address;
   deliveryDate: string;
   validUntil: string | null;
@@ -377,7 +384,64 @@ export const inventorySchema = z.strictObject({
   note: text(500),
   reference: z.string().trim().max(100).default(''),
   idempotencyKey: z.string().uuid(),
+  // Counter sales only: the agreed price per unit (list price when absent), how it was paid,
+  // and who bought.
+  unitPricePaise: paise.refine((v) => v > 0).optional(),
+  channel: z.enum(['CASH', 'UPI']).optional(),
+  counterParty: z.string().trim().max(120).optional(),
 });
+/** Recording cash-on-delivery money: how it was paid at the site. */
+export const collectionSchema = z.strictObject({
+  channel: z.enum(['CASH', 'UPI']).optional(),
+});
+/** Staff names and roles shown on the desk; creating a staff login stays a terminal command. */
+export const staffUpdateSchema = z.strictObject({
+  name: z.string().trim().min(1).max(100),
+  staffTitle: z.string().trim().max(60).default(''),
+  whatsappAlerts: z.boolean().default(false),
+});
+/** A browser's Web Push subscription for owner-desk alerts. */
+export const pushSubscriptionSchema = z.strictObject({
+  endpoint: z.url().startsWith('https://').max(1000),
+  keys: z.strictObject({
+    p256dh: z.string().min(16).max(200),
+    auth: z.string().min(8).max(100),
+  }),
+});
+/** Money report range, inclusive calendar days in India time. */
+export const reportRangeSchema = z
+  .strictObject({
+    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  })
+  .refine((range) => range.from <= range.to, 'The start date must be on or before the end date.')
+  .refine(
+    (range) => Date.parse(range.to) - Date.parse(range.from) <= 366 * 86400000,
+    'Choose a range of up to one year.',
+  );
+export type MoneyReport = {
+  from: string;
+  to: string;
+  orders: { placed: number; valuePaise: number; delivered: number; cancelled: number };
+  collections: {
+    cashPaise: number;
+    upiPaise: number;
+    onlinePaise: number;
+    unrecordedPaise: number;
+  };
+  counter: { sales: number; cashPaise: number; upiPaise: number; unrecordedPaise: number };
+  refundsPaise: number;
+  netPaise: number;
+  pendingCash: { orders: number; amountPaise: number };
+  quotes: { requested: number; sent: number; accepted: number; rejected: number; expired: number };
+  days: {
+    date: string;
+    orders: number;
+    collectedPaise: number;
+    counterPaise: number;
+    refundsPaise: number;
+  }[];
+};
 export type InventoryMovement = {
   id: string;
   productId: string;
@@ -396,6 +460,8 @@ export const deliveryZoneSchema = z.strictObject({
   minimumOrderPaise: paise,
   freeDeliveryAbovePaise: paise.nullable(),
   estimate: text(200),
+  // Unloading, floors, vehicle and time window for this area.
+  terms: z.string().trim().max(500).default(''),
   pincodes: z
     .array(z.string().regex(/^[1-9]\d{5}$/))
     .min(1)

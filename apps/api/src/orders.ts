@@ -22,6 +22,7 @@ import {
   checkoutSchema,
   CheckoutReview,
   orderStatusSchema,
+  orderStatusText,
   placeOrderSchema,
   totals,
   transitions,
@@ -30,7 +31,8 @@ import { Db } from './db';
 import { Admin, AuthRequest, Contract, Input, fail } from './http';
 import { paginate } from './pagination';
 import { deliveryFor, moveStock, validateQuantity } from './inventory';
-import { onlineReady } from './config';
+import { getConfig, onlineReady } from './config';
+import { enqueueWhatsApp } from './alerts';
 import { workInclude } from './owner-work';
 import { Events } from './catalog';
 
@@ -121,8 +123,12 @@ export class OrdersService {
       const previous = await tx.auditLog.findUnique({ where: { id: receiptId } });
       if (previous) {
         if (
-          JSON.stringify((previous.details as { items: typeof items }).items.map((item) => [item.productId, item.quantity])) !==
-          JSON.stringify(items.map((item) => [item.productId, item.quantity]))
+          JSON.stringify(
+            (previous.details as { items: typeof items }).items.map((item) => [
+              item.productId,
+              item.quantity,
+            ]),
+          ) !== JSON.stringify(items.map((item) => [item.productId, item.quantity]))
         )
           fail('IDEMPOTENCY_CONFLICT', 'This merge key was already used for another cart.', 409);
         return this.cart(userId, tx);
@@ -420,9 +426,7 @@ export class OrdersService {
               actorId,
               note:
                 note ||
-                (next === 'REFUND_PENDING'
-                  ? 'Cancelled; refund requires store action.'
-                  : `Order ${status.toLowerCase()}.`),
+                (next === 'REFUND_PENDING' ? 'Cancelled; refund requires store action.' : ''),
             },
           },
         },
@@ -438,11 +442,25 @@ export class OrdersService {
       await tx.notification.create({
         data: {
           userId: order.userId,
-          title: 'Order updated',
-          body: `${order.number}: ${next.toLowerCase().replaceAll('_', ' ')}`,
+          title: 'ऑर्डर अपडेट / Order updated',
+          body: `${order.number}: ${orderStatusText(next, 'hi')} / ${orderStatusText(next, 'en')}`,
           orderId: id,
         },
       });
+      // Optional WhatsApp updates to the customer at the moments that matter to them.
+      const phone = (order.address as { phone?: string } | null)?.phone || '';
+      if (
+        getConfig().WHATSAPP_CUSTOMER_UPDATES &&
+        phone &&
+        ['OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED', 'REFUND_PENDING'].includes(next)
+      )
+        await enqueueWhatsApp(tx, {
+          userId: order.userId,
+          phone,
+          template: 'shiv_order_status',
+          params: [order.number, orderStatusText(next, 'hi')],
+          dedupeKey: `wa:status:${id}:${next}`,
+        });
       return tx.order.findUniqueOrThrow({ where: { id }, include: orderInclude });
     });
     this.events.publish({ type: 'CATALOG_UPDATED' });

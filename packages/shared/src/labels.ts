@@ -46,3 +46,24 @@ export function quoteStatusText(status: string, language: Language): string {
   const label = quoteStatusLabels[status as QuoteStatus];
   return label ? pick(language, label) : status;
 }
+// Notes the server writes itself, so they can be shown in Hindi. Notes typed by staff are shown
+// as written.
+const systemNotes: Record<string, string> = {
+  'Cash on delivery order placed.': 'डिलीवरी पर भुगतान वाला ऑर्डर आया।',
+  'Stock reserved for 30 minutes while awaiting payment.':
+    'भुगतान के इंतज़ार में स्टॉक 30 मिनट के लिए रोका गया।',
+  'Cancelled; refund requires store action.': 'रद्द; पैसा लौटाने का काम दुकान को करना है।',
+  'Full refund verified by Razorpay.': 'Razorpay ने पूरा पैसा लौटाने की पुष्टि की।',
+  'Cash refund recorded by store staff.': 'दुकान ने नकद लौटाना दर्ज किया।',
+};
+/**
+ * The note to show under an order-history step. Older orders stored a generic
+ * "Order out_for_delivery." note that only repeats the status in code form; it is hidden.
+ */
+export function historyNote(note: string | null | undefined, language: Language): string {
+  if (!note || /^Order [a-z_]+\.$/.test(note)) return '';
+  if (language === 'en') return note;
+  const quote = /^Accepted quote (\S+), revision (\d+); agreed freight confirmed\.$/.exec(note);
+  if (quote) return `थोक भाव ${quote[1]} (संशोधन ${quote[2]}) मंज़ूर; तय भाड़ा पक्का।`;
+  return systemNotes[note] ?? note;
+}

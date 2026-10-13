@@ -157,6 +157,11 @@ export function Quotes() {
                 {momentLabel(q.validUntil, language)}
               </Text>
             )}
+            {q.deliveryTerms ? (
+              <Text style={s.small}>
+                {t('Delivery terms', 'डिलीवरी शर्तें')}: {q.deliveryTerms}
+              </Text>
+            ) : null}
             {q.adminNote ? <Notice>{q.adminNote}</Notice> : null}
             {status === 'SENT' && (
               <>

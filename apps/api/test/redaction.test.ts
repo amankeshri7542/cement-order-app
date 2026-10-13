@@ -147,6 +147,8 @@ describe('Personal-data redaction preserves business evidence', () => {
         inventoryMovementId: 'movement-1',
         kind: 'COUNTER_SALE',
         amountPaise: 1950000,
+        channel: '',
+        counterParty: '',
         actorId: 'owner-1',
         occurredAt,
       },

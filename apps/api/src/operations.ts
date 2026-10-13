@@ -125,6 +125,8 @@ export class OperationsController {
   ) {
     if (body.kind !== 'MANUAL_ADJUSTMENT' && body.quantity < 1)
       fail('INVALID_QUANTITY', 'Enter a positive quantity.');
+    if (body.kind !== 'WALK_IN_SALE' && (body.unitPricePaise || body.channel || body.counterParty))
+      fail('INVALID_INPUT', 'Price, payment and buyer apply only to counter sales.');
     const quantity = ['WALK_IN_SALE', 'DAMAGE'].includes(body.kind)
       ? -body.quantity
       : body.quantity;
@@ -135,8 +137,9 @@ export class OperationsController {
               where: { idempotencyKey: body.idempotencyKey },
             })
           : null;
+      const { unitPricePaise, channel, counterParty, ...stock } = body;
       const movement = await moveStock(tx, {
-        ...body,
+        ...stock,
         quantity,
         productId: id,
         actorId: req.user.id,
@@ -144,16 +147,19 @@ export class OperationsController {
       // An old stock-only sale has no known original price; replay must not invent one.
       if (movement.kind === 'WALK_IN_SALE' && !priorSale) {
         const product = await tx.product.findUniqueOrThrow({ where: { id } });
+        // The counter price can be negotiated; the list price is used when none is given.
         await tx.financialMovement.upsert({
           where: { inventoryMovementId: movement.id },
           create: {
             inventoryMovementId: movement.id,
             kind: 'COUNTER_SALE',
             amountPaise: totals(
-              [{ pricePaise: product.pricePaise, quantity: -movement.quantity }],
+              [{ pricePaise: unitPricePaise || product.pricePaise, quantity: -movement.quantity }],
               0,
               null,
             ).totalPaise,
+            channel: channel || '',
+            counterParty: counterParty || '',
             actorId: req.user.id,
             occurredAt: movement.createdAt,
           },
@@ -311,6 +317,8 @@ export class OperationsController {
       await tx.address.deleteMany({ where });
       await tx.cartItem.deleteMany({ where });
       await tx.notification.deleteMany({ where });
+      await tx.pushSubscription.deleteMany({ where });
+      await tx.outboundMessage.deleteMany({ where });
       await tx.checkoutReview.updateMany({ where, data: { snapshot: { deleted: true } } });
       await tx.deliveryAttempt.updateMany({ where: { order: where }, data: { note: '' } });
       await tx.order.updateMany({

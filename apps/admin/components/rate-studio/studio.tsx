@@ -25,11 +25,15 @@ import {
   RateRowEdit,
   money,
 } from '@shiv/shared';
-import { api, API_URL, errorMessage, uploadFile } from '../../lib/api';
+import { api, API_URL, uploadFile } from '../../lib/api';
+import { useWords } from '../../lib/i18n';
 import { Empty, Field, Modal } from '../ui';
 import { ProductEditor } from '../products';
 
 const base = '/admin/rate-studio';
+type T = (en: string, hi: string) => string;
+// A check made here in the desk: its message is already in the chosen language.
+class Problem extends Error {}
 type DraftRow = RateItem & { priceText: string };
 type Providers = {
   visionConfigured: boolean;
@@ -38,9 +42,37 @@ type Providers = {
   model: string | null;
 };
 type Picker = { type: 'add' | 'adjust' } | { type: 'match'; index: number };
-const date = (value: string) =>
-  new Date(value).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
 const label = (value: string) => value.toLowerCase().replaceAll('_', ' ');
+// Server codes (status, source, stage, match, format) as words; unknown codes stay as plain English.
+const named = (t: T) => {
+  const words: Record<string, string> = {
+    DRAFT: t('draft', 'ड्राफ्ट'),
+    REVIEW_REQUIRED: t('review required', 'जाँच बाकी'),
+    READY: t('ready', 'तैयार'),
+    PROCESSING: t('processing', 'पढ़ा जा रहा है'),
+    PUBLISHED: t('published', 'लागू'),
+    CANCELLED: t('cancelled', 'रद्द'),
+    MANUAL: t('manual', 'हाथ से'),
+    IMAGE: t('image', 'फ़ोटो'),
+    ADJUSTMENT: t('adjustment', 'भाव बढ़ाना-घटाना'),
+    UPLOADING: t('uploading', 'अपलोड हो रहा है'),
+    READING_SOURCE: t('reading source', 'शीट पढ़ी जा रही है'),
+    INTERPRETING: t('interpreting', 'भाव समझे जा रहे हैं'),
+    CONFIRMED_ALIAS: t('confirmed alias', 'पक्का किया नाम'),
+    NORMALIZED_NAME: t('normalized name', 'नाम से मिला'),
+    BRAND_SPECIFICATION: t('brand specification', 'ब्रांड और विवरण से मिला'),
+    NEEDS_MATCH: t('needs match', 'सामग्री चुननी है'),
+    UNRECOGNIZED: t('unrecognized', 'पहचान नहीं हुई'),
+    STATUS: t('status', 'WhatsApp स्टेटस'),
+    SQUARE: t('square', 'चौकोर'),
+    SHEET: t('sheet', 'भाव शीट'),
+    brand: t('brand', 'ब्रांड'),
+    specification: t('specification', 'विवरण'),
+    unit: t('unit', 'इकाई'),
+    weight: t('weight', 'वज़न'),
+  };
+  return (value: string) => words[value] ?? label(value);
+};
 const draft = (item: RateItem): DraftRow => ({
   ...item,
   priceText: item.proposedPricePaise === null ? '' : String(item.proposedPricePaise / 100),
@@ -105,6 +137,8 @@ export function RateStudio({
   notice: (value: string) => void;
   onDirtyChange: (value: boolean) => void;
 }) {
+  const { t, error: say, moment } = useWords();
+  const name = named(t);
   const [providers, setProviders] = useState<Providers | null>(null);
   const [history, setHistory] = useState<Page<RateBatch>>({ items: [], nextCursor: null });
   const [batch, setBatch] = useState<RateBatch | null>(null);
@@ -141,7 +175,7 @@ export function RateStudio({
   useEffect(() => {
     mounted.current = true;
     Promise.all([api<Providers>(`${base}/providers`).then(setProviders), loadHistory()]).catch(
-      (e) => setError(errorMessage(e)),
+      (e) => setError(say(e)),
     );
     return () => {
       mounted.current = false;
@@ -157,7 +191,7 @@ export function RateStudio({
           : Promise.resolve(),
       ])
         .then(() => setError(''))
-        .catch((e) => setError(errorMessage(e)));
+        .catch((e) => setError(say(e)));
     };
     window.addEventListener('shiv-owner-refresh', refreshVisible);
     return () => window.removeEventListener('shiv-owner-refresh', refreshVisible);
@@ -183,7 +217,12 @@ export function RateStudio({
         else await loadHistory();
       } catch (e) {
         if (!cancelled)
-          setError(`${errorMessage(e)} Your source is saved. Reload the draft to check progress.`);
+          setError(
+            `${say(e)} ${t(
+              'Your source is saved. Reload the draft to check progress.',
+              'आपकी शीट सहेजी हुई है। प्रगति देखने के लिए ड्राफ्ट फिर से खोलें।',
+            )}`,
+          );
       }
     };
     timer = setTimeout(poll, 2000);
@@ -200,13 +239,13 @@ export function RateStudio({
     try {
       await action();
     } catch (e) {
-      setError(errorMessage(e));
+      setError(e instanceof Problem ? e.message : say(e));
     } finally {
       if (mounted.current) setBusy('');
     }
   }
   async function open(id: string) {
-    await run('Opening draft', async () => {
+    await run(t('Opening draft', 'ड्राफ्ट खुल रहा है'), async () => {
       adopt(await api<RateBatch>(`${base}/batches/${id}`));
       setCards(false);
       setHistoryOnly(false);
@@ -232,7 +271,12 @@ export function RateStudio({
           (!Number.isSafeInteger(row.proposedPricePaise) || row.proposedPricePaise <= 0),
       )
     )
-      throw new Error('Enter a valid price greater than ₹0, or leave the price empty for review.');
+      throw new Problem(
+        t(
+          'Enter a valid price greater than ₹0, or leave the price empty for review.',
+          '₹0 से ज़्यादा सही भाव डालें, या जाँच के लिए भाव खाली छोड़ें।',
+        ),
+      );
     adopt(
       await api<RateBatch>(`${base}/batches/${batch.id}`, 'PATCH', {
         expectedVersion: batch.version,
@@ -241,7 +285,9 @@ export function RateStudio({
       }),
     );
     await loadHistory();
-    notice('Draft saved. Live prices are unchanged.');
+    notice(
+      t('Draft saved. Live prices are unchanged.', 'ड्राफ्ट सहेजा गया। दुकान के भाव नहीं बदले।'),
+    );
   }
   const included = rows.filter((row) => row.included);
   const reviewed = included.filter((row) => row.reviewed).length;
@@ -257,14 +303,27 @@ export function RateStudio({
     <div className="rate-studio">
       <header className="rs-intro">
         <div>
-          <span className="rs-eyebrow">SHIV CEMENT STORE / PRICE OPERATIONS</span>
+          <span className="rs-eyebrow">
+            {t('SHIV CEMENT STORE / PRICE OPERATIONS', 'SHIV CEMENT STORE / भाव का काम')}
+          </span>
           <h1>
-            Rate Studio<span>.</span>
+            {t('Rate Studio', 'भाव स्टूडियो')}
+            <span>.</span>
           </h1>
-          <p>From the supplier’s sheet to your store’s next price.</p>
+          <p>
+            {t(
+              'From the supplier’s sheet to your store’s next price.',
+              'सप्लायर की शीट से आपकी दुकान के नए भाव तक।',
+            )}
+          </p>
         </div>
-        <ol className="rs-steps" aria-label="Rate workflow">
-          {['Source', 'Review', 'Publish', 'Share'].map((step, index) => (
+        <ol className="rs-steps" aria-label={t('Rate workflow', 'भाव बदलने के कदम')}>
+          {[
+            t('Source', 'शीट'),
+            t('Review', 'जाँचें'),
+            t('Publish', 'लागू करें'),
+            t('Share', 'भेजें'),
+          ].map((step, index) => (
             <li
               key={step}
               className={batch && index === (batch.status === 'PUBLISHED' ? 3 : 1) ? 'current' : ''}
@@ -277,7 +336,7 @@ export function RateStudio({
       </header>
       {error && (
         <div role="alert" className="rs-error">
-          <strong>Action needs attention</strong>
+          <strong>{t('Action needs attention', 'इस पर ध्यान दें')}</strong>
           <p>{error}</p>
           {batch && (
             <button
@@ -286,13 +345,18 @@ export function RateStudio({
               onClick={() => {
                 if (
                   !dirty ||
-                  window.confirm('Discard your unsaved edits and reload the saved draft?')
+                  window.confirm(
+                    t(
+                      'Discard your unsaved edits and reload the saved draft?',
+                      'बिना सहेजे बदलाव हटाकर सहेजा हुआ ड्राफ्ट फिर से खोलें?',
+                    ),
+                  )
                 )
                   void open(batch.id);
               }}
             >
               <RefreshCw size={16} />
-              Reload saved draft
+              {t('Reload saved draft', 'सहेजा ड्राफ्ट फिर खोलें')}
             </button>
           )}
         </div>
@@ -309,9 +373,13 @@ export function RateStudio({
                 }}
               >
                 <FileImage size={30} strokeWidth={1.5} />
-                <span className="rs-eyebrow">SCREENSHOT · PHOTO · PRINTED SHEET</span>
-                <strong>Scan a rate sheet</strong>
-                <span>Keep the original. Review every number.</span>
+                <span className="rs-eyebrow">
+                  {t('SCREENSHOT · PHOTO · PRINTED SHEET', 'स्क्रीनशॉट · फ़ोटो · छपी शीट')}
+                </span>
+                <strong>{t('Scan a rate sheet', 'भाव शीट स्कैन करें')}</strong>
+                <span>
+                  {t('Keep the original. Review every number.', 'असली शीट रखें। हर अंक जाँचें।')}
+                </span>
                 <ArrowRight size={22} />
               </button>
               <button
@@ -322,8 +390,13 @@ export function RateStudio({
                 }}
               >
                 <ListPlus size={26} />
-                <strong>Enter prices manually</strong>
-                <span>Quick updates from a call or the counter.</span>
+                <strong>{t('Enter prices manually', 'भाव हाथ से डालें')}</strong>
+                <span>
+                  {t(
+                    'Quick updates from a call or the counter.',
+                    'फ़ोन या काउंटर से मिले भाव जल्दी डालें।',
+                  )}
+                </span>
                 <ArrowRight size={20} />
               </button>
               <button
@@ -334,33 +407,53 @@ export function RateStudio({
                 }}
               >
                 <SlidersHorizontal size={26} />
-                <strong>Increase / decrease</strong>
-                <span>Choose products. Preview ₹ or % changes.</span>
+                <strong>{t('Increase / decrease', 'भाव बढ़ाएँ / घटाएँ')}</strong>
+                <span>
+                  {t(
+                    'Choose products. Preview ₹ or % changes.',
+                    'सामग्री चुनें। ₹ या % बदलाव पहले देखें।',
+                  )}
+                </span>
                 <ArrowRight size={20} />
               </button>
             </div>
           )}
           {providers && (!providers.visionConfigured || !providers.modelConfigured) && (
             <p className="rs-provider-note">
-              <span aria-hidden="true">●</span> Automatic extraction is not configured. Manual price
-              entry and review are available.
+              <span aria-hidden="true">●</span>{' '}
+              {t(
+                'Automatic extraction is not configured. Manual price entry and review are available.',
+                'शीट से अपने-आप भाव पढ़ना चालू नहीं है। भाव हाथ से डालकर जाँच सकते हैं।',
+              )}
             </p>
           )}
           <div className="rs-history" ref={historyRef}>
             <div className="rs-section-heading">
               <div>
-                <span className="rs-eyebrow">THE PRICE REGISTER</span>
-                <h3>{historyOnly ? 'Marketing rate cards & history' : 'Price sheet history'}</h3>
+                <span className="rs-eyebrow">{t('THE PRICE REGISTER', 'भाव का रजिस्टर')}</span>
+                <h3>
+                  {historyOnly
+                    ? t('Marketing rate cards & history', 'प्रचार के भाव कार्ड और पुराना रिकॉर्ड')
+                    : t('Price sheet history', 'पुरानी भाव शीटें')}
+                </h3>
               </div>
               <button className="secondary" onClick={() => setHistoryOnly(!historyOnly)}>
                 <History size={16} />
-                {historyOnly ? 'All workflows' : 'Marketing rate cards'}
+                {historyOnly
+                  ? t('All workflows', 'सभी काम')
+                  : t('Marketing rate cards', 'प्रचार के भाव कार्ड')}
               </button>
             </div>
             {!history.items.length && (
               <Empty
-                title="Your first price sheet starts here"
-                body="Create a draft, review the changes and publish when every row is ready."
+                title={t(
+                  'Your first price sheet starts here',
+                  'आपकी पहली भाव शीट यहाँ से शुरू होगी',
+                )}
+                body={t(
+                  'Create a draft, review the changes and publish when every row is ready.',
+                  'ड्राफ्ट बनाएँ, बदलाव जाँचें और हर लाइन तैयार होने पर लागू करें।',
+                )}
               />
             )}
             <div className="rs-history-list">
@@ -377,11 +470,11 @@ export function RateStudio({
                   <span>
                     <strong>{item.title}</strong>
                     <small>
-                      {date(item.publishedAt || item.createdAt)} · {label(item.sourceType)}
+                      {moment(item.publishedAt || item.createdAt)} · {name(item.sourceType)}
                     </small>
                   </span>
                   <span className={`rs-status rs-status-${item.status.toLowerCase()}`}>
-                    {label(item.status)}
+                    {name(item.status)}
                   </span>
                   <ArrowRight size={18} />
                 </button>
@@ -391,9 +484,13 @@ export function RateStudio({
               <button
                 className="secondary"
                 disabled={Boolean(busy)}
-                onClick={() => void run('Loading history', () => loadHistory(history.nextCursor!))}
+                onClick={() =>
+                  void run(t('Loading history', 'पुराना रिकॉर्ड आ रहा है'), () =>
+                    loadHistory(history.nextCursor!),
+                  )
+                }
               >
-                Load more price sheets
+                {t('Load more price sheets', 'और भाव शीटें दिखाएँ')}
               </button>
             )}
           </div>
@@ -408,20 +505,22 @@ export function RateStudio({
               onClick={() => (dirty ? setConfirm('leave') : setBatch(null))}
             >
               <ArrowLeft size={16} />
-              All price sheets
+              {t('All price sheets', 'सभी भाव शीटें')}
             </button>
             <span className={`rs-status rs-status-${batch.status.toLowerCase()}`}>
-              {label(batch.status)}
+              {name(batch.status)}
             </span>
             <small>
-              Revision {batch.version}
-              {dirty ? ' · Unsaved changes' : ' · Saved'}
+              {t(`Revision ${batch.version}`, `संशोधन ${batch.version}`)}
+              {dirty
+                ? t(' · Unsaved changes', ' · बिना सहेजे बदलाव')
+                : t(' · Saved', ' · सहेजा गया')}
             </small>
           </div>
           <div className="rs-title-row">
             <input
               className="rs-title-input"
-              aria-label="Price sheet title"
+              aria-label={t('Price sheet title', 'भाव शीट का नाम')}
               maxLength={120}
               value={title}
               disabled={locked}
@@ -433,7 +532,7 @@ export function RateStudio({
             {batch.status === 'PUBLISHED' && (
               <button className="primary" onClick={() => setCards(true)}>
                 <Share2 size={17} />
-                Create Shiv Rate Card
+                {t('Create Shiv Rate Card', 'Shiv भाव कार्ड बनाएँ')}
               </button>
             )}
           </div>
@@ -441,11 +540,13 @@ export function RateStudio({
             <div className="rs-published">
               <Check size={23} />
               <div>
-                <strong>Prices published</strong>
+                <strong>{t('Prices published', 'भाव लागू हो गए')}</strong>
                 <p>
-                  {batch.publishedAt && date(batch.publishedAt)} · Approved by{' '}
-                  {batch.publishedByName || 'store staff'}. These reviewed values are preserved in
-                  this record.
+                  {batch.publishedAt && moment(batch.publishedAt)} ·{' '}
+                  {t(
+                    `Approved by ${batch.publishedByName || 'store staff'}. These reviewed values are preserved in this record.`,
+                    `${batch.publishedByName || 'दुकान स्टाफ'} ने मंज़ूरी दी। जाँचे गए भाव इस रिकॉर्ड में सुरक्षित हैं।`,
+                  )}
                 </p>
               </div>
             </div>
@@ -454,25 +555,36 @@ export function RateStudio({
             <div className="rs-processing" role="status">
               <RefreshCw size={21} />
               <div>
-                <strong>Reading your rate sheet</strong>
-                <p>{label(batch.stage)} · You can leave this page and return to the saved draft.</p>
+                <strong>{t('Reading your rate sheet', 'आपकी भाव शीट पढ़ी जा रही है')}</strong>
+                <p>
+                  {batch.stage ? `${name(batch.stage)} · ` : ''}
+                  {t(
+                    'You can leave this page and return to the saved draft.',
+                    'आप यह पेज छोड़कर बाद में सहेजे ड्राफ्ट पर लौट सकते हैं।',
+                  )}
+                </p>
               </div>
             </div>
           )}
           {batch.errorCode && (
             <div className="rs-warning" role="status">
-              <strong>Automatic extraction needs attention</strong>
+              <strong>
+                {t('Automatic extraction needs attention', 'अपने-आप भाव पढ़ने में दिक्कत आई')}
+              </strong>
               <p>
-                {label(batch.errorCode)}. Your source has been retained. Add products manually or
-                retry extraction.
+                {name(batch.errorCode)}.{' '}
+                {t(
+                  'Your source has been retained. Add products manually or retry extraction.',
+                  'आपकी शीट सहेजी हुई है। सामग्री हाथ से जोड़ें या फिर से भाव पढ़ें।',
+                )}
               </p>
             </div>
           )}
           <div className="rs-workbench">
             <aside className="rs-source">
               <div className="rs-section-heading">
-                <h3>Source evidence</h3>
-                <span className="rs-eyebrow">{label(batch.sourceType)}</span>
+                <h3>{t('Source evidence', 'असली शीट')}</h3>
+                <span className="rs-eyebrow">{name(batch.sourceType)}</span>
               </div>
               {batch.source ? (
                 <>
@@ -480,21 +592,27 @@ export function RateStudio({
                     href={`${API_URL}${base}/batches/${batch.id}/source`}
                     target="_blank"
                     rel="noreferrer"
-                    aria-label="Open original rate sheet"
+                    aria-label={t('Open original rate sheet', 'असली भाव शीट खोलें')}
                   >
                     <img
                       className="rs-source-image"
                       src={`${API_URL}${base}/batches/${batch.id}/source`}
                       crossOrigin="use-credentials"
-                      alt="Original rate sheet for price comparison"
+                      alt={t(
+                        'Original rate sheet for price comparison',
+                        'भाव मिलाने के लिए असली भाव शीट',
+                      )}
                     />
                   </a>
                   <p className="rs-file-name">{batch.source.fileName}</p>
                   <details>
-                    <summary>Read OCR source text</summary>
+                    <summary>{t('Read OCR source text', 'शीट से पढ़ा गया लेख देखें')}</summary>
                     <pre className="rs-ocr">
                       {batch.source.ocrText ||
-                        'No extracted text yet. You can enter prices manually.'}
+                        t(
+                          'No extracted text yet. You can enter prices manually.',
+                          'अभी कोई लेख नहीं पढ़ा गया। आप भाव हाथ से डाल सकते हैं।',
+                        )}
                     </pre>
                   </details>
                   {editable(batch) && !batch.items.length && !batch.extraction && (
@@ -507,7 +625,7 @@ export function RateStudio({
                         !providers?.modelConfigured
                       }
                       onClick={() =>
-                        void run('Extracting', async () =>
+                        void run(t('Extracting', 'भाव पढ़े जा रहे हैं'), async () =>
                           adopt(
                             await api<RateBatch>(`${base}/batches/${batch.id}/extract`, 'POST', {
                               expectedVersion: batch.version,
@@ -517,28 +635,45 @@ export function RateStudio({
                       }
                     >
                       <RefreshCw size={16} />
-                      {batch.errorCode ? 'Retry extraction' : 'Extract prices'}
+                      {batch.errorCode
+                        ? t('Retry extraction', 'फिर से भाव पढ़ें')
+                        : t('Extract prices', 'शीट से भाव पढ़ें')}
                     </button>
                   )}
-                  {dirty && <small>Save this draft before extracting.</small>}
+                  {dirty && (
+                    <small>
+                      {t(
+                        'Save this draft before extracting.',
+                        'भाव पढ़ने से पहले यह ड्राफ्ट सहेजें।',
+                      )}
+                    </small>
+                  )}
                 </>
               ) : (
                 <div className="rs-source-empty">
                   <FileImage size={34} strokeWidth={1.3} />
                   <strong>
-                    {batch.sourceType === 'IMAGE' ? 'Add the original sheet' : 'A counter update'}
+                    {batch.sourceType === 'IMAGE'
+                      ? t('Add the original sheet', 'असली शीट जोड़ें')
+                      : t('A counter update', 'काउंटर से भाव बदलाव')}
                   </strong>
                   <p>
                     {batch.sourceType === 'IMAGE'
-                      ? 'Upload a clear screenshot or photograph. PNG, JPG or WebP, up to 5 MB.'
-                      : 'Enter the prices customers will pay. If a supplier sheet shows purchase costs, enter your agreed selling prices before review.'}
+                      ? t(
+                          'Upload a clear screenshot or photograph. PNG, JPG or WebP, up to 5 MB.',
+                          'साफ़ स्क्रीनशॉट या फ़ोटो अपलोड करें। PNG, JPG या WebP, 5 MB तक।',
+                        )
+                      : t(
+                          'Enter the prices customers will pay. If a supplier sheet shows purchase costs, enter your agreed selling prices before review.',
+                          'ग्राहक जो भाव देंगे वही डालें। अगर सप्लायर की शीट में खरीद का भाव है, तो जाँच से पहले अपना तय बिक्री भाव डालें।',
+                        )}
                   </p>
                 </div>
               )}
               {editable(batch) && !batch.source && (
                 <label className={`rs-upload ${busy || dirty ? 'rs-disabled' : ''}`}>
                   <ImagePlus size={18} />
-                  Upload rate sheet
+                  {t('Upload rate sheet', 'भाव शीट अपलोड करें')}
                   <input
                     type="file"
                     accept="image/jpeg,image/png,image/webp"
@@ -547,12 +682,17 @@ export function RateStudio({
                       const file = e.target.files?.[0];
                       e.target.value = '';
                       if (!file) return;
-                      void run('Uploading source', async () => {
+                      void run(t('Uploading source', 'शीट अपलोड हो रही है'), async () => {
                         if (
                           file.size > 5 * 1024 * 1024 ||
                           !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)
                         )
-                          throw new Error('Choose a PNG, JPG or WebP image smaller than 5 MB.');
+                          throw new Problem(
+                            t(
+                              'Choose a PNG, JPG or WebP image smaller than 5 MB.',
+                              '5 MB से छोटी PNG, JPG या WebP फ़ोटो चुनें।',
+                            ),
+                          );
                         await uploadFile(`${base}/batches/${batch.id}/source`, file, batch.version);
                         adopt(await api<RateBatch>(`${base}/batches/${batch.id}`));
                       });
@@ -561,33 +701,45 @@ export function RateStudio({
                 </label>
               )}
               <p className="rs-evidence-note">
-                Source material suggests a price. Only your reviewed, published changes reach
-                customers.
+                {t(
+                  'Source material suggests a price. Only your reviewed, published changes reach customers.',
+                  'शीट से सिर्फ़ भाव का सुझाव मिलता है। ग्राहकों तक वही भाव पहुँचते हैं जो आप जाँचकर लागू करें।',
+                )}
               </p>
               {batch.extraction && (
                 <details>
-                  <summary>Original extracted values</summary>
+                  <summary>{t('Original extracted values', 'शीट से पढ़े गए असली अंक')}</summary>
                   <pre className="rs-ocr">{JSON.stringify(batch.extraction, null, 2)}</pre>
                 </details>
               )}
               {batch.status === 'PUBLISHED' && batch.cards.length > 0 && (
                 <button className="secondary wide" onClick={() => setCards(true)}>
                   <Share2 size={16} />
-                  View {batch.cards.length} saved rate card{batch.cards.length === 1 ? '' : 's'}
+                  {t(
+                    `View ${batch.cards.length} saved rate card${batch.cards.length === 1 ? '' : 's'}`,
+                    `${batch.cards.length} सहेजे भाव कार्ड देखें`,
+                  )}
                 </button>
               )}
             </aside>
-            <section className="rs-review" aria-label="Review price changes">
+            <section
+              className="rs-review"
+              aria-label={t('Review price changes', 'भाव के बदलाव जाँचें')}
+            >
               <div className="rs-review-heading">
                 <div>
-                  <span className="rs-eyebrow">CHECK EVERY NUMBER</span>
+                  <span className="rs-eyebrow">{t('CHECK EVERY NUMBER', 'हर अंक जाँचें')}</span>
                   <h3>
-                    {batch.status === 'PUBLISHED' ? 'Published price record' : 'Review the rates'}
+                    {batch.status === 'PUBLISHED'
+                      ? t('Published price record', 'लागू भाव का रिकॉर्ड')
+                      : t('Review the rates', 'भाव जाँचें')}
                   </h3>
                 </div>
                 <span className="rs-review-count">
                   {reviewed}
-                  <small> / {included.length} reviewed</small>
+                  <small>
+                    {t(` / ${included.length} reviewed`, ` / ${included.length} जाँचे गए`)}
+                  </small>
                 </span>
               </div>
               {editable(batch) && (
@@ -598,7 +750,7 @@ export function RateStudio({
                     onClick={() => setPicker({ type: 'add' })}
                   >
                     <Plus size={16} />
-                    Choose products
+                    {t('Choose products', 'सामग्री चुनें')}
                   </button>
                   <button
                     className="text-button"
@@ -608,7 +760,7 @@ export function RateStudio({
                       setDirty(true);
                     }}
                   >
-                    Add blank row
+                    {t('Add blank row', 'खाली लाइन जोड़ें')}
                   </button>
                   <button
                     className="text-button"
@@ -616,14 +768,17 @@ export function RateStudio({
                     onClick={() => setPicker({ type: 'adjust' })}
                   >
                     <SlidersHorizontal size={16} />
-                    Adjust prices
+                    {t('Adjust prices', 'भाव बढ़ाएँ-घटाएँ')}
                   </button>
                 </div>
               )}
               {!rows.length && (
                 <Empty
-                  title="No rates in this draft yet"
-                  body="Choose existing products, add a blank row, or extract the uploaded sheet to get started."
+                  title={t('No rates in this draft yet', 'इस ड्राफ्ट में अभी कोई भाव नहीं')}
+                  body={t(
+                    'Choose existing products, add a blank row, or extract the uploaded sheet to get started.',
+                    'शुरू करने के लिए सामग्री चुनें, खाली लाइन जोड़ें, या अपलोड की गई शीट से भाव पढ़ें।',
+                  )}
                 />
               )}
               {rows.map((row, index) => (
@@ -639,7 +794,7 @@ export function RateStudio({
                           row.publishedProduct?.name ||
                             row.product?.name ||
                             row.label ||
-                            'Unmatched material',
+                            t('Unmatched material', 'बिना मिलान की सामग्री'),
                         )}
                       </strong>
                       <small>
@@ -647,7 +802,10 @@ export function RateStudio({
                           ? `${String(row.publishedProduct.brand || '')} · ${String(row.publishedProduct.unit || '')}`
                           : row.product
                             ? `${row.product.brand} · ${row.product.unit}`
-                            : 'Choose the exact store product before publishing'}
+                            : t(
+                                'Choose the exact store product before publishing',
+                                'लागू करने से पहले दुकान की सही सामग्री चुनें',
+                              )}
                       </small>
                     </div>
                     <label className="check">
@@ -657,33 +815,36 @@ export function RateStudio({
                         disabled={locked}
                         onChange={(e) => change(index, { included: e.target.checked })}
                       />
-                      Include
+                      {t('Include', 'शामिल करें')}
                     </label>
                   </div>
                   <div className="rs-price-comparison">
                     <div>
-                      <span>Previous rate</span>
+                      <span>{t('Previous rate', 'पुराना भाव')}</span>
                       <strong>{row.oldPricePaise === null ? '—' : money(row.oldPricePaise)}</strong>
                     </div>
                     <ArrowRight size={20} />
                     {batch.status === 'PUBLISHED' ? (
                       <div>
-                        <span>Published rate</span>
+                        <span>{t('Published rate', 'लागू भाव')}</span>
                         <strong>
                           {row.publishedPricePaise === null
-                            ? 'Excluded'
+                            ? t('Excluded', 'शामिल नहीं')
                             : money(row.publishedPricePaise)}
                         </strong>
                       </div>
                     ) : (
-                      <Field label="New rate (₹)">
+                      <Field label={t('New rate (₹)', 'नया भाव (₹)')}>
                         <input
                           type="number"
                           min="0.01"
                           step="0.01"
                           max="1000000"
                           inputMode="decimal"
-                          aria-label={`New price row ${index + 1}`}
+                          aria-label={t(
+                            `New price row ${index + 1}`,
+                            `लाइन ${index + 1} का नया भाव`,
+                          )}
                           value={row.priceText}
                           disabled={locked || !row.included}
                           onChange={(e) => change(index, { priceText: e.target.value })}
@@ -695,14 +856,17 @@ export function RateStudio({
                       row.priceText &&
                       Number.isFinite(Number(row.priceText))
                         ? `${Math.round(Number(row.priceText) * 100) >= row.oldPricePaise ? '+' : '−'}${money(Math.abs(Math.round(Number(row.priceText) * 100) - row.oldPricePaise))}`
-                        : 'Match required'}
+                        : t('Match required', 'मिलान ज़रूरी')}
                     </span>
                   </div>
                   <div className="rs-match-line">
                     <span>
-                      {label(row.matchMethod)}
+                      {name(row.matchMethod)}
                       {row.confidence !== null
-                        ? ` · ${Math.round(row.confidence * 100)}% extraction confidence`
+                        ? t(
+                            ` · ${Math.round(row.confidence * 100)}% extraction confidence`,
+                            ` · शीट पढ़ने में ${Math.round(row.confidence * 100)}% भरोसा`,
+                          )
                         : ''}
                     </span>
                     {!locked && (
@@ -710,7 +874,9 @@ export function RateStudio({
                         className="text-button"
                         onClick={() => setPicker({ type: 'match', index })}
                       >
-                        {row.productId ? 'Change product' : 'Match product'}
+                        {row.productId
+                          ? t('Change product', 'सामग्री बदलें')
+                          : t('Match product', 'सामग्री मिलाएँ')}
                         <ArrowRight size={14} />
                       </button>
                     )}
@@ -722,7 +888,10 @@ export function RateStudio({
                           key={`${issue.code}-${i}`}
                           className={issue.blocking ? 'rs-blocker' : ''}
                         >
-                          <strong>{issue.blocking ? 'Resolve' : 'Check'}:</strong> {issue.message}
+                          <strong>
+                            {issue.blocking ? t('Resolve', 'ठीक करें') : t('Check', 'जाँचें')}:
+                          </strong>{' '}
+                          {issue.message}
                         </li>
                       ))}
                     </ul>
@@ -730,17 +899,25 @@ export function RateStudio({
                   {row.extracted && (
                     <blockquote className="rs-source-quote">
                       “{row.extracted.sourceText}”
-                      <small>{row.extracted.sourceReference || 'Source sheet'}</small>
+                      <small>
+                        {row.extracted.sourceReference || t('Source sheet', 'असली शीट')}
+                      </small>
                     </blockquote>
                   )}
                   <details className="rs-row-details">
-                    <summary>Source details & review notes</summary>
+                    <summary>
+                      {t('Source details & review notes', 'शीट की जानकारी और जाँच नोट')}
+                    </summary>
                     <div className="rs-detail-grid">
                       {(['label', 'brand', 'specification', 'unit', 'weight'] as const).map(
                         (field) => (
                           <Field
                             key={field}
-                            label={field === 'label' ? 'Source product name' : label(field)}
+                            label={
+                              field === 'label'
+                                ? t('Source product name', 'शीट में सामग्री का नाम')
+                                : name(field)
+                            }
                           >
                             <input
                               value={row[field]}
@@ -754,12 +931,15 @@ export function RateStudio({
                         ),
                       )}
                     </div>
-                    <Field label="Review notes">
+                    <Field label={t('Review notes', 'जाँच नोट')}>
                       <textarea
                         maxLength={500}
                         value={row.note}
                         disabled={locked}
-                        placeholder="Supplier confirmed by phone; checked unit and pack size…"
+                        placeholder={t(
+                          'Supplier confirmed by phone; checked unit and pack size…',
+                          'सप्लायर से फ़ोन पर पक्का किया; इकाई और पैक साइज़ जाँचा…',
+                        )}
                         onChange={(e) => change(index, { note: e.target.value })}
                       />
                     </Field>
@@ -770,7 +950,10 @@ export function RateStudio({
                           checked={row.rememberAlias}
                           onChange={(e) => change(index, { rememberAlias: e.target.checked })}
                         />
-                        Remember this confirmed product name for future sheets
+                        {t(
+                          'Remember this confirmed product name for future sheets',
+                          'आगे की शीटों के लिए यह पक्का किया नाम याद रखें',
+                        )}
                       </label>
                     )}
                     {row.product && !locked && (
@@ -778,14 +961,24 @@ export function RateStudio({
                         className="text-button"
                         onClick={() => change(index, { refreshBaseline: true })}
                       >
-                        Use current product version as baseline
-                        {row.refreshBaseline ? ' · selected; save to refresh' : ''}
+                        {t(
+                          'Use current product version as baseline',
+                          'सामग्री का अभी का भाव आधार मानें',
+                        )}
+                        {row.refreshBaseline
+                          ? t(
+                              ' · selected; save to refresh',
+                              ' · चुना गया; ताज़ा करने के लिए सहेजें',
+                            )
+                          : ''}
                       </button>
                     )}
                     {row.publishedProduct && (
                       <p className="hint">
-                        Published product: {String(row.publishedProduct.name || '')} ·{' '}
-                        {String(row.publishedProduct.unit || '')}
+                        {t(
+                          `Published product: ${String(row.publishedProduct.name || '')} · ${String(row.publishedProduct.unit || '')}`,
+                          `लागू सामग्री: ${String(row.publishedProduct.name || '')} · ${String(row.publishedProduct.unit || '')}`,
+                        )}
                       </p>
                     )}
                   </details>
@@ -797,7 +990,10 @@ export function RateStudio({
                         disabled={locked || !row.included}
                         onChange={(e) => change(index, { reviewed: e.target.checked }, true)}
                       />
-                      I checked the product, unit and customer selling price
+                      {t(
+                        'I checked the product, unit and customer selling price',
+                        'मैंने सामग्री, इकाई और ग्राहक का बिक्री भाव जाँच लिया',
+                      )}
                     </label>
                     {row.issues.some((issue) => !issue.blocking) && (
                       <label className="check">
@@ -807,7 +1003,7 @@ export function RateStudio({
                           disabled={locked || !row.included}
                           onChange={(e) => change(index, { acknowledged: e.target.checked }, true)}
                         />
-                        I verified the warnings above
+                        {t('I verified the warnings above', 'मैंने ऊपर की चेतावनियाँ जाँच लीं')}
                       </label>
                     )}
                   </div>
@@ -823,28 +1019,39 @@ export function RateStudio({
               {editable(batch) && (
                 <div className="rs-publish-bar">
                   <div>
-                    <strong>{included.length} included rates</strong>
+                    <strong>
+                      {t(`${included.length} included rates`, `${included.length} भाव शामिल`)}
+                    </strong>
                     <small>
                       {dirty
-                        ? 'Save to validate your latest changes.'
+                        ? t(
+                            'Save to validate your latest changes.',
+                            'नए बदलाव जाँचने के लिए सहेजें।',
+                          )
                         : canPublish
-                          ? 'Reviewed and ready for confirmation.'
-                          : 'Resolve issues and review each included row.'}
+                          ? t(
+                              'Reviewed and ready for confirmation.',
+                              'जाँच पूरी, पक्का करने के लिए तैयार।',
+                            )
+                          : t(
+                              'Resolve issues and review each included row.',
+                              'दिक्कतें ठीक करें और शामिल हर लाइन जाँचें।',
+                            )}
                     </small>
                   </div>
                   <button
                     className="secondary"
                     disabled={Boolean(busy) || !dirty}
-                    onClick={() => void run('Saving draft', save)}
+                    onClick={() => void run(t('Saving draft', 'ड्राफ्ट सहेजा जा रहा है'), save)}
                   >
-                    Save draft
+                    {t('Save draft', 'ड्राफ्ट सहेजें')}
                   </button>
                   <button
                     className="primary"
                     disabled={Boolean(busy) || !canPublish}
                     onClick={() => setConfirm('publish')}
                   >
-                    Publish prices
+                    {t('Publish prices', 'भाव लागू करें')}
                     <ArrowRight size={17} />
                   </button>
                 </div>
@@ -855,7 +1062,7 @@ export function RateStudio({
                   disabled={Boolean(busy)}
                   onClick={() => setConfirm('cancel')}
                 >
-                  Cancel this price sheet
+                  {t('Cancel this price sheet', 'यह भाव शीट रद्द करें')}
                 </button>
               )}
             </section>
@@ -871,10 +1078,10 @@ export function RateStudio({
         <Modal
           title={
             create === 'IMAGE'
-              ? 'Scan a rate sheet'
+              ? t('Scan a rate sheet', 'भाव शीट स्कैन करें')
               : create === 'ADJUSTMENT'
-                ? 'Adjust existing prices'
-                : 'Enter prices manually'
+                ? t('Adjust existing prices', 'मौजूदा भाव बढ़ाएँ-घटाएँ')
+                : t('Enter prices manually', 'भाव हाथ से डालें')
           }
           close={() => {
             if (!busy) setCreate(null);
@@ -885,7 +1092,7 @@ export function RateStudio({
             onSubmit={(e) => {
               e.preventDefault();
               const nextTitle = String(new FormData(e.currentTarget).get('title'));
-              void run('Creating draft', async () => {
+              void run(t('Creating draft', 'ड्राफ्ट बन रहा है'), async () => {
                 const result = await api<RateBatch>(`${base}/batches`, 'POST', {
                   title: nextTitle,
                   sourceType: create,
@@ -899,16 +1106,21 @@ export function RateStudio({
             }}
           >
             <p>
-              A saved draft keeps your work together. Live product prices change only after review
-              and publication.
+              {t(
+                'A saved draft keeps your work together. Live product prices change only after review and publication.',
+                'सहेजा ड्राफ्ट आपका काम एक जगह रखता है। दुकान के भाव जाँच और लागू करने के बाद ही बदलते हैं।',
+              )}
             </p>
-            <Field label="Price sheet title">
+            <Field label={t('Price sheet title', 'भाव शीट का नाम')}>
               <input
                 name="title"
                 required
                 maxLength={120}
                 autoFocus
-                defaultValue={`Store rates · ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`}
+                defaultValue={t(
+                  `Store rates · ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`,
+                  `दुकान के भाव · ${new Date().toLocaleDateString('hi-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`,
+                )}
               />
             </Field>
             {error && (
@@ -917,7 +1129,7 @@ export function RateStudio({
               </p>
             )}
             <button className="primary wide" disabled={Boolean(busy)}>
-              Create draft
+              {t('Create draft', 'ड्राफ्ट बनाएँ')}
               <ArrowRight size={17} />
             </button>
           </form>
@@ -942,7 +1154,12 @@ export function RateStudio({
                 ...adjustment,
               });
               adopt(result);
-              notice('Adjustment preview created. Check each new price before publishing.');
+              notice(
+                t(
+                  'Adjustment preview created. Check each new price before publishing.',
+                  'बदले भाव की झलक बन गई। लागू करने से पहले हर नया भाव जाँचें।',
+                ),
+              );
             } else if (picker.type === 'match') {
               const product = products[0];
               if (product)
@@ -958,7 +1175,12 @@ export function RateStudio({
               const existing = new Set(rows.map((row) => row.productId));
               const added = products.filter((product) => !existing.has(product.id));
               if (rows.length + added.length > 100)
-                throw new Error('A price sheet can contain up to 100 rows.');
+                throw new Problem(
+                  t(
+                    'A price sheet can contain up to 100 rows.',
+                    'एक भाव शीट में ज़्यादा से ज़्यादा 100 लाइनें हो सकती हैं।',
+                  ),
+                );
               setRows((old) => [...old, ...added.map(blank)]);
               setDirty(true);
             }
@@ -973,7 +1195,12 @@ export function RateStudio({
           saved={async () => {
             setAddingProduct(false);
             await refresh();
-            notice('Product created. Search for it to add it to this sheet.');
+            notice(
+              t(
+                'Product created. Search for it to add it to this sheet.',
+                'सामग्री बन गई। इस शीट में जोड़ने के लिए उसे खोजें।',
+              ),
+            );
           }}
         />
       )}
@@ -981,10 +1208,10 @@ export function RateStudio({
         <Modal
           title={
             confirm === 'publish'
-              ? 'Publish these prices?'
+              ? t('Publish these prices?', 'ये भाव लागू करें?')
               : confirm === 'cancel'
-                ? 'Cancel this price sheet?'
-                : 'Leave without saving?'
+                ? t('Cancel this price sheet?', 'यह भाव शीट रद्द करें?')
+                : t('Leave without saving?', 'बिना सहेजे बाहर जाएँ?')
           }
           close={() => {
             if (!busy) setConfirm(null);
@@ -993,10 +1220,19 @@ export function RateStudio({
           <div className="form-stack">
             <p>
               {confirm === 'publish'
-                ? `${included.length} customer selling prices will be checked against current product versions and published together. These must be the prices customers will pay, not supplier purchase costs. Customers must review changed checkout totals.`
+                ? t(
+                    `${included.length} customer selling prices will be checked against current product versions and published together. These must be the prices customers will pay, not supplier purchase costs. Customers must review changed checkout totals.`,
+                    `ग्राहकों के ${included.length} बिक्री भाव अभी की सामग्री से मिलाकर एक साथ लागू होंगे। ये वही भाव होने चाहिए जो ग्राहक देंगे, सप्लायर का खरीद भाव नहीं। ग्राहकों को बदला हुआ कुल बिल फिर से देखना होगा।`,
+                  )
                 : confirm === 'cancel'
-                  ? 'This sheet will be closed. Published catalogue prices will not change.'
-                  : 'Your unsaved edits will be discarded. The last saved draft stays in price sheet history.'}
+                  ? t(
+                      'This sheet will be closed. Published catalogue prices will not change.',
+                      'यह शीट बंद हो जाएगी। दुकान के लागू भाव नहीं बदलेंगे।',
+                    )
+                  : t(
+                      'Your unsaved edits will be discarded. The last saved draft stays in price sheet history.',
+                      'बिना सहेजे बदलाव हट जाएँगे। आख़िरी सहेजा ड्राफ्ट पुरानी भाव शीटों में रहेगा।',
+                    )}
             </p>
             {error && (
               <p className="error" role="alert">
@@ -1008,7 +1244,9 @@ export function RateStudio({
               disabled={Boolean(busy)}
               onClick={() =>
                 void run(
-                  confirm === 'publish' ? 'Publishing prices' : 'Closing draft',
+                  confirm === 'publish'
+                    ? t('Publishing prices', 'भाव लागू हो रहे हैं')
+                    : t('Closing draft', 'ड्राफ्ट बंद हो रहा है'),
                   async () => {
                     if (confirm === 'leave') {
                       setBatch(null);
@@ -1023,7 +1261,12 @@ export function RateStudio({
                       await loadHistory();
                       if (confirm === 'publish') {
                         await refresh();
-                        notice('Prices published. Your customers now have the latest rates.');
+                        notice(
+                          t(
+                            'Prices published. Your customers now have the latest rates.',
+                            'भाव लागू हो गए। अब ग्राहकों को नए भाव दिखेंगे।',
+                          ),
+                        );
                       }
                     }
                     setConfirm(null);
@@ -1032,13 +1275,13 @@ export function RateStudio({
               }
             >
               {confirm === 'publish'
-                ? 'Confirm & publish prices'
+                ? t('Confirm & publish prices', 'पक्का करें और भाव लागू करें')
                 : confirm === 'cancel'
-                  ? 'Confirm cancellation'
-                  : 'Discard unsaved edits'}
+                  ? t('Confirm cancellation', 'रद्द करना पक्का करें')
+                  : t('Discard unsaved edits', 'बिना सहेजे बदलाव हटाएँ')}
             </button>
             <button className="secondary" disabled={Boolean(busy)} onClick={() => setConfirm(null)}>
-              Keep reviewing
+              {t('Keep reviewing', 'जाँच जारी रखें')}
             </button>
           </div>
         </Modal>
@@ -1072,6 +1315,7 @@ function ProductPicker({
     adjustment?: { kind: string; direction: string; amount: number },
   ) => Promise<void>;
 }) {
+  const { t, error: say } = useWords();
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('');
   const [brand, setBrand] = useState('');
@@ -1098,7 +1342,7 @@ function ProductPicker({
             cursor ? { ...result, items: [...old.items, ...result.items] } : result,
           );
       } catch (e) {
-        if (id === generation.current) setError(errorMessage(e));
+        if (id === generation.current) setError(say(e));
       } finally {
         if (id === generation.current) setLoading(false);
       }
@@ -1118,10 +1362,10 @@ function ProductPicker({
     <Modal
       title={
         mode === 'match'
-          ? 'Match the exact store product'
+          ? t('Match the exact store product', 'दुकान की सही सामग्री मिलाएँ')
           : mode === 'adjust'
-            ? 'Preview a price adjustment'
-            : 'Choose products'
+            ? t('Preview a price adjustment', 'भाव बदलाव की झलक देखें')
+            : t('Choose products', 'सामग्री चुनें')
       }
       close={() => {
         if (!busy) close();
@@ -1132,18 +1376,18 @@ function ProductPicker({
           <label className="search">
             <Search size={17} />
             <input
-              aria-label="Search rate products"
-              placeholder="Name, grade or specification"
+              aria-label={t('Search rate products', 'भाव के लिए सामग्री खोजें')}
+              placeholder={t('Name, grade or specification', 'नाम, ग्रेड या विवरण')}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
           </label>
           <select
-            aria-label="Rate product category"
+            aria-label={t('Rate product category', 'सामग्री की श्रेणी')}
             value={category}
             onChange={(e) => setCategory(e.target.value)}
           >
-            <option value="">All categories</option>
+            <option value="">{t('All categories', 'सभी श्रेणियाँ')}</option>
             {categories.map((c) => (
               <option key={c.id} value={c.slug}>
                 {c.name}
@@ -1151,8 +1395,8 @@ function ProductPicker({
             ))}
           </select>
           <input
-            aria-label="Rate product brand"
-            placeholder="Filter by brand"
+            aria-label={t('Rate product brand', 'सामग्री का ब्रांड')}
+            placeholder={t('Filter by brand', 'ब्रांड से छाँटें')}
             value={brand}
             onChange={(e) => setBrand(e.target.value)}
           />
@@ -1179,16 +1423,21 @@ function ProductPicker({
                 <strong>{product.name}</strong>
                 <small>
                   {product.brand} · {product.grade} · {product.unit}
-                  {!product.active ? ' · Inactive' : ''}
+                  {!product.active ? t(' · Inactive', ' · बंद') : ''}
                 </small>
               </span>
               <strong>{money(product.pricePaise)}</strong>
             </label>
           ))}
         </div>
-        {loading && <p role="status">Finding products…</p>}
+        {loading && <p role="status">{t('Finding products…', 'सामग्री खोजी जा रही है…')}</p>}
         {!loading && !page.items.length && (
-          <p>No products found. Try another search or add the missing product.</p>
+          <p>
+            {t(
+              'No products found. Try another search or add the missing product.',
+              'कोई सामग्री नहीं मिली। दूसरा नाम खोजें या छूटी सामग्री जोड़ें।',
+            )}
+          </p>
         )}
         {page.nextCursor && (
           <button
@@ -1196,28 +1445,32 @@ function ProductPicker({
             disabled={loading}
             onClick={() => void load(page.nextCursor!)}
           >
-            Load more products
+            {t('Load more products', 'और सामग्री दिखाएँ')}
           </button>
         )}
         <button className="text-button" onClick={addProduct}>
           <Plus size={16} />
-          Add missing product
+          {t('Add missing product', 'छूटी सामग्री जोड़ें')}
         </button>
         {mode === 'adjust' && (
           <div className="rs-adjust-controls">
-            <Field label="Direction">
+            <Field label={t('Direction', 'बढ़ाएँ या घटाएँ')}>
               <select value={direction} onChange={(e) => setDirection(e.target.value)}>
-                <option value="INCREASE">Increase</option>
-                <option value="DECREASE">Decrease</option>
+                <option value="INCREASE">{t('Increase', 'बढ़ाएँ')}</option>
+                <option value="DECREASE">{t('Decrease', 'घटाएँ')}</option>
               </select>
             </Field>
-            <Field label="Adjustment type">
+            <Field label={t('Adjustment type', 'बदलाव का तरीका')}>
               <select value={kind} onChange={(e) => setKind(e.target.value)}>
-                <option value="FIXED">Fixed amount (₹)</option>
-                <option value="PERCENT">Percentage (%)</option>
+                <option value="FIXED">{t('Fixed amount (₹)', 'तय रकम (₹)')}</option>
+                <option value="PERCENT">{t('Percentage (%)', 'प्रतिशत (%)')}</option>
               </select>
             </Field>
-            <Field label={kind === 'FIXED' ? 'Amount (₹)' : 'Percentage (%)'}>
+            <Field
+              label={
+                kind === 'FIXED' ? t('Amount (₹)', 'रकम (₹)') : t('Percentage (%)', 'प्रतिशत (%)')
+              }
+            >
               <input
                 type="number"
                 min="0.01"
@@ -1230,8 +1483,10 @@ function ProductPicker({
         )}
         {mode === 'adjust' && (
           <p className="hint">
-            Creates a new preview for the selected products, replacing draft rows. Live prices stay
-            unchanged.
+            {t(
+              'Creates a new preview for the selected products, replacing draft rows. Live prices stay unchanged.',
+              'चुनी सामग्री के लिए नई झलक बनेगी, ड्राफ्ट की लाइनें बदल जाएँगी। दुकान के भाव नहीं बदलेंगे।',
+            )}
           </p>
         )}
         {error && (
@@ -1248,25 +1503,33 @@ function ProductPicker({
             try {
               const numeric = Math.round(Number(amount) * 100);
               if (mode === 'adjust' && (!Number.isSafeInteger(numeric) || numeric <= 0))
-                throw new Error('Enter a positive adjustment amount.');
+                throw new Problem(
+                  t('Enter a positive adjustment amount.', 'बदलाव की रकम 0 से ज़्यादा डालें।'),
+                );
               await confirm(
                 Object.values(selected),
                 mode === 'adjust' ? { kind, direction, amount: numeric } : undefined,
               );
             } catch (e) {
-              setError(errorMessage(e));
+              setError(e instanceof Problem ? e.message : say(e));
             } finally {
               setBusy(false);
             }
           }}
         >
           {busy
-            ? 'Preparing…'
+            ? t('Preparing…', 'तैयार हो रहा है…')
             : mode === 'adjust'
-              ? `Preview ${Object.keys(selected).length} price changes`
+              ? t(
+                  `Preview ${Object.keys(selected).length} price changes`,
+                  `${Object.keys(selected).length} भाव बदलाव की झलक देखें`,
+                )
               : mode === 'match'
-                ? 'Confirm product match'
-                : `Add ${Object.keys(selected).length} products`}
+                ? t('Confirm product match', 'सामग्री का मिलान पक्का करें')
+                : t(
+                    `Add ${Object.keys(selected).length} products`,
+                    `${Object.keys(selected).length} सामग्री जोड़ें`,
+                  )}
         </button>
       </div>
     </Modal>
@@ -1282,6 +1545,8 @@ function CardStudio({
   close: () => void;
   saved: (card: RateCard) => void;
 }) {
+  const { t, error: say, moment } = useWords();
+  const name = named(t);
   const [card, setCard] = useState<(RateCard & { pages: number }) | null>(null);
   const [page, setPage] = useState(1);
   const [busy, setBusy] = useState(false);
@@ -1295,7 +1560,7 @@ function CardStudio({
       setCard(await api<RateCard & { pages: number }>(`${base}/cards/${id}`));
       setPage(1);
     } catch (e) {
-      setError(errorMessage(e));
+      setError(say(e));
     } finally {
       setBusy(false);
     }
@@ -1308,7 +1573,13 @@ function CardStudio({
       const result = await fetch(`${API_URL}${base}/cards/${card.id}/pages/${page}/png`, {
         credentials: 'include',
       });
-      if (!result.ok) throw new Error('Could not download this rate card. Please try again.');
+      if (!result.ok)
+        throw new Problem(
+          t(
+            'Could not download this rate card. Please try again.',
+            'यह भाव कार्ड डाउनलोड नहीं हो सका। फिर कोशिश करें।',
+          ),
+        );
       const file = new File([await result.blob()], `shiv-rates-${card.id}-${page}.png`, {
         type: 'image/png',
       });
@@ -1323,25 +1594,28 @@ function CardStudio({
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (e) {
-      if (!(e instanceof DOMException && e.name === 'AbortError')) setError(errorMessage(e));
+      if (!(e instanceof DOMException && e.name === 'AbortError'))
+        setError(e instanceof Problem ? e.message : say(e));
     } finally {
       setBusy(false);
     }
   }
   return (
     <Modal
-      title="Shiv Rate Card Studio"
+      title={t('Shiv Rate Card Studio', 'Shiv भाव कार्ड स्टूडियो')}
       close={() => {
         if (!busy) close();
       }}
     >
       <div className="rate-studio rs-card-studio">
         <p>
-          Artwork uses the approved product names, prices and units. Only the message and layout are
-          editable.
+          {t(
+            'Artwork uses the approved product names, prices and units. Only the message and layout are editable.',
+            'कार्ड में मंज़ूर सामग्री के नाम, भाव और इकाई ही आते हैं। सिर्फ़ संदेश और डिज़ाइन बदल सकते हैं।',
+          )}
         </p>
         {batch.cards.length > 0 && (
-          <Field label="Saved rate cards">
+          <Field label={t('Saved rate cards', 'सहेजे भाव कार्ड')}>
             <select
               value={card?.id || ''}
               disabled={busy}
@@ -1349,10 +1623,12 @@ function CardStudio({
                 if (e.target.value) void open(e.target.value);
               }}
             >
-              <option value="">Choose a previously generated card</option>
+              <option value="">
+                {t('Choose a previously generated card', 'पहले बना कार्ड चुनें')}
+              </option>
               {batch.cards.map((item) => (
                 <option key={item.id} value={item.id}>
-                  {label(item.format)} · {date(item.createdAt)}
+                  {name(item.format)} · {moment(item.createdAt)}
                 </option>
               ))}
             </select>
@@ -1379,24 +1655,34 @@ function CardStudio({
                 saved(result);
                 await open(result.id);
               } catch (err) {
-                setError(errorMessage(err));
+                setError(say(err));
               } finally {
                 setBusy(false);
               }
             }}
           >
             <div className="rs-detail-grid">
-              <Field label="Format">
+              <Field label={t('Format', 'साइज़')}>
                 <select value={format} onChange={(e) => setFormat(e.target.value)}>
-                  <option value="STATUS">WhatsApp Status · 1080 × 1920</option>
-                  <option value="SQUARE">Square Social · 1080 × 1080</option>
-                  <option value="SHEET">Shareable Rate Sheet · portrait</option>
+                  <option value="STATUS">
+                    {t('WhatsApp Status · 1080 × 1920', 'WhatsApp स्टेटस · 1080 × 1920')}
+                  </option>
+                  <option value="SQUARE">
+                    {t('Square Social · 1080 × 1080', 'चौकोर पोस्ट · 1080 × 1080')}
+                  </option>
+                  <option value="SHEET">
+                    {t('Shareable Rate Sheet · portrait', 'भेजने लायक भाव शीट · खड़ी')}
+                  </option>
                 </select>
               </Field>
-              <Field label="Template">
+              <Field label={t('Template', 'डिज़ाइन')}>
                 <select value={template} onChange={(e) => setTemplate(e.target.value)}>
-                  <option value="COUNTER">Counter · graphite & amber</option>
-                  <option value="BULLETIN">Bulletin · concrete & ink</option>
+                  <option value="COUNTER">
+                    {t('Counter · graphite & amber', 'काउंटर · गहरा स्लेटी और पीला')}
+                  </option>
+                  <option value="BULLETIN">
+                    {t('Bulletin · concrete & ink', 'बुलेटिन · सीमेंटी और काला')}
+                  </option>
                 </select>
               </Field>
             </div>
@@ -1412,31 +1698,40 @@ function CardStudio({
               <i />
               <small>Approved rates · clear units · store contact</small>
             </div>
-            <Field label="Heading">
+            <Field label={t('Heading', 'शीर्षक')}>
               <input name="heading" required maxLength={80} defaultValue="Today’s material rates" />
             </Field>
-            <Field label="Delivery message">
+            <Field label={t('Delivery message', 'डिलीवरी संदेश')}>
               <input
                 name="deliveryMessage"
                 maxLength={160}
                 defaultValue="Contact the store to confirm delivery to your site."
               />
             </Field>
-            <Field label="Contact label">
+            <Field label={t('Contact label', 'संपर्क का लेबल')}>
               <input name="contactLabel" maxLength={40} defaultValue="Call / WhatsApp" />
             </Field>
-            <Field label="Optional promotional copy">
+            <Field label={t('Optional promotional copy', 'प्रचार संदेश (वैकल्पिक)')}>
               <textarea
                 name="promotionalCopy"
                 maxLength={160}
-                placeholder="Add a short message. Check any stock or delivery claims."
+                placeholder={t(
+                  'Add a short message. Check any stock or delivery claims.',
+                  'छोटा संदेश लिखें। स्टॉक या डिलीवरी की बात जाँच लें।',
+                )}
               />
             </Field>
             <label className="check">
-              <input type="checkbox" required />I checked the message and delivery claims
+              <input type="checkbox" required />
+              {t(
+                'I checked the message and delivery claims',
+                'मैंने संदेश और डिलीवरी की बातें जाँच लीं',
+              )}
             </label>
             <button className="primary wide" disabled={busy}>
-              {busy ? 'Generating artwork…' : 'Generate rate card'}
+              {busy
+                ? t('Generating artwork…', 'कार्ड बन रहा है…')
+                : t('Generate rate card', 'भाव कार्ड बनाएँ')}
             </button>
           </form>
         ) : (
@@ -1445,10 +1740,16 @@ function CardStudio({
               className="rs-card-preview"
               src={`${API_URL}${base}/cards/${card.id}/pages/${page}/png`}
               crossOrigin="use-credentials"
-              alt={`${card.snapshot.heading}, rate card page ${page} of ${card.pages}`}
+              alt={t(
+                `${card.snapshot.heading}, rate card page ${page} of ${card.pages}`,
+                `${card.snapshot.heading}, भाव कार्ड पेज ${page} / ${card.pages}`,
+              )}
               onError={() =>
                 setError(
-                  'Preview could not be rendered. Try downloading again or use the SVG version below.',
+                  t(
+                    'Preview could not be rendered. Try downloading again or use the SVG version below.',
+                    'झलक नहीं दिख सकी। फिर से डाउनलोड करें या नीचे का SVG खोलें।',
+                  ),
                 )
               }
             />
@@ -1458,7 +1759,7 @@ function CardStudio({
               target="_blank"
               rel="noreferrer"
             >
-              Open printable SVG
+              {t('Open printable SVG', 'छापने वाला SVG खोलें')}
             </a>
             <div className="rs-card-pagination">
               <button
@@ -1466,40 +1767,40 @@ function CardStudio({
                 disabled={page <= 1 || busy}
                 onClick={() => setPage((old) => old - 1)}
               >
-                Previous
+                {t('Previous', 'पिछला')}
               </button>
-              <span>
-                Page {page} of {card.pages}
-              </span>
+              <span>{t(`Page ${page} of ${card.pages}`, `पेज ${page} / ${card.pages}`)}</span>
               <button
                 className="secondary"
                 disabled={page >= card.pages || busy}
                 onClick={() => setPage((old) => old + 1)}
               >
-                Next
+                {t('Next', 'अगला')}
               </button>
             </div>
             <div className="rs-card-actions">
               <button className="primary" disabled={busy} onClick={() => void download(false)}>
-                Download PNG
+                {t('Download PNG', 'PNG डाउनलोड करें')}
               </button>
               <button className="secondary" disabled={busy} onClick={() => void download(true)}>
                 <Share2 size={16} />
-                Share / download
+                {t('Share / download', 'भेजें / डाउनलोड करें')}
               </button>
             </div>
             <p className="hint">
-              Download each page for a multi-page sheet. Sharing opens your device’s share sheet
-              when supported.
+              {t(
+                'Download each page for a multi-page sheet. Sharing opens your device’s share sheet when supported.',
+                'कई पेज वाली शीट का हर पेज अलग डाउनलोड करें। फ़ोन में सुविधा हो तो भेजें दबाने पर भेजने का मेन्यू खुलेगा।',
+              )}
             </p>
             <button className="text-button" disabled={busy} onClick={() => setCard(null)}>
-              Create another layout
+              {t('Create another layout', 'दूसरा डिज़ाइन बनाएँ')}
             </button>
           </div>
         )}
         {error && (
           <p className="error" role="alert">
-            {error} Published prices are unchanged.
+            {error} {t('Published prices are unchanged.', 'लागू भाव नहीं बदले।')}
           </p>
         )}
       </div>

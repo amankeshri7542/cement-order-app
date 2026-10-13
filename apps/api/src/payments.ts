@@ -2,7 +2,7 @@ import { Controller, Inject, Injectable, Param, Post, Req } from '@nestjs/common
 import { ApiTags } from '@nestjs/swagger';
 import { createHmac } from 'node:crypto';
 import { z } from 'zod';
-import { paymentVerifySchema } from '@shiv/shared';
+import { collectionSchema, paymentVerifySchema } from '@shiv/shared';
 import { Db } from './db';
 import { getConfig, onlineReady } from './config';
 import { Admin, AuthRequest, Contract, Input, Public, fail, hash, safeEqual } from './http';
@@ -178,6 +178,7 @@ export class PaymentsService {
         data: {
           paymentId: payment.id,
           kind: 'COLLECTION',
+          channel: 'ONLINE',
           amountPaise: payment.amountPaise,
           actorId: 'razorpay',
         },
@@ -281,6 +282,7 @@ export class PaymentsService {
           data: {
             paymentId: p.id,
             kind: 'REFUND',
+            channel: 'ONLINE',
             amountPaise: p.amountPaise,
             actorId: 'razorpay',
           },
@@ -312,7 +314,8 @@ export class PaymentsService {
     }
     return { ignored: true };
   }
-  async cod(orderId: string, actorId: string, refund = false) {
+  /** Cash on delivery: money received at the site (cash or UPI), or a cash refund returned. */
+  async cod(orderId: string, actorId: string, refund = false, channel: '' | 'CASH' | 'UPI' = '') {
     return this.db.atomic(async (tx) => {
       const p = await tx.payment.findUnique({ where: { orderId }, include: { order: true } });
       if (!p || p.method !== 'COD')
@@ -333,6 +336,7 @@ export class PaymentsService {
         data: {
           paymentId: p.id,
           kind: refund ? 'REFUND' : 'COLLECTION',
+          channel: refund ? 'CASH' : channel,
           amountPaise: p.amountPaise,
           actorId,
         },
@@ -352,7 +356,7 @@ export class PaymentsService {
           actorId,
           event: refund ? 'CASH_REFUNDED' : 'COD_RECEIVED',
           entityId: orderId,
-          details: { amountPaise: p.amountPaise },
+          details: { amountPaise: p.amountPaise, ...(channel ? { channel } : {}) },
         },
       });
       return { ok: true };
@@ -412,11 +416,12 @@ export class PaymentsController {
       String(req.headers['x-razorpay-event-id'] || ''),
     );
   }
-  @Admin() @Post('admin/orders/:id/cod-received') cod(
+  @Admin() @Post('admin/orders/:id/cod-received') @Contract(collectionSchema) cod(
     @Param('id') id: string,
+    @Input(collectionSchema.optional()) body: z.infer<typeof collectionSchema> | undefined,
     @Req() req: AuthRequest,
   ) {
-    return this.payments.cod(id, req.user.id);
+    return this.payments.cod(id, req.user.id, false, body?.channel || '');
   }
   @Admin() @Post('admin/orders/:id/cash-refunded') refund(
     @Param('id') id: string,
