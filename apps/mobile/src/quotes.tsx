@@ -271,7 +271,9 @@ export function QuoteRequest() {
   const [found, setFound] = useState<Product[]>(homeProducts);
   const [searchError, setSearchError] = useState('');
   const [searchVersion, setSearchVersion] = useState(0);
-  const [moreOpen, setMoreOpen] = useState(Boolean(company || gstin || notes));
+  // Opened by the customer, or because a restored draft already has these details.
+  const [moreOpen, setMoreOpen] = useState(false);
+  const extrasShown = moreOpen || Boolean(company || gstin || notes);
   const searchRequest = useRef(0);
   useEffect(() => {
     let live = true;
@@ -590,7 +592,7 @@ export function QuoteRequest() {
           />
         ))}
       </ScrollView>
-      {moreOpen ? (
+      {extrasShown ? (
         <View style={s.stack}>
           <Field
             label={t('Company (optional)', 'कंपनी (वैकल्पिक)')}
