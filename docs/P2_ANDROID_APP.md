@@ -30,14 +30,14 @@ budget phone.
 
 ## Tap budgets: measured on Android 10 by Maestro
 
-| Job                             | Budget | Result                                                                |
-| ------------------------------- | ------ | --------------------------------------------------------------------- |
-| See today's rates               | 0 taps | 0, first screen                                                       |
-| Call / WhatsApp                 | 1 tap  | 1, top bar on every screen                                            |
-| Track latest order              | 1 tap  | 1, Home "Track"                                                       |
-| Reorder                         | 2 taps | 1 to put the last order in the basket                                 |
-| Product → COD order (signed in) | ≤ 4    | 4: Add, Basket, Review order, Place order                             |
-| Bulk quote                      | ≤ 5    | 4 for a repeat request: Bulk quote, add material, (date preset), Send |
+| Job                             | Budget | Result                                                                                                                             |
+| ------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| See today's rates               | 0 taps | 0, first screen                                                                                                                    |
+| Call / WhatsApp                 | 1 tap  | 1, top bar on every screen                                                                                                         |
+| Track latest order              | 1 tap  | 1, Home "Track"                                                                                                                    |
+| Reorder                         | 2 taps | 1 to put the last order in the basket                                                                                              |
+| Product → COD order (signed in) | ≤ 4    | 4: Add, Basket, Review order, Place order                                                                                          |
+| Bulk quote                      | ≤ 5    | 3 by design (Bulk quote, add material, Send; saved site and date preset); covered by a Playwright journey, Maestro flow in Phase 3 |
 
 `apps/mobile/.maestro/` (4 flows, 4/4 pass): browse, Hindi first launch and restart, a new
 customer's guest basket carried through sign-in to a placed order, and the budgets above.
