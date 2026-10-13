@@ -67,6 +67,38 @@ Chrome and WebKit at 360–1440 px) passed and is listed as supporting evidence 
 Record for every failed row: device model, OS and browser version, language, text size,
 network, steps, screenshot. Do not mark a row ✅ from emulator evidence.
 
+### C2. Android app on real phones (Phase 3)
+
+The emulator results are in [P3_HARDENING.md](P3_HARDENING.md); these rows need the actual phones
+(Papa's, Chacha's, one 2–3 GB budget Android, yours).
+
+**Setup, once per phone:** on the phone, open Settings → About phone → tap "Build number" seven
+times → Developer options → turn on USB debugging. Connect it by cable to the development Mac,
+accept the prompt on the phone, then on the Mac:
+
+```bash
+npm run local:start
+adb devices
+adb reverse tcp:4000 tcp:4000
+adb install -r apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+```
+
+The phone reaches only this Mac's loopback API over the cable (mock sign-in codes appear on
+screen; nothing is exposed on Wi-Fi). Then run the journeys on that phone:
+`ANDROID_SERIAL=<id from adb devices> scripts/android-drills.sh` and
+`npm run android:baseline -- --serial <id>`.
+
+| #   | Phone / condition                  | Steps                                                                                                                | Expected                                                      | Status |
+| --- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | ------ |
+| P1  | Budget Android (2–3 GB RAM)        | `npm run android:baseline -- --serial <id>`                                                                          | Cold start < 2.5 s; janky frames < 5%                         | ⏳     |
+| P2  | Each phone, Hindi                  | First launch → हिंदी → order 1 bag COD → track → order again                                                         | No English left on screen; four taps from product to order    | ⏳     |
+| P3  | Each phone, keyboard               | Sign in; add an address with the phone's own keyboard                                                                | The field being typed is always visible; next/done move along | ⏳     |
+| P4  | Each phone, largest font           | Settings → Display → Font size largest; Home, product, basket                                                        | Main buttons visible without scrolling; nothing cut off       | ⏳     |
+| P5  | TalkBack on                        | Swipe through Home, a product, the basket                                                                            | Every control is read out in the chosen language              | ⏳     |
+| P6  | Network loss                       | `scripts/android-drills.sh` on the phone (the cable ignores aeroplane mode, so the drill cuts the connection itself) | "Check order result" confirms exactly one order               | ⏳     |
+| P7  | Real microphone                    | Shiv Sahayak: allow, deny, stop mid-sentence                                                                         | Text editable before sending; typing works when denied        | ⏳     |
+| P8  | Family bug bash (Papa, Chacha + 2) | 20 minutes each of free use; note every hesitation                                                                   | No P0/P1 bugs left open                                       | ⏳     |
+
 ## D. Automated results for this branch
 
 See [V4_STAGING_READINESS.md](V4_STAGING_READINESS.md#automated-checks) for exact commands and
