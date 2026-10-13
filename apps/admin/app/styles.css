@@ -1778,3 +1778,6 @@ dialog legend {
 .activity-list li .text-button {
   justify-self: start;
 }
+.money-report .panel > button {
+  margin-top: 14px;
+}
