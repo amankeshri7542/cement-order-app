@@ -184,6 +184,19 @@ afterAll(async () => {
   await app?.close();
 });
 
+describe('App update policy', () => {
+  it('serves the Android version policy publicly with safe defaults', async () => {
+    const result = await request(server).get('/api/v1/client-config').expect(200);
+    expect(result.body).toEqual({
+      android: {
+        minimumVersion: '1.0.0',
+        latestVersion: '1.0.0',
+        storeUrl: 'https://play.google.com/store/apps/details?id=in.shivcement.store',
+      },
+    });
+  });
+});
+
 describe('Authentication and authorization over HTTP', () => {
   it('rejects a stale account binding before reading or modifying the active account', async () => {
     const result = await request(server)

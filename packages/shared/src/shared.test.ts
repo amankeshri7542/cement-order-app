@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  clientConfigSchema,
+  shortDayLabel,
+  weekdayLabel,
+  compareVersions,
   ageLabel,
   customerErrorCodes,
   customerErrors,
@@ -17,6 +21,7 @@ import {
   orderStatusText,
   quantityProblem,
   quoteStatusLabels,
+  paymentStatusLabels,
   roundUpQuantity,
   stepDown,
   stepUp,
@@ -64,6 +69,8 @@ test('every label, glossary word and customer error has real Hindi text', () => 
     assert.ok(hasDevanagari(orderStatusLabels[status][1]), status);
   for (const [status, [, hi]] of Object.entries(quoteStatusLabels))
     assert.ok(hasDevanagari(hi), status);
+  for (const [status, [, hi]] of Object.entries(paymentStatusLabels))
+    assert.ok(hasDevanagari(hi), status);
   for (const [key, [en, hi]] of Object.entries(glossary))
     if (key !== 'whatsapp') assert.ok(hasDevanagari(hi) && !hasDevanagari(en), key);
   for (const code of customerErrorCodes) {
@@ -95,4 +102,21 @@ test('guest basket keeps ids only and becomes the existing merge request', () =>
     items: [{ productId: 'ultratech-ppc', quantity: 20 }],
   });
   assert.throws(() => guestIntentSchema.parse({ key: 'x', lines: [] }));
+});
+
+test('app versions compare numerically, not as text', () => {
+  assert.ok(compareVersions('1.0.10', '1.0.9') > 0);
+  assert.ok(compareVersions('1.2.0', '1.10.0') < 0);
+  assert.equal(compareVersions('2.0.0', '2.0.0'), 0);
+  assert.ok(
+    clientConfigSchema.safeParse({
+      android: { minimumVersion: '1.0.0', latestVersion: '1.1.0', storeUrl: 'https://example.com' },
+    }).success,
+  );
+});
+
+test('delivery chips name the weekday and short date in Patna time', () => {
+  assert.equal(weekdayLabel('2026-10-15', 'en'), 'Thu');
+  assert.equal(shortDayLabel('2026-10-15', 'en'), '15 Oct');
+  assert.ok(hasDevanagari(weekdayLabel('2026-10-15', 'hi')));
 });

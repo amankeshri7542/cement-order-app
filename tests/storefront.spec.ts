@@ -2,7 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import type { Page } from '@playwright/test';
 import type { DeliveryZone } from '@shiv/shared';
 import { mkdirSync } from 'node:fs';
-import { test, expect, observePage } from './fixtures';
+import { test, expect, observePage, skipLanguageChooser } from './fixtures';
 
 const site = 'http://localhost:3004';
 const api = 'http://localhost:4010/api/v1';
@@ -699,6 +699,7 @@ test('owner price publication reaches storefront and existing customer app', asy
 }, info) => {
   const ownerContext = await browser.newContext();
   const customerContext = await browser.newContext();
+  await skipLanguageChooser(customerContext);
   const owner = await ownerContext.newPage();
   const customer = await customerContext.newPage();
   const cataloguePage = await page.context().newPage();
@@ -711,9 +712,9 @@ test('owner price publication reaches storefront and existing customer app', asy
     await cataloguePage.goto(catalogue);
     await expect(cards(cataloguePage)).toHaveCount(12);
     await customer.goto('http://localhost:8082');
-    await customer.getByRole('tab', { name: 'Products', exact: true }).click();
+    await customer.getByRole('tab', { name: 'Materials', exact: true }).click();
     await customer
-      .getByRole('textbox', { name: 'Search cement, steel, sand…', exact: true })
+      .getByRole('textbox', { name: 'Search materials', exact: true })
       .fill('TEST V2 Material 00');
     await expect(customer.getByRole('button', { name: 'View TEST V2 Material 00' })).toBeVisible();
     await owner.addInitScript(() => localStorage.setItem('shiv-owner-language', 'en'));

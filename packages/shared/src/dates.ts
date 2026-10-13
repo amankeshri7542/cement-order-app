@@ -28,6 +28,22 @@ export function momentLabel(value: string, language: Language): string {
   return `${dateLabel(value, language)} · ${timeLabel(value)}`;
 }
 
+const noon = (day: string) => new Date(`${day}T12:00:00+05:30`);
+/** "Thu" / "गुरु" for a YYYY-MM-DD delivery day. */
+export function weekdayLabel(day: string, language: Language): string {
+  return new Intl.DateTimeFormat(language === 'hi' ? 'hi-IN' : 'en-IN', {
+    weekday: 'short',
+    timeZone: ZONE,
+  }).format(noon(day));
+}
+/** "16 Oct" / "16 अक्टू॰" for a YYYY-MM-DD delivery day. */
+export function shortDayLabel(day: string, language: Language): string {
+  return new Intl.DateTimeFormat(language === 'hi' ? 'hi-IN' : 'en-IN', {
+    day: 'numeric',
+    month: 'short',
+    timeZone: ZONE,
+  }).format(noon(day));
+}
 /** Today's calendar date in Patna as YYYY-MM-DD. */
 export function istToday(now: Date = new Date()): string {
   return new Date(now.getTime() + 5.5 * 3600000).toISOString().slice(0, 10);

@@ -1,27 +1,59 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  FlatList,
   Image,
-  Linking,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
-  useWindowDimensions,
 } from 'react-native';
-import { Page, Product, money } from '@shiv/shared';
-import { api, message } from './api';
+import {
+  dateLabel,
+  money,
+  maxOrderable,
+  orderStatusText,
+  quantityProblem,
+  ratesFrom,
+  timeLabel,
+  MAX_LINE_QUANTITY,
+  space,
+  radius,
+  textSize,
+  type Language,
+  type Page,
+  type Product,
+} from '@shiv/shared';
+import { api } from './api';
 import { useStore } from './store';
-import { Button, C, Empty, Field, Icon, IconName, Notice, Section, Tag, s } from './ui';
+import { awards } from './trust';
+import { useReorder } from './orders';
+import {
+  Bone,
+  Button,
+  C,
+  Chip,
+  Empty,
+  Field,
+  Icon,
+  Notice,
+  Screen,
+  Section,
+  Stamp,
+  Tag,
+  s,
+  type IconName,
+} from './ui';
 
 const categoryIcons: Record<string, IconName> = {
   cement: 'cube-outline',
   steel: 'reorder-four-outline',
   sand: 'layers-outline',
   bricks: 'grid-outline',
-  aggregates: 'shapes-outline',
+  aggregates: 'ellipse-outline',
   tiles: 'apps-outline',
   pipes: 'git-merge-outline',
   hardware: 'construct-outline',
@@ -30,143 +62,143 @@ const categoryHindi: Record<string, string> = {
   cement: 'सीमेंट',
   steel: 'सरिया',
   sand: 'बालू',
-  bricks: 'ईंट और ब्लॉक',
+  bricks: 'ईंट',
   aggregates: 'गिट्टी',
   tiles: 'टाइल्स',
   pipes: 'पाइप',
   hardware: 'हार्डवेयर',
 };
-export function MaterialArt({ product, large }: { product: Product; large?: boolean }) {
+export const categoryName = (slug: string, name: string, language: Language) =>
+  language === 'hi' ? categoryHindi[slug] || name : name;
+
+/** A product photo, or a material tile in the shop's colours when there is none. */
+export function MaterialArt({ product, size = 64 }: { product: Product; size?: number }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [product.images[0]]);
   if (product.images[0] && !failed)
     return (
       <Image
-        accessibilityLabel={product.name}
+        accessibilityIgnoresInvertColors
         source={{ uri: product.images[0] }}
         onError={() => setFailed(true)}
-        style={{ width: '100%', height: large ? 260 : 140, resizeMode: 'contain' }}
+        resizeMode="contain"
+        style={{ width: size, height: size, borderRadius: radius.md, backgroundColor: C.stone }}
       />
     );
   return (
-    <View style={[cs.art, large && { height: 260 }]}>
+    <View style={[cs.tile, { width: size, height: size }]}>
       <Icon
         name={categoryIcons[product.category.slug] || 'cube-outline'}
-        size={large ? 84 : 48}
-        color={C.muted}
+        size={size * 0.5}
+        color={C.inkSoft}
       />
-      <Text style={[s.specification, { marginTop: 10 }]}>
-        {product.category.name.toUpperCase()}
-      </Text>
-      <Text style={cs.photoCaption}>Product photo pending</Text>
     </View>
   );
 }
-export function ProductCard({ product }: { product: Product }) {
-  const { t, language, navigate, add, cart, cartBusy, setQuantity, setToast } = useStore();
+
+const unitText = (product: Product, language: Language) =>
+  language === 'hi' ? `प्रति ${product.unit}` : `per ${product.unit}`;
+
+/**
+ * One row per material: everything needed to choose it, and the basket control, in ~100dp.
+ * Once in the basket the row shows a quantity bar that can be typed into (200 bags is one
+ * entry, not forty taps).
+ */
+export function ProductRow({ product }: { product: Product }) {
+  const { t, navigate, add, setQuantity, basketQuantity, cartBusy, setToast } = useStore();
   const [busy, setBusy] = useState(false);
-  const inCart = cart.find((line) => line.productId === product.id)?.quantity || 0;
-  const available = product.stock >= product.minQuantity;
+  const inBasket = basketQuantity(product.id);
+  const available = product.active && product.stock >= product.minQuantity;
   return (
-    <View style={cs.productCard}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`View ${product.name}`}
-        onPress={() => navigate({ screen: 'Product', id: product.id })}
-      >
-        <View style={cs.productImage}>
+    <View style={cs.row} testID={`product-${product.id}`}>
+      <View style={[s.row, { gap: space.sm }]}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${t('View', 'देखें')} ${product.name}`}
+          onPress={() => navigate({ screen: 'Product', id: product.id })}
+          style={({ pressed }) => [cs.rowMain, pressed && { opacity: 0.75 }]}
+        >
           <MaterialArt product={product} />
-        </View>
-        <View style={cs.productInfo}>
-          <Text style={s.eyebrow}>{product.brand.toUpperCase()}</Text>
-          <Text numberOfLines={2} style={cs.productName}>
-            {product.name}
-          </Text>
-          <Text numberOfLines={2} style={s.specification}>
-            {[product.grade, product.packSize || product.type].filter(Boolean).join(' · ')}
-          </Text>
-          <Text style={[s.price, { marginTop: 12, fontSize: 23 }]}>
-            {money(product.pricePaise)}
-          </Text>
-          <Text style={cs.unit}>per {product.unit}</Text>
-          <Text style={[cs.stock, { color: available ? C.green : C.red }]}>
-            {available ? t('stock') : t('unavailable')}
-          </Text>
-          <Text style={cs.unit}>
-            Min. {product.minQuantity} · step {product.quantityStep}
-          </Text>
-        </View>
-      </Pressable>
-      {inCart > 0 ? (
-        <View style={[cs.cardButton, { gap: 6, paddingHorizontal: 0 }]}>
-          <Text style={[cs.unit, { marginTop: 0 }]}>
-            {language === 'hi' ? 'कार्ट में' : 'In cart'} · {product.unit}
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={cs.rowName} numberOfLines={2}>
+              {product.name}
+            </Text>
+            <Text style={s.small} numberOfLines={1}>
+              {[product.brand, product.grade, product.packSize].filter(Boolean).join(' · ')}
+            </Text>
+            <View style={[s.row, { gap: space.xs, marginTop: 2 }]}>
+              <Text style={cs.rowPrice}>{money(product.pricePaise)}</Text>
+              <Text style={s.small}>/ {product.unit}</Text>
+            </View>
+            {!available && <Tag tone="grey">{t('Out of stock', 'स्टॉक नहीं')}</Tag>}
+          </View>
+        </Pressable>
+        {available && inBasket === 0 && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('Add to basket', 'टोकरी में जोड़ें')}
+            disabled={busy || cartBusy}
+            onPress={() => {
+              setBusy(true);
+              void add(product).finally(() => setBusy(false));
+            }}
+            style={({ pressed }) => [
+              cs.add,
+              (busy || cartBusy) && { opacity: 0.5 },
+              pressed && { opacity: 0.8 },
+            ]}
+          >
+            <Icon name="add" color={C.surface} size={20} />
+            <Text style={cs.addText}>{t('Add', 'जोड़ें')}</Text>
+          </Pressable>
+        )}
+      </View>
+      {inBasket > 0 && (
+        <View style={cs.inBasket}>
+          <Icon name="basket" color={C.green} size={18} />
+          <Text style={[s.small, { flex: 1, color: C.green, fontWeight: '700' }]}>
+            {t('In basket', 'टोकरी में')} · {product.unit}
           </Text>
           <Quantity
-            label={`${product.name} quantity`}
-            value={inCart}
+            label={`${product.name} ${t('quantity', 'मात्रा')}`}
+            value={inBasket}
             min={product.minQuantity}
             step={product.quantityStep}
-            max={Math.min(product.stock, 10000)}
+            max={Math.min(product.stock, MAX_LINE_QUANTITY)}
             disabled={cartBusy}
             commitOnBlur
             allowRemove
             onInvalid={setToast}
-            change={(quantity) =>
-              void setQuantity(product.id, quantity).catch((e) => setToast(message(e)))
-            }
+            change={(quantity) => void setQuantity(product, quantity)}
           />
         </View>
-      ) : (
-        <Button
-          secondary
-          disabled={!available || cartBusy}
-          loading={busy}
-          onPress={() => {
-            setBusy(true);
-            void add(product).finally(() => setBusy(false));
-          }}
-          icon="add"
-          style={cs.cardButton}
-        >
-          {t('add')}
-        </Button>
       )}
     </View>
   );
 }
-function ProductGrid({ products }: { products: Product[] }) {
-  const { width } = useWindowDimensions();
-  const columns = width > 1000 ? 4 : width > 700 ? 3 : width < 350 ? 1 : 2;
-  return (
-    <View style={cs.grid}>
-      {products.map((product) => (
-        <View key={product.id} style={{ width: `${100 / columns}%`, padding: 6 }}>
-          <ProductCard product={product} />
-        </View>
-      ))}
-    </View>
-  );
-}
-function Skeletons() {
+
+function RowSkeletons() {
+  const { t } = useStore();
   return (
     <View
-      accessibilityLabel="Loading materials"
+      accessibilityLabel={t('Loading materials', 'सामग्री लोड हो रही है')}
       accessibilityState={{ busy: true }}
-      style={cs.grid}
+      style={{ gap: space.md }}
     >
       {[0, 1, 2, 3].map((key) => (
-        <View key={key} style={{ width: '50%', padding: 6 }}>
-          <View style={cs.skeleton}>
-            <View style={{ height: 132, backgroundColor: C.concrete }} />
-            <View style={cs.skeletonLine} />
-            <View style={[cs.skeletonLine, { width: '55%' }]} />
+        <View key={key} style={[cs.row, { gap: space.md }]}>
+          <Bone height={64} width={64} />
+          <View style={{ flex: 1, gap: space.sm }}>
+            <Bone width="80%" />
+            <Bone width="50%" />
+            <Bone width="35%" height={20} />
           </View>
         </View>
       ))}
     </View>
   );
 }
+
 type DeliveryResult = {
   serviceable: boolean;
   zone?: {
@@ -177,7 +209,8 @@ type DeliveryResult = {
     freeDeliveryAbovePaise: number | null;
   };
 };
-function DeliveryCheck() {
+export function DeliveryCheck() {
+  const { t, say } = useStore();
   const [pincode, setPincode] = useState('');
   const [result, setResult] = useState<DeliveryResult | null>(null);
   const [error, setError] = useState('');
@@ -189,9 +222,9 @@ function DeliveryCheck() {
     },
     [],
   );
-  async function check() {
-    if (!/^[1-9]\d{5}$/.test(pincode)) {
-      setError('Enter a valid six-digit pincode.');
+  async function check(value = pincode) {
+    if (!/^[1-9]\d{5}$/.test(value)) {
+      setError(t('Enter a valid six-digit pincode.', 'छह अंकों का सही पिनकोड लिखें।'));
       return;
     }
     const current = ++request.current;
@@ -199,256 +232,321 @@ function DeliveryCheck() {
     setError('');
     setResult(null);
     try {
-      const response = await api<DeliveryResult>(`/delivery/${pincode}`);
+      const response = await api<DeliveryResult>(`/delivery/${value}`);
       if (current === request.current) setResult(response);
     } catch (e) {
-      if (current === request.current) setError(message(e));
+      if (current === request.current) setError(say(e));
     } finally {
       if (current === request.current) setBusy(false);
     }
   }
   return (
-    <View style={cs.delivery}>
-      <View style={[s.row, { flexWrap: 'wrap' }]}>
-        <Icon name="location-outline" />
-        <Text style={s.h2}>Delivery to your site</Text>
+    <View style={[s.card, { gap: space.md }]}>
+      <View style={s.row}>
+        <Icon name="location-outline" color={C.clay} />
+        <Text style={s.h3}>{t('Delivery to your site', 'आपकी साइट पर डिलीवरी')}</Text>
       </View>
-      <Text style={s.body}>Check your pincode for delivery charges and availability.</Text>
-      <View style={[s.row, { flexWrap: 'wrap' }]}>
+      <View style={[s.row, { gap: space.sm }]}>
         <TextInput
-          accessibilityLabel="Delivery pincode"
-          placeholder="6-digit pincode"
+          accessibilityLabel={t('Delivery pincode', 'डिलीवरी पिनकोड')}
+          placeholder={t('6-digit pincode', '6 अंकों का पिनकोड')}
           placeholderTextColor={C.muted}
           value={pincode}
           maxLength={6}
           keyboardType="number-pad"
           onChangeText={(value) => {
+            const digits = value.replace(/\D/g, '');
             request.current++;
-            setPincode(value.replace(/\D/g, ''));
+            setPincode(digits);
             setResult(null);
             setError('');
             setBusy(false);
+            // Six digits is a complete pincode: check without another tap.
+            if (digits.length === 6) void check(digits);
           }}
           onSubmitEditing={() => void check()}
-          style={[s.input, { flex: 1, minWidth: 145 }]}
+          style={[s.input, { flex: 1 }]}
         />
-        <Button loading={busy} onPress={() => void check()}>
-          Check delivery
+        <Button loading={busy} onPress={() => void check()} style={{ minWidth: 104 }}>
+          {t('Check', 'जाँचें')}
         </Button>
       </View>
       {error ? <Notice error>{error}</Notice> : null}
       {result &&
         (result.serviceable && result.zone ? (
-          <View style={{ gap: 6 }}>
-            <Text style={{ color: C.green, fontWeight: '700', fontSize: 15 }}>
-              {result.zone.name} · Delivery available
-            </Text>
-            <Text style={s.body}>{result.zone.estimate}</Text>
-            <Text style={s.specification}>
-              {money(result.zone.deliveryFeePaise)} delivery ·{' '}
-              {money(result.zone.minimumOrderPaise)} minimum order
-              {result.zone.freeDeliveryAbovePaise !== null
-                ? ` · Free delivery from ${money(result.zone.freeDeliveryAbovePaise)}`
-                : ''}
-            </Text>
-          </View>
+          <Notice tone="good">
+            {t(
+              `Delivery available · ${result.zone.name}\n${result.zone.estimate}\nDelivery ${money(result.zone.deliveryFeePaise)} · minimum order ${money(result.zone.minimumOrderPaise)}${result.zone.freeDeliveryAbovePaise !== null ? ` · free above ${money(result.zone.freeDeliveryAbovePaise)}` : ''}`,
+              `डिलीवरी उपलब्ध · ${result.zone.name}\n${result.zone.estimate}\nडिलीवरी ${money(result.zone.deliveryFeePaise)} · न्यूनतम ऑर्डर ${money(result.zone.minimumOrderPaise)}${result.zone.freeDeliveryAbovePaise !== null ? ` · ${money(result.zone.freeDeliveryAbovePaise)} से ऊपर मुफ़्त` : ''}`,
+            )}
+          </Notice>
         ) : (
           <Notice>
-            This pincode is not currently available for online delivery. Call the store to discuss
-            your site.
+            {t(
+              'This pincode is not on our delivery list yet. Call or WhatsApp the store to discuss your site.',
+              'यह पिनकोड अभी हमारी डिलीवरी सूची में नहीं है। अपनी साइट के बारे में दुकान को फ़ोन या WhatsApp करें।',
+            )}
           </Notice>
         ))}
     </View>
   );
 }
-export function Home() {
-  const {
-    products,
-    categories,
-    settings,
-    navigate,
-    t,
-    language,
-    loading,
-    error,
-    refreshCatalog,
-    setToast,
-  } = useStore();
-  const { width } = useWindowDimensions();
-  function contact(url: string) {
-    void Linking.openURL(url).catch(() =>
-      setToast('Could not open this link. Please call the store directly.'),
-    );
-  }
+
+/** Today's lowest in-stock price per material, as on the shop's chalk board. */
+function RateBoard() {
+  const { products, loading, error, t, language, navigate, refreshCatalog } = useStore();
+  const rates = useMemo(() => ratesFrom(products, 6), [products]);
+  const checkedAt = useMemo(() => new Date().toISOString(), [products]);
   return (
-    <>
-      <View style={cs.hero}>
-        <View style={cs.counterLabel}>
-          <Text style={cs.counterLabelText}>SHIV CEMENT STORE / PATNA, BIHAR</Text>
-          <Icon name="construct-outline" color={C.yellow} />
-        </View>
-        <Text style={[cs.heroTitle, width < 500 && { fontSize: 35, lineHeight: 39 }]}>
-          {language === 'hi' ? 'आपकी साइट।\nआपकी सामग्री।' : 'Your site.\nYour materials.'}
-        </Text>
-        <Text style={cs.heroBody}>
-          {language === 'hi'
-            ? 'सीमेंट से सरिया तक — दाम देखें, सामग्री चुनें और डिलीवरी जांचें।'
-            : 'Cement to steel. Check prices, choose your materials and plan the next delivery.'}
-        </Text>
-        <Button
-          icon="arrow-forward"
-          onPress={() => navigate({ screen: 'Products' })}
-          style={{ alignSelf: 'flex-start', marginTop: 16 }}
-        >
-          {t('browse')}
-        </Button>
-        <View style={cs.counterFooter}>
-          <Text style={cs.counterFooterText}>PRICE / UNIT / SPECIFICATION</Text>
-          <Text style={cs.counterFooterText}>THE MATERIALS COUNTER</Text>
+    <View style={cs.board}>
+      <View style={[s.row, { alignItems: 'flex-start' }]}>
+        <Stamp size={46} tone="clay" />
+        <View style={{ flex: 1 }}>
+          <Text style={cs.boardTitle} accessibilityRole="header">
+            {t('Current rates', 'मौजूदा भाव')}
+          </Text>
+          <Text style={cs.boardSub}>
+            {loading
+              ? t('Checking today’s prices…', 'आज के भाव जाँचे जा रहे हैं…')
+              : t(
+                  `Lowest in-stock price · checked ${timeLabel(checkedAt)}`,
+                  `सबसे कम उपलब्ध भाव · ${timeLabel(checkedAt)} पर जाँचा`,
+                )}
+          </Text>
         </View>
       </View>
-      <View style={cs.quickActions}>
-        <Button
-          secondary
-          icon="refresh-outline"
-          onPress={() => navigate({ screen: 'Orders' })}
-          style={{ flex: 1, minWidth: 130 }}
-        >
-          Reorder materials
-        </Button>
-        <Button
-          secondary
-          icon="document-text-outline"
-          onPress={() => navigate({ screen: 'QuoteRequest' })}
-          style={{ flex: 1, minWidth: 130 }}
-        >
-          Bulk quotation
-        </Button>
-      </View>
-      <DeliveryCheck />
-      <Section title={t('materials')} />
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={cs.categories}
-      >
-        {categories.map((category) => (
-          <Pressable
-            accessibilityRole="button"
-            key={category.id}
-            style={cs.category}
-            onPress={() => navigate({ screen: 'Products', category: category.slug })}
-          >
-            <Icon name={categoryIcons[category.slug] || 'cube-outline'} size={28} />
-            <Text style={cs.categoryName}>
-              {language === 'hi' ? categoryHindi[category.slug] || category.name : category.name}
-            </Text>
-            <Icon name="arrow-forward" size={16} />
-          </Pressable>
-        ))}
-      </ScrollView>
-      <Section
-        title={t('today')}
-        action={t('all')}
-        onAction={() => navigate({ screen: 'Products' })}
-      />
-      <Text style={[s.body, { marginBottom: 14 }]}>
-        Prices per selling unit. Final availability and delivery confirmed at checkout.
-      </Text>
-      {error ? (
-        <Empty
-          title="Prices could not be loaded"
-          body={error}
-          action="Try again"
-          onAction={() => void refreshCatalog()}
-        />
-      ) : loading ? (
-        <Skeletons />
+      {loading && !rates.length ? (
+        <View style={{ gap: space.sm, marginTop: space.md }}>
+          {[0, 1, 2, 3].map((row) => (
+            <View key={row} style={cs.rateRow}>
+              <View style={{ height: 18, width: '55%', backgroundColor: '#2E4B5C' }} />
+            </View>
+          ))}
+        </View>
+      ) : error && !rates.length ? (
+        <View style={{ gap: space.md, marginTop: space.md }}>
+          <Text style={cs.boardSub}>
+            {t('Today’s rates could not load.', 'आज के भाव लोड नहीं हो सके।')}
+          </Text>
+          <Button secondary onPress={() => void refreshCatalog()}>
+            {t('Try again', 'फिर कोशिश करें')}
+          </Button>
+        </View>
+      ) : rates.length ? (
+        <View style={{ marginTop: space.sm }}>
+          {rates.map((rate) => (
+            <Pressable
+              key={rate.slug}
+              accessibilityRole="button"
+              accessibilityLabel={`${categoryName(rate.slug, rate.name, language)}: ${t(`from ${money(rate.product.pricePaise)}`, `${money(rate.product.pricePaise)} से`)} ${unitText(rate.product, language)}`}
+              onPress={() => navigate({ screen: 'Products', category: rate.slug })}
+              style={({ pressed }) => [cs.rateRow, pressed && { opacity: 0.7 }]}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={cs.rateName}>{categoryName(rate.slug, rate.name, language)}</Text>
+                <Text style={cs.rateProduct} numberOfLines={1}>
+                  {rate.product.name}
+                </Text>
+              </View>
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text style={cs.ratePrice}>{money(rate.product.pricePaise)}</Text>
+                <Text style={cs.rateProduct}>/ {rate.product.unit}</Text>
+              </View>
+              <Icon name="chevron-forward" color={C.clayOnInk} size={18} />
+            </Pressable>
+          ))}
+        </View>
       ) : (
-        <ProductGrid products={products.slice(0, 8)} />
-      )}
-      {!loading && !error && !products.length && (
-        <Empty
-          title="The materials counter is being updated"
-          body="Call the store for current prices and availability."
-        />
-      )}
-      <View style={cs.bulk}>
-        <Text style={s.eyebrow}>PLANNING A BIGGER BUILD?</Text>
-        <Text style={s.h2}>One list. A quote for your site.</Text>
-        <Text style={s.body}>
-          Send material quantities and your delivery address. The store will prepare a quotation for
-          you to review.
+        <Text style={[cs.boardSub, { marginTop: space.md }]}>
+          {t(
+            'No materials are in stock right now. Call the store for today’s rates.',
+            'अभी कोई सामग्री स्टॉक में नहीं है। आज के भाव के लिए दुकान पर फ़ोन करें।',
+          )}
         </Text>
-        <Button secondary onPress={() => navigate({ screen: 'QuoteRequest' })} icon="arrow-forward">
-          Request bulk quotation
-        </Button>
-      </View>
-      {settings && (
-        <View style={cs.help}>
-          <Text style={s.h2}>Talk to Shiv Cement Store</Text>
-          <Text style={s.body}>Need help choosing a material or arranging delivery?</Text>
-          <View style={cs.quickActions}>
-            <Button
-              secondary
-              icon="call-outline"
-              onPress={() => contact(`tel:${settings.phone}`)}
-              style={{ flex: 1 }}
-            >
-              Call store
-            </Button>
-            <Button
-              secondary
-              icon="logo-whatsapp"
-              onPress={() => contact(`https://wa.me/${settings.phone.replace(/\D/g, '')}`)}
-              style={{ flex: 1 }}
-            >
-              WhatsApp
-            </Button>
-          </View>
-        </View>
       )}
-    </>
-  );
-}
-function FilterChips({
-  values,
-  selected,
-  change,
-  label,
-}: {
-  values: { value: string; label: string }[];
-  selected: string;
-  change: (value: string) => void;
-  label: string;
-}) {
-  return (
-    <View style={{ gap: 8 }}>
-      <Text style={s.label}>{label}</Text>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={cs.filterRow}
-      >
-        {values.map((option) => (
-          <Pressable
-            key={option.value}
-            accessibilityRole="button"
-            accessibilityState={{ selected: option.value === selected }}
-            onPress={() => change(option.value)}
-            style={[cs.filter, option.value === selected && cs.selectedFilter]}
-          >
-            <Text style={[cs.filterText, option.value === selected && { color: C.white }]}>
-              {option.label}
-            </Text>
-          </Pressable>
-        ))}
-      </ScrollView>
+      <Text style={[cs.boardSub, { marginTop: space.md, fontSize: 13 }]}>
+        {t(
+          'Delivery is added when you review your order.',
+          'डिलीवरी शुल्क ऑर्डर की समीक्षा में जुड़ता है।',
+        )}
+      </Text>
     </View>
   );
 }
+
+/** Compact, first on Home for returning customers: where is my order, and order it again. */
+function LatestOrder() {
+  const { latestOrder, t, language, navigate } = useStore();
+  const reorder = useReorder(latestOrder);
+  if (!latestOrder) return null;
+  return (
+    <View style={[s.card, { gap: space.sm, padding: space.md }]}>
+      <View style={s.between}>
+        <Text style={s.h3} numberOfLines={1}>
+          {t('Your latest order', 'आपका पिछला ऑर्डर')}
+        </Text>
+        <OrderStatusTag status={latestOrder.status} language={language} />
+      </View>
+      <Text style={s.small} numberOfLines={1}>
+        {latestOrder.number} ·{' '}
+        {latestOrder.items.map((item) => `${item.name} × ${item.quantity}`).join(', ')}
+      </Text>
+      <View style={[s.row, { gap: space.sm }]}>
+        <Button
+          secondary
+          icon="navigate-outline"
+          style={{ flex: 1, minHeight: 48 }}
+          onPress={() => navigate({ screen: 'Order', id: latestOrder.id })}
+        >
+          {t('Track', 'ट्रैक करें')}
+        </Button>
+        <Button
+          icon="repeat"
+          style={{ flex: 1, minHeight: 48 }}
+          loading={reorder.busy}
+          disabled={!reorder.ready}
+          onPress={() => void reorder.run()}
+        >
+          {reorder.pending
+            ? t('Check reorder', 'दोबारा जाँचें')
+            : t('Order again', 'फिर से मँगाएँ')}
+        </Button>
+      </View>
+      {reorder.error ? <Notice error>{reorder.error}</Notice> : null}
+    </View>
+  );
+}
+
+export function OrderStatusTag({ status, language }: { status: string; language: Language }) {
+  const good = ['DELIVERED', 'CONFIRMED', 'PREPARING', 'OUT_FOR_DELIVERY', 'PAID'].includes(status);
+  const bad = ['CANCELLED', 'DELIVERY_EXCEPTION', 'REFUND_PENDING'].includes(status);
+  return (
+    <Tag tone={bad ? 'clay' : good ? 'green' : 'grey'}>{orderStatusText(status, language)}</Tag>
+  );
+}
+
+export function Home() {
+  const { categories, products, navigate, t, language, refreshCurrent, refreshing, user } =
+    useStore();
+  const brands = useMemo(
+    () => [...new Set(products.map((product) => product.brand).filter(Boolean))].slice(0, 12),
+    [products],
+  );
+  const actions: [string, IconName, () => void][] = [
+    [t('All materials', 'सारी सामग्री'), 'grid-outline', () => navigate({ screen: 'Products' })],
+    [
+      t('Bulk quote', 'थोक भाव'),
+      'document-text-outline',
+      () => navigate({ screen: 'QuoteRequest' }),
+    ],
+    [
+      t('Ask Shiv Sahayak', 'शिव सहायक से पूछें'),
+      'chatbubbles-outline',
+      () => navigate({ screen: 'Assistant' }),
+    ],
+    [t('Compare', 'तुलना करें'), 'git-compare-outline', () => navigate({ screen: 'Compare' })],
+  ];
+  return (
+    <Screen onRefresh={() => void refreshCurrent()} refreshing={refreshing}>
+      {user && <LatestOrder />}
+      <RateBoard />
+      <View style={cs.actions}>
+        {actions.map(([label, icon, onPress]) => (
+          <Pressable
+            key={label}
+            accessibilityRole="button"
+            onPress={onPress}
+            style={({ pressed }) => [cs.action, pressed && { opacity: 0.75 }]}
+          >
+            <Icon name={icon} color={C.clay} size={26} />
+            <Text style={cs.actionText}>{label}</Text>
+          </Pressable>
+        ))}
+      </View>
+      {categories.length > 0 && (
+        <View>
+          <Section title={t('Shop by material', 'सामग्री के हिसाब से')} />
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: space.sm }}
+          >
+            {categories.map((category) => (
+              <Pressable
+                accessibilityRole="button"
+                key={category.id}
+                style={({ pressed }) => [cs.category, pressed && { opacity: 0.75 }]}
+                onPress={() => navigate({ screen: 'Products', category: category.slug })}
+              >
+                <Icon name={categoryIcons[category.slug] || 'cube-outline'} size={28} />
+                <Text style={cs.categoryName}>
+                  {categoryName(category.slug, category.name, language)}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+      )}
+      <DeliveryCheck />
+      <View style={cs.bulk}>
+        <Text style={s.eyebrow}>
+          {t('BUILDING A HOUSE OR A SITE?', 'घर या बड़ी साइट बना रहे हैं?')}
+        </Text>
+        <Text style={s.h2}>
+          {t('One list. A written price for your site.', 'एक सूची। आपकी साइट का लिखित भाव।')}
+        </Text>
+        <Text style={s.body}>
+          {t(
+            'Send quantities and your site address. The store prices each item with freight and sends a quote you can accept.',
+            'मात्रा और साइट का पता भेजें। दुकान हर सामग्री का भाव, भाड़े के साथ, लिखकर भेजेगी।',
+          )}
+        </Text>
+        <Button icon="arrow-forward" onPress={() => navigate({ screen: 'QuoteRequest' })}>
+          {t('Ask for a bulk quote', 'थोक भाव माँगें')}
+        </Button>
+      </View>
+      {awards.length > 0 && (
+        <View>
+          <Section title={t('Awards & recognition', 'पुरस्कार और सम्मान')} />
+          {awards.map((award) => (
+            <View key={award.title} style={[s.card, s.row, { marginBottom: space.sm }]}>
+              <Icon name="ribbon-outline" color={C.clay} size={28} />
+              <View style={{ flex: 1 }}>
+                <Text style={s.h3}>{award.title}</Text>
+                <Text style={s.small}>
+                  {award.issuer} · {award.year}
+                </Text>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
+      {brands.length > 0 && (
+        <View>
+          <Section title={t('Brands at our counter', 'हमारी दुकान के ब्रांड')} />
+          <View style={cs.brands}>
+            {brands.map((brand) => (
+              <Text key={brand} style={cs.brand}>
+                {brand}
+              </Text>
+            ))}
+          </View>
+        </View>
+      )}
+    </Screen>
+  );
+}
+
 export function Catalogue() {
-  const { route, products: refreshedProducts, categories, t, registerRefresh } = useStore();
+  const {
+    route,
+    products: refreshedProducts,
+    categories,
+    t,
+    language,
+    registerRefresh,
+    say,
+  } = useStore();
   const [query, setQuery] = useState('');
   const [brand, setBrand] = useState('');
   const [brands, setBrands] = useState<string[]>([]);
@@ -461,14 +559,15 @@ export function Catalogue() {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [more, setMore] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const request = useRef(0);
   const visibleItems = useRef(items);
   visibleItems.current = items;
   const inFlight = useRef(false);
   useEffect(() => {
-    setCategory(route.category || '');
-  }, [route.category]);
+    if (route.screen === 'Products') setCategory(route.category || '');
+  }, [route.screen, route.category]);
   useEffect(() => {
     const timer = setTimeout(() => {
       const next = { query: query.trim(), brand: brand.trim() };
@@ -534,7 +633,7 @@ export function Catalogue() {
         );
         setNextCursor(page.nextCursor);
       } catch (e) {
-        if (current === request.current) setError(message(e));
+        if (current === request.current) setError(say(e));
       } finally {
         if (current === request.current) {
           inFlight.current = false;
@@ -543,7 +642,7 @@ export function Catalogue() {
         }
       }
     },
-    [search, category, availability, sort],
+    [search, category, availability, sort, say],
   );
   useEffect(() => {
     void load();
@@ -555,155 +654,220 @@ export function Catalogue() {
     void load(undefined, true);
   }, [load, refreshedProducts]);
   useEffect(() => registerRefresh(() => load(undefined, true)), [load, registerRefresh]);
-  return (
-    <View style={s.stack}>
-      <View>
-        <Text style={s.eyebrow}>THE MATERIALS COUNTER</Text>
-        <Text style={[s.title, { marginTop: 8 }]}>{t('products')}</Text>
-        <Text style={[s.body, { marginTop: 8 }]}>
-          Compare prices, units and specifications for your next order.
-        </Text>
-      </View>
+  const filtered = brand || availability !== 'all' || sort !== 'name';
+  const header = (
+    <View style={{ gap: space.md, paddingBottom: space.md }}>
       <View style={cs.searchBox}>
-        <Icon name="search-outline" />
+        <Icon name="search-outline" color={C.inkSoft} />
         <TextInput
-          accessibilityLabel={t('search')}
-          placeholder={t('search')}
+          accessibilityLabel={t('Search materials', 'सामग्री खोजें')}
+          placeholder={t('Search cement, steel, sand…', 'सीमेंट, सरिया, बालू खोजें…')}
           placeholderTextColor={C.muted}
           value={query}
           maxLength={100}
+          returnKeyType="search"
           onChangeText={setQuery}
           style={cs.searchInput}
         />
+        {query ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('Clear search', 'खोज हटाएँ')}
+            onPress={() => setQuery('')}
+            hitSlop={10}
+          >
+            <Icon name="close-circle" color={C.muted} />
+          </Pressable>
+        ) : null}
       </View>
-      <FilterChips
-        label="Material category"
-        values={[
-          { value: '', label: t('all') },
-          ...categories.map((item) => ({ value: item.slug, label: item.name })),
-        ]}
-        selected={category}
-        change={setCategory}
-      />
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Filters and sort"
-        accessibilityState={{ expanded: filtersOpen }}
-        onPress={() => setFiltersOpen((open) => !open)}
-        style={[s.between, s.card, { padding: 14 }]}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ gap: space.sm }}
+        accessibilityLabel={t('Material category', 'सामग्री की श्रेणी')}
       >
-        <View style={{ flex: 1 }}>
-          <Text style={[s.label, { color: C.ink }]}>Filters &amp; sort</Text>
-          <Text style={s.specification}>
-            {brand || 'All brands'} ·{' '}
-            {availability === 'all'
-              ? 'All stock'
-              : availability === 'in'
-                ? 'In stock'
-                : 'Out of stock'}
-            {sort !== 'name' ? ' · Sorted' : ''}
-          </Text>
-        </View>
-        <Icon name={filtersOpen ? 'chevron-up' : 'options-outline'} />
-      </Pressable>
+        <Chip label={t('All', 'सभी')} selected={!category} onPress={() => setCategory('')} />
+        {categories.map((item) => (
+          <Chip
+            key={item.id}
+            label={categoryName(item.slug, item.name, language)}
+            selected={category === item.slug}
+            onPress={() => setCategory(item.slug)}
+          />
+        ))}
+        <Chip
+          label={`${t('Filters', 'फ़िल्टर')}${filtered ? ' •' : ''}`}
+          accessibilityLabel={t('Filters and sort', 'फ़िल्टर और क्रम')}
+          selected={filtersOpen}
+          onPress={() => setFiltersOpen((open) => !open)}
+        />
+      </ScrollView>
       {filtersOpen && (
-        <View style={s.stack}>
+        <View style={[s.card, { gap: space.md }]}>
           <Field
-            label="Filter by brand"
-            placeholder="For example: UltraTech"
+            label={t('Brand', 'ब्रांड')}
+            placeholder={t('For example: UltraTech', 'जैसे: UltraTech')}
             value={brand}
             maxLength={80}
             onChangeText={setBrand}
             autoCapitalize="none"
           />
           {brands.length > 0 && (
-            <FilterChips
-              label="Choose a matching brand"
-              values={[
-                { value: '', label: 'All brands' },
-                ...brands.map((name) => ({ value: name, label: name })),
-              ]}
-              selected={brand}
-              change={setBrand}
-            />
+            <ScrollView horizontal contentContainerStyle={{ gap: space.sm }}>
+              <Chip
+                label={t('All brands', 'सभी ब्रांड')}
+                selected={!brand}
+                onPress={() => setBrand('')}
+              />
+              {brands.map((name) => (
+                <Chip
+                  key={name}
+                  label={name}
+                  selected={brand === name}
+                  onPress={() => setBrand(name)}
+                />
+              ))}
+            </ScrollView>
           )}
-          <FilterChips
-            label="Availability"
-            values={[
-              { value: 'all', label: 'All materials' },
-              { value: 'in', label: 'In stock' },
-              { value: 'out', label: 'Out of stock' },
-            ]}
-            selected={availability}
-            change={setAvailability}
-          />
-          <FilterChips
-            label="Sort by"
-            values={[
-              { value: 'name', label: 'Name' },
-              { value: 'price_asc', label: 'Price: low to high' },
-              { value: 'price_desc', label: 'Price: high to low' },
-              { value: 'newest', label: 'Recently added' },
-            ]}
-            selected={sort}
-            change={setSort}
-          />
+          <Text style={s.label}>{t('Stock', 'स्टॉक')}</Text>
+          <View style={[s.row, { flexWrap: 'wrap', gap: space.sm }]}>
+            {(
+              [
+                ['all', t('All', 'सभी')],
+                ['in', t('In stock', 'स्टॉक में')],
+                ['out', t('Out of stock', 'स्टॉक नहीं')],
+              ] as const
+            ).map(([value, label]) => (
+              <Chip
+                key={value}
+                label={label}
+                selected={availability === value}
+                onPress={() => setAvailability(value)}
+              />
+            ))}
+          </View>
+          <Text style={s.label}>{t('Sort by', 'क्रम')}</Text>
+          <View style={[s.row, { flexWrap: 'wrap', gap: space.sm }]}>
+            {(
+              [
+                ['name', t('Name', 'नाम')],
+                ['price_asc', t('Price: low to high', 'भाव: कम से ज़्यादा')],
+                ['price_desc', t('Price: high to low', 'भाव: ज़्यादा से कम')],
+                ['newest', t('Newest', 'नई')],
+              ] as const
+            ).map(([value, label]) => (
+              <Chip
+                key={value}
+                label={label}
+                selected={sort === value}
+                onPress={() => setSort(value)}
+              />
+            ))}
+          </View>
           <Button secondary onPress={() => setFiltersOpen(false)}>
-            Show materials
+            {t('Show materials', 'सामग्री दिखाएँ')}
           </Button>
         </View>
       )}
       {loading ? (
-        <Skeletons />
+        <RowSkeletons />
       ) : (
-        <>
-          <Text style={s.specification}>
-            {items.length} materials loaded{nextCursor ? ' · more available' : ''}
-          </Text>
-          <ProductGrid products={items} />
-        </>
+        <Text style={s.small}>
+          {t(`${items.length} materials`, `${items.length} सामग्री`)}
+          {nextCursor ? t(' · more below', ' · नीचे और') : ''}
+        </Text>
       )}
       {Boolean(error) && (
-        <View style={s.stack}>
+        <View style={{ gap: space.sm }}>
           <Notice error>{error}</Notice>
           <Button secondary onPress={() => void load(undefined, Boolean(items.length))}>
-            Try again
+            {t('Try again', 'फिर कोशिश करें')}
           </Button>
         </View>
       )}
-      {!loading && !error && !items.length && (
-        <Empty
-          title="No materials match these filters"
-          body="Try another name, brand or category."
-          action="Clear filters"
-          onAction={() => {
-            setQuery('');
-            setBrand('');
-            setCategory('');
-            setAvailability('all');
-            setSort('name');
-          }}
-        />
-      )}
-      {!loading && !error && nextCursor && (
-        <Button secondary loading={more} onPress={() => void load(nextCursor)}>
-          Load more materials
-        </Button>
-      )}
     </View>
   );
+  return (
+    <FlatList
+      data={loading ? [] : items}
+      keyExtractor={(item) => item.id}
+      renderItem={({ item }) => <ProductRow product={item} />}
+      ListHeaderComponent={header}
+      ItemSeparatorComponent={() => <View style={{ height: space.sm }} />}
+      keyboardShouldPersistTaps="handled"
+      contentContainerStyle={cs.list}
+      initialNumToRender={8}
+      windowSize={7}
+      removeClippedSubviews={Platform.OS === 'android'}
+      onEndReachedThreshold={0.6}
+      onEndReached={() => {
+        if (nextCursor && !more && !loading) void load(nextCursor);
+      }}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          colors={[C.clay]}
+          onRefresh={() => {
+            setRefreshing(true);
+            void load(undefined, true).finally(() => setRefreshing(false));
+          }}
+        />
+      }
+      ListEmptyComponent={
+        !loading && !error ? (
+          <Empty
+            title={t('No materials match', 'कोई सामग्री नहीं मिली')}
+            body={t('Try another name, brand or category.', 'दूसरा नाम, ब्रांड या श्रेणी आज़माएँ।')}
+            action={t('Clear filters', 'फ़िल्टर हटाएँ')}
+            onAction={() => {
+              setQuery('');
+              setBrand('');
+              setCategory('');
+              setAvailability('all');
+              setSort('name');
+            }}
+          />
+        ) : null
+      }
+      ListFooterComponent={
+        more ? (
+          <View style={{ paddingVertical: space.lg }}>
+            <RowSkeletons />
+          </View>
+        ) : nextCursor && !loading ? (
+          <Button secondary onPress={() => void load(nextCursor)} style={{ marginTop: space.md }}>
+            {t('Load more materials', 'और सामग्री दिखाएँ')}
+          </Button>
+        ) : null
+      }
+    />
+  );
 }
+
 export function ProductDetail() {
-  const { route, products, t, add, navigate, cart, cartBusy, registerRefresh } = useStore();
-  const cached = products.find((item) => item.id === route.id);
+  const {
+    route,
+    knownProducts,
+    products,
+    t,
+    language,
+    add,
+    navigate,
+    basketQuantity,
+    cartBusy,
+    registerRefresh,
+    remember,
+    compare,
+    toggleCompare,
+    say,
+  } = useStore();
+  const cached = knownProducts[route.id || ''];
   const [product, setProduct] = useState<Product | null>(cached || null);
   const [quantity, setQuantity] = useState(cached?.minQuantity || 1);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const request = useRef(0);
-  const cartRef = useRef(cart);
-  cartRef.current = cart;
   const load = useCallback(async () => {
     const current = ++request.current;
     setLoading(true);
@@ -712,22 +876,14 @@ export function ProductDetail() {
       const value = await api<Product>(`/products/${encodeURIComponent(route.id || '')}`);
       if (current !== request.current) return;
       setProduct(value);
-      const inCart = cartRef.current.find((line) => line.productId === value.id)?.quantity || 0;
-      const available = Math.max(
-        value.minQuantity,
-        Math.floor((Math.min(value.stock, 10000) - inCart) / value.quantityStep) *
-          value.quantityStep,
+      remember([value]);
+      const room = maxOrderable(
+        value,
+        Math.min(value.stock, MAX_LINE_QUANTITY) - basketQuantity(value.id),
       );
-      setQuantity((old) => {
-        if (old >= value.minQuantity && old <= available && old % value.quantityStep === 0)
-          return old;
-        return Math.min(
-          available,
-          Math.max(value.minQuantity, Math.ceil(old / value.quantityStep) * value.quantityStep),
-        );
-      });
+      setQuantity((old) => (quantityProblem(value, old, room) ? value.minQuantity : old));
     } catch (e) {
-      if (current === request.current) setError(message(e));
+      if (current === request.current) setError(say(e));
     } finally {
       if (current === request.current) setLoading(false);
     }
@@ -739,107 +895,171 @@ export function ProductDetail() {
     };
   }, [load, products]);
   useEffect(() => registerRefresh(load), [load, registerRefresh]);
-  if (loading && !product) return <Skeletons />;
+  if (loading && !product)
+    return (
+      <Screen>
+        <RowSkeletons />
+      </Screen>
+    );
   if (!product)
     return (
-      <Empty
-        title="Material could not be loaded"
-        body={error || 'This material may no longer be available.'}
-        action="Try again"
-        onAction={() => void load()}
-      />
-    );
-  const inCart = cart.find((line) => line.productId === product.id)?.quantity || 0;
-  return (
-    <View style={s.stack}>
-      {Boolean(error) && (
-        <Notice error>{error} Displaying the last loaded material details.</Notice>
-      )}
-      <View style={[s.card, { backgroundColor: C.concrete }]}>
-        <MaterialArt product={product} large />
-      </View>
-      <View style={s.between}>
-        <Tag tone={product.stock >= product.minQuantity ? 'green' : 'grey'}>
-          {product.stock >= product.minQuantity ? t('stock') : t('unavailable')}
-        </Tag>
-        <Text style={s.specification}>{product.category.name}</Text>
-      </View>
-      <Text style={s.eyebrow}>{product.brand.toUpperCase()}</Text>
-      <Text style={s.title}>{product.name}</Text>
-      <Text style={s.specification}>
-        {[product.grade, product.type, product.packSize].filter(Boolean).join(' · ')}
-      </Text>
-      <View style={[s.row, { flexWrap: 'wrap' }]}>
-        <Text style={[s.price, { fontSize: 36 }]}>{money(product.pricePaise)}</Text>
-        <Text style={s.body}>per {product.unit}</Text>
-      </View>
-      <Text style={s.body}>
-        Price updated {new Date(product.priceUpdatedAt).toLocaleDateString('en-IN')}. Final price
-        confirmed at checkout.
-      </Text>
-      <View style={[s.card, { gap: 8 }]}>
-        <Text style={s.h2}>Ordering specification</Text>
-        <Text style={s.specification}>
-          Selling unit: {product.unit}
-          {product.packSize ? `\nPack: ${product.packSize}` : ''}
-          {`\nMinimum: ${product.minQuantity} · Order step: ${product.quantityStep}`}
-        </Text>
-      </View>
-      <Text style={s.body}>{product.description}</Text>
-      {product.recommendedUse ? (
-        <>
-          <Text style={s.h2}>Recommended use</Text>
-          <Text style={s.body}>{product.recommendedUse}</Text>
-        </>
-      ) : null}
-      <View style={[s.between, { flexWrap: 'wrap' }]}>
-        <Text style={s.label}>{t('quantity')}</Text>
-        <Quantity
-          value={quantity}
-          min={product.minQuantity}
-          step={product.quantityStep}
-          max={Math.min(product.stock, 10000) - inCart}
-          disabled={cartBusy || busy}
-          change={setQuantity}
+      <Screen>
+        <Empty
+          title={t('Material could not be loaded', 'सामग्री लोड नहीं हो सकी')}
+          body={error || t('It may no longer be available.', 'शायद यह अब उपलब्ध नहीं है।')}
+          action={t('Try again', 'फिर कोशिश करें')}
+          onAction={() => void load()}
         />
-      </View>
-      <Button
-        disabled={
-          !product.active ||
-          cartBusy ||
-          quantity + inCart > Math.min(product.stock, 10000) ||
-          quantity < product.minQuantity ||
-          quantity % product.quantityStep !== 0
-        }
-        loading={busy}
-        icon="bag-add-outline"
-        onPress={() => {
-          setBusy(true);
-          void add(product, quantity).finally(() => setBusy(false));
-        }}
-      >
-        {t('add')} · {money(product.pricePaise * quantity)}
-      </Button>
-      {inCart > 0 && (
-        <Text style={s.body}>
-          In cart: {inCart} × {product.unit}
-        </Text>
+      </Screen>
+    );
+  const inBasket = basketQuantity(product.id);
+  const room = Math.min(product.stock, MAX_LINE_QUANTITY) - inBasket;
+  const available = product.active && product.stock >= product.minQuantity;
+  const problem = quantityProblem(product, quantity, room);
+  const comparing = compare.some((item) => item.id === product.id);
+  return (
+    <Screen
+      footer={
+        available ? (
+          <>
+            <View style={s.between}>
+              <Quantity
+                value={quantity}
+                min={product.minQuantity}
+                step={product.quantityStep}
+                max={room}
+                disabled={cartBusy || busy}
+                change={setQuantity}
+              />
+              <View style={{ alignItems: 'flex-end', flexShrink: 1 }}>
+                <Text style={s.small}>{t('Total', 'कुल')}</Text>
+                <Text style={s.price}>{money(product.pricePaise * quantity)}</Text>
+              </View>
+            </View>
+            <Button
+              disabled={cartBusy || Boolean(problem) || room < product.minQuantity}
+              loading={busy}
+              icon="basket-outline"
+              onPress={() => {
+                setBusy(true);
+                void add(product, quantity).finally(() => setBusy(false));
+              }}
+            >
+              {t('Add to basket', 'टोकरी में जोड़ें')}
+            </Button>
+          </>
+        ) : (
+          <Button secondary onPress={() => navigate({ screen: 'QuoteRequest', id: product.id })}>
+            {t('Out of stock · ask for a quote', 'स्टॉक नहीं · भाव माँगें')}
+          </Button>
+        )
+      }
+    >
+      {Boolean(error) && (
+        <Notice error>
+          {error} {t('Showing the last loaded details.', 'पिछली बार की जानकारी दिख रही है।')}
+        </Notice>
       )}
-      <Button secondary onPress={() => navigate({ screen: 'QuoteRequest', id: product.id })}>
-        {t('bulk')}
-      </Button>
+      <View style={[s.row, { alignItems: 'flex-start' }]}>
+        <MaterialArt product={product} size={96} />
+        <View style={{ flex: 1, gap: 4 }}>
+          <Text style={s.eyebrow}>{product.brand.toUpperCase()}</Text>
+          <Text style={[s.h1, { fontSize: 26 }]}>{product.name}</Text>
+          <Tag tone={available ? 'green' : 'grey'}>
+            {available ? t('In stock', 'स्टॉक में') : t('Out of stock', 'स्टॉक नहीं')}
+          </Tag>
+        </View>
+      </View>
+      <View style={[s.card, { gap: space.sm }]}>
+        <View style={[s.row, { alignItems: 'baseline', flexWrap: 'wrap', gap: space.sm }]}>
+          <Text style={[s.price, { fontSize: 32 }]}>{money(product.pricePaise)}</Text>
+          <Text style={s.body}>{unitText(product, language)}</Text>
+        </View>
+        <Text style={s.small}>
+          {t(
+            `Price updated ${dateLabel(product.priceUpdatedAt, language)}. Confirmed again when you review your order.`,
+            `भाव ${dateLabel(product.priceUpdatedAt, language)} को बदला गया। ऑर्डर की समीक्षा में फिर पक्का होगा।`,
+          )}
+        </Text>
+        {inBasket > 0 && (
+          <Notice tone="good">
+            {t(
+              `${inBasket} × ${product.unit} already in your basket`,
+              `${inBasket} × ${product.unit} पहले से टोकरी में`,
+            )}
+          </Notice>
+        )}
+      </View>
+      <View style={[s.card, { gap: space.sm }]}>
+        <Text style={s.h3}>{t('Specification', 'विवरण')}</Text>
+        {(
+          [
+            [
+              t('Category', 'श्रेणी'),
+              categoryName(product.category.slug, product.category.name, language),
+            ],
+            [t('Type', 'प्रकार'), product.type],
+            [t('Grade', 'ग्रेड'), product.grade],
+            [t('Pack', 'पैक'), product.packSize],
+            [t('Sold per', 'बिक्री इकाई'), product.unit],
+            [
+              t('Order', 'ऑर्डर'),
+              t(
+                `minimum ${product.minQuantity}, in steps of ${product.quantityStep}`,
+                `कम से कम ${product.minQuantity}, ${product.quantityStep} के गुणक में`,
+              ),
+            ],
+          ] as const
+        )
+          .filter(([, value]) => value)
+          .map(([label, value]) => (
+            <View key={label} style={[s.between, { alignItems: 'flex-start' }]}>
+              <Text style={s.small}>{label}</Text>
+              <Text style={[s.body, { color: C.ink, flex: 1, textAlign: 'right' }]}>{value}</Text>
+            </View>
+          ))}
+      </View>
+      {product.description ? <Text style={s.body}>{product.description}</Text> : null}
+      {product.recommendedUse ? (
+        <View style={{ gap: space.xs }}>
+          <Text style={s.h3}>{t('Recommended use', 'कहाँ इस्तेमाल करें')}</Text>
+          <Text style={s.body}>{product.recommendedUse}</Text>
+        </View>
+      ) : null}
+      <View style={[s.row, { gap: space.sm }]}>
+        <Button
+          secondary
+          icon="document-text-outline"
+          style={{ flex: 1 }}
+          onPress={() => navigate({ screen: 'QuoteRequest', id: product.id })}
+        >
+          {t('Bulk quote', 'थोक भाव')}
+        </Button>
+        <Button
+          secondary
+          icon={comparing ? 'checkmark' : 'git-compare-outline'}
+          style={{ flex: 1 }}
+          onPress={() => {
+            if (!comparing) toggleCompare(product);
+            navigate({ screen: 'Compare' });
+          }}
+        >
+          {t('Compare', 'तुलना करें')}
+        </Button>
+      </View>
       <DeliveryCheck />
-    </View>
+    </Screen>
   );
 }
+
 export function Quantity({
   value,
   change,
-  max = 10000,
+  max = MAX_LINE_QUANTITY,
   min = 1,
   step = 1,
   disabled,
-  label = 'Quantity',
+  label,
   commitOnBlur = false,
   allowRemove = false,
   onInvalid,
@@ -855,13 +1075,18 @@ export function Quantity({
   allowRemove?: boolean;
   onInvalid?: (message: string) => void;
 }) {
+  const { t } = useStore();
+  const name = label || t('Quantity', 'मात्रा');
   const [draft, setDraft] = useState(String(value));
   const input = useRef<TextInput>(null);
   // react-native-web applies selectTextOnFocus after a delay; if the customer has already typed
   // a digit, that late select-all made the next keystroke replace it ("12" became "2").
   const typedSinceFocus = useRef(false);
+  // Show the saved quantity, but never overwrite what the customer is typing: a basket save or
+  // background refresh finishing mid-entry used to replace their digits.
+  const editing = useRef(false);
   useEffect(() => {
-    if (!disabled) setDraft(String(value));
+    if (!disabled && !editing.current) setDraft(String(value));
   }, [value, disabled]);
   const previous = Math.min(Math.floor(max / step) * step, Math.floor((value - 1) / step) * step);
   const next = Math.max(min, Math.ceil((value + 1) / step) * step);
@@ -878,28 +1103,37 @@ export function Quantity({
       if (quantity !== value) change(quantity);
     } else {
       setDraft(String(value));
-      onInvalid?.(`Enter a quantity from ${min} to ${max}, in steps of ${step}.`);
+      onInvalid?.(
+        t(
+          `Enter a quantity from ${min} to ${max}, in steps of ${step}.`,
+          `${min} से ${max} तक, ${step} के गुणक में मात्रा लिखें।`,
+        ),
+      );
     }
   }
   return (
-    <View style={cs.quantity}>
+    <View style={cs.stepper}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`Decrease ${label === 'Quantity' ? 'quantity' : label}`}
+        accessibilityLabel={`${t('Decrease', 'कम करें')} ${name}`}
         disabled={disabled || !canDecrease}
         onPress={() => change(previous < min ? 0 : previous)}
-        style={[cs.quantityButton, (disabled || !canDecrease) && { opacity: 0.35 }]}
+        style={[cs.stepButton, (disabled || !canDecrease) && { opacity: 0.35 }]}
       >
-        <Icon name="remove" size={19} />
+        <Icon name="remove" size={20} />
       </Pressable>
       <TextInput
-        accessibilityLabel={label}
-        accessibilityHint={`Minimum ${min}, step ${step}, maximum ${max}`}
+        accessibilityLabel={name}
+        accessibilityHint={t(
+          `Minimum ${min}, step ${step}, maximum ${max}`,
+          `कम से कम ${min}, गुणक ${step}, अधिकतम ${max}`,
+        )}
         ref={input}
         value={draft}
         keyboardType="number-pad"
         selectTextOnFocus={Platform.OS !== 'web'}
         onFocus={() => {
+          editing.current = true;
           if (Platform.OS !== 'web') return;
           typedSinceFocus.current = false;
           setTimeout(() => {
@@ -908,7 +1142,11 @@ export function Quantity({
           }, 0);
         }}
         editable={!disabled}
-        onBlur={() => (commitOnBlur ? commit() : setDraft(String(value)))}
+        onBlur={() => {
+          editing.current = false;
+          if (commitOnBlur) commit();
+          else setDraft(String(value));
+        }}
         onSubmitEditing={() => {
           if (commitOnBlur) commit();
         }}
@@ -916,155 +1154,160 @@ export function Quantity({
           typedSinceFocus.current = true;
           if (!/^\d*$/.test(text)) return;
           setDraft(text);
-          const next = Number(text);
+          const typed = Number(text);
           if (
             !commitOnBlur &&
-            Number.isInteger(next) &&
-            next >= min &&
-            next <= max &&
-            next % step === 0
+            Number.isInteger(typed) &&
+            typed >= min &&
+            typed <= max &&
+            typed % step === 0
           )
-            change(next);
+            change(typed);
         }}
         style={cs.quantityValue}
       />
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`Increase ${label === 'Quantity' ? 'quantity' : label}`}
+        accessibilityLabel={`${t('Increase', 'बढ़ाएँ')} ${name}`}
         disabled={disabled || next > max}
         onPress={() => change(next)}
-        style={[cs.quantityButton, (disabled || next > max) && { opacity: 0.35 }]}
+        style={[cs.stepButton, (disabled || next > max) && { opacity: 0.35 }]}
       >
-        <Icon name="add" size={19} />
+        <Icon name="add" size={20} />
       </Pressable>
     </View>
   );
 }
+
 const cs = StyleSheet.create({
-  hero: {
-    backgroundColor: C.navy,
-    borderRadius: 5,
-    padding: 25,
-    overflow: 'hidden',
-    borderLeftWidth: 6,
-    borderLeftColor: C.yellow,
+  list: {
+    width: '100%',
+    maxWidth: 720,
+    alignSelf: 'center',
+    paddingHorizontal: space.lg,
+    paddingTop: space.lg,
+    paddingBottom: space.xxl,
   },
-  counterLabel: {
+  tile: {
+    backgroundColor: C.stone,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  row: {
+    gap: space.sm,
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.line,
+    borderRadius: radius.md,
+    padding: space.md,
+  },
+  rowMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.md },
+  inBasket: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 16,
-    marginBottom: 16,
-  },
-  counterLabelText: { color: C.sand, fontSize: 11, fontWeight: '700', letterSpacing: 1.3, flex: 1 },
-  heroTitle: {
-    color: C.paper,
-    fontSize: 40,
-    fontWeight: '800',
-    letterSpacing: -1.8,
-    lineHeight: 43,
-  },
-  heroBody: { color: '#D0D4CD', fontSize: 15, lineHeight: 23, maxWidth: 470, marginTop: 18 },
-  counterFooter: {
+    gap: space.sm,
+    paddingTop: space.sm,
     borderTopWidth: 1,
-    borderTopColor: '#4E5852',
-    paddingTop: 16,
-    marginTop: 18,
+    borderTopColor: C.stone,
+  },
+  rowName: { color: C.ink, fontSize: textSize.body, fontWeight: '800', lineHeight: 21 },
+  rowPrice: { color: C.ink, fontSize: 20, fontWeight: '800' },
+  add: {
+    minHeight: 48,
+    minWidth: 76,
+    paddingHorizontal: space.md,
+    borderRadius: radius.md,
+    backgroundColor: C.clay,
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    gap: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
   },
-  counterFooterText: { color: C.sand, fontSize: 10, letterSpacing: 1 },
-  quickActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginVertical: 16 },
-  delivery: { backgroundColor: C.concrete, borderRadius: 5, padding: 20, gap: 14 },
-  categories: { gap: 10, paddingBottom: 3 },
+  addText: { color: C.surface, fontSize: textSize.body, fontWeight: '800' },
+  stepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: C.ink,
+    borderRadius: radius.md,
+    backgroundColor: C.surface,
+  },
+  stepButton: { width: 44, height: 48, alignItems: 'center', justifyContent: 'center' },
+  quantityValue: {
+    width: 64,
+    minWidth: 40,
+    flexShrink: 1,
+    minHeight: 48,
+    textAlign: 'center',
+    color: C.ink,
+    fontSize: textSize.lead,
+    fontWeight: '800',
+  },
+  board: { backgroundColor: C.ink, borderRadius: radius.lg, padding: space.lg },
+  boardTitle: { color: C.paper, fontSize: 26, fontWeight: '800' },
+  boardSub: { color: '#C9D3D8', fontSize: textSize.caption, lineHeight: 20 },
+  rateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    minHeight: 56,
+    paddingVertical: space.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2E4B5C',
+  },
+  rateName: { color: C.paper, fontSize: textSize.lead, fontWeight: '800' },
+  rateProduct: { color: '#C9D3D8', fontSize: 13 },
+  ratePrice: { color: C.clayOnInk, fontSize: 22, fontWeight: '800' },
+  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
+  action: {
+    flexBasis: '47%',
+    flexGrow: 1,
+    minHeight: 76,
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.line,
+    borderRadius: radius.md,
+    padding: space.md,
+    gap: space.xs,
+    justifyContent: 'center',
+  },
+  actionText: { color: C.ink, fontSize: textSize.body, fontWeight: '800' },
   category: {
-    backgroundColor: C.white,
+    backgroundColor: C.surface,
     borderWidth: 1,
     borderColor: C.line,
-    minWidth: 140,
-    padding: 16,
-    gap: 14,
-    borderRadius: 4,
+    minWidth: 96,
+    minHeight: 88,
+    padding: space.md,
+    gap: space.sm,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  categoryName: { color: C.ink, fontSize: 14, fontWeight: '700' },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -6 },
-  productCard: {
-    backgroundColor: C.white,
+  categoryName: { color: C.ink, fontSize: textSize.body, fontWeight: '700' },
+  bulk: { backgroundColor: C.kraft, padding: space.lg, borderRadius: radius.lg, gap: space.md },
+  brands: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
+  brand: {
+    color: C.ink,
+    fontSize: textSize.body,
+    fontWeight: '800',
+    paddingHorizontal: space.md,
+    paddingVertical: space.sm,
+    backgroundColor: C.surface,
+    borderRadius: radius.sm,
     borderWidth: 1,
     borderColor: C.line,
-    borderRadius: 5,
-    overflow: 'hidden',
-    height: '100%',
-    justifyContent: 'space-between',
   },
-  productImage: { backgroundColor: C.concrete, borderBottomWidth: 1, borderBottomColor: C.line },
-  art: { height: 140, alignItems: 'center', justifyContent: 'center' },
-  photoCaption: { fontSize: 11, color: C.muted, marginTop: 3 },
-  productInfo: { padding: 13, gap: 5 },
-  productName: { fontSize: 16, lineHeight: 21, fontWeight: '700', color: C.ink, minHeight: 42 },
-  unit: { color: C.muted, fontSize: 12, lineHeight: 18 },
-  stock: { fontSize: 12, fontWeight: '600', marginTop: 8 },
-  cardButton: { marginHorizontal: 12, marginBottom: 13, paddingHorizontal: 10, minHeight: 46 },
-  bulk: { backgroundColor: C.sand, padding: 22, marginTop: 28, borderRadius: 5, gap: 14 },
-  help: { paddingVertical: 28, gap: 10 },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 14,
-    backgroundColor: C.white,
-    borderWidth: 1,
+    gap: space.sm,
+    paddingHorizontal: space.md,
+    backgroundColor: C.surface,
+    borderWidth: 1.5,
     borderColor: C.line,
-    borderRadius: 4,
+    borderRadius: radius.md,
   },
-  searchInput: { flex: 1, color: C.ink, fontSize: 15, minHeight: 52, paddingVertical: 14 },
-  filterRow: { gap: 8, paddingBottom: 3 },
-  filter: {
-    minHeight: 44,
-    justifyContent: 'center',
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-    borderWidth: 1,
-    borderColor: C.line,
-    borderRadius: 4,
-    backgroundColor: C.white,
-  },
-  selectedFilter: { backgroundColor: C.navy, borderColor: C.navy },
-  filterText: { fontSize: 13, fontWeight: '600', color: C.muted },
-  skeleton: {
-    backgroundColor: C.white,
-    borderColor: C.line,
-    borderWidth: 1,
-    paddingBottom: 20,
-    minHeight: 230,
-  },
-  skeletonLine: {
-    height: 14,
-    margin: 15,
-    marginBottom: 0,
-    width: '75%',
-    backgroundColor: C.concrete,
-  },
-  quantity: {
-    maxWidth: '100%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: C.line,
-    borderRadius: 4,
-    backgroundColor: C.white,
-  },
-  quantityButton: { width: 46, height: 46, alignItems: 'center', justifyContent: 'center' },
-  quantityValue: {
-    width: 54,
-    minWidth: 32,
-    flexShrink: 1,
-    minHeight: 46,
-    textAlign: 'center',
-    color: C.ink,
-    fontSize: 15,
-    fontWeight: '600',
-  },
+  searchInput: { flex: 1, color: C.ink, fontSize: textSize.body, minHeight: 52 },
 });

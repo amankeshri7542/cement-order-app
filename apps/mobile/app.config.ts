@@ -1,4 +1,12 @@
 import type { ExpoConfig, ConfigContext } from 'expo/config';
+// Staging and store builds must talk to a real HTTPS API; never ship the localhost fallback.
+const environment = process.env.EXPO_PUBLIC_APP_ENV || 'development';
+if (
+  ['staging', 'production'].includes(environment) &&
+  !/^https:\/\/[^/]+\.[a-z]{2,}\//.test(process.env.EXPO_PUBLIC_API_URL || '')
+)
+  throw new Error(`EXPO_PUBLIC_API_URL must be an https URL for ${environment} builds.`);
+
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: 'Shiv Cement Store',

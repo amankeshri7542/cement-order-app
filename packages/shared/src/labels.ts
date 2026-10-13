@@ -24,6 +24,19 @@ export const quoteStatusLabels: Record<QuoteStatus, Bilingual> = {
   EXPIRED: ['Expired', 'समय समाप्त'],
 };
 
+export const paymentStatuses = ['PENDING', 'CAPTURED', 'REFUND_PENDING', 'REFUNDED'] as const;
+export type PaymentStatus = (typeof paymentStatuses)[number];
+export const paymentStatusLabels: Record<PaymentStatus, Bilingual> = {
+  PENDING: ['Not paid yet', 'भुगतान बाकी'],
+  CAPTURED: ['Paid', 'भुगतान हो गया'],
+  REFUND_PENDING: ['Refund pending', 'वापसी बाकी'],
+  REFUNDED: ['Refunded', 'राशि वापस'],
+};
+export function paymentStatusText(status: string, language: Language): string {
+  const label = paymentStatusLabels[status as PaymentStatus];
+  return label ? pick(language, label) : status;
+}
+
 /** Customer-facing status text; unknown values are shown as received rather than hidden. */
 export function orderStatusText(status: string, language: Language): string {
   const label = orderStatusLabels[status as OrderStatus];
