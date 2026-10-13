@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   clientConfigSchema,
+  shortDayLabel,
+  weekdayLabel,
   compareVersions,
   ageLabel,
   customerErrorCodes,
@@ -111,4 +113,10 @@ test('app versions compare numerically, not as text', () => {
       android: { minimumVersion: '1.0.0', latestVersion: '1.1.0', storeUrl: 'https://example.com' },
     }).success,
   );
+});
+
+test('delivery chips name the weekday and short date in Patna time', () => {
+  assert.equal(weekdayLabel('2026-10-15', 'en'), 'Thu');
+  assert.equal(shortDayLabel('2026-10-15', 'en'), '15 Oct');
+  assert.ok(hasDevanagari(weekdayLabel('2026-10-15', 'hi')));
 });

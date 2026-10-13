@@ -1,5 +1,6 @@
 import { type Page, type Response } from '@playwright/test';
 import { test, expect, observePage } from './fixtures';
+import { appLogin, fillAddress, openBasket, openMaterial } from './app';
 import { PrismaClient } from '@prisma/client';
 import { mkdir } from 'node:fs/promises';
 import type { Order, Quote } from '@shiv/shared';
@@ -202,29 +203,14 @@ test('collected COD cancellation records one cash refund and restores stock once
 
 async function customerLogin(page: Page, suffix: number) {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('http://localhost:8082');
-  await page.getByRole('tab', { name: 'Account' }).click();
-  await page.getByRole('button', { name: 'Sign in', exact: true }).last().click();
-  await page.getByRole('textbox', { name: 'Mobile number (+91)' }).fill(`98888888${suffix}`);
-  const sent = page.waitForResponse(
-    (response) => response.url().endsWith('/auth/otp/request') && response.status() === 201,
-  );
-  await page.getByRole('button', { name: 'Get verification code' }).click();
-  await page
-    .getByRole('textbox', { name: 'Verification code', exact: true })
-    .fill((await (await sent).json()).devCode);
-  await page.getByRole('button', { name: 'Verify & continue' }).click();
-  await expect(page.getByRole('dialog')).toBeHidden();
-  await expect(page.getByRole('button', { name: 'Sign out', exact: true })).toBeVisible();
+  await appLogin(page, `98888888${suffix}`);
   await page.getByRole('button', { name: 'Saved addresses', exact: true }).click();
-  for (const [name, value] of [
-    ['Recipient name', `Family review customer ${suffix}`],
-    ['Building, plot or street', 'Plot 50'],
-    ['Area / locality', 'Kankarbagh'],
-    ['Pincode', '800027'],
-  ])
-    await page.getByRole('textbox', { name, exact: true }).fill(value!);
-  await page.getByRole('button', { name: 'Save address', exact: true }).click();
+  await fillAddress(page, {
+    name: `Family review customer ${suffix}`,
+    line1: 'Plot 50',
+    area: 'Kankarbagh',
+    pincode: '800027',
+  });
   await expect(page.getByText('Address saved', { exact: true })).toBeVisible();
 }
 async function ownerLogin(page: Page, suffix: number) {
@@ -243,29 +229,22 @@ async function ownerLogin(page: Page, suffix: number) {
   page.on('dialog', (dialog) => dialog.accept());
 }
 async function submitOrder(page: Page, product: (typeof products)[number], quantity: number) {
-  await page.getByRole('tab', { name: 'Products' }).click();
-  await page
-    .getByRole('textbox', { name: 'Search cement, steel, sand…', exact: true })
-    .fill(product.name);
-  await page.getByRole('button', { name: `View ${product.name}`, exact: true }).click();
+  await openMaterial(page, product.name);
   await page.getByRole('textbox', { name: 'Quantity', exact: true }).fill(String(quantity));
-  await page.getByRole('button', { name: /Add.*to cart/ }).click();
-  await page.getByRole('button', { name: /^Your cart,.*1 products?$/ }).click();
-  await page.getByRole('button', { name: 'Continue to checkout', exact: true }).click();
-  await page.getByRole('button', { name: 'Review your order', exact: true }).click();
+  await page.getByRole('button', { name: 'Add to basket', exact: true }).click();
+  await openBasket(page);
+  await page.getByRole('button', { name: 'Review order', exact: true }).click();
   const total = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(
     quantity * 390 + 500,
   );
   await expect(page.getByText(total, { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Place order', exact: true })).toBeDisabled();
-  await page.getByRole('checkbox').check();
   const created = page.waitForResponse(
     (response) => response.url() === `${api}/orders` && response.request().method() === 'POST',
   );
-  await page.getByRole('button', { name: 'Place order', exact: true }).click();
+  await page.getByRole('button', { name: `Place order · ${total}`, exact: true }).click();
   const response = await created;
   expect(response.status()).toBe(201);
-  await expect(page.getByText('Order received.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Confirmed', exact: true })).toBeVisible();
   return { order: (await response.json()) as Order, response };
 }
 async function replay(page: Page, response: Response) {
@@ -451,9 +430,13 @@ test('wholesale UI: freight confirmation, renewed consent and one order at the n
     await owner.getByRole('button', { name: /थोक अनुरोध \/ New quotations/ }).click();
     await customerLogin(page, 33);
     await page.getByRole('tab', { name: 'Home' }).click();
-    await page.getByRole('button', { name: 'Bulk quotation', exact: true }).click();
-    await page.getByRole('textbox', { name: /^Find.*material$/ }).fill(products[2]!.name);
-    await page.getByRole('button', { name: products[2]!.name, exact: true }).click();
+    await page.getByRole('button', { name: 'Bulk quote', exact: true }).click();
+    await page
+      .getByRole('textbox', { name: 'Find a material to add', exact: true })
+      .fill(products[2]!.name);
+    await page
+      .getByRole('button', { name: `Add to quote: ${products[2]!.name}`, exact: true })
+      .click();
     const requested = page.waitForResponse(
       (r) => r.url() === `${api}/quotes` && r.request().method() === 'POST',
     );
@@ -477,7 +460,11 @@ test('wholesale UI: freight confirmation, renewed consent and one order at the n
     await owner.getByRole('button', { name: 'Send quotation', exact: true }).click();
     await expect(owner.getByRole('dialog')).toHaveCount(0);
     await page.getByRole('button', { name: 'Refresh current screen', exact: true }).click();
-    await page.getByRole('button', { name: 'Accept quote · ₹38,750.00', exact: true }).click();
+    const consent = page.getByRole('checkbox', { name: /I reviewed this revision/ });
+    await consent.check();
+    await page
+      .getByRole('button', { name: 'Accept this revision · ₹38,750.00', exact: true })
+      .click();
     await expect
       .poll(async () => (await db.quote.findUniqueOrThrow({ where: { id: quote.id } })).status)
       .toBe('ACCEPTED');
@@ -497,7 +484,15 @@ test('wholesale UI: freight confirmation, renewed consent and one order at the n
       .toBe('SENT');
     expect(await db.order.count({ where: { quoteId: quote.id } })).toBe(0);
     await page.getByRole('button', { name: 'Refresh current screen', exact: true }).click();
-    await page.getByRole('button', { name: 'Accept quote · ₹38,860.00', exact: true }).click();
+    // A revised offer needs fresh consent: the earlier tick does not carry over.
+    await expect(consent).not.toBeChecked();
+    const accept = page.getByRole('button', {
+      name: 'Accept this revision · ₹38,860.00',
+      exact: true,
+    });
+    await expect(accept).toBeDisabled();
+    await consent.check();
+    await accept.click();
     await expect
       .poll(async () => (await db.quote.findUniqueOrThrow({ where: { id: quote.id } })).status)
       .toBe('ACCEPTED');

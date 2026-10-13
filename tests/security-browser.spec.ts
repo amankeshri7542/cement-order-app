@@ -41,5 +41,5 @@ test('customer web server sends frame, content and exact API-origin restrictions
   expect(headers['content-security-policy']).toContain("base-uri 'none'");
   expect(headers['x-content-type-options']).toBe('nosniff');
   expect(headers['x-frame-options']).toBe('DENY');
-  await expect(page.getByRole('tab', { name: 'Products', exact: true })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Materials', exact: true })).toBeVisible();
 });

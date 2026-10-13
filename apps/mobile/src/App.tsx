@@ -92,6 +92,8 @@ function Shell() {
     pendingCheckout,
     refreshCurrent,
     refreshing,
+    error,
+    refreshCatalog,
   } = useStore();
   // The last tab stays mounted under detail screens, so Back keeps search and scroll.
   const [tabRoute, setTabRoute] = useState<Route>({ screen: 'Home' });
@@ -207,6 +209,21 @@ function Shell() {
           <Icon name="arrow-back" size={22} />
           <Text style={a.backText}>{t('Back', 'वापस')}</Text>
         </Pressable>
+      )}
+      {Boolean(error) && (
+        <View accessibilityRole="alert" style={a.offline}>
+          <Icon name="cloud-offline-outline" color={C.danger} />
+          <Text style={a.offlineText}>{error}</Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => void refreshCatalog()}
+            style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: space.sm }}
+          >
+            <Text style={[a.offlineText, { fontWeight: '800', textDecorationLine: 'underline' }]}>
+              {t('Retry', 'फिर से')}
+            </Text>
+          </Pressable>
+        </View>
       )}
       {pendingCheckout && route.screen !== 'Checkout' && route.screen !== 'Order' && (
         <Pressable
@@ -372,6 +389,15 @@ const a = StyleSheet.create({
     padding: space.md,
     backgroundColor: C.dangerSoft,
   },
+  offline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    paddingHorizontal: space.md,
+    paddingVertical: space.xs,
+    backgroundColor: C.dangerSoft,
+  },
+  offlineText: { flex: 1, color: C.danger, fontSize: textSize.caption },
   pendingText: { flex: 1, color: C.clayDeep, fontSize: textSize.caption, fontWeight: '700' },
   nav: {
     flexDirection: 'row',

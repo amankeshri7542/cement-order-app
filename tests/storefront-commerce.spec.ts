@@ -242,8 +242,9 @@ test('rejected guest merge can be corrected and multidigit quantities persist th
   await putCart(page, 15);
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await expect(quantity).toHaveValue('15');
+  // The Android app's basket (web build) reads the same server basket.
   await page.goto('http://localhost:8082/#/cart');
-  await expect(page.getByRole('textbox', { name: 'Quantity', exact: true })).toHaveValue('15');
+  await expect(page.getByRole('textbox', { name: / quantity$/ })).toHaveValue('15');
 });
 
 test('COD lost success recovers exactly one owner task and inventory movement after reload', async ({

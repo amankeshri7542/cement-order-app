@@ -8,7 +8,8 @@
     "web": "node ../../scripts/customer-web.mjs",
     "build": "expo export --platform all",
     "typecheck": "tsc --noEmit",
-    "test:maestro": "maestro test .maestro"
+    "test:maestro": "maestro test .maestro",
+    "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

@@ -531,10 +531,13 @@ export function Addresses() {
     say,
     language,
   } = useStore();
-  const routedAddress = addresses.find((address) => address.id === route.id);
+  // route.id: an address to edit, or 'new' to open straight onto an empty form.
+  const creating = route.id === 'new';
+  const editId = creating ? undefined : route.id;
+  const routedAddress = addresses.find((address) => address.id === editId);
   const [show, setShow] = useState(Boolean(route.id) || !addresses.length);
-  const [editingId, setEditingId] = useState<string | null>(route.id || null);
-  const initialized = useRef(!route.id || Boolean(routedAddress));
+  const [editingId, setEditingId] = useState<string | null>(editId || null);
+  const initialized = useRef(!editId || Boolean(routedAddress));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   function addressForm(address?: Address) {
@@ -559,13 +562,13 @@ export function Addresses() {
     setShow(true);
   }
   useEffect(() => {
-    if (initialized.current || !route.id) return;
-    const address = addresses.find((item) => item.id === route.id);
+    if (initialized.current || !editId) return;
+    const address = addresses.find((item) => item.id === editId);
     if (address) {
       initialized.current = true;
       edit(address);
     }
-  }, [addresses, route.id]);
+  }, [addresses, editId]);
   async function save() {
     setBusy(true);
     setError('');

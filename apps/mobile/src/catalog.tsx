@@ -325,7 +325,9 @@ function RateBoard() {
         </View>
       ) : error && !rates.length ? (
         <View style={{ gap: space.md, marginTop: space.md }}>
-          <Text style={cs.boardSub}>{error}</Text>
+          <Text style={cs.boardSub}>
+            {t('Today’s rates could not load.', 'आज के भाव लोड नहीं हो सके।')}
+          </Text>
           <Button secondary onPress={() => void refreshCatalog()}>
             {t('Try again', 'फिर कोशिश करें')}
           </Button>
@@ -336,7 +338,7 @@ function RateBoard() {
             <Pressable
               key={rate.slug}
               accessibilityRole="button"
-              accessibilityLabel={`${categoryName(rate.slug, rate.name, language)}: ${t('from', '')} ${money(rate.product.pricePaise)} ${unitText(rate.product, language)}`}
+              accessibilityLabel={`${categoryName(rate.slug, rate.name, language)}: ${t(`from ${money(rate.product.pricePaise)}`, `${money(rate.product.pricePaise)} से`)} ${unitText(rate.product, language)}`}
               onPress={() => navigate({ screen: 'Products', category: rate.slug })}
               style={({ pressed }) => [cs.rateRow, pressed && { opacity: 0.7 }]}
             >
@@ -1080,8 +1082,11 @@ export function Quantity({
   // react-native-web applies selectTextOnFocus after a delay; if the customer has already typed
   // a digit, that late select-all made the next keystroke replace it ("12" became "2").
   const typedSinceFocus = useRef(false);
+  // Show the saved quantity, but never overwrite what the customer is typing: a basket save or
+  // background refresh finishing mid-entry used to replace their digits.
+  const editing = useRef(false);
   useEffect(() => {
-    if (!disabled) setDraft(String(value));
+    if (!disabled && !editing.current) setDraft(String(value));
   }, [value, disabled]);
   const previous = Math.min(Math.floor(max / step) * step, Math.floor((value - 1) / step) * step);
   const next = Math.max(min, Math.ceil((value + 1) / step) * step);
@@ -1128,6 +1133,7 @@ export function Quantity({
         keyboardType="number-pad"
         selectTextOnFocus={Platform.OS !== 'web'}
         onFocus={() => {
+          editing.current = true;
           if (Platform.OS !== 'web') return;
           typedSinceFocus.current = false;
           setTimeout(() => {
@@ -1136,7 +1142,11 @@ export function Quantity({
           }, 0);
         }}
         editable={!disabled}
-        onBlur={() => (commitOnBlur ? commit() : setDraft(String(value)))}
+        onBlur={() => {
+          editing.current = false;
+          if (commitOnBlur) commit();
+          else setDraft(String(value));
+        }}
         onSubmitEditing={() => {
           if (commitOnBlur) commit();
         }}

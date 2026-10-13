@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import {
-  dateLabel,
   dayLabel,
   deliveryDateOptions,
   momentLabel,
   money,
   quantityProblem,
   quoteStatusText,
+  shortDayLabel,
+  weekdayLabel,
   space,
   type Page,
   type Product,
@@ -538,7 +539,7 @@ export function QuoteRequest() {
       <Section
         title={t('2. Delivery site', '2. डिलीवरी साइट')}
         action={t('Add address', 'पता जोड़ें')}
-        onAction={() => openAddresses()}
+        onAction={() => openAddresses('new')}
       />
       {!addresses.length && (
         <Notice>
@@ -581,8 +582,8 @@ export function QuoteRequest() {
           <Chip
             key={value}
             role="radio"
-            label={dayLabel(value, language).split(',')[0] ?? ''}
-            detail={dateLabel(`${value}T12:00:00+05:30`, language).replace(/,? \d{4}$/, '')}
+            label={weekdayLabel(value, language)}
+            detail={shortDayLabel(value, language)}
             accessibilityLabel={dayLabel(value, language)}
             selected={date === value}
             onPress={() => update({ date: value })}

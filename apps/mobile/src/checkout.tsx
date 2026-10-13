@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import {
-  dateLabel,
   dayLabel,
   deliveryDateOptions,
+  shortDayLabel,
+  weekdayLabel,
   money,
   space,
   MAX_LINE_QUANTITY,
@@ -84,7 +85,7 @@ function DeliveryDetails() {
           )}
         </View>
         {!address ? (
-          <Button icon="add" secondary onPress={() => openAddresses()}>
+          <Button icon="add" secondary onPress={() => openAddresses('new')}>
             {t('Add your site address', 'साइट का पता जोड़ें')}
           </Button>
         ) : choosing ? (
@@ -109,9 +110,20 @@ function DeliveryDetails() {
                   <Text style={{ fontWeight: '800' }}>{item.label}</Text> · {item.line1},{' '}
                   {item.area}, {item.pincode}
                 </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`${t('Edit', 'बदलें')} ${item.label}`}
+                  onPress={(event) => {
+                    event.stopPropagation();
+                    openAddresses(item.id);
+                  }}
+                  style={{ padding: space.md }}
+                >
+                  <Icon name="create-outline" />
+                </Pressable>
               </Pressable>
             ))}
-            <Button kind="quiet" icon="add" onPress={() => openAddresses()}>
+            <Button kind="quiet" icon="add" onPress={() => openAddresses('new')}>
               {t('Add another address', 'दूसरा पता जोड़ें')}
             </Button>
           </View>
@@ -139,9 +151,9 @@ function DeliveryDetails() {
                   ? t('Today', 'आज')
                   : date === dates[1]
                     ? t('Tomorrow', 'कल')
-                    : (dayLabel(date, language).split(',')[0] ?? '')
+                    : weekdayLabel(date, language)
               }
-              detail={dateLabel(`${date}T12:00:00+05:30`, language).replace(/,? \d{4}$/, '')}
+              detail={shortDayLabel(date, language)}
               accessibilityLabel={dayLabel(date, language)}
               selected={checkoutDraft.date === date}
               onPress={() => updateCheckoutDraft({ date })}
@@ -507,7 +519,7 @@ export function Checkout() {
         <Notice>
           {t('Add your site address to continue.', 'आगे बढ़ने के लिए साइट का पता जोड़ें।')}
         </Notice>
-        <Button onPress={() => navigate({ screen: 'Addresses' })}>
+        <Button onPress={() => navigate({ screen: 'Addresses', id: 'new' })}>
           {t('Add address', 'पता जोड़ें')}
         </Button>
       </Screen>

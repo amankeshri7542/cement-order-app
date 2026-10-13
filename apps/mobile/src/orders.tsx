@@ -575,7 +575,12 @@ export function OrderDetail() {
         </Notice>
       )}
       {order.status === 'REFUNDED' && (
-        <Notice>{t('Your payment has been refunded.', 'आपका भुगतान लौटा दिया गया है।')}</Notice>
+        <Notice>
+          {t(
+            'Your payment has been refunded. This order will not be delivered.',
+            'आपका भुगतान लौटा दिया गया है। यह ऑर्डर डिलीवर नहीं होगा।',
+          )}
+        </Notice>
       )}
       {order.status === 'CANCELLED' && (
         <Notice>
