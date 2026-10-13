@@ -45,6 +45,16 @@
           "speechRecognitionPermission": "Turns your spoken question into text. / आपका बोला सवाल लिखे शब्दों में बदलता है।",
           "androidSpeechServicePackages": ["com.google.android.googlequicksearchbox"]
         }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableMinifyInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true,
+            "extraProguardRules": "# Razorpay checkout (kept for when online payment is switched on)\n-keepclassmembers class * { @android.webkit.JavascriptInterface <methods>; }\n-keepattributes JavascriptInterface\n-keepattributes *Annotation*\n-dontwarn com.razorpay.**\n-keep class com.razorpay.** {*;}\n-optimizations !method/inlining/*\n-keepclasseswithmembers class * { public void onPayment*(...); }\n"
+          }
+        }
       ]
     ],
     "icon": "./assets/icon.png",

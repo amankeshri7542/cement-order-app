@@ -3,7 +3,7 @@ import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { money, space, textSize, type Product } from '@shiv/shared';
 import { useStore } from './store';
 import { categoryName, MaterialArt } from './catalog';
-import { Button, C, Empty, Icon, Notice, Screen, s } from './ui';
+import { Button, C, Icon, Notice, Screen, s } from './ui';
 
 /** Side-by-side check of up to three materials: price per selling unit, pack, grade, rules. */
 export function Compare() {
@@ -59,14 +59,12 @@ export function Compare() {
         )}
       </View>
       {compare.length === 0 ? (
-        <Empty
-          icon="git-compare-outline"
-          title={t('Pick up to three materials', 'तीन तक सामग्री चुनें')}
-          body={t(
-            'See prices per selling unit, packs and grades side by side.',
-            'बिक्री इकाई का भाव, पैक और ग्रेड एक साथ देखें।',
+        <Text style={s.body}>
+          {t(
+            'Pick up to three materials to see their price per selling unit, pack and grade side by side.',
+            'तीन तक सामग्री चुनें और उनका इकाई भाव, पैक और ग्रेड एक साथ देखें।',
           )}
-        />
+        </Text>
       ) : (
         <>
           {units.size > 1 && (

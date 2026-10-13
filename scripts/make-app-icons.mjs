@@ -10,6 +10,7 @@ import { chromium } from '@playwright/test';
 
 const root = new URL('..', import.meta.url).pathname;
 const out = join(root, 'apps/mobile/assets');
+const store = join(root, 'docs/play-store');
 const ink = '#173345';
 const clay = '#B45438';
 const paper = '#F5F3ED';
@@ -39,22 +40,34 @@ const images = {
   'adaptive-monochrome.png': [1024, stamp(520, 252, 230, '#000000', '#FFFFFF')],
   // Splash mark, shown centred on the ink splash background.
   'splash-icon.png': [512, stamp(360, 76, 62)],
+  // Google Play feature graphic (1024×500): the signboard with what the app does.
+  'feature-graphic.png': [
+    [1024, 500],
+    `<rect width="1024" height="500" fill="${ink}"/>${stamp(230, 70, 125)}
+     <text x="350" y="205" font-family="${font}" font-weight="700" font-size="74" fill="${paper}">शिव सीमेंट स्टोर</text>
+     <text x="352" y="262" font-family="${font}" font-size="34" fill="#F2B49C">Shiv Cement Store · पटना, बिहार</text>
+     <text x="352" y="340" font-family="${font}" font-weight="700" font-size="38" fill="${paper}">आज के भाव · डिलीवरी पर भुगतान</text>
+     <text x="352" y="390" font-family="${font}" font-size="30" fill="#C9D3D8">Today’s rates · Cash on delivery · Bulk quotes</text>`,
+  ],
 };
 
 mkdirSync(out, { recursive: true });
+mkdirSync(store, { recursive: true });
 const browser = await chromium.launch({ channel: 'chrome' });
 try {
   const page = await browser.newPage({ deviceScaleFactor: 1 });
   for (const [name, [size, body]] of Object.entries(images)) {
-    await page.setViewportSize({ width: size, height: size });
+    const [width, height] = Array.isArray(size) ? size : [size, size];
+    await page.setViewportSize({ width, height });
     await page.setContent(
       `<html><body style="margin:0;background:transparent">
-        <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">${body}</svg>
+        <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${body}</svg>
       </body></html>`,
     );
     await page.evaluate(() => globalThis.document.fonts.ready);
-    await page.screenshot({ path: join(out, name), omitBackground: true });
-    console.log(`apps/mobile/assets/${name}`);
+    const folder = name.startsWith('feature') ? store : out;
+    await page.screenshot({ path: join(folder, name), omitBackground: true });
+    console.log(join(folder, name).replace(root, ''));
   }
 } finally {
   await browser.close();
