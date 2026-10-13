@@ -557,7 +557,7 @@ export function RateStudio({
               <div>
                 <strong>{t('Reading your rate sheet', 'आपकी भाव शीट पढ़ी जा रही है')}</strong>
                 <p>
-                  {name(batch.stage)} ·{' '}
+                  {batch.stage ? `${name(batch.stage)} · ` : ''}
                   {t(
                     'You can leave this page and return to the saved draft.',
                     'आप यह पेज छोड़कर बाद में सहेजे ड्राफ्ट पर लौट सकते हैं।',

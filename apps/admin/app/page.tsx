@@ -188,7 +188,7 @@ const contractorText = (t: Words): Record<string, string> => ({
   VERIFIED: t('Verified', 'सत्यापित'),
   REJECTED: t('Not verified', 'सत्यापित नहीं'),
 });
-type Connection = { kind: 'connecting' | 'checked' | 'problem' | 'interrupted'; at?: Date };
+type Connection = { kind: 'connecting' | 'checked' | 'problem'; at?: Date };
 
 export default function Page() {
   const [session, setSession] = useState(0);
@@ -228,6 +228,9 @@ function StoreDesk({ recoverSession }: { recoverSession: () => void }) {
   const [lowStockOnly, setLowStockOnly] = useState(false);
   const [quoteRequestedOnly, setQuoteRequestedOnly] = useState(false);
   const [connection, setConnection] = useState<Connection>({ kind: 'connecting' });
+  // The live update stream is tracked apart from polling: a successful poll does not mean the
+  // stream is back.
+  const [liveDown, setLiveDown] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [checking, setChecking] = useState(true);
   const [tab, setTab] = useState<Tab>('Overview');
@@ -418,10 +421,29 @@ function StoreDesk({ recoverSession }: { recoverSession: () => void }) {
     const update = () => {
       if (document.visibilityState === 'visible') void refresh(true);
     };
-    const source = new EventSource(`${API_URL}/admin/events`, { withCredentials: true });
-    source.onopen = update;
-    source.onmessage = update;
-    source.onerror = () => setConnection({ kind: 'interrupted' });
+    let source: EventSource;
+    let retry = 0;
+    let delay = 5000;
+    const connect = () => {
+      source = new EventSource(`${API_URL}/admin/events`, { withCredentials: true });
+      source.onopen = () => {
+        delay = 5000;
+        setLiveDown(false);
+        update();
+      };
+      source.onmessage = update;
+      source.onerror = () => {
+        setLiveDown(true);
+        // Browsers retry a dropped stream themselves, but Safari gives up for good when the
+        // first attempt fails; reconnect in that case (after 5 s, then every 15 s like polling).
+        if (source.readyState === EventSource.CLOSED) {
+          window.clearTimeout(retry);
+          retry = window.setTimeout(connect, delay);
+          delay = 15000;
+        }
+      };
+    };
+    connect();
     // A push alert reaching an open desk refreshes it at once.
     const pushed = (event: MessageEvent) => {
       if (event.data?.type === 'shiv-owner-push') update();
@@ -434,6 +456,7 @@ function StoreDesk({ recoverSession }: { recoverSession: () => void }) {
     const timer = window.setInterval(update, 15000);
     return () => {
       source.close();
+      window.clearTimeout(retry);
       window.clearInterval(timer);
       navigator.serviceWorker?.removeEventListener('message', pushed);
       window.removeEventListener('focus', update);
@@ -525,7 +548,7 @@ function StoreDesk({ recoverSession }: { recoverSession: () => void }) {
       'Live connection interrupted · checking every 15 seconds',
       'लाइव संपर्क टूटा · हर 15 सेकंड में जाँच',
     ),
-  }[connection.kind];
+  }[connection.kind === 'checked' && liveDown ? 'interrupted' : connection.kind];
   const contractor = contractorText(t);
   return (
     <div className="shell">

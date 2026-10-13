@@ -81,6 +81,12 @@ test('SSE outage: polling finds new work and competing owners keep one durable a
   try {
     // Transport fault injection only: polling, orders and acknowledgment use the real API.
     await father.route('**/admin/events', (route) => route.abort('connectionfailed'));
+    // WebKit's own retry can bypass the route after the first abort, so count every stream
+    // that opens from here on instead of waiting for one after the route is lifted.
+    let liveStreams = 0;
+    father.on('response', (r) => {
+      if (r.url().endsWith('/admin/events') && r.status() === 200) liveStreams++;
+    });
     await uncle.route('**/admin/events', (route) => route.abort('connectionfailed'));
     await ownerLogin(father, 34);
     await ownerLogin(uncle, 35);
@@ -126,10 +132,7 @@ test('SSE outage: polling finds new work and competing owners keep one durable a
     ).toHaveAttribute('href', /^https:\/\/wa\.me\/91/);
     // Restore the real SSE transport and require automatic reconnection without a reload.
     await father.unroute('**/admin/events');
-    const reopened = father.waitForResponse(
-      (r) => r.url().endsWith('/admin/events') && r.status() === 200,
-    );
-    await reopened;
+    await expect.poll(() => liveStreams, { timeout: 30000 }).toBeGreaterThan(0);
     await father.screenshot({
       path: test.info().outputPath('polling-assignment-reconnected.png'),
       fullPage: true,
