@@ -2,8 +2,25 @@
 import { X, Package, ArrowUpRight } from 'lucide-react';
 import { statusLabel } from '@shiv/shared';
 import { useEffect, useRef } from 'react';
+import { useWords } from '../lib/i18n';
+// Desk-only states that are not order, quote or payment statuses.
+const deskStates: Record<string, [string, string]> = {
+  INACTIVE: ['Hidden', 'छिपा'],
+  IN_STOCK: ['In stock', 'स्टॉक में'],
+  OUT_OF_STOCK: ['Out of stock', 'स्टॉक ख़त्म'],
+  CUSTOMER: ['Customer', 'ग्राहक'],
+  CONTRACTOR: ['Contractor', 'ठेकेदार'],
+  ADMIN: ['Staff', 'स्टाफ़'],
+};
 export function Badge({ value }: { value: string }) {
-  return <span className={`badge ${value.toLowerCase()}`}>{statusLabel(value)}</span>;
+  const { status, language, t } = useWords();
+  const desk = deskStates[value];
+  const text = desk ? t(...desk) : status(value);
+  return (
+    <span className={`badge ${value.toLowerCase()}`}>
+      {text === value && language === 'en' ? statusLabel(value) : text}
+    </span>
+  );
 }
 export function Empty({ title, body }: { title: string; body: string }) {
   return (
@@ -23,6 +40,7 @@ export function Modal({
   children: React.ReactNode;
   close: () => void;
 }) {
+  const { t } = useWords();
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     ref.current?.showModal();
@@ -37,7 +55,7 @@ export function Modal({
     >
       <div className="modal-head">
         <h2>{title}</h2>
-        <button className="icon-button" aria-label="Close dialog" onClick={close}>
+        <button className="icon-button" aria-label={t('Close dialog', 'बंद करें')} onClick={close}>
           <X size={21} />
         </button>
       </div>

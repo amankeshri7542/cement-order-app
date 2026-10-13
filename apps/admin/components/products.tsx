@@ -2,7 +2,8 @@
 import { useEffect, useState } from 'react';
 import { Category, Product, money, productSchema } from '@shiv/shared';
 import { Plus, Search, Pencil, Package, Upload } from 'lucide-react';
-import { api, errorMessage, uploadProductPhoto } from '../lib/api';
+import { api, uploadProductPhoto } from '../lib/api';
+import { useWords } from '../lib/i18n';
 import { Badge, Empty, Field, Modal } from './ui';
 import { Inventory } from './operations';
 
@@ -19,6 +20,7 @@ export function Products({
   refresh: () => Promise<void>;
   notice: (value: string) => void;
 }) {
+  const { t, error: say } = useWords();
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState<Product | 'new' | null>(null);
   const [category, setCategory] = useState('');
@@ -37,18 +39,18 @@ export function Products({
         <label className="search">
           <Search size={18} />
           <input
-            aria-label="Search products"
-            placeholder="Search products or brands"
+            aria-label={t('Search products', 'सामग्री खोजें')}
+            placeholder={t('Search products or brands', 'सामग्री या ब्रांड खोजें')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </label>
         <select
-          aria-label="Filter category"
+          aria-label={t('Filter category', 'श्रेणी चुनें')}
           value={category}
           onChange={(e) => setCategory(e.target.value)}
         >
-          <option value="">All categories</option>
+          <option value="">{t('All categories', 'सभी श्रेणियाँ')}</option>
           {categories.map((c) => (
             <option key={c.id} value={c.slug}>
               {c.name}
@@ -57,20 +59,20 @@ export function Products({
         </select>
         <button className="primary" onClick={() => setEditing('new')}>
           <Plus size={18} />
-          Add product
+          {t('Add product', 'सामग्री जोड़ें')}
         </button>
       </div>
       <div className="panel table-wrap">
         <table>
           <thead>
             <tr>
-              <th>Product</th>
-              <th>Category</th>
-              <th>Selling price</th>
-              <th>Available stock</th>
-              <th>Status</th>
+              <th>{t('Product', 'सामग्री')}</th>
+              <th>{t('Category', 'श्रेणी')}</th>
+              <th>{t('Selling price', 'बिक्री भाव')}</th>
+              <th>{t('Available stock', 'उपलब्ध स्टॉक')}</th>
+              <th>{t('Status', 'स्थिति')}</th>
               <th>
-                <span className="sr-only">Edit</span>
+                <span className="sr-only">{t('Edit', 'बदलें')}</span>
               </th>
             </tr>
           </thead>
@@ -93,12 +95,15 @@ export function Products({
                 <td>{p.category.name}</td>
                 <td>
                   <strong>{money(p.pricePaise)}</strong>
-                  <small>Price version {p.priceVersion}</small>
+                  <small>{t('Price version', 'भाव संस्करण')} {p.priceVersion}</small>
                 </td>
                 <td>
-                  <span className={p.stock < 25 ? 'low-stock' : ''}>
-                    {p.stock.toLocaleString('en-IN')} units
+                  <span className={p.stock <= p.lowStockAt ? 'low-stock' : ''}>
+                    {p.stock.toLocaleString('en-IN')} {p.unit}
                   </span>
+                  <small>
+                    {t(`Alert at ${p.lowStockAt}`, `${p.lowStockAt} पर चेतावनी`)}
+                  </small>
                 </td>
                 <td>
                   <Badge value={!p.active ? 'INACTIVE' : p.stock ? 'IN_STOCK' : 'OUT_OF_STOCK'} />
@@ -107,13 +112,13 @@ export function Products({
                   <button
                     className="secondary"
                     onClick={() => setInventory(p)}
-                    aria-label={`Stock ledger ${p.name}`}
+                    aria-label={`${t('Stock ledger', 'स्टॉक खाता')} ${p.name}`}
                   >
-                    Stock ledger
+                    {t('Stock ledger', 'स्टॉक खाता')}
                   </button>
                   <button
                     className="icon-button"
-                    aria-label={`Edit ${p.name}`}
+                    aria-label={`${t('Edit', 'बदलें')} ${p.name}`}
                     onClick={() => setEditing(p)}
                   >
                     <Pencil size={17} />
@@ -124,11 +129,14 @@ export function Products({
           </tbody>
         </table>
         {!filtered.length && (
-          <Empty title="No products found" body="Add a product or try another search." />
+          <Empty
+            title={t('No products found', 'कोई सामग्री नहीं मिली')}
+            body={t('Add a product or try another search.', 'सामग्री जोड़ें या दूसरी खोज करें।')}
+          />
         )}
       </div>
       <div className="category-add">
-        <h3>Categories</h3>
+        <h3>{t('Categories', 'श्रेणियाँ')}</h3>
         <div className="chips">
           {categories.map((c) => (
             <span key={c.id}>{c.name}</span>
@@ -149,20 +157,20 @@ export function Products({
               });
               form.reset();
               await refresh();
-              notice('Category added');
+              notice(t('Category added', 'श्रेणी जुड़ी'));
             } catch (err) {
-              notice(errorMessage(err));
+              notice(say(err));
             }
           }}
         >
           <input
             name="name"
-            aria-label="New category name"
+            aria-label={t('New category name', 'नई श्रेणी का नाम')}
             required
             maxLength={60}
-            placeholder="New category"
+            placeholder={t('New category', 'नई श्रेणी')}
           />
-          <button className="secondary">Add category</button>
+          <button className="secondary">{t('Add category', 'श्रेणी जोड़ें')}</button>
         </form>
       </div>
       {inventory && (
@@ -176,7 +184,12 @@ export function Products({
           saved={async () => {
             setEditing(null);
             await refresh();
-            notice('Product saved. Customers will see the latest price.');
+            notice(
+              t(
+                'Product saved. Customers will see the latest price.',
+                'सामग्री सहेजी। ग्राहकों को नया भाव दिखेगा।',
+              ),
+            );
           }}
         />
       )}
@@ -194,6 +207,7 @@ export function ProductEditor({
   close: () => void;
   saved: () => Promise<void>;
 }) {
+  const { t, error: say } = useWords();
   const [image, setImage] = useState(product?.images[0] || '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -214,6 +228,7 @@ export function ProductEditor({
       quantityStep: Number(f.get('quantityStep')),
       pricePaise: Math.round(Number(f.get('price')) * 100),
       stock: product?.stock ?? Number(f.get('stock')),
+      lowStockAt: Number(f.get('lowStockAt')),
       active: f.get('active') === 'on',
       description: String(f.get('description')),
       recommendedUse: String(f.get('recommendedUse')),
@@ -221,7 +236,9 @@ export function ProductEditor({
     };
     const parsed = productSchema.safeParse(data);
     if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message || 'Check product details.');
+      setError(
+        `${t('Check product details', 'जानकारी जाँचें')}: ${parsed.error.issues[0]?.path.join('.') || ''}`,
+      );
       setBusy(false);
       return;
     }
@@ -233,22 +250,22 @@ export function ProductEditor({
       );
       await saved();
     } catch (err) {
-      setError(errorMessage(err));
+      setError(say(err));
     } finally {
       setBusy(false);
     }
   }
   return (
-    <Modal title={product ? 'Edit product' : 'Add a product'} close={close}>
+    <Modal title={product ? t('Edit product', 'सामग्री बदलें') : t('Add a product', 'नई सामग्री जोड़ें')} close={close}>
       <form onSubmit={submit} className="form-stack">
         <div className="form-grid">
-          <Field label="Product name">
+          <Field label={t('Product name', 'सामग्री का नाम')}>
             <input name="name" defaultValue={product?.name} required maxLength={120} />
           </Field>
-          <Field label="Brand">
+          <Field label={t('Brand', 'ब्रांड')}>
             <input name="brand" defaultValue={product?.brand} required />
           </Field>
-          <Field label="Category">
+          <Field label={t('Category', 'श्रेणी')}>
             <select name="categoryId" defaultValue={product?.categoryId}>
               {categories.map((c) => (
                 <option value={c.id} key={c.id}>
@@ -257,16 +274,16 @@ export function ProductEditor({
               ))}
             </select>
           </Field>
-          <Field label="Type">
+          <Field label={t('Type', 'प्रकार')}>
             <input name="type" defaultValue={product?.type} placeholder="PPC Cement" required />
           </Field>
-          <Field label="Grade">
+          <Field label={t('Grade', 'ग्रेड')}>
             <input name="grade" defaultValue={product?.grade} placeholder="53 grade" required />
           </Field>
-          <Field label="Unit">
+          <Field label={t('Unit', 'इकाई')}>
             <input name="unit" defaultValue={product?.unit} placeholder="50 kg bag" required />
           </Field>
-          <Field label="Selling price (₹)">
+          <Field label={t('Selling price (₹)', 'बिक्री भाव (₹)')}>
             <input
               name="price"
               type="number"
@@ -276,7 +293,7 @@ export function ProductEditor({
               required
             />
           </Field>
-          <Field label="Pack size / specification">
+          <Field label={t('Pack size / specification', 'पैक / विवरण')}>
             <input
               name="packSize"
               defaultValue={product?.packSize}
@@ -284,7 +301,7 @@ export function ProductEditor({
               placeholder="50 kg sealed bag / 4 tiles per box"
             />
           </Field>
-          <Field label="Minimum quantity">
+          <Field label={t('Minimum quantity', 'कम से कम मात्रा')}>
             <input
               name="minQuantity"
               type="number"
@@ -294,7 +311,7 @@ export function ProductEditor({
               required
             />
           </Field>
-          <Field label="Quantity step">
+          <Field label={t('Quantity step', 'मात्रा का अंतर')}>
             <input
               name="quantityStep"
               type="number"
@@ -304,7 +321,13 @@ export function ProductEditor({
               required
             />
           </Field>
-          <Field label={product ? 'Available stock · use stock ledger to change' : 'Opening stock'}>
+          <Field
+            label={
+              product
+                ? t('Available stock · use stock ledger to change', 'उपलब्ध स्टॉक · बदलने के लिए स्टॉक खाता')
+                : t('Opening stock', 'शुरुआती स्टॉक')
+            }
+          >
             <input
               name="stock"
               readOnly={Boolean(product)}
@@ -315,8 +338,18 @@ export function ProductEditor({
               required
             />
           </Field>
+          <Field label={t('Low-stock alert at', 'इतना बचने पर चेतावनी')}>
+            <input
+              name="lowStockAt"
+              type="number"
+              min="0"
+              step="1"
+              defaultValue={product?.lowStockAt ?? 25}
+              required
+            />
+          </Field>
         </div>
-        <Field label="Description">
+        <Field label={t('Description', 'विवरण')}>
           <textarea
             name="description"
             defaultValue={product?.description}
@@ -324,10 +357,10 @@ export function ProductEditor({
             maxLength={1500}
           />
         </Field>
-        <Field label="Recommended use">
+        <Field label={t('Recommended use', 'कहाँ इस्तेमाल करें')}>
           <input name="recommendedUse" defaultValue={product?.recommendedUse} required />
         </Field>
-        <Field label="Product image URL">
+        <Field label={t('Product image URL', 'फ़ोटो का लिंक')}>
           <input
             type="url"
             value={image}
@@ -336,7 +369,7 @@ export function ProductEditor({
           />
         </Field>
         <label className="upload-button">
-          <Upload size={16} /> Upload image to store storage
+          <Upload size={16} /> {t('Upload photo', 'फ़ोटो अपलोड करें')}
           <input
             type="file"
             accept="image/png,image/jpeg,image/webp"
@@ -348,7 +381,7 @@ export function ProductEditor({
                 const r = await uploadProductPhoto(file);
                 setImage(r.publicUrl);
               } catch (err) {
-                setError(errorMessage(err));
+                setError(say(err));
               } finally {
                 setBusy(false);
               }
@@ -356,8 +389,8 @@ export function ProductEditor({
           />
         </label>
         <label className="check">
-          <input type="checkbox" name="active" defaultChecked={product?.active ?? true} /> Visible
-          to customers
+          <input type="checkbox" name="active" defaultChecked={product?.active ?? true} />{' '}
+          {t('Visible to customers', 'ग्राहकों को दिखे')}
         </label>
         {error && (
           <p role="alert" className="error">
@@ -365,11 +398,13 @@ export function ProductEditor({
           </p>
         )}
         <p className="hint">
-          Price changes are recorded and sent to connected customers. Customers must review changed
-          totals before ordering.
+          {t(
+            'Price changes are recorded and sent to connected customers. Customers must review changed totals before ordering.',
+            'भाव बदलाव दर्ज होता है और ग्राहकों तक पहुँचता है। ऑर्डर से पहले ग्राहक नया कुल देखकर पुष्टि करते हैं।',
+          )}
         </p>
         <button className="primary wide" disabled={busy}>
-          {busy ? 'Saving…' : 'Save product'}
+          {busy ? t('Saving…', 'सहेज रहे हैं…') : t('Save product', 'सामग्री सहेजें')}
         </button>
       </form>
     </Modal>

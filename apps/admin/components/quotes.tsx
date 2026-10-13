@@ -2,7 +2,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Order, Quote, User, money } from '@shiv/shared';
 import { ArrowUpRight } from 'lucide-react';
-import { api, errorMessage } from '../lib/api';
+import { api } from '../lib/api';
+import { useWords } from '../lib/i18n';
 import { Badge, Empty, Field, Modal } from './ui';
 export function Quotes({
   quotes,
@@ -15,6 +16,7 @@ export function Quotes({
   notice: (s: string) => void;
   onDirtyChange: (value: boolean) => void;
 }) {
+  const { t, age } = useWords();
   const [selected, setSelected] = useState<Quote | null>(null);
   const [dirty, setDirty] = useState(false);
   useEffect(() => {
@@ -36,7 +38,10 @@ export function Quotes({
     return () => window.removeEventListener('beforeunload', warn);
   }, [dirty]);
   const close = () => {
-    if (dirty && !window.confirm('Discard unsaved quotation edits? / बिना भेजे बदलाव हटाएँ?'))
+    if (
+      dirty &&
+      !window.confirm(t('Discard unsaved quotation edits?', 'बिना भेजे बदलाव हटाएँ?'))
+    )
       return;
     setSelected(null);
     setDirty(false);
@@ -57,25 +62,28 @@ export function Quotes({
             <p>
               {q.items.map((item) => `${item.name}: ${item.quantity} ${item.unit}`).join(' · ')}
             </p>
-            <strong>
-              {q.totalPaise === null ? 'भाव देना है / Awaiting offer' : money(q.totalPaise)}
-            </strong>
+            <div className="row-between">
+              <strong>
+                {q.totalPaise === null ? t('Awaiting offer', 'भाव देना है') : money(q.totalPaise)}
+              </strong>
+              <small>{age(q.createdAt)}</small>
+            </div>
             <button
               className="primary wide owner-next-action"
-              aria-label={`Open quote ${q.number}`}
+              aria-label={`${t('Open quote', 'भाव खोलें')} ${q.number}`}
               onClick={() => {
                 setSelected(q);
                 setDirty(false);
               }}
             >
               {q.order
-                ? 'ऑर्डर देखें / View order'
+                ? t('View order', 'ऑर्डर देखें')
                 : q.status === 'ACCEPTED'
-                  ? 'सप्लाई तैयार करें / Prepare supply'
-                  : 'कोटेशन देखें / Review quote'}
+                  ? t('Prepare supply', 'सप्लाई तैयार करें')
+                  : t('Review quote', 'भाव देखें')}
             </button>
             <div className="owner-actions">
-              <a href={`tel:${q.address.phone}`}>फ़ोन / Call</a>
+              <a href={`tel:${q.address.phone}`}>{t('Call', 'फ़ोन')}</a>
               <a
                 href={`https://wa.me/${(q.address.phone || '').replace(/\D/g, '')}`}
                 target="_blank"
@@ -91,11 +99,11 @@ export function Quotes({
         <table>
           <thead>
             <tr>
-              <th>Request</th>
-              <th>Customer / site</th>
-              <th>Products</th>
-              <th>Quoted total</th>
-              <th>Status</th>
+              <th>{t('Request', 'अनुरोध')}</th>
+              <th>{t('Customer / site', 'ग्राहक / साइट')}</th>
+              <th>{t('Products', 'सामग्री')}</th>
+              <th>{t('Quoted total', 'कुल भाव')}</th>
+              <th>{t('Status', 'स्थिति')}</th>
               <th />
             </tr>
           </thead>
@@ -104,7 +112,9 @@ export function Quotes({
               <tr key={q.id}>
                 <td>
                   <strong>{q.number}</strong>
-                  <small>Revision {q.revision}</small>
+                  <small>
+                    {t('Revision', 'संस्करण')} {q.revision} · {age(q.createdAt)}
+                  </small>
                 </td>
                 <td>
                   <strong>{q.company || q.address.name}</strong>
@@ -113,17 +123,24 @@ export function Quotes({
                   </small>
                 </td>
                 <td>
-                  {q.items.length} products
-                  <small>{q.items.reduce((s, i) => s + i.quantity, 0)} units requested</small>
+                  {t(`${q.items.length} products`, `${q.items.length} सामग्री`)}
+                  <small>
+                    {t(
+                      `${q.items.reduce((s, i) => s + i.quantity, 0)} units requested`,
+                      `${q.items.reduce((s, i) => s + i.quantity, 0)} इकाई माँगी`,
+                    )}
+                  </small>
                 </td>
-                <td>{q.totalPaise === null ? 'Awaiting offer' : money(q.totalPaise)}</td>
+                <td>
+                  {q.totalPaise === null ? t('Awaiting offer', 'भाव देना है') : money(q.totalPaise)}
+                </td>
                 <td>
                   <Badge value={q.status} />
                 </td>
                 <td>
                   <button
                     className="icon-button"
-                    aria-label={`Open quote ${q.number}`}
+                    aria-label={`${t('Open quote', 'भाव खोलें')} ${q.number}`}
                     onClick={() => {
                       setSelected(q);
                       setDirty(false);
@@ -139,8 +156,11 @@ export function Quotes({
       </div>
       {!quotes.length && (
         <Empty
-          title="Build bigger, together"
-          body="Bulk requests from customers and contractors will appear here."
+          title={t('No bulk requests yet', 'अभी कोई थोक अनुरोध नहीं')}
+          body={t(
+            'Bulk requests from customers and contractors appear here.',
+            'ग्राहकों और ठेकेदारों के थोक अनुरोध यहाँ दिखेंगे।',
+          )}
         />
       )}
       {quote && (
@@ -159,7 +179,7 @@ export function Quotes({
               (liveQuote.revision !== quote.revision || liveQuote.status !== quote.status),
             )
           }
-          save={async (text = 'Quote sent to the customer') => {
+          save={async (text = t('Quote sent to the customer', 'भाव ग्राहक को भेज दिया')) => {
             await refresh();
             setSelected(null);
             setDirty(false);
@@ -183,6 +203,7 @@ function QuoteEditor({
   onDirty: () => void;
   changed: boolean;
 }) {
+  const { t, error: say } = useWords();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [revising, setRevising] = useState(false);
@@ -190,7 +211,7 @@ function QuoteEditor({
   useEffect(() => {
     void api<User[]>('/admin/owners')
       .then(setOwners)
-      .catch((e) => setError(errorMessage(e)));
+      .catch((e) => setError(say(e)));
   }, []);
   const saving = useRef(false);
   const locked = Boolean(quote.order) || (quote.status === 'ACCEPTED' && !revising);
@@ -201,8 +222,22 @@ function QuoteEditor({
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (saving.current) return;
-    saving.current = true;
     const f = new FormData(e.currentTarget);
+    const total =
+      quote.items.reduce(
+        (sum, i) => sum + Math.round(Number(f.get(i.productId)) * 100) * i.quantity,
+        0,
+      ) + Math.round(Number(f.get('delivery')) * 100);
+    if (
+      !window.confirm(
+        t(
+          `Send this quote for ${money(total)} to the customer?`,
+          `${money(total)} का यह भाव ग्राहक को भेजें?`,
+        ),
+      )
+    )
+      return;
+    saving.current = true;
     setBusy(true);
     setError('');
     try {
@@ -217,10 +252,11 @@ function QuoteEditor({
         deliveryFeePaise: Math.round(Number(f.get('delivery')) * 100),
         validUntil: new Date(String(f.get('expiry'))).toISOString(),
         note: String(f.get('note')),
+        deliveryTerms: String(f.get('deliveryTerms') || ''),
       });
       await save();
     } catch (e) {
-      setError(errorMessage(e));
+      setError(say(e));
     } finally {
       saving.current = false;
       setBusy(false);
@@ -228,6 +264,15 @@ function QuoteEditor({
   }
   async function convert() {
     if (saving.current) return;
+    if (
+      !window.confirm(
+        t(
+          `Create a cash-on-delivery order for ${money(quote.totalPaise || 0)} at the agreed terms?`,
+          `तय शर्तों पर ${money(quote.totalPaise || 0)} का डिलीवरी पर भुगतान वाला ऑर्डर बनाएँ?`,
+        ),
+      )
+    )
+      return;
     saving.current = true;
     setBusy(true);
     setError('');
@@ -235,10 +280,10 @@ function QuoteEditor({
       const order = await api<Order>(`/admin/quotes/${quote.id}/convert`, 'POST', {
         revision: quote.revision,
       });
-      await save(`ऑर्डर बन गया / Order ${order.number} created`);
+      await save(t(`Order ${order.number} created`, `ऑर्डर ${order.number} बन गया`));
       window.location.hash = `orders?order=${encodeURIComponent(order.id)}`;
     } catch (e) {
-      setError(errorMessage(e));
+      setError(say(e));
     } finally {
       saving.current = false;
       setBusy(false);
@@ -249,16 +294,18 @@ function QuoteEditor({
       <form className="form-stack" onSubmit={submit} onChange={onDirty}>
         {changed && (
           <p className="warning">
-            यह कोटेशन कहीं और बदला है। आपके बदलाव सुरक्षित हैं; भेजते समय पुरानी आवृत्ति की जाँच
-            होगी। / This quote changed elsewhere. Your edits are preserved; saving checks the
-            revision. Close and reopen to review the latest terms.
+            {t(
+              'This quote changed elsewhere. Your edits are kept; sending checks the revision. Close and reopen to see the latest terms.',
+              'यह भाव कहीं और बदला है। आपके बदलाव सुरक्षित हैं; भेजते समय संस्करण जाँचा जाएगा। नई शर्तें देखने के लिए बंद करके फिर खोलें।',
+            )}
           </p>
         )}
         <Badge value={quote.status} />
         {quote.work && (
           <section className="detail-block">
             <p>
-              ज़िम्मेदारी / Assigned: <strong>{quote.work.assignedTo?.name || 'Unassigned'}</strong>
+              {t('Assigned', 'ज़िम्मेदारी')}:{' '}
+              <strong>{quote.work.assignedTo?.name || t('Nobody yet', 'अभी किसी की नहीं')}</strong>
             </p>
             {!quote.work.acknowledgedAt && (
               <button
@@ -272,24 +319,22 @@ function QuoteEditor({
                   setError('');
                   try {
                     await api(`/admin/quotes/${quote.id}/acknowledge`, 'POST', {});
-                    await save('ज़िम्मेदारी ली / Quotation acknowledged');
+                    await save(t('Quotation acknowledged', 'ज़िम्मेदारी ली'));
                   } catch (e) {
-                    setError(errorMessage(e));
+                    setError(say(e));
                   } finally {
                     saving.current = false;
                     setBusy(false);
                   }
                 }}
               >
-                ज़िम्मेदारी लें / Acknowledge quotation
+                {t('Acknowledge quotation', 'ज़िम्मेदारी लें')}
               </button>
             )}
             {quote.work.lastError && (
-              <p className="warning">
-                सूचना नहीं पहुँची / Alert failed. Attempts: {quote.work.attempts}
-              </p>
+              <AlertRetry workId={quote.work.id} attempts={quote.work.attempts} done={save} />
             )}
-            <Field label="ज़िम्मेदारी बदलें / Assign owner">
+            <Field label={t('Assign owner', 'ज़िम्मेदारी बदलें')}>
               <select
                 defaultValue=""
                 disabled={busy}
@@ -301,16 +346,16 @@ function QuoteEditor({
                     await api(`/admin/work/${quote.work!.id}/assign`, 'POST', {
                       ownerId: e.target.value,
                     });
-                    await save('ज़िम्मेदारी बदली / Quotation assigned');
+                    await save(t('Quotation assigned', 'ज़िम्मेदारी बदली'));
                   } catch (e) {
-                    setError(errorMessage(e));
+                    setError(say(e));
                   } finally {
                     saving.current = false;
                     setBusy(false);
                   }
                 }}
               >
-                <option value="">Choose owner</option>
+                <option value="">{t('Choose owner', 'मालिक चुनें')}</option>
                 {owners.map((owner) => (
                   <option key={owner.id} value={owner.id}>
                     {owner.name || owner.phone}
@@ -322,16 +367,17 @@ function QuoteEditor({
         )}
         {quote.order && (
           <p className="notice">
-            सप्लाई ऑर्डर / Supply order:{' '}
+            {t('Supply order', 'सप्लाई ऑर्डर')}:{' '}
             <a href={`#orders?order=${encodeURIComponent(quote.order.id)}`}>{quote.order.number}</a>
           </p>
         )}
         {quote.status === 'ACCEPTED' && !quote.order && !revising && (
           <section className="form-stack">
             <p className="notice">
-              ग्राहक ने यह भाव मंज़ूर किया है। / The customer accepted this revision. Create one
-              cash-on-delivery order at these agreed prices and freight. Availability is checked
-              again.
+              {t(
+                'The customer accepted this revision. Create one cash-on-delivery order at these agreed prices and freight; stock is checked again.',
+                'ग्राहक ने यह भाव मंज़ूर किया है। इन्हीं तय भाव और भाड़े पर डिलीवरी पर भुगतान वाला एक ऑर्डर बनाएँ; स्टॉक फिर जाँचा जाएगा।',
+              )}
             </p>
             <button
               type="button"
@@ -339,7 +385,7 @@ function QuoteEditor({
               disabled={busy}
               onClick={() => void convert()}
             >
-              ऑर्डर बनाएँ / Create supply order
+              {t('Create supply order', 'ऑर्डर बनाएँ')}
             </button>
             <button
               type="button"
@@ -350,21 +396,25 @@ function QuoteEditor({
                 setRevising(true);
               }}
             >
-              बात बदली है / Revise terms for fresh consent
+              {t('Revise terms for fresh consent', 'बात बदली है, नई मंज़ूरी लें')}
             </button>
           </section>
         )}
         {revising && (
           <p className="warning">
-            तारीख, भाव या भाड़ा बदलने पर ग्राहक की नई मंज़ूरी ज़रूरी है। / Send a revised offer and
-            obtain fresh customer acceptance before creating an order.
+            {t(
+              'Changing the date, prices or freight needs the customer’s fresh acceptance before an order is created.',
+              'तारीख, भाव या भाड़ा बदलने पर ऑर्डर से पहले ग्राहक की नई मंज़ूरी ज़रूरी है।',
+            )}
           </p>
         )}
         {quote.decisionSource && (
           <p>
-            Decision:{' '}
-            {quote.decisionSource === 'CUSTOMER' ? 'Customer in app' : 'Recorded by store'} ·{' '}
-            {quote.decisionNote}
+            {t('Decision', 'फ़ैसला')}:{' '}
+            {quote.decisionSource === 'CUSTOMER'
+              ? t('Customer in the app', 'ग्राहक ने ऐप में')
+              : t('Recorded by the store', 'दुकान ने दर्ज किया')}{' '}
+            · {quote.decisionNote}
           </p>
         )}
         {quote.status === 'SENT' && !quote.order && (
@@ -379,12 +429,20 @@ function QuoteEditor({
                   if (
                     !window.confirm(
                       status === 'ACCEPTED'
-                        ? 'Record the customer’s acceptance of this quote?'
-                        : 'Close this quote as rejected?',
+                        ? t(
+                            'Record the customer’s acceptance of this quote?',
+                            'ग्राहक की मंज़ूरी दर्ज करें?',
+                          )
+                        : t('Close this quote as rejected?', 'यह भाव अस्वीकार मानकर बंद करें?'),
                     )
                   )
                     return;
-                  const note = window.prompt('Record who confirmed, how, and when (required):');
+                  const note = window.prompt(
+                    t(
+                      'Record who confirmed, how, and when (required):',
+                      'किसने, कैसे और कब पक्का किया लिखें (ज़रूरी):',
+                    ),
+                  );
                   if (!note?.trim()) return;
                   setBusy(true);
                   try {
@@ -394,16 +452,20 @@ function QuoteEditor({
                       note,
                     });
                     await save(
-                      status === 'ACCEPTED' ? 'Customer acceptance recorded' : 'Quote closed',
+                      status === 'ACCEPTED'
+                        ? t('Customer acceptance recorded', 'ग्राहक की मंज़ूरी दर्ज हुई')
+                        : t('Quote closed', 'भाव बंद हुआ'),
                     );
                   } catch (e) {
-                    setError(errorMessage(e));
+                    setError(say(e));
                   } finally {
                     setBusy(false);
                   }
                 }}
               >
-                {status === 'ACCEPTED' ? 'Record customer acceptance' : 'Close quote'}
+                {status === 'ACCEPTED'
+                  ? t('Record customer acceptance', 'ग्राहक की मंज़ूरी दर्ज करें')
+                  : t('Close quote', 'भाव बंद करें')}
               </button>
             ))}
           </div>
@@ -413,18 +475,20 @@ function QuoteEditor({
           <p>
             {quote.address.line1}, {quote.address.area}, {quote.address.city}
             <br />
-            Delivery requested: {quote.deliveryDate}
+            {t('Delivery requested', 'चाही डिलीवरी')}: {quote.deliveryDate}
             {quote.address.landmark && (
               <>
                 <br />
-                पहचान / Landmark: {quote.address.landmark}
+                {t('Landmark', 'पहचान')}: {quote.address.landmark}
               </>
             )}
           </p>
           <p>{quote.notes}</p>
           {quote.gstin && <small>GSTIN: {quote.gstin}</small>}
           <div className="owner-actions">
-            <a href={`tel:${quote.address.phone}`}>फ़ोन / Call {quote.address.phone}</a>
+            <a href={`tel:${quote.address.phone}`}>
+              {t('Call', 'फ़ोन')} {quote.address.phone}
+            </a>
             <a
               href={`https://wa.me/${quote.address.phone.replace(/\D/g, '')}`}
               target="_blank"
@@ -437,7 +501,7 @@ function QuoteEditor({
         {quote.items.map((i) => (
           <Field
             key={i.productId}
-            label={`${i.name} · ${i.quantity} × ${i.unit}${i.packSize ? ` (${i.packSize})` : ''} · price per unit (₹)`}
+            label={`${i.name} · ${i.quantity} × ${i.unit}${i.packSize ? ` (${i.packSize})` : ''} · ${t('price per unit (₹)', 'इकाई का भाव (₹)')}`}
           >
             <input
               name={i.productId}
@@ -450,7 +514,7 @@ function QuoteEditor({
             />
           </Field>
         ))}
-        <Field label="डिलीवरी की तारीख / Agreed delivery date">
+        <Field label={t('Agreed delivery date', 'डिलीवरी की तारीख')}>
           <input
             type="date"
             name="deliveryDate"
@@ -460,7 +524,7 @@ function QuoteEditor({
           />
         </Field>
         <div className="form-grid">
-          <Field label="Delivery charge (₹)">
+          <Field label={t('Delivery charge (₹)', 'भाड़ा (₹)')}>
             <input
               name="delivery"
               type="number"
@@ -471,7 +535,7 @@ function QuoteEditor({
               disabled={locked || busy}
             />
           </Field>
-          <Field label="Valid until">
+          <Field label={t('Valid until', 'कब तक मान्य')}>
             <input
               type="datetime-local"
               name="expiry"
@@ -481,7 +545,19 @@ function QuoteEditor({
             />
           </Field>
         </div>
-        <Field label="Note to customer">
+        <Field label={t('Delivery terms', 'डिलीवरी की शर्तें')}>
+          <textarea
+            name="deliveryTerms"
+            defaultValue={quote.deliveryTerms || ''}
+            maxLength={500}
+            placeholder={t(
+              'Unloading, floors, vehicle, number of trips…',
+              'उतराई, मंज़िल, गाड़ी, कितने चक्कर…',
+            )}
+            disabled={locked || busy}
+          />
+        </Field>
+        <Field label={t('Note to customer', 'ग्राहक के लिए संदेश')}>
           <textarea
             name="note"
             defaultValue={quote.adminNote}
@@ -498,8 +574,10 @@ function QuoteEditor({
               defaultChecked={quote.deliveryConfirmed}
               disabled={locked || busy}
             />{' '}
-            मैंने स्थान, रास्ता, गाड़ी और भाड़ा जाँच लिया है। / I checked the site, route, vehicle
-            availability and agreed freight.
+            {t(
+              'I checked the site, route, vehicle availability and agreed freight.',
+              'मैंने स्थान, रास्ता, गाड़ी और भाड़ा जाँच लिया है।',
+            )}
           </span>
         </label>
         {error && (
@@ -509,16 +587,66 @@ function QuoteEditor({
         )}
         {!locked ? (
           <button disabled={busy} className="primary wide">
-            {busy ? 'Sending…' : quote.revision ? 'Send revised quote' : 'Send quotation'}
+            {busy
+              ? t('Sending…', 'भेजा जा रहा है…')
+              : quote.revision
+                ? t('Send revised quote', 'बदला हुआ भाव भेजें')
+                : t('Send quotation', 'भाव भेजें')}
           </button>
         ) : (
           <p className="notice">
             {quote.order
-              ? 'इस कोटेशन का ऑर्डर बन चुका है। / This quotation has one linked supply order.'
-              : 'मंज़ूर भाव सुरक्षित हैं। / Accepted terms are preserved; revised terms require fresh consent.'}
+              ? t(
+                  'This quotation has one linked supply order.',
+                  'इस भाव का ऑर्डर बन चुका है।',
+                )
+              : t(
+                  'Accepted terms are kept; revised terms need fresh consent.',
+                  'मंज़ूर शर्तें सुरक्षित हैं; बदली शर्तों पर नई मंज़ूरी चाहिए।',
+                )}
           </p>
         )}
       </form>
     </Modal>
+  );
+}
+
+/** Shown when the new-work alert could not be delivered; retries it now. */
+export function AlertRetry({
+  workId,
+  attempts,
+  done,
+}: {
+  workId: string;
+  attempts: number;
+  done: (text?: string) => Promise<void> | void;
+}) {
+  const { t, error: say } = useWords();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  return (
+    <div className="warning">
+      {t(`The alert did not go out (${attempts} tries).`, `अलर्ट नहीं पहुँचा (${attempts} बार कोशिश)।`)}{' '}
+      <button
+        type="button"
+        className="text-button"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          setError('');
+          try {
+            await api(`/admin/work/${workId}/retry`, 'POST', {});
+            await done(t('Alert sent again', 'अलर्ट फिर भेजा'));
+          } catch (e) {
+            setError(say(e));
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        {t('Retry alert', 'अलर्ट फिर भेजें')}
+      </button>
+      {error && <span role="alert"> {error}</span>}
+    </div>
   );
 }

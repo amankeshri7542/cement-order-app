@@ -2,7 +2,8 @@
 import { useState } from 'react';
 import { StoreSettings } from '@shiv/shared';
 import { Phone, Truck, ShieldCheck } from 'lucide-react';
-import { api, errorMessage } from '../lib/api';
+import { api } from '../lib/api';
+import { useWords } from '../lib/i18n';
 import { Field } from './ui';
 export function Settings({
   settings,
@@ -13,6 +14,7 @@ export function Settings({
   refresh: () => Promise<void>;
   notice: (s: string) => void;
 }) {
+  const { t, error: say } = useWords();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   async function submit(e: React.FormEvent<HTMLFormElement>) {
@@ -30,9 +32,9 @@ export function Settings({
         deliveryMessage: String(f.get('message')),
       });
       await refresh();
-      notice('Store and finance settings saved');
+      notice(t('Store and finance settings saved', 'दुकान की सेटिंग सहेजी'));
     } catch (err) {
-      setError(errorMessage(err));
+      setError(say(err));
     } finally {
       setBusy(false);
     }
@@ -43,13 +45,15 @@ export function Settings({
         <section className="panel padded">
           <h2>
             <Phone size={21} />
-            Store details
+            {t('Store details', 'दुकान की जानकारी')}
           </h2>
-          <p className="muted">The details customers see when they need you.</p>
-          <Field label="Store name">
+          <p className="muted">
+            {t('The details customers see when they need you.', 'ग्राहकों को दिखने वाली जानकारी।')}
+          </p>
+          <Field label={t('Store name', 'दुकान का नाम')}>
             <input value="Shiv Cement Store" readOnly />
           </Field>
-          <Field label="Contact and WhatsApp number">
+          <Field label={t('Contact and WhatsApp number', 'फ़ोन और WhatsApp नंबर')}>
             <input
               name="phone"
               type="tel"
@@ -58,7 +62,7 @@ export function Settings({
               defaultValue={settings.phone.replace(/^\+91/, '')}
             />
           </Field>
-          <Field label="Delivery information for customers">
+          <Field label={t('Delivery information for customers', 'ग्राहकों के लिए डिलीवरी जानकारी')}>
             <textarea
               name="message"
               defaultValue={settings.deliveryMessage}
@@ -70,33 +74,33 @@ export function Settings({
         <section className="panel padded">
           <h2>
             <Truck size={21} />
-            Delivery & finance
+            {t('Delivery & finance', 'डिलीवरी और भाड़ा')}
           </h2>
-          <p className="muted">
-            Delivery is available only for the active pincodes configured above.
-          </p>
           <p className="hint">
-            Set charges, minimum orders, free-delivery thresholds and estimates in Delivery areas.
-            Existing orders keep the charge accepted at checkout. Bulk quotations can use a separate
-            agreed transport charge.
+            {t(
+              'Set charges, minimum orders, free-delivery limits, estimates and terms in Delivery areas. Existing orders keep the charge accepted at checkout. Bulk quotes can use a separate agreed transport charge.',
+              'भाड़ा, कम से कम ऑर्डर, मुफ़्त डिलीवरी, समय और शर्तें "डिलीवरी क्षेत्र" में तय करें। पुराने ऑर्डर का भाड़ा नहीं बदलता। थोक भाव में अलग भाड़ा लगा सकते हैं।',
+            )}
           </p>
         </section>
         <section className="panel padded">
           <h2>
             <ShieldCheck size={21} />
-            Payments
+            {t('Payments', 'भुगतान')}
           </h2>
           <label className="check">
             <input type="checkbox" checked readOnly />
-            Cash on delivery
+            {t('Cash or UPI on delivery', 'डिलीवरी पर नकद या UPI')}
           </label>
           <label className="check">
             <input type="checkbox" name="online" defaultChecked={settings.onlinePaymentsEnabled} />
-            Enable Razorpay online payments
+            {t('Enable Razorpay online payments', 'Razorpay ऑनलाइन भुगतान चालू करें')}
           </label>
           <p className="hint">
-            Online payments can only be enabled after the backend credentials and webhook secret are
-            configured.
+            {t(
+              'Online payments work only after the technical operator sets up the payment account.',
+              'ऑनलाइन भुगतान तभी चलेगा जब तकनीकी व्यक्ति पेमेंट खाता जोड़ दे।',
+            )}
           </p>
         </section>
         {error && (
@@ -105,24 +109,24 @@ export function Settings({
           </p>
         )}
         <button className="primary" disabled={busy}>
-          {busy ? 'Saving…' : 'Save settings'}
+          {busy ? t('Saving…', 'सहेज रहे हैं…') : t('Save settings', 'सेटिंग सहेजें')}
         </button>
       </div>
       <aside className="finance-note">
-        <span className="eyebrow">YOU’RE IN CONTROL</span>
-        <h2>
-          Clear prices.
-          <br />
-          No surprises.
-        </h2>
+        <span className="eyebrow">{t('YOU’RE IN CONTROL', 'फ़ैसला आपका')}</span>
+        <h2>{t('Clear prices. No surprises.', 'साफ़ भाव। कोई छुपा ख़र्च नहीं।')}</h2>
         <p>
-          Every delivery-fee change is recorded. Customers see the complete total before they place
-          an order.
+          {t(
+            'Every delivery-fee change is recorded. Customers see the complete total before they place an order.',
+            'भाड़े का हर बदलाव दर्ज होता है। ग्राहक ऑर्डर से पहले पूरा कुल देखते हैं।',
+          )}
         </p>
         <hr />
         <p>
-          For orders with special delivery requirements, send a bulk quotation with a custom
-          delivery charge.
+          {t(
+            'For orders with special delivery needs, send a bulk quote with a custom delivery charge.',
+            'ख़ास डिलीवरी वाले ऑर्डर के लिए अलग भाड़े के साथ थोक भाव भेजें।',
+          )}
         </p>
       </aside>
     </form>

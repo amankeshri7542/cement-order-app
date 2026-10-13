@@ -117,6 +117,11 @@ export function Delivery() {
                 <p>
                   {result.zone.name} · {result.zone.estimate}
                 </p>
+                {result.zone.terms ? (
+                  <p>
+                    {t('Delivery terms', 'डिलीवरी शर्तें')}: {result.zone.terms}
+                  </p>
+                ) : null}
                 <p>
                   {t('Delivery fee', 'डिलीवरी शुल्क')}: {price(result.zone.deliveryFeePaise)}
                   <br />

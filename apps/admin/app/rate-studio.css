@@ -10,7 +10,7 @@
 }
 .rate-studio .rs-eyebrow {
   display: block;
-  font-size: 10px;
+  font-size: 14px;
   letter-spacing: 1.7px;
   font-weight: 700;
   line-height: 1.6;
@@ -46,7 +46,7 @@
   padding: 0;
   gap: 16px;
   margin: 0 0 3px;
-  font-size: 12px;
+  font-size: 14px;
 }
 .rs-steps li {
   display: flex;
@@ -61,7 +61,7 @@
   border-radius: 50%;
   display: grid;
   place-items: center;
-  font-size: 11px;
+  font-size: 14px;
 }
 .rs-steps .current {
   color: var(--rs-ink);
@@ -112,7 +112,7 @@
   line-height: 1.6;
   max-width: 230px;
   font-weight: 400;
-  font-size: 13px;
+  font-size: 14px;
 }
 .rs-start > svg:last-child {
   position: absolute;
@@ -122,7 +122,7 @@
 .rs-provider-note {
   padding: 14px 2px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 14px;
 }
 .rs-provider-note > span {
   color: #8a620d;
@@ -184,7 +184,7 @@
   padding: 6px 9px;
   border-radius: 4px;
   background: #ebece6;
-  font-size: 10px;
+  font-size: 14px;
   letter-spacing: 0.5px;
   font-weight: 700;
   text-transform: uppercase;
@@ -253,7 +253,7 @@
 .rs-published p,
 .rs-processing p {
   margin: 4px 0 0;
-  font-size: 12px;
+  font-size: 14px;
 }
 .rs-processing {
   background: var(--rs-sand);
@@ -292,7 +292,7 @@
   margin: 0;
 }
 .rs-source .rs-eyebrow {
-  font-size: 9px;
+  font-size: 14px;
   color: var(--muted);
 }
 .rs-source-image {
@@ -305,7 +305,7 @@
   border-radius: 3px;
 }
 .rs-file-name {
-  font-size: 11px;
+  font-size: 14px;
   overflow-wrap: anywhere;
   color: var(--muted);
   margin: 9px 0 15px;
@@ -316,14 +316,14 @@
 .rate-studio summary {
   cursor: pointer;
   font-weight: 600;
-  font-size: 12px;
+  font-size: 14px;
   padding: 8px 0;
   line-height: 1.5;
 }
 .rs-ocr {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-size: 11px;
+  font-size: 14px;
   line-height: 1.6;
   max-height: 300px;
   overflow: auto;
@@ -342,7 +342,7 @@
 }
 .rs-source-empty p {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.7;
   margin: 0;
 }
@@ -375,7 +375,7 @@
   opacity: 0.5;
 }
 .rs-evidence-note {
-  font-size: 11px;
+  font-size: 14px;
   line-height: 1.65;
   margin: 18px 0 0;
   color: var(--muted);
@@ -404,7 +404,7 @@
 }
 .rs-review-count small {
   font-family: 'DM Sans', Arial, sans-serif;
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 400;
 }
 .rs-row-actions {
@@ -447,7 +447,7 @@
 }
 .rs-row-top small {
   display: block;
-  font-size: 11px;
+  font-size: 14px;
   line-height: 1.6;
   margin-top: 4px;
 }
@@ -455,7 +455,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.5;
 }
 .rate-studio .check input {
@@ -466,7 +466,7 @@
 }
 .rs-row-top > .check {
   margin: 0;
-  font-size: 11px;
+  font-size: 14px;
 }
 .rs-price-comparison {
   display: grid;
@@ -479,7 +479,7 @@
   border-radius: 5px;
 }
 .rs-price-comparison > div > span {
-  font-size: 10px;
+  font-size: 14px;
   display: block;
   color: var(--muted);
   margin-bottom: 8px;
@@ -496,7 +496,7 @@
   min-width: 0;
 }
 .rs-price-comparison .field > span {
-  font-size: 10px;
+  font-size: 14px;
 }
 .rs-price-comparison input {
   font-size: 24px;
@@ -518,7 +518,7 @@
 }
 .rs-delta {
   font-variant-numeric: tabular-nums;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 650;
   white-space: nowrap;
   background: var(--rs-sand);
@@ -530,7 +530,7 @@
   justify-content: space-between;
   align-items: center;
   gap: 10px;
-  font-size: 11px;
+  font-size: 14px;
   color: var(--muted);
   margin-bottom: 12px;
 }
@@ -538,14 +538,14 @@
   text-transform: capitalize;
 }
 .rs-match-line .text-button {
-  font-size: 11px;
+  font-size: 14px;
   flex-shrink: 0;
 }
 .rs-issues {
   list-style: none;
   margin: 12px 0;
   padding: 0;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.6;
 }
 .rs-issues li {
@@ -560,7 +560,7 @@
   color: #793c2b;
 }
 .rs-source-quote {
-  font-size: 12px;
+  font-size: 14px;
   margin: 12px 0;
   padding: 10px 12px;
   border-left: 2px solid var(--rs-rule);
@@ -627,12 +627,12 @@
 }
 .rs-publish-bar strong {
   display: block;
-  font-size: 13px;
+  font-size: 14px;
 }
 .rs-publish-bar small {
   display: block;
   color: #d6d8cd;
-  font-size: 11px;
+  font-size: 14px;
   margin-top: 5px;
   line-height: 1.5;
 }
@@ -646,7 +646,7 @@
   min-height: 42px;
 }
 .rs-cancel {
-  font-size: 11px;
+  font-size: 14px;
   color: #7e4535;
   margin: 18px 0;
 }
@@ -662,7 +662,7 @@
 .rs-error p,
 .rs-warning p {
   margin: 5px 0 12px;
-  font-size: 13px;
+  font-size: 14px;
 }
 .rs-warning {
   border-color: #d6ba78;
@@ -679,7 +679,7 @@
   color: white;
   box-shadow: 0 3px 16px #0002;
   border-radius: 5px;
-  font-size: 12px;
+  font-size: 14px;
 }
 .rs-picker-filters {
   display: grid;
@@ -722,7 +722,7 @@
   min-width: 0;
 }
 .rs-picker-product strong {
-  font-size: 12px;
+  font-size: 14px;
 }
 .rs-picker-product small {
   display: block;
@@ -758,7 +758,7 @@
   border-left: 8px solid var(--rs-amber);
 }
 .rs-template-sample > span {
-  font-size: 10px;
+  font-size: 14px;
   font-weight: 700;
   letter-spacing: 1.5px;
 }
@@ -775,7 +775,7 @@
 }
 .rs-template-sample small {
   color: inherit;
-  font-size: 10px;
+  font-size: 14px;
   opacity: 0.8;
 }
 .rs-template-bulletin {
@@ -802,7 +802,7 @@
   margin: 16px 0;
 }
 .rs-card-pagination > span {
-  font-size: 12px;
+  font-size: 14px;
 }
 .rs-card-studio .hint {
   line-height: 1.6;
@@ -880,11 +880,11 @@
     margin-bottom: 18px;
   }
   .rs-intro .rs-eyebrow {
-    font-size: 9px;
+    font-size: 14px;
   }
   .rs-steps {
     gap: 13px;
-    font-size: 11px;
+    font-size: 14px;
   }
   .rs-steps li {
     gap: 5px;
@@ -901,7 +901,7 @@
     font-size: 25px;
   }
   .rs-start > span:not(.rs-eyebrow) {
-    font-size: 12px;
+    font-size: 14px;
     padding-right: 3px;
   }
   .rs-start-feature {
@@ -911,7 +911,7 @@
     font-size: 32px;
   }
   .rs-start > .rs-eyebrow {
-    font-size: 8px;
+    font-size: 14px;
     max-width: 200px;
   }
   .rs-history-entry {
@@ -933,7 +933,7 @@
     height: 40px;
   }
   .rs-history-entry strong {
-    font-size: 13px;
+    font-size: 14px;
   }
   .rs-section-heading {
     align-items: flex-start;
@@ -1004,7 +1004,7 @@
     gap: 9px;
   }
   .rs-row-actions > .text-button {
-    font-size: 11px;
+    font-size: 14px;
   }
   .rs-adjust-controls {
     grid-template-columns: 1fr 1fr;

@@ -204,6 +204,7 @@ type DeliveryResult = {
   zone?: {
     name: string;
     estimate: string;
+    terms?: string;
     deliveryFeePaise: number;
     minimumOrderPaise: number;
     freeDeliveryAbovePaise: number | null;
@@ -279,6 +280,9 @@ export function DeliveryCheck() {
               `Delivery available · ${result.zone.name}\n${result.zone.estimate}\nDelivery ${money(result.zone.deliveryFeePaise)} · minimum order ${money(result.zone.minimumOrderPaise)}${result.zone.freeDeliveryAbovePaise !== null ? ` · free above ${money(result.zone.freeDeliveryAbovePaise)}` : ''}`,
               `डिलीवरी उपलब्ध · ${result.zone.name}\n${result.zone.estimate}\nडिलीवरी ${money(result.zone.deliveryFeePaise)} · न्यूनतम ऑर्डर ${money(result.zone.minimumOrderPaise)}${result.zone.freeDeliveryAbovePaise !== null ? ` · ${money(result.zone.freeDeliveryAbovePaise)} से ऊपर मुफ़्त` : ''}`,
             )}
+            {result.zone.terms
+              ? `\n${t('Delivery terms', 'डिलीवरी शर्तें')}: ${result.zone.terms}`
+              : ''}
           </Notice>
         ) : (
           <Notice>

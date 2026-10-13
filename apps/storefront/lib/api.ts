@@ -34,6 +34,7 @@ export const deliveryResponse = z
         minimumOrderPaise: amount,
         freeDeliveryAbovePaise: amount.nullable(),
         estimate: z.string(),
+        terms: z.string().default(''),
       })
       .nullable(),
   })
