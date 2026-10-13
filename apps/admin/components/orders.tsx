@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { Order, OrderStatus, User, money, transitions } from '@shiv/shared';
+import { Order, OrderStatus, User, dayLabel, historyNote, money, transitions } from '@shiv/shared';
 import { ArrowUpRight, Search, Printer } from 'lucide-react';
 import { api } from '../lib/api';
 import { useWords } from '../lib/i18n';
@@ -67,7 +67,7 @@ function CustomerContact({ phone }: { phone: string }) {
   );
 }
 export function OrdersTable({ orders, select }: { orders: Order[]; select: (id: string) => void }) {
-  const { t, age } = useWords();
+  const { t, age, language } = useWords();
   return (
     <>
       <div className="owner-order-cards">
@@ -79,7 +79,7 @@ export function OrdersTable({ orders, select }: { orders: Order[]; select: (id: 
             </div>
             <h3>{o.user?.name || o.address.name}</h3>
             <p>
-              {o.address.area}, {o.address.city} · {o.deliveryDate}
+              {o.address.area}, {o.address.city} · {dayLabel(o.deliveryDate, language)}
             </p>
             <p>{o.items.map((i) => `${i.name}: ${i.quantity} ${i.unit}`).join(' · ')}</p>
             <div className="row-between">
@@ -139,7 +139,7 @@ export function OrdersTable({ orders, select }: { orders: Order[]; select: (id: 
                   <small>{o.address.city}</small>
                 </td>
                 <td>
-                  {o.deliveryDate}
+                  {dayLabel(o.deliveryDate, language)}
                   <small>
                     {o.payment.method === 'COD'
                       ? t('Cash on delivery', 'डिलीवरी पर भुगतान')
@@ -296,7 +296,7 @@ function OrderDetail({
   refresh: () => Promise<void>;
   notice: (s: string) => void;
 }) {
-  const { t, status: statusText, error: say, age, moment } = useWords();
+  const { t, status: statusText, error: say, age, moment, language } = useWords();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [note, setNote] = useState('');
@@ -502,7 +502,7 @@ function OrderDetail({
           </p>
           <CustomerContact phone={order.address.phone} />
           <p>
-            {t('Delivery', 'डिलीवरी')}: {order.deliveryDate}
+            {t('Delivery', 'डिलीवरी')}: {dayLabel(order.deliveryDate, language)}
             {order.notes && (
               <>
                 <br />
@@ -799,7 +799,7 @@ function OrderDetail({
           {order.history.map((h) => (
             <li key={h.id}>
               <strong>{statusText(h.status)}</strong>
-              <p>{h.note}</p>
+              {historyNote(h.note, language) && <p>{historyNote(h.note, language)}</p>}
               <small>{moment(h.createdAt)}</small>
             </li>
           ))}

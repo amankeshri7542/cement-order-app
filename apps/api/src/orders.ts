@@ -426,9 +426,7 @@ export class OrdersService {
               actorId,
               note:
                 note ||
-                (next === 'REFUND_PENDING'
-                  ? 'Cancelled; refund requires store action.'
-                  : `Order ${status.toLowerCase()}.`),
+                (next === 'REFUND_PENDING' ? 'Cancelled; refund requires store action.' : ''),
             },
           },
         },

@@ -271,6 +271,19 @@ async function openOrder(owner: Page, order: Order) {
     .click();
   await expect(owner.getByRole('dialog')).toBeVisible();
 }
+/** Saves a documentation screenshot of the desk in Hindi, its default language, then returns to English. */
+async function hindiScreenshot(owner: Page, path: string) {
+  // An open order or quote dialog is modal, so the top-bar switch is pressed directly.
+  const press = (name: string) =>
+    owner
+      .locator('.topbar-actions button', { hasText: name })
+      .evaluate((button) => (button as HTMLButtonElement).click());
+  await press('हिन्दी');
+  await expect(owner.locator('html')).toHaveAttribute('lang', 'hi');
+  await owner.screenshot({ path, fullPage: true });
+  await press('English');
+  await expect(owner.locator('html')).toHaveAttribute('lang', 'en');
+}
 async function acknowledgeAndDispatch(owner: Page) {
   const dialog = owner.getByRole('dialog');
   await dialog.getByRole('button', { name: 'Acknowledge', exact: true }).click();
@@ -336,7 +349,7 @@ test('phone COD: automatic owner queue, acknowledgment, actual collection, deliv
     expect((await db.product.findUniqueOrThrow({ where: { id: products[0]!.id } })).stock).toBe(
       450,
     );
-    await owner.screenshot({ path: 'docs/screenshots/owner-cod-hindi-phone.png', fullPage: true });
+    await hindiScreenshot(owner, 'docs/screenshots/owner-cod-hindi-phone.png');
     await owner.goBack();
     await expect(owner.getByRole('dialog')).toHaveCount(0);
     expect(
@@ -410,10 +423,7 @@ test('phone refused delivery: retry and physical return without fake collection,
     expect(payment.status).toBe('PENDING');
     expect(await db.financialMovement.count({ where: { paymentId: payment.id } })).toBe(0);
     expect(await db.deliveryAttempt.count({ where: { orderId: order.id } })).toBe(4);
-    await owner.screenshot({
-      path: 'docs/screenshots/owner-return-hindi-phone.png',
-      fullPage: true,
-    });
+    await hindiScreenshot(owner, 'docs/screenshots/owner-return-hindi-phone.png');
   } finally {
     await context.close();
   }
@@ -526,10 +536,7 @@ test('wholesale UI: freight confirmation, renewed consent and one order at the n
     expect((await db.product.findUniqueOrThrow({ where: { id: products[2]!.id } })).stock).toBe(
       400,
     );
-    await owner.screenshot({
-      path: 'docs/screenshots/owner-quote-hindi-phone.png',
-      fullPage: true,
-    });
+    await hindiScreenshot(owner, 'docs/screenshots/owner-quote-hindi-phone.png');
   } finally {
     await context.close();
   }

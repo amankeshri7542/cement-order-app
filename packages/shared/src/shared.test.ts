@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   clientConfigSchema,
+  historyNote,
   shortDayLabel,
   weekdayLabel,
   compareVersions,
@@ -119,4 +120,26 @@ test('delivery chips name the weekday and short date in Patna time', () => {
   assert.equal(weekdayLabel('2026-10-15', 'en'), 'Thu');
   assert.equal(shortDayLabel('2026-10-15', 'en'), '15 Oct');
   assert.ok(hasDevanagari(weekdayLabel('2026-10-15', 'hi')));
+});
+
+test('order history notes hide status codes and show server notes in Hindi', () => {
+  assert.equal(historyNote('Order out_for_delivery.', 'en'), '');
+  assert.equal(historyNote(null, 'hi'), '');
+  assert.equal(
+    historyNote('Cash on delivery order placed.', 'en'),
+    'Cash on delivery order placed.',
+  );
+  assert.equal(
+    historyNote('Cash on delivery order placed.', 'hi'),
+    'डिलीवरी पर भुगतान वाला ऑर्डर आया।',
+  );
+  assert.equal(
+    historyNote('Accepted quote QT-2026-1, revision 2; agreed freight confirmed.', 'hi'),
+    'थोक भाव QT-2026-1 (संशोधन 2) मंज़ूर; तय भाड़ा पक्का।',
+  );
+  // Staff notes are shown exactly as typed.
+  assert.equal(
+    historyNote('Customer asked for evening delivery', 'hi'),
+    'Customer asked for evening delivery',
+  );
 });

@@ -930,6 +930,10 @@ dialog::backdrop {
 .timeline li {
   font-size: 14px;
 }
+.timeline li > strong,
+.timeline li > small {
+  display: block;
+}
 .timeline p {
   font-size: 14px;
   margin: 5px 0;

@@ -8,7 +8,7 @@ import { AccountRequired } from './account';
 import { customerApi, CustomerError } from '../lib/customer-api';
 import { dayLabel, price } from '../lib/catalog';
 import { useLanguage } from './language';
-import { orderStatusText } from '@shiv/shared';
+import { historyNote, orderStatusText } from '@shiv/shared';
 
 export function Status({ status }: { status: string }) {
   const { language } = useLanguage();
@@ -220,7 +220,9 @@ function Orders({ orderId }: { orderId?: string }) {
                           language === 'hi' ? 'hi-IN' : 'en-IN',
                         )}
                       </span>
-                      {item.note && <p>{item.note}</p>}
+                      {historyNote(item.note, language) && (
+                        <p>{historyNote(item.note, language)}</p>
+                      )}
                     </li>
                   ))}
                 </ol>
