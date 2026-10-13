@@ -1,10 +1,23 @@
-import { Controller, Get, Inject, Injectable, Param, Patch, Post, Put, Req } from '@nestjs/common';
+import { clientIp, demand, requestBudget } from './abuse';
+import {
+  Controller,
+  Get,
+  Inject,
+  Injectable,
+  Param,
+  Patch,
+  Post,
+  Put,
+  Query,
+  Req,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Prisma } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import {
   cartItemSchema,
+  deliveryActionSchema,
   checkoutSchema,
   CheckoutReview,
   orderStatusSchema,
@@ -14,13 +27,27 @@ import {
 } from '@shiv/shared';
 import { Db } from './db';
 import { Admin, AuthRequest, Contract, Input, fail } from './http';
+import { paginate } from './pagination';
+import { deliveryFor, moveStock, validateQuantity } from './inventory';
 import { onlineReady } from './config';
+import { workInclude } from './owner-work';
+import { Events } from './catalog';
 
 export const orderInclude = {
+  work: { include: workInclude },
+  deliveryAttempts: { orderBy: { createdAt: 'asc' as const } },
   items: true,
   payment: true,
   history: { orderBy: { createdAt: 'asc' as const } },
 };
+const reorderSchema = z.strictObject({ idempotencyKey: z.string().uuid().optional() }).default({});
+const normalizeReturns = (items: unknown) =>
+  Array.isArray(items)
+    ? items
+        .map((i) => [i.productId, i.sellableQuantity, i.damagedQuantity])
+        .sort((a, b) => String(a[0]).localeCompare(String(b[0])))
+    : null;
+
 export const reference = (prefix: string) =>
   `${prefix}-${new Date().getFullYear()}-${randomBytes(4).toString('hex').toUpperCase()}`;
 export function validDelivery(date: string) {
@@ -41,9 +68,12 @@ export function validDelivery(date: string) {
 }
 @Injectable()
 export class OrdersService {
-  constructor(@Inject(Db) private db: Db) {}
-  cart(userId: string) {
-    return this.db.cartItem.findMany({
+  constructor(
+    @Inject(Db) private db: Db,
+    @Inject(Events) private events: Events,
+  ) {}
+  cart(userId: string, db: Prisma.TransactionClient = this.db) {
+    return db.cartItem.findMany({
       where: { userId },
       include: { product: { include: { category: true } } },
       orderBy: { productId: 'asc' },
@@ -56,6 +86,7 @@ export class OrdersService {
         return;
       }
       const product = await tx.product.findUnique({ where: { id: input.productId } });
+      if (product) validateQuantity(product, input.quantity);
       if (!product?.active || product.stock < input.quantity)
         fail('OUT_OF_STOCK', 'That quantity is not available.', 409);
       if (
@@ -78,9 +109,10 @@ export class OrdersService {
     });
     return this.cart(userId);
   }
-  async review(userId: string, input: z.infer<typeof checkoutSchema>) {
+  async review(userId: string, input: z.infer<typeof checkoutSchema>, ip = 'internal') {
     validDelivery(input.deliveryDate);
     return this.db.atomic(async (tx) => {
+      await requestBudget(tx, 'review', userId, ip);
       const address = await tx.address.findFirst({ where: { id: input.addressId, userId } });
       if (!address) fail('INVALID_ADDRESS', 'Choose one of your saved addresses.');
       const cart = await tx.cartItem.findMany({
@@ -93,23 +125,29 @@ export class OrdersService {
       if (input.paymentMethod === 'ONLINE' && !(settings.onlinePaymentsEnabled && onlineReady()))
         fail('PAYMENTS_UNAVAILABLE', 'Online payment is unavailable. Choose cash on delivery.');
       const items = cart.map(({ product, quantity }) => {
+        validateQuantity(product, quantity);
         if (!product.active || product.stock < quantity)
           fail('OUT_OF_STOCK', `${product.name} is not available in that quantity.`, 409);
         return {
           productId: product.id,
           name: product.name,
           unit: product.unit,
+          packSize: product.packSize,
           quantity,
           pricePaise: product.pricePaise,
           priceVersion: product.priceVersion,
           lineTotalPaise: product.pricePaise * quantity,
         };
       });
+      const zone = await deliveryFor(tx, address.pincode, totals(items, 0, null).subtotalPaise);
       const snapshot = {
         ...input,
         address,
         items,
-        ...totals(items, settings.deliveryFeePaise, settings.freeDeliveryAbovePaise),
+        ...totals(items, zone.deliveryFeePaise, zone.freeDeliveryAbovePaise),
+        deliveryZoneId: zone.id,
+        deliveryZoneVersion: zone.version,
+        deliveryEstimate: zone.estimate,
         settingsVersion: settings.version,
         changes: cart
           .filter((c) => c.seenPriceVersion !== c.product.priceVersion)
@@ -129,8 +167,8 @@ export class OrdersService {
       return { ...snapshot, id: review.id, expiresAt: review.expiresAt };
     });
   }
-  async place(userId: string, input: z.infer<typeof placeOrderSchema>) {
-    return this.db.atomic(async (tx) => {
+  async place(userId: string, input: z.infer<typeof placeOrderSchema>, ip = 'internal') {
+    const result = await this.db.atomic(async (tx) => {
       const existing = await tx.order.findUnique({
         where: { userId_idempotencyKey: { userId, idempotencyKey: input.idempotencyKey } },
         include: orderInclude,
@@ -152,6 +190,9 @@ export class OrdersService {
           include: orderInclude,
         });
       const snapshot = review.snapshot as unknown as CheckoutReview;
+      await requestBudget(tx, 'order', userId, ip);
+      if (snapshot.paymentMethod === 'COD')
+        await demand(tx, userId, 'ORDER', snapshot.totalPaise, snapshot.items);
       validDelivery(snapshot.deliveryDate);
       const settings = await tx.storeSettings.findUniqueOrThrow({ where: { id: 'store' } });
       if (settings.version !== snapshot.settingsVersion)
@@ -164,6 +205,9 @@ export class OrdersService {
         JSON.stringify(snapshot.items.map((c) => [c.productId, c.quantity]))
       )
         fail('CART_CHANGED', 'Your cart changed. Review it again.', 409);
+      const zone = await deliveryFor(tx, snapshot.address.pincode, snapshot.subtotalPaise);
+      if (zone.id !== snapshot.deliveryZoneId || zone.version !== snapshot.deliveryZoneVersion)
+        fail('PRICE_CHANGED', 'Delivery policy changed. Review the updated total.', 409);
       for (const line of snapshot.items) {
         const product = await tx.product.findUniqueOrThrow({ where: { id: line.productId } });
         if (product.priceVersion !== line.priceVersion || product.pricePaise !== line.pricePaise)
@@ -177,27 +221,25 @@ export class OrdersService {
               currentPricePaise: product.pricePaise,
             },
           );
-        const reserved = await tx.product.updateMany({
-          where: {
-            id: product.id,
-            active: true,
-            stock: { gte: line.quantity },
-            priceVersion: line.priceVersion,
-          },
-          data: { stock: { decrement: line.quantity }, version: { increment: 1 } },
+        validateQuantity(product, line.quantity);
+        if (!product.active || product.stock < line.quantity)
+          fail('OUT_OF_STOCK', `${product.name} is no longer available in this quantity.`, 409);
+        await moveStock(tx, {
+          productId: product.id,
+          kind: 'ONLINE_ORDER',
+          quantity: -line.quantity,
+          actorId: userId,
+          reference: review.id,
+          note: 'Online order reservation',
+          idempotencyKey: `order:${review.id}:${product.id}`,
         });
-        if (!reserved.count)
-          fail('OUT_OF_STOCK', `${product.name} is no longer available in that quantity.`, 409);
       }
-      const amounts = totals(
-        snapshot.items,
-        settings.deliveryFeePaise,
-        settings.freeDeliveryAbovePaise,
-      );
+      const amounts = totals(snapshot.items, zone.deliveryFeePaise, zone.freeDeliveryAbovePaise);
       const online = snapshot.paymentMethod === 'ONLINE';
       const order = await tx.order.create({
         data: {
           number: reference('SC'),
+          work: { create: {} },
           userId,
           reviewId: review.id,
           idempotencyKey: input.idempotencyKey,
@@ -240,6 +282,8 @@ export class OrdersService {
       });
       return order;
     });
+    this.events.publish({ type: 'CATALOG_UPDATED' });
+    return result;
   }
   async changeStatus(
     id: string,
@@ -247,13 +291,28 @@ export class OrdersService {
     actorId: string,
     note: string,
     ownerId?: string,
+    expireOnly = false,
   ) {
-    return this.db.atomic(async (tx) => {
+    const result = await this.db.atomic(async (tx) => {
       const order = await tx.order.findFirst({
         where: { id, ...(ownerId ? { userId: ownerId } : {}) },
         include: orderInclude,
       });
       if (!order) fail('ORDER_NOT_FOUND', 'Order not found.', 404);
+      if (
+        expireOnly &&
+        (order.status !== 'PENDING_PAYMENT' ||
+          order.payment?.status !== 'PENDING' ||
+          !order.reservedUntil ||
+          order.reservedUntil >= new Date())
+      )
+        return order;
+      if (order.status === 'DELIVERY_EXCEPTION' || status === 'DELIVERY_EXCEPTION')
+        fail(
+          'DELIVERY_ACTION_REQUIRED',
+          'Use delivery issue, retry or physical return actions.',
+          409,
+        );
       if (
         ownerId &&
         (!['PENDING_PAYMENT', 'CONFIRMED'].includes(order.status) || status !== 'CANCELLED')
@@ -266,13 +325,24 @@ export class OrdersService {
         fail('INVALID_TRANSITION', 'That order status change is not allowed.', 409);
       if (status === 'DELIVERED' && order.payment?.status !== 'CAPTURED')
         fail('PAYMENT_PENDING', 'Record payment received before completing delivery.', 409);
+      if (status === 'PREPARING' && !order.work?.acknowledgedAt)
+        await tx.ownerWork.upsert({
+          where: { orderId: id },
+          create: { orderId: id, assignedToId: actorId, acknowledgedAt: new Date() },
+          update: { assignedToId: actorId, acknowledgedAt: new Date() },
+        });
       const next =
         status === 'CANCELLED' && order.payment?.status === 'CAPTURED' ? 'REFUND_PENDING' : status;
       if (status === 'CANCELLED') {
         for (const line of order.items)
-          await tx.product.update({
-            where: { id: line.productId },
-            data: { stock: { increment: line.quantity }, version: { increment: 1 } },
+          await moveStock(tx, {
+            productId: line.productId,
+            kind: 'ORDER_CANCELLED',
+            quantity: line.quantity,
+            actorId,
+            reference: order.id,
+            note: 'Cancelled order stock release',
+            idempotencyKey: `cancel:${order.id}:${line.productId}`,
           });
         if (next === 'REFUND_PENDING')
           await tx.payment.update({ where: { orderId: id }, data: { status: 'REFUND_PENDING' } });
@@ -313,38 +383,170 @@ export class OrdersService {
       });
       return tx.order.findUniqueOrThrow({ where: { id }, include: orderInclude });
     });
+    this.events.publish({ type: 'CATALOG_UPDATED' });
+    return result;
   }
   async expireReservations() {
     const expired = await this.db.order.findMany({
       where: { status: 'PENDING_PAYMENT', reservedUntil: { lt: new Date() } },
       take: 100,
     });
-    for (const order of expired) {
-      try {
-        await this.changeStatus(order.id, 'CANCELLED', 'system', 'Payment reservation expired.');
-      } catch (error) {
-        if (!(error instanceof Error && error.message.includes('status change'))) throw error;
-      }
-    }
+    for (const order of expired)
+      await this.changeStatus(
+        order.id,
+        'CANCELLED',
+        'system',
+        'Payment reservation expired.',
+        undefined,
+        true,
+      );
     return { processed: expired.length };
   }
-  async reorder(id: string, userId: string) {
+
+  async delivery(id: string, input: z.infer<typeof deliveryActionSchema>, actorId: string) {
+    const result = await this.db.atomic(async (tx) => {
+      const order = await tx.order.findUniqueOrThrow({ where: { id }, include: orderInclude });
+      const previous = await tx.deliveryAttempt.findUnique({
+        where: { orderId_idempotencyKey: { orderId: id, idempotencyKey: input.idempotencyKey } },
+      });
+      if (previous) {
+        if (
+          previous.action !== input.action ||
+          previous.reason !== (input.reason || null) ||
+          previous.note !== input.note ||
+          previous.retryDate !== (input.retryDate || null) ||
+          JSON.stringify(normalizeReturns(previous.items)) !==
+            JSON.stringify(normalizeReturns(input.items || null))
+        )
+          fail(
+            'IDEMPOTENCY_CONFLICT',
+            'This delivery action was already used with different details.',
+            409,
+          );
+        return order;
+      }
+      let status = order.status;
+      if (input.action === 'REPORT') {
+        if (order.status !== 'OUT_FOR_DELIVERY' || !input.reason)
+          fail('INVALID_DELIVERY_ACTION', 'Choose a reason for this dispatched delivery.', 409);
+        status = 'DELIVERY_EXCEPTION';
+      } else {
+        if (order.status !== 'DELIVERY_EXCEPTION')
+          fail('INVALID_DELIVERY_ACTION', 'Record the delivery issue first.', 409);
+        if (input.action === 'RETRY') {
+          if (!input.retryDate) fail('RETRY_DATE_REQUIRED', 'Choose a retry date.');
+          validDelivery(input.retryDate);
+          status = 'OUT_FOR_DELIVERY';
+        } else {
+          const items = input.items || [];
+          if (
+            items.length !== order.items.length ||
+            new Set(items.map((i) => i.productId)).size !== items.length ||
+            order.items.some((line) => {
+              const returned = items.find((i) => i.productId === line.productId);
+              return (
+                !returned || returned.sellableQuantity + returned.damagedQuantity !== line.quantity
+              );
+            })
+          )
+            fail(
+              'RETURN_COUNTS_REQUIRED',
+              'Confirm all returned quantities as sellable or damaged. Stock is restored only after physical return.',
+            );
+          for (const line of items)
+            if (line.sellableQuantity)
+              await moveStock(tx, {
+                productId: line.productId,
+                quantity: line.sellableQuantity,
+                kind: 'RETURN',
+                actorId,
+                reference: id,
+                note: 'Delivery physically returned; sellable quantity confirmed',
+                idempotencyKey: `return:${id}:${line.productId}`,
+              });
+          status = order.payment?.status === 'CAPTURED' ? 'REFUND_PENDING' : 'CANCELLED';
+          if (status === 'REFUND_PENDING')
+            await tx.payment.update({ where: { orderId: id }, data: { status: 'REFUND_PENDING' } });
+        }
+      }
+      await tx.order.update({
+        where: { id },
+        data: {
+          status,
+          ...(input.action === 'RETRY' ? { deliveryDate: input.retryDate } : {}),
+          history: {
+            create: {
+              status,
+              actorId,
+              note: `${input.action}: ${input.reason || ''} ${input.note}`,
+            },
+          },
+        },
+      });
+      await tx.deliveryAttempt.create({
+        data: { ...input, items: input.items || Prisma.JsonNull, orderId: id, actorId },
+      });
+      await tx.auditLog.create({
+        data: { actorId, event: `DELIVERY_${input.action}`, entityId: id, details: input },
+      });
+      await tx.notification.create({
+        data: {
+          userId: order.userId,
+          orderId: id,
+          title: 'Delivery updated',
+          body: `${order.number}: ${status.toLowerCase().replaceAll('_', ' ')}`,
+        },
+      });
+      return tx.order.findUniqueOrThrow({ where: { id }, include: orderInclude });
+    });
+    this.events.publish({ type: 'CATALOG_UPDATED' });
+    return result;
+  }
+  async reorder(id: string, userId: string, idempotencyKey?: string) {
     return this.db.atomic(async (tx) => {
+      // Serialize keyed retries even when no product is eligible and no cart row changes.
+      if (idempotencyKey)
+        await tx.user.update({ where: { id: userId }, data: { updatedAt: new Date() } });
       const order = await tx.order.findFirst({
         where: { id, userId },
         include: { items: { include: { product: true } } },
       });
       if (!order) fail('ORDER_NOT_FOUND', 'Order not found.', 404);
+      const receiptId = idempotencyKey ? `cart-reorder:${userId}:${idempotencyKey}` : null;
+      if (receiptId) {
+        const previous = await tx.auditLog.findUnique({ where: { id: receiptId } });
+        if (previous) {
+          if (previous.entityId !== id)
+            fail(
+              'IDEMPOTENCY_CONFLICT',
+              'This reorder key was already used for another order.',
+              409,
+            );
+          return {
+            notices: (previous.details as { notices: string[] }).notices,
+            cart: await this.cart(userId, tx),
+          };
+        }
+      }
       const notices: string[] = [];
+      let count = await tx.cartItem.count({ where: { userId } });
       for (const item of order.items) {
         const old = await tx.cartItem.findUnique({
           where: { userId_productId: { userId, productId: item.productId } },
         });
         const quantity = item.quantity + (old?.quantity || 0);
-        if (!item.product.active || item.product.stock < quantity || quantity > 10000) {
+        if (
+          !item.product.active ||
+          item.product.stock < quantity ||
+          quantity > 10000 ||
+          quantity < item.product.minQuantity ||
+          quantity % item.product.quantityStep !== 0 ||
+          (!old && count >= 50)
+        ) {
           notices.push(`${item.name}: unavailable in the requested quantity.`);
           continue;
         }
+        if (!old) count++;
         if (item.product.pricePaise !== item.pricePaise)
           notices.push(`${item.name}: price has changed; current price added.`);
         await tx.cartItem.upsert({
@@ -363,7 +565,17 @@ export class OrdersService {
           },
         });
       }
-      return { notices };
+      if (receiptId)
+        await tx.auditLog.create({
+          data: {
+            id: receiptId,
+            actorId: userId,
+            event: 'CART_REORDERED',
+            entityId: id,
+            details: { notices },
+          },
+        });
+      return { notices, cart: await this.cart(userId, tx) };
     });
   }
 }
@@ -387,21 +599,24 @@ export class OrdersController {
     @Input(checkoutSchema) body: z.infer<typeof checkoutSchema>,
     @Req() req: AuthRequest,
   ) {
-    return this.orders.review(req.user.id, body);
+    return this.orders.review(req.user.id, body, clientIp(req));
   }
   @Post('orders') @Contract(placeOrderSchema) place(
     @Input(placeOrderSchema) body: z.infer<typeof placeOrderSchema>,
     @Req() req: AuthRequest,
   ) {
-    return this.orders.place(req.user.id, body);
+    return this.orders.place(req.user.id, body, clientIp(req));
   }
-  @Get('orders') list(@Req() req: AuthRequest) {
-    return this.db.order.findMany({
-      where: { userId: req.user.id },
-      include: orderInclude,
-      orderBy: { createdAt: 'desc' },
-      take: 100,
-    });
+  @Get('orders') async list(@Req() req: AuthRequest, @Query() query: Record<string, string>) {
+    const page = paginate(query, `orders:${req.user.id}`);
+    return page.finish(
+      await this.db.order.findMany({
+        where: { userId: req.user.id, ...page.after },
+        include: orderInclude,
+        orderBy: page.orderBy,
+        take: page.take,
+      }),
+    );
   }
   @Get('orders/:id') async detail(@Param('id') id: string, @Req() req: AuthRequest) {
     const order = await this.db.order.findFirst({
@@ -419,8 +634,12 @@ export class OrdersController {
       order: await this.detail(id, req),
     };
   }
-  @Post('orders/:id/reorder') reorder(@Param('id') id: string, @Req() req: AuthRequest) {
-    return this.orders.reorder(id, req.user.id);
+  @Post('orders/:id/reorder') @Contract(reorderSchema) reorder(
+    @Param('id') id: string,
+    @Input(reorderSchema) body: z.infer<typeof reorderSchema>,
+    @Req() req: AuthRequest,
+  ) {
+    return this.orders.reorder(id, req.user.id, body.idempotencyKey);
   }
   @Post('orders/:id/cancel') cancel(@Param('id') id: string, @Req() req: AuthRequest) {
     return this.orders.changeStatus(
@@ -431,11 +650,60 @@ export class OrdersController {
       req.user.id,
     );
   }
-  @Admin() @Get('admin/orders') all() {
-    return this.db.order.findMany({
+  @Admin() @Get('admin/orders') async all(@Query() query: Record<string, string>) {
+    const parsed = z
+      .object({
+        q: z.string().max(100).default(''),
+        status: orderStatusSchema.shape.status.optional(),
+        queue: z.enum(['new', 'dispatch', 'payments', 'issues']).optional(),
+      })
+      .safeParse(query);
+    if (!parsed.success) fail('INVALID_FILTER', 'Check order filters.');
+    const { q, status, queue } = parsed.data;
+    const page = paginate(query, JSON.stringify({ list: 'admin-orders', q, status, queue }));
+    return page.finish(
+      await this.db.order.findMany({
+        include: { ...orderInclude, user: true },
+        where: {
+          AND: [
+            page.after,
+            queue === 'new'
+              ? { work: { acknowledgedAt: null }, status: { in: ['CONFIRMED', 'PENDING_PAYMENT'] } }
+              : {},
+            queue === 'dispatch' ? { status: { in: ['CONFIRMED', 'PREPARING'] } } : {},
+            queue === 'payments'
+              ? { payment: { status: 'PENDING' }, status: { notIn: ['CANCELLED', 'REFUNDED'] } }
+              : {},
+            queue === 'issues'
+              ? {
+                  OR: [
+                    { status: { in: ['DELIVERY_EXCEPTION', 'REFUND_PENDING'] } },
+                    { work: { lastError: { not: null } } },
+                  ],
+                }
+              : {},
+            status ? { status } : {},
+            q
+              ? {
+                  OR: [
+                    { number: { contains: q, mode: 'insensitive' } },
+                    { user: { name: { contains: q, mode: 'insensitive' } } },
+                  ],
+                }
+              : {},
+          ],
+        },
+        orderBy: page.orderBy,
+        take: page.take,
+      }),
+    );
+  }
+  @Admin()
+  @Get('admin/orders/:id')
+  adminDetail(@Param('id') id: string) {
+    return this.db.order.findUniqueOrThrow({
+      where: { id },
       include: { ...orderInclude, user: true },
-      orderBy: { createdAt: 'desc' },
-      take: 300,
     });
   }
   @Admin() @Patch('admin/orders/:id/status') @Contract(orderStatusSchema) change(
@@ -445,6 +713,16 @@ export class OrdersController {
   ) {
     return this.orders.changeStatus(id, body.status, req.user.id, body.note);
   }
+  @Admin()
+  @Post('admin/orders/:id/delivery')
+  delivery(
+    @Param('id') id: string,
+    @Input(deliveryActionSchema) body: z.infer<typeof deliveryActionSchema>,
+    @Req() req: AuthRequest,
+  ) {
+    return this.orders.delivery(id, body, req.user.id);
+  }
+
   @Admin() @Post('admin/orders/expire-reservations') expire() {
     return this.orders.expireReservations();
   }

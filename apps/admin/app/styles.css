@@ -1,10 +1,10 @@
 @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=DM+Sans:wght@400;450;500;550;600;650;700&display=swap');
 :root {
-  --navy: #142c43;
-  --ink: #1c3044;
-  --muted: #607484;
-  --yellow: #f5c344;
-  --paper: #f4f6f8;
+  --navy: #252c2b;
+  --ink: #252c2b;
+  --muted: #62665f;
+  --yellow: #e9ad32;
+  --paper: #f7f6f1;
   --line: #e7ebef;
   --green: #26775b;
   --white: #fff;
@@ -548,7 +548,7 @@ table {
 th {
   font-weight: 500;
   font-size: 10px;
-  color: #607484;
+  color: #62665f;
   background: #fafbfd;
   padding: 13px 20px;
   border-bottom: 1px solid var(--line);
@@ -997,7 +997,7 @@ dialog::backdrop {
   background: var(--navy);
   color: #fff;
   border-radius: 7px;
-  box-shadow: 0 8px 30px #1c30442a;
+  box-shadow: 0 8px 30px #252c2b2a;
   padding: 15px 18px;
   display: flex;
   align-items: center;
@@ -1037,7 +1037,11 @@ dialog::backdrop {
 .login-page {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  overflow-wrap: anywhere;
+}
+.login-page > section {
+  min-width: 0;
 }
 .login-story {
   padding: 50px 60px;
@@ -1099,6 +1103,8 @@ dialog::backdrop {
   padding-left: 13px;
 }
 .phone-input > span {
+  flex-shrink: 0;
+  white-space: nowrap;
   font-size: 12px;
   color: #7e909f;
   padding-right: 12px;
@@ -1185,10 +1191,12 @@ dialog::backdrop {
 @media (max-width: 800px) {
   .sidebar {
     transform: translateX(-100%);
+    visibility: hidden;
     transition: transform 0.2s;
   }
   .sidebar.open {
     transform: translateX(0);
+    visibility: visible;
   }
   .main-shell {
     margin-left: 0;
@@ -1289,7 +1297,7 @@ dialog::backdrop {
     grid-template-columns: 1fr;
   }
   .login-page {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .login-story {
     padding: 27px;
@@ -1350,6 +1358,367 @@ dialog::backdrop {
     display: none;
   }
   .toast {
+    display: none;
+  }
+}
+
+/* Materials counter: readable prices, warm concrete surfaces and dispatch labels. */
+body {
+  font-size: 15px;
+}
+h1,
+h2,
+.brand {
+  font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+}
+h1 {
+  font-size: clamp(32px, 4vw, 46px);
+  letter-spacing: -0.5px;
+}
+button,
+input,
+select {
+  min-height: 44px;
+}
+button:focus-visible,
+a:focus-visible,
+summary:focus-visible {
+  outline: 3px solid #386451;
+  outline-offset: 3px;
+}
+.sidebar {
+  background: #252c2b;
+}
+.panel {
+  border-radius: 6px;
+  box-shadow: none;
+}
+.counter-board {
+  background: #deded6;
+  color: #252c2b;
+  border-radius: 6px;
+  border-left: 7px solid #e9ad32;
+}
+.counter-board h2 {
+  color: #252c2b;
+  font-size: clamp(38px, 5vw, 64px);
+  line-height: 0.95;
+}
+.counter-board .eyebrow,
+.counter-board p {
+  color: #50574f;
+}
+.counter-board button {
+  color: #252c2b;
+}
+.dispatch-board {
+  padding: 24px;
+  border: 1px solid #aeb3a8;
+  min-width: 230px;
+  align-self: stretch;
+  background: #f7f6f1;
+}
+.dispatch-board > span {
+  font-family: monospace;
+  letter-spacing: 2px;
+  font-size: 12px;
+}
+.dispatch-board > strong {
+  display: block;
+  font-size: 64px;
+  font-weight: 800;
+}
+.operations-panel {
+  padding: 24px;
+  margin-bottom: 24px;
+}
+.zone-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 16px;
+}
+.zone-card {
+  padding: 20px;
+  border: 1px solid #c8cbbf;
+  border-left: 4px solid #e9ad32;
+  background: #f7f6f1;
+  text-align: left;
+  display: grid;
+  gap: 10px;
+  border-radius: 4px;
+  overflow-wrap: anywhere;
+}
+.zone-card span,
+.zone-card small {
+  font-size: 13px;
+}
+.session-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.session-row small {
+  display: block;
+  color: var(--muted);
+  margin-top: 6px;
+}
+.load-more {
+  margin: 24px auto;
+  display: block;
+}
+.policy-page {
+  max-width: 760px;
+  margin: auto;
+  padding: 48px 24px;
+  line-height: 1.7;
+}
+.policy-page h2 {
+  margin-top: 32px;
+}
+.policy-page a {
+  text-decoration: underline;
+}
+.policy-page .primary {
+  display: inline-block;
+}
+.operations-panel pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: 420px;
+}
+@media (max-width: 650px) {
+  .counter-board {
+    display: grid;
+    gap: 20px;
+    padding: 22px;
+  }
+  .dispatch-board {
+    min-width: 0;
+    width: 100%;
+  }
+  .session-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .operations-panel {
+    padding: 16px;
+  }
+  .section-title {
+    flex-wrap: wrap;
+    gap: 14px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* The daily phone desk keeps the four shop destinations within thumb reach. */
+.owner-bottom-nav,
+.owner-order-cards {
+  display: none;
+}
+.owner-queue-tabs,
+.owner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 16px 0;
+}
+.owner-queue-tabs button {
+  flex: 1 1 180px;
+  text-align: left;
+  white-space: normal;
+  line-height: 1.5;
+}
+.owner-actions a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-weight: 650;
+}
+.owner-more-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+  gap: 16px;
+}
+.owner-more-grid button {
+  justify-content: flex-start;
+  text-align: left;
+  min-height: 80px;
+  white-space: normal;
+  line-height: 1.5;
+}
+.owner-order-card {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  overflow-wrap: anywhere;
+}
+.owner-order-card h3 {
+  margin: 12px 0 4px;
+  font-size: 20px;
+}
+.owner-order-card p {
+  margin: 8px 0;
+  line-height: 1.6;
+}
+.owner-order-card small {
+  display: block;
+  margin: 12px 0;
+  line-height: 1.6;
+}
+.owner-order-card .row-between {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.owner-order-card .owner-next-action {
+  margin-top: 12px;
+  white-space: normal;
+  line-height: 1.5;
+}
+.owner-order-card .owner-actions {
+  margin-bottom: 0;
+}
+dialog details {
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+dialog summary {
+  cursor: pointer;
+  padding: 14px 0;
+  font-weight: 650;
+  line-height: 1.5;
+}
+dialog fieldset {
+  border: 1px solid var(--line);
+  padding: 14px;
+  border-radius: 6px;
+  min-width: 0;
+}
+dialog legend {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-weight: 650;
+}
+@media (max-width: 720px) {
+  .owner-bottom-nav {
+    position: fixed;
+    inset: auto 0 0;
+    z-index: 30;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+    background: #fff;
+    border-top: 1px solid var(--line);
+    box-shadow: 0 -4px 18px #252c2b0d;
+  }
+  .owner-bottom-nav button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-height: 60px;
+    padding: 6px 3px;
+    color: #50574f;
+    background: transparent;
+    border: 0;
+    border-radius: 6px;
+    line-height: 1.4;
+    font-size: 13px;
+  }
+  .owner-bottom-nav button.active {
+    background: #edf1ec;
+    color: #244f3c;
+    font-weight: 750;
+  }
+  .main-shell main {
+    padding-bottom: calc(100px + env(safe-area-inset-bottom));
+  }
+  .owner-order-cards {
+    display: grid;
+    gap: 14px;
+  }
+  .owner-order-table {
+    display: none;
+  }
+  .owner-queue-tabs {
+    gap: 8px;
+  }
+  .owner-queue-tabs button {
+    flex-basis: calc(50% - 8px);
+    padding: 12px;
+    font-size: 14px;
+  }
+  .topbar {
+    padding-inline: 12px;
+    gap: 8px;
+  }
+  .topbar .date-label,
+  .topbar .avatar,
+  .topbar .breadcrumbs > span,
+  .topbar .breadcrumbs > svg {
+    display: none;
+  }
+  .topbar-actions {
+    gap: 6px;
+  }
+  .topbar-actions .secondary {
+    padding-inline: 10px;
+  }
+  .page-heading h1 {
+    font-family: inherit;
+    font-size: 28px;
+    line-height: 1.4;
+  }
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+  dialog {
+    width: calc(100% - 16px);
+    max-height: calc(100dvh - 24px);
+    padding: 18px;
+  }
+  dialog .modal-head {
+    position: sticky;
+    top: -18px;
+    padding-top: 14px;
+    padding-bottom: 12px;
+    background: #fff;
+    z-index: 2;
+  }
+  dialog .button-row {
+    flex-wrap: wrap;
+  }
+  dialog .button-row button {
+    flex: 1 1 150px;
+    white-space: normal;
+    line-height: 1.5;
+  }
+  .toast {
+    bottom: calc(92px + env(safe-area-inset-bottom));
+    max-width: calc(100% - 24px);
+  }
+}
+@media print {
+  .owner-bottom-nav {
     display: none;
   }
 }

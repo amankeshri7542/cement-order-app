@@ -18,6 +18,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 export type AuthRequest = Request & {
   user: User;
   sessionId: string;
+  sessionAccessHash: string;
   requestId: string;
   rawBody?: Buffer;
 };
@@ -66,7 +67,10 @@ export class Errors implements ExceptionFilter {
       code: 'INTERNAL_ERROR',
       message: 'Something went wrong. Please try again.',
     };
-    if (error instanceof HttpException) {
+    if (error && typeof error === 'object' && 'status' in error && error.status === 413) {
+      status = 413;
+      body = { code: 'UPLOAD_TOO_LARGE', message: 'The uploaded file or request is too large.' };
+    } else if (error instanceof HttpException) {
       status = error.getStatus();
       const detail = error.getResponse();
       body = typeof detail === 'object' ? { ...detail } : { message: detail };
@@ -92,6 +96,15 @@ export class Errors implements ExceptionFilter {
           requestId: req.requestId,
           status,
           errorType: error instanceof Error ? error.constructor.name : 'Unknown',
+          timestamp: new Date().toISOString(),
+        }),
+      );
+    if ([401, 403, 429].includes(status))
+      console.warn(
+        JSON.stringify({
+          event: 'SECURITY_REQUEST_REJECTED',
+          requestId: req.requestId,
+          status,
           timestamp: new Date().toISOString(),
         }),
       );

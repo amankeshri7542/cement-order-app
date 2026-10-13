@@ -6,6 +6,7 @@ export const orderStatuses = [
   'CONFIRMED',
   'PREPARING',
   'OUT_FOR_DELIVERY',
+  'DELIVERY_EXCEPTION',
   'DELIVERED',
   'CANCELLED',
   'REFUND_PENDING',
@@ -17,7 +18,8 @@ export const transitions: Record<OrderStatus, readonly OrderStatus[]> = {
   PENDING_PAYMENT: ['CONFIRMED', 'CANCELLED'],
   CONFIRMED: ['PREPARING', 'CANCELLED'],
   PREPARING: ['OUT_FOR_DELIVERY', 'CANCELLED'],
-  OUT_FOR_DELIVERY: ['DELIVERED'],
+  OUT_FOR_DELIVERY: ['DELIVERED', 'DELIVERY_EXCEPTION'],
+  DELIVERY_EXCEPTION: ['OUT_FOR_DELIVERY', 'CANCELLED'],
   DELIVERED: [],
   CANCELLED: ['REFUND_PENDING'],
   REFUND_PENDING: ['REFUNDED'],
@@ -33,12 +35,13 @@ export const otpRequestSchema = z.strictObject({ phone: phoneSchema });
 export const otpVerifySchema = z.strictObject({
   phone: phoneSchema,
   code: z.string().regex(/^\d{6}$/),
+  adminPassword: z.string().min(12).max(200).optional(),
 });
 export const refreshSchema = z.strictObject({
   refreshToken: z.string().min(32).max(200).optional(),
 });
 export const profileSchema = z.strictObject({
-  name: text(100),
+  name: text(100).optional(),
   language: z.enum(['en', 'hi']),
   contractor: z.boolean().optional(),
 });
@@ -65,6 +68,9 @@ export const checkoutSchema = z.strictObject({
 });
 export const placeOrderSchema = z.strictObject({ reviewId: id, idempotencyKey: z.string().uuid() });
 export const productSchema = z.strictObject({
+  packSize: z.string().trim().max(100).default(''),
+  minQuantity: z.number().int().min(1).max(10000).default(1),
+  quantityStep: z.number().int().min(1).max(10000).default(1),
   name: text(120),
   brand: text(80),
   categoryId: id,
@@ -98,6 +104,7 @@ export const orderStatusSchema = z.strictObject({
   note: z.string().trim().max(500).default(''),
 });
 export const quoteRequestSchema = z.strictObject({
+  idempotencyKey: z.string().uuid().optional(),
   items: z
     .array(z.strictObject({ productId: id, quantity: z.number().int().min(1).max(100000) }))
     .min(1)
@@ -113,6 +120,11 @@ export const quoteRequestSchema = z.strictObject({
   notes: z.string().trim().max(1500).default(''),
 });
 export const quoteOfferSchema = z.strictObject({
+  deliveryDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  deliveryConfirmed: z.boolean().default(false),
   expectedRevision: z.number().int().min(0),
   items: z
     .array(z.strictObject({ productId: id, unitPricePaise: paise.refine((v) => v > 0) }))
@@ -147,7 +159,15 @@ export const deviceSchema = z.strictObject({
 
 export type AddressInput = z.infer<typeof addressSchema>;
 export type Address = AddressInput & { id: string };
-export type User = { id: string; phone: string; name: string; role: Role; language: 'en' | 'hi' };
+export type User = {
+  id: string;
+  phone: string;
+  name: string;
+  role: Role;
+  language: 'en' | 'hi';
+  contractorStatus?: string;
+  deletedAt?: string | null;
+};
 export type Category = { id: string; name: string; slug: string };
 export type Product = z.infer<typeof productSchema> & {
   id: string;
@@ -169,6 +189,7 @@ export type CartLine = {
   product: Product;
 };
 export type ReviewLine = {
+  packSize?: string;
   productId: string;
   name: string;
   unit: string;
@@ -190,14 +211,22 @@ export type CheckoutReview = {
   notes: string;
   paymentMethod: 'COD' | 'ONLINE';
   settingsVersion: number;
+  deliveryZoneId: string;
+  deliveryZoneVersion: number;
+  deliveryEstimate: string;
 };
 export type Payment = {
+  initializationStartedAt?: string | null;
   status: 'PENDING' | 'CAPTURED' | 'REFUND_PENDING' | 'REFUNDED';
   method: 'COD' | 'ONLINE';
   razorpayOrderId: string | null;
   razorpayPaymentId: string | null;
 };
 export type Order = {
+  quoteId?: string | null;
+  quoteRevision?: number | null;
+  work?: OwnerWork | null;
+  deliveryAttempts?: DeliveryAttempt[];
   id: string;
   number: string;
   userId: string;
@@ -215,6 +244,12 @@ export type Order = {
   user?: User;
 };
 export type Quote = {
+  work?: OwnerWork | null;
+  deliveryConfirmed?: boolean;
+  order?: { id: string; number: string } | null;
+  decisionSource?: string | null;
+  decisionNote?: string;
+  decisionAt?: string | null;
   id: string;
   number: string;
   status: 'REQUESTED' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED';
@@ -228,6 +263,7 @@ export type Quote = {
   validUntil: string | null;
   createdAt: string;
   items: {
+    packSize?: string;
     productId: string;
     name: string;
     quantity: number;
@@ -278,3 +314,102 @@ export function totals(
   if (subtotalPaise + fee > 2_000_000_000) throw new Error('Order exceeds supported total');
   return { subtotalPaise, deliveryFeePaise: fee, totalPaise: subtotalPaise + fee };
 }
+
+export type Page<T> = { items: T[]; nextCursor: string | null };
+export type OwnerWork = {
+  id: string;
+  orderId: string | null;
+  quoteId: string | null;
+  assignedTo?: Pick<User, 'id' | 'name' | 'phone'> | null;
+  technicalOwner?: Pick<User, 'id' | 'name' | 'phone'> | null;
+  acknowledgedAt: string | null;
+  deliveredAt: string | null;
+  createdAt: string;
+  attempts: number;
+  lastError: string | null;
+};
+export type DeliveryAttempt = {
+  id: string;
+  action: string;
+  reason: string | null;
+  note: string;
+  retryDate: string | null;
+  createdAt: string;
+};
+export const deliveryActionSchema = z.strictObject({
+  action: z.enum(['REPORT', 'RETRY', 'RETURN']),
+  reason: z.enum(['UNAVAILABLE', 'REFUSED', 'INACCESSIBLE']).optional(),
+  note: text(500),
+  retryDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  items: z
+    .array(
+      z.strictObject({
+        productId: id,
+        sellableQuantity: z.number().int().min(0).max(100000),
+        damagedQuantity: z.number().int().min(0).max(100000),
+      }),
+    )
+    .max(50)
+    .optional(),
+  idempotencyKey: z.string().uuid(),
+});
+export const inventorySchema = z.strictObject({
+  kind: z.enum(['PURCHASE_IN', 'WALK_IN_SALE', 'RETURN', 'DAMAGE', 'MANUAL_ADJUSTMENT']),
+  quantity: z
+    .number()
+    .int()
+    .min(-1_000_000)
+    .max(1_000_000)
+    .refine((v) => v !== 0),
+  note: text(500),
+  reference: z.string().trim().max(100).default(''),
+  idempotencyKey: z.string().uuid(),
+});
+export type InventoryMovement = {
+  id: string;
+  productId: string;
+  kind: string;
+  quantity: number;
+  balanceAfter: number;
+  actorId: string;
+  reference: string;
+  note: string;
+  createdAt: string;
+};
+export const deliveryZoneSchema = z.strictObject({
+  name: text(100),
+  active: z.boolean(),
+  deliveryFeePaise: paise,
+  minimumOrderPaise: paise,
+  freeDeliveryAbovePaise: paise.nullable(),
+  estimate: text(200),
+  pincodes: z
+    .array(z.string().regex(/^[1-9]\d{5}$/))
+    .min(1)
+    .max(500)
+    .refine((v) => new Set(v).size === v.length, 'Duplicate pincodes'),
+  expectedVersion: z.number().int().min(1).optional(),
+});
+export type DeliveryZone = Omit<
+  z.infer<typeof deliveryZoneSchema>,
+  'pincodes' | 'expectedVersion'
+> & { id: string; version: number; pincodes: { pincode: string }[] };
+export const contractorDecisionSchema = z.strictObject({
+  status: z.enum(['VERIFIED', 'REJECTED']),
+  note: text(500),
+});
+export const deletionSchema = z.strictObject({ confirmation: z.literal('DELETE') });
+export const storeQuoteRespondSchema = quoteRespondSchema.extend({ note: text(500) });
+export type SessionInfo = {
+  id: string;
+  label: string;
+  createdAt: string;
+  lastSeenAt: string;
+  current: boolean;
+  deviceCount: number;
+};
+
+export * from './rate-studio';

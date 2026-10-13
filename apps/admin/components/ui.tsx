@@ -28,7 +28,13 @@ export function Modal({
     ref.current?.showModal();
   }, []);
   return (
-    <dialog ref={ref} onCancel={close}>
+    <dialog
+      ref={ref}
+      onCancel={(event) => {
+        event.preventDefault();
+        close();
+      }}
+    >
       <div className="modal-head">
         <h2>{title}</h2>
         <button className="icon-button" aria-label="Close dialog" onClick={close}>

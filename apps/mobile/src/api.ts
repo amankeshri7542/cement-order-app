@@ -51,6 +51,11 @@ export async function restoreSession() {
     return null;
   }
 }
+export async function clearLocalSession() {
+  accessToken = '';
+  refreshToken = '';
+  if (Platform.OS !== 'web') await SecureStore.deleteItemAsync('shiv_refresh');
+}
 export async function logout() {
   await api('/auth/logout', 'POST', Platform.OS === 'web' ? {} : { refreshToken });
   accessToken = '';

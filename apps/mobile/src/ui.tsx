@@ -1,5 +1,6 @@
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -11,14 +12,16 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import type { ComponentProps, ReactNode } from 'react';
 export const C = {
-  navy: '#142c43',
-  yellow: '#f5c344',
-  ink: '#1c3044',
-  muted: '#607484',
-  line: '#e5ebef',
-  paper: '#f4f6f8',
-  green: '#257659',
-  white: '#fff',
+  navy: '#252C2B',
+  yellow: '#E9AD32',
+  ink: '#252C2B',
+  muted: '#58615C',
+  line: '#D0D2C9',
+  paper: '#F7F6F1',
+  green: '#386451',
+  white: '#FFFFFF',
+  concrete: '#E7E6E1',
+  sand: '#D9C9A8',
   red: '#a23930',
 };
 export type IconName = ComponentProps<typeof Ionicons>['name'];
@@ -53,6 +56,7 @@ export function Button({
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityState={{ disabled: Boolean(disabled || loading), busy: Boolean(loading) }}
       disabled={disabled || loading}
       onPress={onPress}
       style={({ pressed }) => [
@@ -80,7 +84,7 @@ export function Field({ label, ...props }: TextInputProps & { label: string }) {
       <Text style={s.label}>{label}</Text>
       <TextInput
         accessibilityLabel={label}
-        placeholderTextColor="#9aa7b2"
+        placeholderTextColor={C.muted}
         {...props}
         style={[
           s.input,
@@ -122,7 +126,7 @@ export function Empty({
   return (
     <View style={s.empty}>
       <View style={s.emptyIcon}>
-        <Icon name={icon} size={33} color="#698297" />
+        <Icon name={icon} size={33} color={C.muted} />
       </View>
       <Text style={s.emptyTitle}>{title}</Text>
       <Text style={s.emptyBody}>{body}</Text>
@@ -167,14 +171,15 @@ export function Tag({
       style={[
         s.tag,
         {
-          backgroundColor: tone === 'green' ? '#eaf5ef' : tone === 'yellow' ? '#fff4d6' : '#edf1f5',
+          backgroundColor:
+            tone === 'green' ? '#E8EFE9' : tone === 'yellow' ? '#F8EDCD' : C.concrete,
         },
       ]}
     >
       <Text
         style={[
           s.tagText,
-          { color: tone === 'green' ? C.green : tone === 'yellow' ? '#947222' : '#647888' },
+          { color: tone === 'green' ? C.green : tone === 'yellow' ? '#70531A' : C.muted },
         ]}
       >
         {children}
@@ -187,7 +192,7 @@ export const s = StyleSheet.create({
     minHeight: 48,
     paddingHorizontal: 20,
     paddingVertical: 13,
-    borderRadius: 8,
+    borderRadius: 4,
     backgroundColor: C.yellow,
     flexDirection: 'row',
     gap: 10,
@@ -195,13 +200,13 @@ export const s = StyleSheet.create({
     justifyContent: 'center',
   },
   buttonText: { color: C.navy, fontWeight: '700', fontSize: 14 },
-  secondary: { backgroundColor: C.white, borderWidth: 1, borderColor: '#d8e0e7' },
+  secondary: { backgroundColor: C.white, borderWidth: 1, borderColor: C.line },
   field: { gap: 8 },
-  label: { fontSize: 12, color: '#5d7182', fontWeight: '600' },
+  label: { fontSize: 13, color: C.muted, fontWeight: '600' },
   input: {
     borderWidth: 1,
-    borderColor: '#dbe3e9',
-    borderRadius: 7,
+    borderColor: C.line,
+    borderRadius: 4,
     backgroundColor: C.white,
     color: C.ink,
     padding: 13,
@@ -216,20 +221,20 @@ export const s = StyleSheet.create({
     gap: 10,
     alignItems: 'flex-start',
   },
-  noticeText: { fontSize: 12, lineHeight: 19, color: '#856720', flex: 1 },
+  noticeText: { fontSize: 14, lineHeight: 21, color: '#70531A', flex: 1 },
   empty: { paddingVertical: 50, paddingHorizontal: 24, alignItems: 'center' },
   emptyIcon: {
     height: 74,
     width: 74,
     borderRadius: 37,
-    backgroundColor: '#eaf0f5',
+    backgroundColor: C.concrete,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 20,
   },
   emptyTitle: { fontSize: 20, fontWeight: '700', color: C.ink, textAlign: 'center', maxWidth: 310 },
   emptyBody: {
-    fontSize: 13,
+    fontSize: 14,
     color: C.muted,
     lineHeight: 21,
     textAlign: 'center',
@@ -242,25 +247,33 @@ export const s = StyleSheet.create({
     alignItems: 'center',
     marginTop: 27,
     marginBottom: 16,
+    gap: 12,
+    flexWrap: 'wrap',
   },
   sectionAction: { flexDirection: 'row', gap: 6, alignItems: 'center', minHeight: 44 },
   h2: { color: C.ink, fontSize: 20, fontWeight: '700', letterSpacing: -0.5 },
-  link: { color: C.navy, fontWeight: '600', fontSize: 12 },
+  link: { color: C.navy, fontWeight: '600', fontSize: 14 },
   tag: { alignSelf: 'flex-start', paddingVertical: 5, paddingHorizontal: 8, borderRadius: 4 },
-  tagText: { fontSize: 10, fontWeight: '600' },
+  tagText: { fontSize: 12, fontWeight: '600' },
   card: {
     backgroundColor: C.white,
     borderWidth: 1,
     borderColor: C.line,
-    borderRadius: 10,
+    borderRadius: 5,
     padding: 20,
   },
   stack: { gap: 18 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   title: { color: C.ink, fontSize: 28, fontWeight: '700', letterSpacing: -0.8 },
-  body: { color: C.muted, fontSize: 13, lineHeight: 21 },
-  eyebrow: { color: '#7c8f9f', fontSize: 10, fontWeight: '700', letterSpacing: 1.5 },
+  body: { color: C.muted, fontSize: 14, lineHeight: 22 },
+  eyebrow: { color: C.muted, fontSize: 11, fontWeight: '700', letterSpacing: 1.5 },
+  specification: {
+    color: C.muted,
+    fontSize: 12,
+    lineHeight: 19,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
   price: { color: C.ink, fontSize: 24, fontWeight: '700', letterSpacing: -0.7 },
   divider: { height: 1, backgroundColor: C.line, marginVertical: 5 },
 });

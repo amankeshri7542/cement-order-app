@@ -1,3 +1,5 @@
+> Historical initial-MVP report. The current changes and verification are in [Pilot implementation](PILOT_IMPLEMENTATION.md).
+
 # Implementation report
 
 **Store:** Shiv Cement Store · **Service area:** Patna and Bihar · **Initial contact:** +91 9297513707.

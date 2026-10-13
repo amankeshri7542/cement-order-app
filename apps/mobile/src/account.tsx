@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Linking,
   Modal,
@@ -11,16 +11,17 @@ import {
   View,
 } from 'react-native';
 import * as Notifications from 'expo-notifications';
-import { addressSchema, Address, User } from '@shiv/shared';
+import { addressSchema, Address, SessionInfo, User } from '@shiv/shared';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { api, message, saveSession } from './api';
+import { api, clearLocalSession, message, saveSession } from './api';
 import { useStore } from './store';
 import { Button, C, Field, Icon, IconName, Notice, Section, s } from './ui';
 
 export function Login() {
-  const { loginVisible, setLoginVisible, setUser, setLanguage, t } = useStore();
+  const { loginVisible, setLoginVisible, completeLogin, t } = useStore();
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
   const [sent, setSent] = useState(false);
   const [devCode, setDevCode] = useState('');
   const [busy, setBusy] = useState(false);
@@ -39,15 +40,14 @@ export function Login() {
         const result = await api<{ user: User; accessToken?: string; refreshToken?: string }>(
           '/auth/otp/verify',
           'POST',
-          { phone: `+91${phone}`, code },
+          { phone: `+91${phone}`, code, ...(adminPassword ? { adminPassword } : {}) },
         );
         const user = await saveSession(result);
-        setUser(user);
-        setLanguage(user.language);
-        setLoginVisible(false);
+        await completeLogin(user);
         setSent(false);
         setCode('');
         setDevCode('');
+        setAdminPassword('');
       }
     } catch (e) {
       setError(message(e));
@@ -109,6 +109,15 @@ export function Login() {
                 placeholder="6-digit code"
               />
             )}
+            {sent && (
+              <Field
+                label="Staff passphrase (staff only)"
+                secureTextEntry
+                value={adminPassword}
+                onChangeText={setAdminPassword}
+                autoComplete="current-password"
+              />
+            )}
             {Boolean(devCode) && (
               <Notice>
                 Local development code: {devCode}
@@ -160,7 +169,12 @@ export function Account() {
   } = useStore();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(user?.name || '');
-  const [contractor, setContractor] = useState(user?.role === 'CONTRACTOR');
+  const [contractor, setContractor] = useState(
+    user?.contractorStatus === 'PENDING' || user?.role === 'CONTRACTOR',
+  );
+  const [sessions, setSessions] = useState<SessionInfo[] | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmation, setConfirmation] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   async function save() {
@@ -253,7 +267,7 @@ export function Account() {
               onValueChange={setContractor}
               accessibilityLabel={t('contractor')}
             />
-            <Text style={[s.body, { flex: 1 }]}>{t('contractor')}</Text>
+            <Text style={[s.body, { flex: 1 }]}>Request contractor verification</Text>
           </View>
           {Boolean(error) && <Notice error>{error}</Notice>}
           <Button loading={busy} onPress={() => void save()}>
@@ -320,10 +334,98 @@ export function Account() {
         </View>
       )}
       {user && (
+        <View style={[s.card, s.stack]}>
+          <Text style={s.h2}>Account security & privacy</Text>
+          <Text style={s.body}>
+            Contractor verification: {user.contractorStatus || 'NONE'}. Verification does not grant
+            credit or special prices.
+          </Text>
+          <Button
+            secondary
+            onPress={() =>
+              void api<SessionInfo[]>('/auth/sessions')
+                .then(setSessions)
+                .catch((e) => setToast(message(e)))
+            }
+          >
+            Manage signed-in devices
+          </Button>
+          {sessions?.map((session) => (
+            <View key={session.id} style={s.stack}>
+              <Text style={s.body}>
+                {session.current ? 'This device' : session.label} ·{' '}
+                {new Date(session.lastSeenAt).toLocaleDateString('en-IN')}
+              </Text>
+              {!session.current && (
+                <Button
+                  secondary
+                  onPress={() =>
+                    void api(`/auth/sessions/${session.id}`, 'DELETE')
+                      .then(() => api<SessionInfo[]>('/auth/sessions'))
+                      .then(setSessions)
+                      .catch((e) => setToast(message(e)))
+                  }
+                >
+                  Sign out device
+                </Button>
+              )}
+            </View>
+          ))}
+          <Text style={s.body}>
+            Your number and delivery details support sign-in, orders and support. Deletion removes
+            your profile, addresses, cart and sessions. De-identified financial records remain for
+            reconciliation. Resolve open orders/refunds first.
+          </Text>
+          <Button secondary onPress={() => setDeleting(!deleting)}>
+            Delete account
+          </Button>
+          {deleting && (
+            <>
+              <Notice>This cannot be undone. All devices will be signed out.</Notice>
+              <Field
+                label="Type DELETE to confirm"
+                value={confirmation}
+                onChangeText={setConfirmation}
+              />
+              <Button
+                disabled={confirmation !== 'DELETE'}
+                loading={busy}
+                onPress={async () => {
+                  setBusy(true);
+                  try {
+                    await api('/me/delete', 'POST', { confirmation });
+                    await clearLocalSession();
+                    setUser(null);
+                    navigate({ screen: 'Home' });
+                    setToast('Account deleted');
+                  } catch (e) {
+                    setToast(message(e));
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              >
+                Permanently delete my account
+              </Button>
+            </>
+          )}
+        </View>
+      )}
+      {user && (
         <Button secondary onPress={() => void signout()}>
           {t('signout')}
         </Button>
       )}
+      <Button
+        secondary
+        onPress={() =>
+          void Linking.openURL(
+            process.env.EXPO_PUBLIC_PRIVACY_URL || 'http://localhost:3000/privacy',
+          ).catch(() => setToast('Could not open the privacy policy. Contact the store.'))
+        }
+      >
+        Privacy & deletion policy
+      </Button>
       <Text style={[s.body, { textAlign: 'center', fontSize: 11 }]}>
         Shiv Cement Store · Built on trust.
       </Text>
@@ -331,20 +433,42 @@ export function Account() {
   );
 }
 export function Addresses() {
-  const { user, addresses, setAddresses, t, setToast } = useStore();
-  const [show, setShow] = useState(!addresses.length);
+  const { user, addresses, setAddresses, t, setToast, route, completeAddress, refreshAccount } =
+    useStore();
+  const routedAddress = addresses.find((address) => address.id === route.id);
+  const [show, setShow] = useState(Boolean(route.id) || !addresses.length);
+  const [editingId, setEditingId] = useState<string | null>(route.id || null);
+  const initialized = useRef(!route.id || Boolean(routedAddress));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [form, setForm] = useState({
-    label: 'Site',
-    name: user?.name || '',
-    phone: user?.phone.replace('+91', '') || '',
-    line1: '',
-    area: '',
-    city: 'Patna',
-    pincode: '',
-    landmark: '',
-  });
+  function addressForm(address?: Address) {
+    return {
+      label: address?.label || 'Site',
+      name: address?.name || user?.name || '',
+      phone: (address?.phone || user?.phone || '').replace('+91', ''),
+      line1: address?.line1 || '',
+      area: address?.area || '',
+      city: address?.city || 'Patna',
+      pincode: address?.pincode || '',
+      landmark: address?.landmark || '',
+    };
+  }
+  const [form, setForm] = useState(() => addressForm(routedAddress));
+  function edit(address?: Address) {
+    initialized.current = true;
+    setEditingId(address?.id || null);
+    setForm(addressForm(address));
+    setError('');
+    setShow(true);
+  }
+  useEffect(() => {
+    if (initialized.current || !route.id) return;
+    const address = addresses.find((item) => item.id === route.id);
+    if (address) {
+      initialized.current = true;
+      edit(address);
+    }
+  }, [addresses, route.id]);
   async function save() {
     setBusy(true);
     setError('');
@@ -355,10 +479,15 @@ export function Addresses() {
         state: 'Bihar',
       });
       if (!parsed.success) throw new Error(parsed.error.issues.map((i) => i.message).join('\n'));
-      const address = await api<Address>('/me/addresses', 'POST', parsed.data);
-      setAddresses([address, ...addresses]);
+      const address = await api<Address>(
+        editingId ? `/me/addresses/${editingId}` : '/me/addresses',
+        editingId ? 'PATCH' : 'POST',
+        parsed.data,
+      );
+      setAddresses((old) => [address, ...old.filter((item) => item.id !== address.id)]);
       setShow(false);
       setToast('Address saved');
+      completeAddress(address.id);
     } catch (e) {
       setError(message(e));
     } finally {
@@ -367,20 +496,37 @@ export function Addresses() {
   }
   return (
     <View style={s.stack}>
-      <Section title={t('savedAddresses')} action="+ Add new" onAction={() => setShow(true)} />
+      <Section title={t('savedAddresses')} action="+ Add new" onAction={() => edit()} />
       {addresses.map((a) => (
         <View key={a.id} style={s.card}>
           <View style={s.between}>
             <Text style={{ color: C.ink, fontWeight: '700', fontSize: 16 }}>{a.label}</Text>
             <Pressable
               accessibilityRole="button"
+              accessibilityLabel={`Edit ${a.label} address`}
+              disabled={busy}
+              onPress={() => edit(a)}
+              style={{ padding: 12 }}
+            >
+              <Icon name="create-outline" size={18} />
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
               accessibilityLabel={`Delete ${a.label} address`}
+              disabled={busy}
               onPress={async () => {
+                setBusy(true);
                 try {
                   await api(`/me/addresses/${a.id}`, 'DELETE');
-                  setAddresses(addresses.filter((x) => x.id !== a.id));
+                  setAddresses((old) => old.filter((x) => x.id !== a.id));
+                  if (editingId === a.id) {
+                    setEditingId(null);
+                    setShow(false);
+                  }
                 } catch (e) {
                   setToast(message(e));
+                } finally {
+                  setBusy(false);
                 }
               }}
               style={{ padding: 12 }}
@@ -395,9 +541,32 @@ export function Addresses() {
           </Text>
         </View>
       ))}
-      {show && (
+      {show && !initialized.current && (
+        <View style={s.stack}>
+          <Notice error>
+            This saved address is not available. Refresh addresses or return to your draft.
+          </Notice>
+          <Button
+            secondary
+            loading={busy}
+            onPress={async () => {
+              setBusy(true);
+              try {
+                await refreshAccount();
+              } catch (e) {
+                setToast(message(e));
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Refresh addresses
+          </Button>
+        </View>
+      )}
+      {show && initialized.current && (
         <View style={[s.card, s.stack]}>
-          <Text style={s.h2}>Add a delivery address</Text>
+          <Text style={s.h2}>{editingId ? 'Edit delivery address' : 'Add a delivery address'}</Text>
           {(
             [
               { key: 'label', label: 'Address label (Home / Site)' },
@@ -416,16 +585,25 @@ export function Addresses() {
               value={form[x.key]}
               keyboardType={['phone', 'pincode'].includes(x.key) ? 'number-pad' : 'default'}
               maxLength={x.key === 'pincode' ? 6 : x.key === 'phone' ? 10 : 200}
-              onChangeText={(value) => setForm({ ...form, [x.key]: value })}
+              onChangeText={(value) => setForm((current) => ({ ...current, [x.key]: value }))}
             />
           ))}
-          <Text style={s.body}>State: Bihar · We deliver across Bihar.</Text>
+          <Text style={s.body}>
+            State: Bihar · Delivery availability and charges are checked for your pincode.
+          </Text>
           {Boolean(error) && <Notice error>{error}</Notice>}
           <Button loading={busy} onPress={() => void save()}>
             {t('saveAddress')}
           </Button>
           {addresses.length > 0 && (
-            <Button secondary onPress={() => setShow(false)}>
+            <Button
+              secondary
+              disabled={busy}
+              onPress={() => {
+                setShow(false);
+                setError('');
+              }}
+            >
               Cancel
             </Button>
           )}

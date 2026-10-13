@@ -35,7 +35,8 @@ describe('Financial and state invariants', () => {
   });
   it('prevents backwards and skipped fulfilment transitions', () => {
     expect(transitions.CONFIRMED).not.toContain('DELIVERED');
-    expect(transitions.OUT_FOR_DELIVERY).toEqual(['DELIVERED']);
+    expect(transitions.OUT_FOR_DELIVERY).toEqual(['DELIVERED', 'DELIVERY_EXCEPTION']);
+    expect(transitions.DELIVERY_EXCEPTION).toEqual(['OUT_FOR_DELIVERY', 'CANCELLED']);
     expect(transitions.DELIVERED).toEqual([]);
   });
   it('verifies exact raw webhook bytes, rejects mutation and malformed signatures', () => {

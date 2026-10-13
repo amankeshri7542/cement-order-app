@@ -1,4 +1,9 @@
+import { raw, json } from 'express';
+import { RateStudioController, RateStudioService } from './rate-studio/studio';
+import { RateProviders } from './rate-studio/providers';
+import { RateStorage } from './rate-studio/storage';
 import 'reflect-metadata';
+import { OperationsController } from './operations';
 import { Controller, Get, Inject, Module } from '@nestjs/common';
 import { APP_GUARD, NestFactory } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
@@ -9,6 +14,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { AuthController, AuthGuard, AuthService } from './auth';
 import { AccountController, CatalogController, Events } from './catalog';
 import { Db } from './db';
+import { OwnerWorkController, OwnerWorkService } from './owner-work';
 import { Errors, Public } from './http';
 import { getConfig } from './config';
 import { OrdersController, OrdersService } from './orders';
@@ -30,6 +36,7 @@ class HealthController {
     ThrottlerModule.forRoot([{ ttl: 60000, limit: process.env.NODE_ENV === 'test' ? 10000 : 120 }]),
   ],
   controllers: [
+    OwnerWorkController,
     AuthController,
     CatalogController,
     AccountController,
@@ -39,9 +46,15 @@ class HealthController {
     AdminController,
     IntegrationsController,
     HealthController,
+    OperationsController,
+    RateStudioController,
   ],
   providers: [
+    OwnerWorkService,
     Db,
+    RateStudioService,
+    RateProviders,
+    RateStorage,
     AuthService,
     Events,
     OrdersService,
@@ -57,6 +70,13 @@ export async function createApp() {
   const app = await NestFactory.create(AppModule, { rawBody: true, logger: ['error', 'warn'] });
   app.getHttpAdapter().getInstance().set('trust proxy', c.TRUST_PROXY_HOPS);
   app.setGlobalPrefix('api/v1');
+  const rateJson = json({ limit: '512kb' });
+  app.use(
+    '/api/v1/admin/rate-studio',
+    raw({ type: ['image/png', 'image/jpeg', 'image/webp'], limit: '5mb' }),
+    (req: Request, res: Response, next: NextFunction) => rateJson(req, res, next),
+  );
+  app.use('/api/v1/admin/uploads', raw({ type: '*/*', limit: '5mb' }));
   app.use(helmet());
   app.enableCors({
     origin: c.CORS_ORIGINS.split(','),
@@ -95,6 +115,10 @@ export async function createApp() {
           .build(),
       ),
     );
+  const server = app.getHttpServer();
+  server.headersTimeout = 10000;
+  server.requestTimeout = 30000;
+  server.keepAliveTimeout = 5000;
   app.enableShutdownHooks();
   return app;
 }
