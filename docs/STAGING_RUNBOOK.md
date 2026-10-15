@@ -1,5 +1,9 @@
 # Staging runbook
 
+Phase 5's prepared Blueprint, EAS profiles and operator sequence are in
+[P5_STAGING_SETUP.md](P5_STAGING_SETUP.md). The owner authorized preparation and Git push
+only; importing the Blueprint, provider builds and deployment still require approval.
+
 Prepared 11 October 2026 (Phase 4). Nothing here has been deployed. Every step marked
 **[approval]** needs an explicit decision from the owner before it is carried out, because it
 creates cost, exposes data or affects real people. See also [DEPLOYMENT.md](DEPLOYMENT.md)

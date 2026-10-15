@@ -43,7 +43,15 @@ export async function openBasket(page: Page) {
 /** Opens Materials and narrows the list to `query`. */
 export async function searchMaterials(page: Page, query: string) {
   await tab(page, 'Materials').click();
-  await page.getByRole('textbox', { name: 'Search materials', exact: true }).fill(query);
+  const search = page.getByRole('textbox', { name: 'Search materials', exact: true });
+  // WebKit can drop text typed before the list's first commit: wait for it, then check the value.
+  await expect(
+    page.getByText(/^\d+ (materials?|सामग्री)( · (more below|नीचे और))?$/),
+  ).toBeVisible();
+  await expect(async () => {
+    await search.fill(query);
+    await expect(search).toHaveValue(query, { timeout: 1000 });
+  }).toPass();
 }
 /** A product's row on Materials (name, price, Add and the in-basket quantity bar). */
 export const productRow = (page: Page, id: string) => page.getByTestId(`product-${id}`);

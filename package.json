@@ -35,7 +35,8 @@
     "security:scan": "node scripts/security-scan.mjs",
     "serve:customer": "node scripts/serve-customer.mjs",
     "dev:storefront": "npm run dev -w @shiv/storefront",
-    "test:local": "node --test scripts/local.test.mjs",
+    "test:local": "node --test scripts/local.test.mjs scripts/staging-smoke.test.mjs",
+    "staging:smoke": "node scripts/staging-smoke.mjs",
     "android:baseline": "node scripts/android-baseline.mjs"
   },
   "overrides": {

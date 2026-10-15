@@ -319,6 +319,8 @@ test('store records stock and delivery rules; customers browse server pages on m
   await page.getByRole('textbox', { name: 'Delivery pincode' }).fill('801111');
   await expect(page.getByText('2–3 days after confirmation', { exact: false })).toBeVisible();
   await tab(page, 'Materials').click();
+  // Wait for the initial list commit before WebKit pastes into its controlled header.
+  await expect(page.getByText('24 materials · more below', { exact: true })).toBeVisible();
   const pilotProducts = page.waitForResponse((response) => {
     const url = new URL(response.url());
     return (

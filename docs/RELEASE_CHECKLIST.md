@@ -1,5 +1,9 @@
 # Release checklist and acceptance matrix
 
+Phase 5 preparation and the provider/family handoff are in
+[P5_STAGING_SETUP.md](P5_STAGING_SETUP.md). Preparation and Git push do not pass hosted,
+real-SMS, signed-build, closed-test or physical-device gates; those remain pending.
+
 Prepared 11 October 2026 (Phase 4). Use this for every staging release and, later, for the
 production decision. A row passes only with the evidence named. **Automated** means a test in
 this repository ran against a disposable database; it is not proof on a real phone, real

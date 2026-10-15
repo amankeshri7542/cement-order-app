@@ -5,6 +5,7 @@
   },
   "build": {
     "development": {
+      "environment": "development",
       "developmentClient": true,
       "distribution": "internal",
       "env": {
@@ -13,29 +14,37 @@
       }
     },
     "preview": {
+      "environment": "preview",
       "distribution": "internal",
       "android": {
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_APP_ENV": "staging",
-        "EXPO_PUBLIC_API_URL": "https://api.staging.example.invalid/api/v1",
-        "EXPO_PUBLIC_PRIVACY_URL": "https://staging.example.invalid/privacy"
+        "EXPO_PUBLIC_APP_ENV": "staging"
       }
     },
+    "closed-test": {
+      "environment": "preview",
+      "distribution": "store",
+      "autoIncrement": true,
+      "android": { "buildType": "app-bundle" },
+      "env": { "EXPO_PUBLIC_APP_ENV": "staging" }
+    },
     "production": {
+      "environment": "production",
       "autoIncrement": true,
       "android": {
         "buildType": "app-bundle"
       },
       "env": {
-        "EXPO_PUBLIC_APP_ENV": "production",
-        "EXPO_PUBLIC_API_URL": "https://api.example.invalid/api/v1",
-        "EXPO_PUBLIC_PRIVACY_URL": "https://example.invalid/privacy"
+        "EXPO_PUBLIC_APP_ENV": "production"
       }
     }
   },
   "submit": {
+    "closed-test": {
+      "android": { "track": "alpha", "releaseStatus": "draft" }
+    },
     "production": {
       "android": {
         "track": "internal",
