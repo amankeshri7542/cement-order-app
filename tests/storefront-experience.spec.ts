@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import type { Page } from '@playwright/test';
+import type { Page, Request } from '@playwright/test';
 import { money } from '@shiv/shared';
 import { test, expect } from './fixtures';
 
@@ -15,6 +15,29 @@ test.beforeEach(async ({ page }) => {
   page.on('pageerror', (error) => list.push(error.message));
 });
 test.afterEach(async ({ page }) => expect(errors.get(page)).toEqual([]));
+
+// WebKit can report a catalogue read cut off by a page navigation as an "access control" page
+// error, although the page handles it. Let a page's API reads finish before navigating away.
+function apiReads(page: Page) {
+  const pending = new Set<Request>();
+  const read = (url: string) => url.startsWith(api) && !url.startsWith(`${api}/events`);
+  page.on('request', (r) => read(r.url()) && pending.add(r));
+  page.on('requestfinished', (r) => pending.delete(r));
+  page.on('requestfailed', (r) => pending.delete(r));
+  return {
+    settled: () =>
+      expect
+        .poll(
+          async () => {
+            if (pending.size) return pending.size;
+            await page.waitForTimeout(300);
+            return pending.size;
+          },
+          { timeout: 15000 },
+        )
+        .toBe(0),
+  };
+}
 
 test.beforeAll(async () => {
   const url = process.env.TEST_DATABASE_URL;
@@ -184,6 +207,7 @@ test('phone catalogue keeps products near the top with an explicit filter toggle
 test('unapproved shop content is marked for review and never shown as a business fact', async ({
   page,
 }) => {
+  const reads = apiReads(page);
   await page.goto(site);
   await expect(page.getByText(/awaiting (family )?approval/i)).toHaveCount(0);
   const notes = page.getByRole('complementary', { name: 'Internal content review note' });
@@ -192,6 +216,7 @@ test('unapproved shop content is marked for review and never shown as a business
   await expect(
     page.locator('a[href^="tel:"], a[href*="wa.me"], a[href*="google.com/maps"]'),
   ).toHaveCount(0);
+  await reads.settled();
   await page.goto(`${site}/quotes`);
   await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
 });
