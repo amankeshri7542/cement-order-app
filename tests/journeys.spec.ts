@@ -369,7 +369,21 @@ test('public privacy and verified account deletion work without installing the a
 }) => {
   await page.goto('http://localhost:3001/privacy');
   await expect(page.getByRole('heading', { name: 'Privacy, in plain language.' })).toBeVisible();
-  await page.getByRole('link', { name: 'Request account deletion' }).click();
+  let hydrate!: () => void;
+  const hydration = new Promise<void>((resolve) => {
+    hydrate = resolve;
+  });
+  await page.route('**/_next/static/**/*.js', async (route) => {
+    await hydration;
+    await route.continue();
+  });
+  const navigation = page.getByRole('link', { name: 'Request account deletion' }).click();
+  try {
+    await expect(page.getByLabel('Mobile number', { exact: true })).toBeDisabled();
+  } finally {
+    hydrate();
+  }
+  await navigation;
   await page.getByLabel('Mobile number', { exact: true }).fill('9888888884');
   const otp = page.waitForResponse(
     (r) => r.url().endsWith('/auth/otp/request') && r.status() === 201,
