@@ -13,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import Constants from 'expo-constants';
 import { space, textSize } from '@shiv/shared';
 import { StoreProvider, tabs, useStore, type Route, type Tab } from './store';
 import { Button, C, Icon, IconButton, Stamp, type IconName } from './ui';
@@ -24,15 +25,22 @@ import { Quotes, QuoteRequest } from './quotes';
 import { Compare } from './compare';
 import { Assistant } from './assistant';
 import { UpdateGate } from './update';
+import { ErrorBoundary } from './boundary';
+
+// Staging, preview and development builds say so, so a test install is never mistaken for the
+// real shop (and a closed-test build promoted by mistake is noticed at once).
+const testBuild = Constants.expoConfig?.extra?.appEnv !== 'production';
 
 export default function App() {
   return (
     <SafeAreaProvider>
-      <StoreProvider>
-        <UpdateGate>
-          <Shell />
-        </UpdateGate>
-      </StoreProvider>
+      <ErrorBoundary>
+        <StoreProvider>
+          <UpdateGate>
+            <Shell />
+          </UpdateGate>
+        </StoreProvider>
+      </ErrorBoundary>
     </SafeAreaProvider>
   );
 }
@@ -164,6 +172,13 @@ function Shell() {
               {t('Store · Patna, Bihar', 'स्टोर · पटना, बिहार')}
             </Text>
           </View>
+          {testBuild ? (
+            <View style={a.testMark}>
+              <Text style={a.testMarkText} maxFontSizeMultiplier={1.15}>
+                TEST
+              </Text>
+            </View>
+          ) : null}
         </Pressable>
         {Platform.OS === 'web' && (
           <IconButton
@@ -361,6 +376,14 @@ const a = StyleSheet.create({
   brand: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.sm, minHeight: 48 },
   brandName: { color: C.paper, fontSize: textSize.lead, fontWeight: '800' },
   brandPlace: { color: C.clayOnInk, fontSize: 13 },
+  testMark: {
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: C.clayOnInk,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  testMarkText: { color: C.clayOnInk, fontSize: 11, fontWeight: '800', letterSpacing: 0.8 },
   languageTarget: { minWidth: 52, height: 48, alignItems: 'center', justifyContent: 'center' },
   language: {
     minWidth: 48,

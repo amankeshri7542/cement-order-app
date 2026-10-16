@@ -348,7 +348,7 @@ export function OrderDetail() {
   const load = useCallback(async () => {
     const current = ++request.current;
     try {
-      const updated = await api<Order>(`/orders/${route.id}`);
+      const updated = await api<Order>(`/orders/${encodeURIComponent(route.id || '')}`);
       if (current !== request.current) return;
       setOrder(updated);
       setError('');
