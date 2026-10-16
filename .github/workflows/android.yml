@@ -9,9 +9,13 @@ on:
       - 'apps/api/src/**'
       - 'apps/api/prisma/**'
       - '.github/workflows/android.yml'
+      - 'package.json'
+      - 'package-lock.json'
   push:
     branches: [main]
   workflow_dispatch:
+permissions:
+  contents: read
 concurrency:
   group: android-${{ github.ref }}
   cancel-in-progress: true

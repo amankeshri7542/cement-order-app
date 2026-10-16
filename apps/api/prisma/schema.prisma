@@ -166,6 +166,10 @@ model Product {
   @@index([active, createdAt, id])
   @@index([active, categoryId, name, id])
   @@index([active, brand, name, id])
+  // Trigram search indexes (pg_trgm is created by the 20261002120000_pilot_operations migration).
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "Product_name_search")
+  @@index([brand(ops: raw("gin_trgm_ops"))], type: Gin, map: "Product_brand_search")
+  @@index([grade(ops: raw("gin_trgm_ops"))], type: Gin, map: "Product_grade_search")
 }
 
 model ProductPriceHistory {
@@ -633,7 +637,7 @@ model RateCard {
 model DemandOverride {
   id            String    @id @default(cuid())
   userId        String
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   kind          String
   maxTotalPaise Int
   expiresAt     DateTime
@@ -651,7 +655,7 @@ model ProductAsset {
 model PushSubscription {
   id        String   @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   endpoint  String   @unique
   p256dh    String
   auth      String
@@ -663,7 +667,7 @@ model PushSubscription {
 model OutboundMessage {
   id            String    @id @default(cuid())
   userId        String?
-  user          User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user          User?     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   channel       String
   recipient     String
   template      String
