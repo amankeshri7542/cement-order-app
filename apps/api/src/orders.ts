@@ -27,7 +27,7 @@ import {
   transitions,
 } from '@shiv/shared';
 import { Db } from './db';
-import { Admin, AuthRequest, Contract, Input, fail } from './http';
+import { Admin, AuthRequest, Contract, Input, errorCause, fail } from './http';
 import { paginate } from './pagination';
 import { deliveryFor, moveStock, orderTotals, validateQuantity } from './inventory';
 import { getConfig, onlineReady } from './config';
@@ -484,16 +484,30 @@ export class OrdersService {
       where: { status: 'PENDING_PAYMENT', reservedUntil: { lt: new Date() } },
       take: 100,
     });
+    let failed = 0;
+    // One order that cannot be cancelled must not hold back the others.
     for (const order of expired)
-      await this.changeStatus(
-        order.id,
-        'CANCELLED',
-        'system',
-        'Payment reservation expired.',
-        undefined,
-        true,
-      );
-    return { processed: expired.length };
+      try {
+        await this.changeStatus(
+          order.id,
+          'CANCELLED',
+          'system',
+          'Payment reservation expired.',
+          undefined,
+          true,
+        );
+      } catch (error) {
+        failed++;
+        console.error(
+          JSON.stringify({
+            event: 'RESERVATION_EXPIRY_FAILED',
+            orderId: order.id,
+            ...errorCause(error),
+            timestamp: new Date().toISOString(),
+          }),
+        );
+      }
+    return { processed: expired.length - failed, failed };
   }
 
   async delivery(id: string, input: z.infer<typeof deliveryActionSchema>, actorId: string) {

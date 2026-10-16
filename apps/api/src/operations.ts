@@ -323,6 +323,8 @@ export class OperationsController {
                 in: [req.user.id, ...orders.map((o) => o.id), ...quotes.map((q) => q.id)],
               },
             },
+            // Staff entries about this customer, e.g. a demand override and its free-text reason.
+            { details: { path: ['userId'], equals: req.user.id } },
           ],
         },
         select: { id: true, details: true },
@@ -339,6 +341,21 @@ export class OperationsController {
       await tx.notification.deleteMany({ where });
       await tx.pushSubscription.deleteMany({ where });
       await tx.outboundMessage.deleteMany({ where });
+      // Owner WhatsApp copies about this customer's orders and quotes carry their area.
+      const work = await tx.ownerWork.findMany({
+        where: {
+          OR: [
+            { orderId: { in: orders.map((o) => o.id) } },
+            { quoteId: { in: quotes.map((q) => q.id) } },
+          ],
+        },
+        select: { id: true },
+      });
+      if (work.length)
+        await tx.outboundMessage.updateMany({
+          where: { OR: work.map((w) => ({ dedupeKey: { startsWith: `wa:owner:${w.id}:` } })) },
+          data: { params: [] },
+        });
       await tx.checkoutReview.updateMany({ where, data: { snapshot: { deleted: true } } });
       await tx.deliveryAttempt.updateMany({ where: { order: where }, data: { note: '' } });
       await tx.order.updateMany({
@@ -386,6 +403,17 @@ export class OperationsController {
           decisionNote: '',
         },
       });
+      // Open requests and offers cannot be delivered to a deleted account: close them.
+      const closed = await tx.quote.updateMany({
+        where: { ...where, status: { in: ['REQUESTED', 'SENT', 'ACCEPTED'] }, order: null },
+        data: {
+          status: 'REJECTED',
+          decisionSource: 'CUSTOMER',
+          decisionActorId: req.user.id,
+          decisionAt: new Date(),
+          decisionNote: 'Closed: customer account deleted.',
+        },
+      });
       await tx.otpChallenge.deleteMany({ where: { phone: req.user.phone } });
       await tx.user.update({
         where: { id: req.user.id },
@@ -402,7 +430,10 @@ export class OperationsController {
           actorId: req.user.id,
           event: 'ACCOUNT_DELETED',
           entityId: req.user.id,
-          details: { retained: 'De-identified order/payment and audit records' },
+          details: {
+            retained: 'De-identified order/payment and audit records',
+            closedQuotes: closed.count,
+          },
         },
       });
     });

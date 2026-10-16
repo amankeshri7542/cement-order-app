@@ -19,17 +19,16 @@ runtime_url=$(ROLE="$role" PASS="$role_password" node -e '
   const u = new URL(process.env.TEST_DATABASE_URL);
   u.username = process.env.ROLE; u.password = process.env.PASS; console.log(u.href);')
 
+migration_role=$(node -e 'console.log(decodeURIComponent(new URL(process.env.TEST_DATABASE_URL).username))')
+
 psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -q <<SQL
 DROP ROLE IF EXISTS $role;
 CREATE ROLE $role LOGIN PASSWORD '$role_password' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
-REVOKE CREATE ON SCHEMA public FROM PUBLIC;
-GRANT CONNECT ON DATABASE "$database" TO $role;
-GRANT USAGE ON SCHEMA public TO $role;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO $role;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO $role;
-REVOKE ALL ON TABLE "_prisma_migrations" FROM $role;
 SQL
 trap 'psql "$TEST_DATABASE_URL" -q -c "DROP OWNED BY $role; DROP ROLE IF EXISTS $role;" >/dev/null 2>&1 || true' EXIT
+# The exact grants operators apply in staging and production.
+psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -q -v database="$database" \
+  -v migration_role="$migration_role" -v runtime_role="$role" -f scripts/runtime-grants.sql
 
 common=(
   -e NODE_ENV=production -e PORT=4100 -e OTP_PROVIDER=twilio

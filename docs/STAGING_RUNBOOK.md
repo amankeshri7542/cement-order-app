@@ -76,21 +76,25 @@ Store values in the host's secret settings. Never in the repository, Docker buil
 
 ## 5. Database roles
 
-Use two roles. The migration role owns the schema; the runtime role only reads and writes rows.
-This is the same grant set the CI container smoke and restore rehearsal verify:
+Use two roles. The migration role owns the schema; the runtime role only reads and writes rows,
+and may delete only from the short list of tables the API really deletes from (sessions, carts,
+addresses, notifications and similar). It can never delete orders, payments, payment events,
+stock movements or audit rows. The grants live in one file, `scripts/runtime-grants.sql`, which the
+CI container smoke and the restore rehearsal run as-is.
 
-```sql
--- run as the migration/owner role, once per database
-CREATE ROLE shiv_runtime LOGIN PASSWORD '<from secret manager>'
-  NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
-REVOKE CREATE ON SCHEMA public FROM PUBLIC;
-GRANT CONNECT ON DATABASE "<staging_db>" TO shiv_runtime;
-GRANT USAGE ON SCHEMA public TO shiv_runtime;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO shiv_runtime;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO shiv_runtime;
-REVOKE ALL ON TABLE "_prisma_migrations" FROM shiv_runtime;
--- after every migration that adds tables or sequences, repeat the two GRANT ... ALL lines
+```sh
+# once per database, as the migration/owner role (password from the secret manager)
+psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE ROLE shiv_runtime LOGIN PASSWORD '<from secret manager>' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS"
+
+# after the first migration and again after EVERY migration
+psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 \
+  -v database=<staging_db> -v migration_role=<migration_role> -v runtime_role=shiv_runtime \
+  -f scripts/runtime-grants.sql
 ```
+
+New tables get `SELECT, INSERT, UPDATE` automatically (default privileges), never `DELETE`. If a
+release makes the API delete from a new table, add it to the `GRANT DELETE` list in the script.
+Do not paste older inline grant blocks: they grant `DELETE` on every table.
 
 The API refuses to start under `NODE_ENV=production` if its role could change the schema.
 
@@ -105,7 +109,7 @@ Run from a trusted release shell or CI job with the **migration** role's `DATABA
    It must list only pending migrations from this release and no failed ones.
 4. **Apply migrations:** `npm run db:migrate`. The runtime container never migrates itself.
    If a migration fails, stop: see section 9.
-5. **Re-grant** runtime privileges if new tables or sequences were added.
+5. **Re-grant:** run `scripts/runtime-grants.sql` (section 5) after every migration.
 6. **Deploy the API** with the runtime role. Watch for `API_STARTED` with the expected
    `release`; any `API_STARTUP_FAILED` event names the problem without printing secrets.
 7. **Wait for readiness:** `curl -fsS https://api…/api/v1/health/ready` → `{"status":"ready"}`.

@@ -87,15 +87,27 @@ async function main() {
       `CREATE ROLE "${role}" LOGIN PASSWORD '${password}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`,
     );
     roleCreated = true;
-    for (const sql of [
-      'REVOKE CREATE ON SCHEMA public FROM PUBLIC',
-      `GRANT CONNECT ON DATABASE "${name}" TO "${role}"`,
-      `GRANT USAGE ON SCHEMA public TO "${role}"`,
-      `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO "${role}"`,
-      `GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO "${role}"`,
-      `REVOKE ALL ON TABLE "_prisma_migrations" FROM "${role}"`,
-    ])
-      await restored.$executeRawUnsafe(sql);
+    // The exact grants file operators run in staging and production, not a copy of it.
+    execFileSync(
+      `${pg}/psql`,
+      [
+        '--no-psqlrc',
+        '--quiet',
+        '-v',
+        'ON_ERROR_STOP=1',
+        '-v',
+        `database=${name}`,
+        '-v',
+        `migration_role=${env.PGUSER}`,
+        '-v',
+        `runtime_role=${role}`,
+        '-f',
+        resolve('../../scripts/runtime-grants.sql'),
+        '--dbname',
+        name,
+      ],
+      { env, stdio: 'pipe' },
+    );
     const runtimeUrl = new URL(target);
     runtimeUrl.username = role;
     runtimeUrl.password = password;
@@ -105,6 +117,14 @@ async function main() {
     await assert.rejects(runtime.$executeRawUnsafe('CREATE TABLE "ForbiddenDDL" (id integer)'));
     await assert.rejects(runtime.$queryRawUnsafe('SELECT * FROM "_prisma_migrations"'));
     await assert.rejects(runtime.$executeRawUnsafe('UPDATE "InventoryMovement" SET note = note'));
+    // Money and audit evidence cannot be deleted by the API role, even with no rows matching.
+    for (const table of ['Order', 'Payment', 'PaymentEvent', 'AuditLog'])
+      await assert.rejects(
+        runtime.$executeRawUnsafe(`DELETE FROM "${table}" WHERE false`),
+        /permission denied/,
+        `runtime role may delete from ${table}`,
+      );
+    await runtime.session.deleteMany({ where: { id: 'restore-rehearsal-none' } });
     const user = await runtime.user.findFirstOrThrow();
     await runtime.user.update({ where: { id: user.id }, data: { name: user.name } });
     // Boot the real API on the restored copy with production startup guards and the restricted
@@ -150,6 +170,7 @@ async function main() {
           tables: Object.keys(before).length,
           fingerprintsMatched: true,
           restrictedRuntimeCrud: true,
+          evidenceDeleteDenied: true,
           ddlDenied: true,
           migrationTableDenied: true,
           immutableLedgerPreserved: true,
@@ -161,7 +182,7 @@ async function main() {
       ),
     );
     console.log(
-      'PASS: disposable dump/restore matches every table; restricted runtime CRUD works; DDL, migration metadata and ledger mutation denied; production-mode API starts on the restored copy and reports ready.',
+      'PASS: disposable dump/restore matches every table; restricted runtime CRUD works; DDL, migration metadata, ledger mutation and order/payment/audit deletion denied; production-mode API starts on the restored copy and reports ready.',
     );
   } finally {
     await runtime?.$disconnect();
