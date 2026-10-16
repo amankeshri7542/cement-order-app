@@ -23,11 +23,12 @@ import {
   CodStamp,
   Empty,
   Field,
+  headingScale,
   Icon,
   Notice,
+  s,
   Screen,
   TornEdge,
-  s,
 } from './ui';
 import { MaterialArt, Quantity } from './catalog';
 import { payOnline } from './payment';
@@ -294,7 +295,7 @@ export function Cart() {
         </>
       }
     >
-      <Text style={s.h1} accessibilityRole="header">
+      <Text style={s.h1} maxFontSizeMultiplier={headingScale} accessibilityRole="header">
         {t('Your basket', 'आपकी टोकरी')}
       </Text>
       <MergeNotice />
@@ -524,7 +525,9 @@ export function Checkout() {
           </Button>
         }
       >
-        <Text style={s.h1}>{t('Check your order request', 'अपना ऑर्डर अनुरोध जाँचें')}</Text>
+        <Text style={s.h1} maxFontSizeMultiplier={headingScale}>
+          {t('Check your order request', 'अपना ऑर्डर अनुरोध जाँचें')}
+        </Text>
         <Notice>
           {t(
             `This request is for ${money(pendingCheckout.totalPaise)}. Its result is not confirmed on this phone yet. Checking sends the same request and will not create a second order.`,
@@ -594,7 +597,7 @@ export function Checkout() {
         )
       }
     >
-      <Text style={s.h1} accessibilityRole="header">
+      <Text style={s.h1} maxFontSizeMultiplier={headingScale} accessibilityRole="header">
         {t('Review your order', 'अपना ऑर्डर जाँचें')}
       </Text>
       {Boolean(error) && <Notice error>{error}</Notice>}

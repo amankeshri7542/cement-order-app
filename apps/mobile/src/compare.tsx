@@ -3,7 +3,7 @@ import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { money, productName, space, textSize, unitLabel, type Product } from '@shiv/shared';
 import { useStore } from './store';
 import { categoryName, MaterialArt } from './catalog';
-import { Button, C, Icon, Notice, Screen, s } from './ui';
+import { Button, C, headingScale, Icon, Notice, s, Screen } from './ui';
 
 /** Side-by-side check of up to three materials: price per selling unit, pack, grade, rules. */
 export function Compare() {
@@ -51,7 +51,7 @@ export function Compare() {
   return (
     <Screen>
       <View style={s.between}>
-        <Text style={s.h1} accessibilityRole="header">
+        <Text style={s.h1} maxFontSizeMultiplier={headingScale} accessibilityRole="header">
           {t('Compare', 'तुलना करें')}
         </Text>
         {compare.length > 0 && (

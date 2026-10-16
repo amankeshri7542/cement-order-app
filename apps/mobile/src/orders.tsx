@@ -28,7 +28,7 @@ import {
 import { api } from './api';
 import { makeKey, readSaved, useStore, writeSaved } from './store';
 import { OrderStatusTag } from './catalog';
-import { Button, C, Empty, Icon, Notice, Screen, s } from './ui';
+import { Button, C, Empty, headingScale, Icon, Notice, s, Screen } from './ui';
 import { payOnline } from './payment';
 
 export async function confirm(
@@ -257,7 +257,7 @@ export function Orders() {
       ListHeaderComponent={
         <View style={{ gap: space.md }}>
           <View style={s.between}>
-            <Text style={s.h1} accessibilityRole="header">
+            <Text style={s.h1} maxFontSizeMultiplier={headingScale} accessibilityRole="header">
               {t('Orders', 'ऑर्डर')}
             </Text>
             <Button
@@ -480,7 +480,11 @@ export function OrderDetail() {
             color={needsAttention ? C.danger : C.ok}
           />
         </View>
-        <Text style={[s.h1, { textAlign: 'center' }]} accessibilityRole="header">
+        <Text
+          style={[s.h1, { textAlign: 'center' }]}
+          maxFontSizeMultiplier={headingScale}
+          accessibilityRole="header"
+        >
           {orderStatusText(order.status, language)}
         </Text>
         <Text style={s.body}>

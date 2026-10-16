@@ -45,6 +45,12 @@ export const display: TextStyle = { fontFamily: displayFont, fontWeight: 'normal
  */
 export const displaySize = { display: 56, head: 40, title: 30, figure: 26, small: 22 } as const;
 export const displayLine = (size: number) => Math.round(size * 1.15);
+/**
+ * Teko headings already start large, so, like Android 14's non-linear font scaling, they grow
+ * at most 1.5× with the phone's font size: reading text still doubles, and a heading never
+ * fills the screen. Pass it as maxFontSizeMultiplier.
+ */
+export const headingScale = 1.5;
 export const teko = (size: number): TextStyle => ({
   ...display,
   fontSize: size,
@@ -347,7 +353,9 @@ export function Empty({
       <View style={s.emptyIcon}>
         <Icon name={icon} size={32} color={C.ink2} />
       </View>
-      <Text style={s.emptyTitle}>{title}</Text>
+      <Text style={s.emptyTitle} maxFontSizeMultiplier={headingScale}>
+        {title}
+      </Text>
       {body ? <Text style={s.emptyBody}>{body}</Text> : null}
       {action && onAction && (
         <Button onPress={onAction} style={{ marginTop: space.xl, alignSelf: 'stretch' }}>
@@ -369,7 +377,7 @@ export function Section({
 }) {
   return (
     <View style={s.section}>
-      <Text style={s.h2} accessibilityRole="header">
+      <Text style={s.h2} maxFontSizeMultiplier={headingScale} accessibilityRole="header">
         {title}
       </Text>
       {action && onAction && (

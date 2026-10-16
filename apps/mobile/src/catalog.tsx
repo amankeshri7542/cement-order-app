@@ -43,16 +43,17 @@ import {
   displaySize,
   Empty,
   Field,
+  headingScale,
   Icon,
   Notice,
   Roll,
+  s,
   Screen,
   Section,
   Stamp,
   Tag,
   teko,
   TornEdge,
-  s,
   type IconName,
 } from './ui';
 
@@ -369,7 +370,7 @@ function RateBoard() {
   ];
   return (
     <View>
-      <Text style={cs.ratesTitle} accessibilityRole="header">
+      <Text style={cs.ratesTitle} maxFontSizeMultiplier={headingScale} accessibilityRole="header">
         {t('Current rates', 'मौजूदा भाव')}
       </Text>
       <Text style={s.small}>
@@ -559,7 +560,7 @@ export function Home() {
       <View style={[s.paper, { gap: space.md }]}>
         <View style={[s.row, { alignItems: 'flex-start' }]}>
           <Stamp size={44} />
-          <Text style={[s.h2, { flex: 1 }]}>
+          <Text style={[s.h2, { flex: 1 }]} maxFontSizeMultiplier={headingScale}>
             {t('One list. A written price for your site.', 'एक सूची। आपकी साइट का लिखित भाव।')}
           </Text>
         </View>
@@ -1058,7 +1059,9 @@ export function ProductDetail() {
       <View style={[s.row, { alignItems: 'flex-start' }]}>
         <MaterialArt product={product} size={96} />
         <View style={{ flex: 1, gap: 4 }}>
-          <Text style={s.h1}>{productName(product, language)}</Text>
+          <Text style={s.h1} maxFontSizeMultiplier={headingScale}>
+            {productName(product, language)}
+          </Text>
           {/* The English name is what is printed on the bag, so Hindi readers see it too. */}
           {language === 'hi' && product.nameHi ? <Text style={s.small}>{product.name}</Text> : null}
           <Text style={s.small}>{product.brand}</Text>

@@ -32,12 +32,13 @@ import {
   Chip,
   Empty,
   Field,
+  headingScale,
   Icon,
   Notice,
+  s,
   Screen,
   Section,
   Stamp,
-  s,
   type IconName,
 } from './ui';
 import { confirm } from './orders';
@@ -104,7 +105,9 @@ export function Login() {
               </Pressable>
             </View>
             <View style={{ gap: space.xs }}>
-              <Text style={s.h1}>{t('Sign in with your mobile', 'मोबाइल नंबर से साइन इन')}</Text>
+              <Text style={s.h1} maxFontSizeMultiplier={headingScale}>
+                {t('Sign in with your mobile', 'मोबाइल नंबर से साइन इन')}
+              </Text>
               <Text style={s.body}>
                 {t(
                   'We send a 6-digit code by SMS. No password needed.',
@@ -298,7 +301,7 @@ export function Account() {
           <Icon name="person" color={C.ink2} size={30} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={s.h2}>
+          <Text style={s.h2} maxFontSizeMultiplier={headingScale}>
             {user?.name || (user ? t('Welcome', 'स्वागत है') : t('Not signed in', 'साइन इन नहीं'))}
           </Text>
           <Text style={s.body}>
@@ -709,7 +712,7 @@ export function Addresses() {
       )}
       {show && initialized.current && (
         <View style={s.stack}>
-          <Text style={s.h2}>
+          <Text style={s.h2} maxFontSizeMultiplier={headingScale}>
             {editingId
               ? t('Edit address', 'पता बदलें')
               : t('Add a delivery address', 'डिलीवरी का पता जोड़ें')}

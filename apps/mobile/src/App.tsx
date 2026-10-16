@@ -17,7 +17,17 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 import { radius, space, textSize } from '@shiv/shared';
 import { StoreProvider, tabs, useStore, type Route, type Tab } from './store';
-import { Button, C, displaySize, Icon, IconButton, Stamp, teko, type IconName } from './ui';
+import {
+  Button,
+  C,
+  displaySize,
+  headingScale,
+  Icon,
+  IconButton,
+  Stamp,
+  teko,
+  type IconName,
+} from './ui';
 import { Home, Catalogue, ProductDetail } from './catalog';
 import { Cart, Checkout } from './checkout';
 import { Account, Addresses, Login } from './account';
@@ -356,7 +366,9 @@ function LanguageChooser({ choose }: { choose: (language: 'hi' | 'en') => void }
     <SafeAreaView style={[a.app, a.center, { backgroundColor: C.ink, padding: space.xl }]}>
       <StatusBar barStyle="light-content" backgroundColor={C.ink} />
       <Stamp size={72} />
-      <Text style={a.chooserTitle}>शिव सीमेंट स्टोर</Text>
+      <Text style={a.chooserTitle} maxFontSizeMultiplier={headingScale}>
+        शिव सीमेंट स्टोर
+      </Text>
       <Text style={a.chooserSub}>Shiv Cement Store · पटना</Text>
       <Text style={a.chooserAsk}>अपनी भाषा चुनें · Choose your language</Text>
       <View style={{ alignSelf: 'stretch', gap: space.md, marginTop: space.xl }}>

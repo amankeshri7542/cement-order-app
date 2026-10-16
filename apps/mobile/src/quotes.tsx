@@ -16,7 +16,20 @@ import {
 } from '@shiv/shared';
 import { ApiError, api } from './api';
 import { useStore } from './store';
-import { Button, C, Chip, Empty, Field, Icon, Notice, Screen, Section, Tag, s } from './ui';
+import {
+  Button,
+  C,
+  Chip,
+  Empty,
+  Field,
+  headingScale,
+  Icon,
+  Notice,
+  s,
+  Screen,
+  Section,
+  Tag,
+} from './ui';
 import { MaterialArt, Quantity } from './catalog';
 import { confirm } from './orders';
 
@@ -86,7 +99,7 @@ export function Quotes() {
         </Button>
       }
     >
-      <Text style={s.h1} accessibilityRole="header">
+      <Text style={s.h1} maxFontSizeMultiplier={headingScale} accessibilityRole="header">
         {t('Bulk quotes', 'थोक भाव')}
       </Text>
       {Boolean(error) && <Notice error>{error}</Notice>}
@@ -426,7 +439,9 @@ export function QuoteRequest() {
           </Button>
         }
       >
-        <Text style={s.h1}>{t('Check your bulk request', 'अपना थोक अनुरोध जाँचें')}</Text>
+        <Text style={s.h1} maxFontSizeMultiplier={headingScale}>
+          {t('Check your bulk request', 'अपना थोक अनुरोध जाँचें')}
+        </Text>
         <Notice>
           {t(
             'Your request is saved. Checking sends the same request, so it is never submitted twice.',
@@ -455,7 +470,7 @@ export function QuoteRequest() {
         </Button>
       }
     >
-      <Text style={s.h1} accessibilityRole="header">
+      <Text style={s.h1} maxFontSizeMultiplier={headingScale} accessibilityRole="header">
         {t('Ask for a bulk quote', 'थोक भाव माँगें')}
       </Text>
       <Text style={s.body}>
