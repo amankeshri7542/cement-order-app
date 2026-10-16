@@ -694,21 +694,35 @@
 .rs-card-studio > .field {
   margin-bottom: 16px;
 }
-/* A small picture of the generated card. Its colours mirror the artwork drawn by
-   apps/api/src/rate-studio/cards.ts (graphite and amber), not the desk tokens. */
+/* A small picture of the generated card, drawn by apps/api/src/rate-studio/cards.ts in the
+   same Direction A tokens: Counter is the ink signboard with a sindoor rule, Bulletin is the
+   paper sheet with an ink edge, and both carry the शिव stamp. */
 .rs-template-sample {
-  background: #252c2b;
-  color: #f7f6f1;
+  position: relative;
+  background: var(--ink);
+  color: var(--on-ink);
   padding: 22px;
+  padding-right: 92px;
   display: flex;
   flex-direction: column;
   gap: 14px;
   min-height: 180px;
-  border-left: 8px solid #e9ad32;
+  border-bottom: 8px solid var(--accent);
+}
+.rs-template-sample::after {
+  content: 'शिव';
+  position: absolute;
+  top: 22px;
+  right: 22px;
+  width: 52px;
+  height: 52px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font: 600 1.75rem/56px var(--display);
+  text-align: center;
 }
 .rs-template-sample > span {
-  font-size: var(--t-small);
-  font-weight: 700;
+  font: 600 1.35rem/1 var(--display);
 }
 .rs-template-sample > strong {
   font: 600 2.2rem/1 var(--display);
@@ -717,19 +731,24 @@
 .rs-template-sample i {
   display: block;
   height: 2px;
-  background: #70766a;
+  background: var(--ink-2);
   width: 100%;
 }
 .rs-template-sample small {
-  color: inherit;
-  opacity: 0.8;
+  color: var(--on-ink-muted);
 }
 .rs-template-bulletin {
-  background: #f7f6f1;
-  color: #252c2b;
-  border-left: 0;
-  border-top: 8px solid #252c2b;
-  box-shadow: inset 8px 0 0 #e9ad32;
+  background: var(--paper);
+  color: var(--ink);
+  border-bottom: 0;
+  box-shadow: inset 8px 0 0 var(--ink);
+  padding-left: 30px;
+}
+.rs-template-bulletin i {
+  background: var(--rule);
+}
+.rs-template-bulletin small {
+  color: var(--muted);
 }
 .rs-card-preview {
   display: block;

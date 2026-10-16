@@ -1670,10 +1670,10 @@ function CardStudio({
               <Field label={t('Template', 'डिज़ाइन')}>
                 <select value={template} onChange={(e) => setTemplate(e.target.value)}>
                   <option value="COUNTER">
-                    {t('Counter · graphite & amber', 'काउंटर · गहरा स्लेटी और पीला')}
+                    {t('Counter · ink & sindoor', 'काउंटर · स्याही और सिंदूर')}
                   </option>
                   <option value="BULLETIN">
-                    {t('Bulletin · concrete & ink', 'बुलेटिन · सीमेंटी और काला')}
+                    {t('Bulletin · paper & ink', 'बुलेटिन · काग़ज़ और स्याही')}
                   </option>
                 </select>
               </Field>

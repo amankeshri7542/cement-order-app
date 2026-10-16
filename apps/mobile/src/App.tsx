@@ -17,7 +17,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 import { radius, space, textSize } from '@shiv/shared';
 import { StoreProvider, tabs, useStore, type Route, type Tab } from './store';
-import { Button, C, Icon, IconButton, Stamp, type IconName } from './ui';
+import { Button, C, displaySize, Icon, IconButton, Stamp, teko, type IconName } from './ui';
 import { Home, Catalogue, ProductDetail } from './catalog';
 import { Cart, Checkout } from './checkout';
 import { Account, Addresses, Login } from './account';
@@ -402,8 +402,8 @@ const a = StyleSheet.create({
     paddingRight: space.xs,
   },
   brandText: { flex: 1, minWidth: 0 },
-  brandName: { color: C.onInk, fontSize: textSize.lead, lineHeight: 26, fontWeight: '800' },
-  brandNameNarrow: { fontSize: textSize.body, lineHeight: 22 },
+  brandName: { color: C.onInk, ...teko(displaySize.figure) },
+  brandNameNarrow: teko(displaySize.small),
   brandLine: { flexDirection: 'row', alignItems: 'center', gap: space.xs, minWidth: 0 },
   brandPlace: { flexShrink: 1, color: C.onInkMuted, fontSize: textSize.small, lineHeight: 18 },
   testMark: {
@@ -511,18 +511,14 @@ const a = StyleSheet.create({
   toastText: { flex: 1, color: C.onInk, fontSize: textSize.body, lineHeight: 24 },
   chooserTitle: {
     color: C.onInk,
-    fontSize: textSize.head,
-    lineHeight: 42,
-    fontWeight: '800',
+    ...teko(displaySize.head),
     marginTop: space.xl,
     textAlign: 'center',
   },
   chooserSub: { color: C.onInkMuted, fontSize: textSize.body, marginTop: 4, textAlign: 'center' },
   chooserAsk: {
     color: C.onInk,
-    fontSize: textSize.lead,
-    lineHeight: 28,
-    fontWeight: '700',
+    ...teko(displaySize.figure),
     marginTop: space.xxl,
     textAlign: 'center',
   },

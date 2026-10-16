@@ -41,6 +41,15 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     // Local QA release builds reach the laptop's HTTP API over adb reverse; never production.
     plugins: [
       ...(config.plugins ?? []),
+      // Teko 600 (Latin and Devanagari, 155 KB) for display text and prices, as on the website.
+      // Embedded at build time, so it draws on the first frame; resolved here because npm
+      // workspaces hoist the package to the repository root.
+      [
+        'expo-font',
+        {
+          fonts: [require.resolve('@expo-google-fonts/teko/600SemiBold/Teko_600SemiBold.ttf')],
+        },
+      ] as [string, unknown],
       ...(process.env.APP_VARIANT === 'local' ? ['./plugins/local-cleartext'] : []),
       // Uploads source maps so crash reports show real file and line numbers. Only release builds
       // with Sentry credentials (EAS/CI) load it; local builds need no Sentry account.
