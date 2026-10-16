@@ -1,6 +1,9 @@
 import { z } from 'zod';
+import { compareVersions } from '@shiv/shared';
 export const configSchema = z.object({
-  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  // Required: production guards (secure cookies, staff credentials, runtime role) key off it, so
+  // a deploy that forgets it must fail to start rather than run as development.
+  NODE_ENV: z.enum(['development', 'test', 'production']),
   PORT: z.coerce.number().int().default(4000),
   TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(2).default(0),
   DATABASE_URL: z.string().min(1),
@@ -119,8 +122,18 @@ export const configSchema = z.object({
     .url()
     .startsWith('https://')
     .default('https://play.google.com/store/apps/details?id=in.shivcement.store'),
+  // Open public live-update streams (/events). Pages fall back to refreshing on focus when refused.
+  EVENT_STREAMS_PER_IP: z.coerce.number().int().min(1).max(10000).default(20),
+  EVENT_STREAMS_TOTAL: z.coerce.number().int().min(1).max(100000).default(2000),
 });
 export type Config = z.infer<typeof configSchema>;
+function testDatabase(url: string) {
+  try {
+    return new URL(url).pathname.endsWith('_test');
+  } catch {
+    return false;
+  }
+}
 let config: Config | undefined;
 /** Tests that change environment settings re-read them; the running API never calls this. */
 export function resetConfigForTests() {
@@ -134,6 +147,12 @@ export function getConfig(): Config {
       `Invalid configuration: ${parsed.error.issues.map((i) => i.path.join('.')).join(', ')}`,
     );
   const candidate = parsed.data;
+  // Test mode lifts request limits and silences logs; it must only ever touch a throwaway database.
+  if (candidate.NODE_ENV === 'test' && !testDatabase(candidate.DATABASE_URL))
+    throw new Error('NODE_ENV=test requires a DATABASE_URL whose database name ends in _test');
+  // A minimum above the latest version would block every install, including the newest.
+  if (compareVersions(candidate.ANDROID_MINIMUM_VERSION, candidate.ANDROID_LATEST_VERSION) > 0)
+    throw new Error('ANDROID_MINIMUM_VERSION cannot be above ANDROID_LATEST_VERSION');
   if (
     candidate.WHATSAPP_PROVIDER === 'meta' &&
     !(candidate.WHATSAPP_ACCESS_TOKEN && candidate.WHATSAPP_PHONE_NUMBER_ID)

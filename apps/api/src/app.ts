@@ -16,7 +16,7 @@ import { AuthController, AuthGuard, AuthService } from './auth';
 import { AccountController, CatalogController, Events } from './catalog';
 import { Db } from './db';
 import { OwnerWorkController, OwnerWorkService } from './owner-work';
-import { Errors, Public, fail } from './http';
+import { Errors, Public, cookie, fail } from './http';
 import { getConfig } from './config';
 import { OrdersController, OrdersService } from './orders';
 import { PaymentsController, PaymentsService } from './payments';
@@ -101,18 +101,34 @@ class HealthController {
   ],
 })
 export class AppModule {}
+/**
+ * A cheap credential-shaped check only; AuthGuard still verifies the session afterwards. Bodies
+ * announced above 5 MB are left to raw(), which refuses them (413) without buffering them.
+ */
+export function uploadGate(
+  req: Request & { requestId?: string },
+  res: Response,
+  next: NextFunction,
+) {
+  if (
+    req.method === 'OPTIONS' ||
+    /^Bearer [A-Za-z0-9_-]{43}$/.test(req.headers.authorization || '') ||
+    cookie(req, 'shiv_access')
+  )
+    return next();
+  res.status(401).json({
+    error: {
+      code: 'UNAUTHORIZED',
+      message: 'Please sign in to continue.',
+      requestId: req.requestId,
+    },
+  });
+}
 export async function createApp() {
   const c = getConfig();
   const app = await NestFactory.create(AppModule, { rawBody: true, logger: ['error', 'warn'] });
   app.getHttpAdapter().getInstance().set('trust proxy', c.TRUST_PROXY_HOPS);
   app.setGlobalPrefix('api/v1');
-  const rateJson = json({ limit: '512kb' });
-  app.use(
-    '/api/v1/admin/rate-studio',
-    raw({ type: ['image/png', 'image/jpeg', 'image/webp'], limit: '5mb' }),
-    (req: Request, res: Response, next: NextFunction) => rateJson(req, res, next),
-  );
-  app.use('/api/v1/admin/uploads', raw({ type: '*/*', limit: '5mb' }));
   app.use(helmet());
   app.enableCors({
     origin: c.CORS_ORIGINS.split(','),
@@ -143,6 +159,16 @@ export async function createApp() {
     });
     next();
   });
+  // Staff upload routes read bodies of up to 5 MB before Nest's guards run. Refuse requests that
+  // carry no credential before reading any of the body.
+  app.use(['/api/v1/admin/uploads', '/api/v1/admin/rate-studio'], uploadGate);
+  const rateJson = json({ limit: '512kb' });
+  app.use(
+    '/api/v1/admin/rate-studio',
+    raw({ type: ['image/png', 'image/jpeg', 'image/webp'], limit: '5mb' }),
+    (req: Request, res: Response, next: NextFunction) => rateJson(req, res, next),
+  );
+  app.use('/api/v1/admin/uploads', raw({ type: '*/*', limit: '5mb' }));
   app.useGlobalFilters(new Errors());
   if (c.NODE_ENV !== 'production')
     SwaggerModule.setup(

@@ -43,6 +43,12 @@ export const orderInclude = {
   payment: true,
   history: { orderBy: { createdAt: 'asc' as const } },
 };
+// Customers see who is handling their request by name only. Staff phones (also their sign-in
+// identifiers), technical owners and alert retries stay on the owner desk.
+export const customerWork = {
+  select: { acknowledgedAt: true, assignedTo: { select: { name: true } } },
+} as const;
+export const customerOrderInclude = { ...orderInclude, work: customerWork };
 const reorderSchema = z.strictObject({ idempotencyKey: z.string().uuid().optional() }).default({});
 const normalizeReturns = (items: unknown) =>
   Array.isArray(items)
@@ -239,7 +245,7 @@ export class OrdersService {
     const result = await this.db.atomic(async (tx) => {
       const existing = await tx.order.findUnique({
         where: { userId_idempotencyKey: { userId, idempotencyKey: input.idempotencyKey } },
-        include: orderInclude,
+        include: customerOrderInclude,
       });
       if (existing) {
         if (existing.reviewId !== input.reviewId)
@@ -255,7 +261,7 @@ export class OrdersService {
       if (review.order)
         return tx.order.findUniqueOrThrow({
           where: { id: review.order.id },
-          include: orderInclude,
+          include: customerOrderInclude,
         });
       const snapshot = review.snapshot as unknown as CheckoutReview;
       await requestBudget(tx, 'order', userId, ip);
@@ -329,7 +335,7 @@ export class OrdersService {
             },
           },
         },
-        include: orderInclude,
+        include: customerOrderInclude,
       });
       await tx.cartItem.deleteMany({ where: { userId } });
       await tx.auditLog.create({
@@ -698,7 +704,7 @@ export class OrdersController {
     return page.finish(
       await this.db.order.findMany({
         where: { userId: req.user.id, ...page.after },
-        include: orderInclude,
+        include: customerOrderInclude,
         orderBy: page.orderBy,
         take: page.take,
       }),
@@ -707,7 +713,7 @@ export class OrdersController {
   @Get('orders/:id') async detail(@Param('id') id: string, @Req() req: AuthRequest) {
     const order = await this.db.order.findFirst({
       where: { id, userId: req.user.id },
-      include: orderInclude,
+      include: customerOrderInclude,
     });
     if (!order) fail('ORDER_NOT_FOUND', 'Order not found.', 404);
     return order;
@@ -727,14 +733,16 @@ export class OrdersController {
   ) {
     return this.orders.reorder(id, req.user.id, body.idempotencyKey);
   }
-  @Post('orders/:id/cancel') cancel(@Param('id') id: string, @Req() req: AuthRequest) {
-    return this.orders.changeStatus(
+  @Post('orders/:id/cancel') async cancel(@Param('id') id: string, @Req() req: AuthRequest) {
+    await this.orders.changeStatus(
       id,
       'CANCELLED',
       req.user.id,
       'Cancelled by customer.',
       req.user.id,
     );
+    // Re-read through the customer view: changeStatus returns the desk view.
+    return this.detail(id, req);
   }
   @Admin() @Get('admin/orders') async all(@Query() query: Record<string, string>) {
     const parsed = z

@@ -16,7 +16,7 @@ import { Db } from './db';
 import { workInclude } from './owner-work';
 import { Events } from './catalog';
 import { Admin, AuthRequest, Contract, Input, fail, hash } from './http';
-import { orderInclude, reference, validDelivery } from './orders';
+import { customerWork, orderInclude, reference, validDelivery } from './orders';
 
 @ApiTags('Bulk quotations')
 @Controller()
@@ -30,7 +30,7 @@ export class QuotesController {
     const quotes = await this.db.quote.findMany({
       where: { userId: req.user.id, ...page.after },
       include: {
-        work: { include: workInclude },
+        work: customerWork,
         items: true,
         order: { select: { id: true, number: true } },
       },
@@ -61,7 +61,7 @@ export class QuotesController {
             userId_idempotencyKey: { userId: req.user.id, idempotencyKey: body.idempotencyKey },
           },
           include: {
-            work: { include: workInclude },
+            work: customerWork,
             items: true,
             order: { select: { id: true, number: true } },
           },
@@ -109,7 +109,7 @@ export class QuotesController {
           },
         },
         include: {
-          work: { include: workInclude },
+          work: customerWork,
           items: true,
           order: { select: { id: true, number: true } },
         },
@@ -117,10 +117,12 @@ export class QuotesController {
     });
   }
   @Admin() @Get('admin/quotes') async all(@Query() query: Record<string, string>) {
-    const status = z
+    const parsed = z
       .enum(['REQUESTED', 'SENT', 'ACCEPTED', 'REJECTED', 'EXPIRED'])
       .optional()
-      .parse(query.status);
+      .safeParse(query.status);
+    if (!parsed.success) fail('INVALID_INPUT', 'Choose a valid quote status.');
+    const status = parsed.data;
     const page = paginate(query, `admin-quotes:${status || ''}`);
     const quotes = await this.db.quote.findMany({
       where: { ...page.after, ...(status ? { status } : {}) },
@@ -451,7 +453,7 @@ export class QuotesController {
           decisionNote: note,
         },
         include: {
-          work: { include: workInclude },
+          work: ownerId ? customerWork : { include: workInclude },
           items: true,
           order: { select: { id: true, number: true } },
         },

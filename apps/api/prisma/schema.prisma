@@ -76,18 +76,22 @@ model User {
 }
 
 model Session {
-  label            String    @default("Unknown device")
-  lastSeenAt       DateTime  @default(now())
-  adminVerifiedAt  DateTime?
-  id               String    @id @default(cuid())
-  userId           String
-  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  accessHash       String    @unique
-  refreshHash      String    @unique
-  expiresAt        DateTime
-  refreshExpiresAt DateTime
-  createdAt        DateTime  @default(now())
-  devices          Device[]
+  label                String    @default("Unknown device")
+  lastSeenAt           DateTime  @default(now())
+  adminVerifiedAt      DateTime?
+  id                   String    @id @default(cuid())
+  userId               String
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessHash           String    @unique
+  refreshHash          String    @unique
+  // The refresh token replaced by the latest rotation: a retry before previousRefreshUntil still
+  // refreshes (the reply was lost); presenting it later revokes the session (token reuse).
+  previousRefreshHash  String?   @unique
+  previousRefreshUntil DateTime?
+  expiresAt            DateTime
+  refreshExpiresAt     DateTime
+  createdAt            DateTime  @default(now())
+  devices              Device[]
 
   @@index([userId])
 }
