@@ -499,11 +499,12 @@ function DeleteAccount() {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<{ code: string; text: string } | null>(null);
   async function remove() {
-    if (confirmation !== 'DELETE') return;
+    // Typed confirmation, forgiving case and spaces (phone keyboards capitalise and pad).
+    if (confirmation.trim().toUpperCase() !== 'DELETE') return;
     setBusy(true);
     setProblem(null);
     try {
-      await customerApi('/me/delete', 'POST', { confirmation }, id);
+      await customerApi('/me/delete', 'POST', { confirmation: 'DELETE' }, id);
     } catch (e) {
       if (live()) {
         setProblem({
@@ -516,8 +517,9 @@ function DeleteAccount() {
     }
     // Drafts, pending requests and recovery records saved for this account on this browser.
     try {
-      for (const key of Object.keys(localStorage))
-        if (key.startsWith('shiv_') && key.includes(id)) localStorage.removeItem(key);
+      for (const store of [localStorage, sessionStorage])
+        for (const key of Object.keys(store))
+          if (key.startsWith('shiv_') && key.includes(id)) store.removeItem(key);
     } catch {
       /* Storage blocked: nothing was kept. */
     }
@@ -543,7 +545,7 @@ function DeleteAccount() {
           <p>
             {t(
               'Deletion removes your profile, addresses, basket and sign-ins on every phone. Order records without your details stay for the shop’s accounts. Finish open orders first. This cannot be undone.',
-              'खाता हटाने से आपकी प्रोफ़ाइल, पते, टोकरी और सभी फ़ोन से साइन इन हट जाएँगे। आपकी जानकारी के बिना ऑर्डर का हिसाब दुकान के खातों में रहेगा। पहले खुले ऑर्डर पूरे करें। यह वापस नहीं होगा।',
+              'खाता हटाने से आपकी प्रोफ़ाइल, पते, टोकरी और सभी फ़ोन से साइन इन हट जाएँगे। आपकी जानकारी के बिना ऑर्डर का हिसाब दुकान के रिकॉर्ड में रहेगा। पहले खुले ऑर्डर पूरे करें। यह वापस नहीं होगा।',
             )}
           </p>
           <label>
@@ -554,6 +556,7 @@ function DeleteAccount() {
               spellCheck={false}
               value={confirmation}
               onChange={(e) => setConfirmation(e.target.value)}
+              autoFocus
             />
           </label>
           {problem && (
@@ -567,7 +570,10 @@ function DeleteAccount() {
             </p>
           )}
           <div className="action-row">
-            <button className="button" disabled={busy || confirmation !== 'DELETE'}>
+            <button
+              className="button"
+              disabled={busy || confirmation.trim().toUpperCase() !== 'DELETE'}
+            >
               {busy
                 ? t('Please wait…', 'कृपया रुकें…')
                 : t('Permanently delete my account', 'मेरा खाता हमेशा के लिए हटाएँ')}

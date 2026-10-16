@@ -3,7 +3,9 @@
 //   node scripts/demo.mjs prepare            add the sample catalogue, customers, orders and quote
 //   node scripts/demo.mjs reset              remove exactly what prepare added (and demo-customer activity)
 //   node scripts/demo.mjs snapshot <file>    pg_dump the target database to <file>
-//   node scripts/demo.mjs restore <file> --yes   replace the target database with <file>
+//   node scripts/demo.mjs restore <file> --yes [--runtime-role=<role>]
+//                                            replace the target database with <file>; on staging
+//                                            the API role's grants are reapplied (required there)
 //
 // DATABASE_URL names the target and must pass demoTarget() (scripts/demo-lib.mjs): a database
 // ending in _test, or DEMO_TARGET=staging with "staging" in the database name. Use the migration
@@ -14,11 +16,11 @@
 import { existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { orderStatusText, totals } from '@shiv/shared';
 import {
   DEMO_ACTOR,
-  DEMO_PHONE_PREFIX,
+  demoPhones,
   PRACTICE_PINCODE,
   demoTarget,
   istDate,
@@ -52,8 +54,8 @@ async function takeStock(tx, productId, quantity) {
   if (!changed.count) throw new Error(`Not enough sample stock for ${productId}.`);
 }
 
-export async function prepare(db, { Prisma, log = console.log } = {}) {
-  const data = sampleData();
+export async function prepare(db, { Prisma, log = console.log, phones } = {}) {
+  const data = sampleData(phones);
   const hindi = supportsHindi(Prisma);
   if (!hindi)
     log(
@@ -297,7 +299,6 @@ export async function reset(db, { log = console.log } = {}) {
     const customers = await tx.user.findMany({
       where: {
         id: { in: data.customers.map((c) => c.id) },
-        phone: { startsWith: DEMO_PHONE_PREFIX },
       },
       select: { id: true, phone: true },
     });
@@ -456,8 +457,16 @@ export function snapshot(target, file) {
   return path;
 }
 
-export function restore(target, file, confirmed) {
-  if (!file) throw new Error('Usage: demo.mjs restore <file> --yes');
+export function restore(target, file, confirmed, runtimeRole) {
+  if (!file) throw new Error('Usage: demo.mjs restore <file> --yes [--runtime-role=<role>]');
+  // The dump carries no privileges, so restoring drops the runtime role's grants. Staging must
+  // have them back before the API is used again (scripts/runtime-grants.sql).
+  if (target.staging && !runtimeRole)
+    throw new Error(
+      'On staging, name the API login role: --runtime-role=<role> (its grants are reapplied after the restore).',
+    );
+  if (runtimeRole && !/^[A-Za-z_][A-Za-z0-9_]{0,62}$/.test(runtimeRole))
+    throw new Error('--runtime-role must be a plain role name.');
   const path = resolve(file);
   if (!existsSync(path)) throw new Error(`${path} does not exist.`);
   if (!confirmed)
@@ -479,6 +488,25 @@ export function restore(target, file, confirmed) {
     ],
     target,
   );
+  if (runtimeRole)
+    runPg(
+      'psql',
+      [
+        '-v',
+        'ON_ERROR_STOP=1',
+        '-v',
+        `database=${target.database}`,
+        '-v',
+        `migration_role=${target.pgEnv.PGUSER}`,
+        '-v',
+        `runtime_role=${runtimeRole}`,
+        '-f',
+        fileURLToPath(new URL('runtime-grants.sql', import.meta.url)),
+        '--dbname',
+        target.database,
+      ],
+      target,
+    );
   return path;
 }
 
@@ -495,15 +523,18 @@ async function main(argv) {
   console.log(`Demo target: ${target.label}`);
   if (command === 'snapshot') return console.log(`Snapshot written to ${snapshot(target, file)}`);
   if (command === 'restore')
-    return console.log(`Restored from ${restore(target, file, argv.includes('--yes'))}`);
+    return console.log(
+      `Restored from ${restore(target, file, argv.includes('--yes'), argv.find((arg) => arg.startsWith('--runtime-role='))?.slice(15))}`,
+    );
   const { PrismaClient, Prisma } = await import('@prisma/client');
   const db = new PrismaClient({ datasourceUrl: target.url });
   try {
     if (command === 'prepare') {
-      const made = await prepare(db, { Prisma });
+      const phones = demoPhones(process.env, target.staging);
+      const made = await prepare(db, { Prisma, phones });
       console.log(`Sample data ready (new rows: ${JSON.stringify(made)}).`);
       console.log(
-        `Practice pincode ${PRACTICE_PINCODE}; demo customers ${DEMO_PHONE_PREFIX}01–03. Run "reset" to remove them.`,
+        `Practice pincode ${PRACTICE_PINCODE}; demo customers ${phones.join(', ')}. Run "reset" to remove them.`,
       );
     } else console.log(`Sample data removed: ${JSON.stringify(await reset(db))}.`);
   } finally {

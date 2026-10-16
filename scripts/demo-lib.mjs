@@ -2,8 +2,10 @@
 // Pure parts of the family-review demo tooling (scripts/demo.mjs): the database guard and the
 // sample data. Nothing here touches a database or the network, so tests can check them directly.
 
-// Every row prepare creates is tagged: ids start with this prefix and customer phones sit in the
-// +91 99000 901xx block. Reset deletes only these (and what demo customers did during the demo).
+// Every row prepare creates is tagged: ids start with this prefix, and reset deletes only these
+// (and what demo customers did during the demo). On a local _test database the demo customers
+// use the +91 99000 901xx block; on staging they must be numbers the family approved (DEMO_PHONES),
+// because staging sends real SMS and WhatsApp messages to whatever number an order carries.
 export const DEMO_PREFIX = 'demo-';
 export const DEMO_PHONE_PREFIX = '+9199000901';
 export const DEMO_ACTOR = 'demo-script';
@@ -43,6 +45,7 @@ export function demoTarget(env = process.env) {
     );
   return {
     url: env.DATABASE_URL,
+    staging,
     database,
     host: url.hostname,
     port: url.port || '5432',
@@ -333,6 +336,32 @@ const quote = {
 };
 
 /** The whole sample set, as plain data; demo.mjs writes it and the tests check its invariants. */
-export function sampleData() {
-  return structuredClone({ categories, products, zone, customers, orders, quote });
+/**
+ * The three demo customers' phones. Staging requires DEMO_PHONES: three comma-separated
+ * family-approved numbers (+91…), never strangers' numbers.
+ */
+export function demoPhones(env = process.env, staging = false) {
+  const listed = (env.DEMO_PHONES || '')
+    .split(',')
+    .map((phone) => phone.trim())
+    .filter(Boolean);
+  if (!listed.length) {
+    if (staging)
+      throw new Error(
+        'Set DEMO_PHONES to three family-approved mobile numbers (+91…, comma-separated): staging sends real SMS and WhatsApp messages.',
+      );
+    return customers.map((c) => c.phone);
+  }
+  if (listed.length !== 3 || listed.some((phone) => !/^\+91[6-9]\d{9}$/.test(phone)))
+    throw new Error('DEMO_PHONES must be exactly three +91 mobile numbers, comma-separated.');
+  return listed;
+}
+
+export function sampleData(phones = customers.map((c) => c.phone)) {
+  const data = structuredClone({ categories, products, zone, customers, orders, quote });
+  data.customers.forEach((c, i) => {
+    c.phone = phones[i];
+    c.address.phone = phones[i];
+  });
+  return data;
 }

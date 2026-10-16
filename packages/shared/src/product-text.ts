@@ -16,7 +16,8 @@ export const productDescription = (product: Described, language: Language) =>
 // come first so "tonne" is not read as "ton" + "ne".
 const unitWords: [spellings: string[], hindi: string][] = [
   [['cubic feet', 'cubic foot', 'cu ft', 'cft'], 'घन फ़ुट'],
-  [['square feet', 'square foot', 'sq ft', 'sqft'], 'वर्ग फ़ुट'],
+  [['square feet', 'square foot', 'sq ft'], 'वर्ग फ़ुट'],
+  [['square metre', 'square meter', 'sq m'], 'वर्ग मीटर'],
   [['quintal', 'qtl'], 'क्विंटल'],
   [['tonne', 'ton'], 'टन'],
   [['kilogram', 'kilo', 'kg'], 'किलो'],
@@ -29,7 +30,9 @@ const unitWords: [spellings: string[], hindi: string][] = [
   [['brick'], 'ईंट'],
 ];
 const hindiFor = new Map(
-  unitWords.flatMap(([spellings, hindi]) => spellings.map((s) => [s, hindi] as const)),
+  unitWords.flatMap(([spellings, hindi]) =>
+    spellings.map((s) => [s.replace(/ /g, ''), hindi] as const),
+  ),
 );
 const spelling = (s: string) => s.replace(/ /g, '\\.?\\s*');
 // A known unit word on its own (not inside another word), in any case, singular or plural:
@@ -48,7 +51,7 @@ export function unitLabel(unit: string, language: Language): string {
   if (language !== 'hi') return unit;
   return unit.replace(
     unitPattern,
-    // "Sq. Ft", "cu.ft" and "cu  ft" all look up as "sq ft" / "cu ft".
-    (match, word: string) => hindiFor.get(word.toLowerCase().replace(/[.\s]+/g, ' ')) ?? match,
+    // "Sq. Ft", "cu.ft", "cuft" and "cu  ft" all look up as "sqft" / "cuft".
+    (match, word: string) => hindiFor.get(word.toLowerCase().replace(/[.\s]+/g, '')) ?? match,
   );
 }

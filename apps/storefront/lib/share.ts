@@ -1,4 +1,4 @@
-import { orderStatusText, type Language, type Order } from '@shiv/shared';
+import { orderStatusText, unitLabel, type Language, type Order } from '@shiv/shared';
 import { price } from './catalog';
 
 export type ShareableOrder = Pick<
@@ -21,7 +21,8 @@ export function orderShareText(order: ShareableOrder, language: Language): strin
     `${hi ? 'ऑर्डर' : 'Order'} ${order.number}`,
     `${hi ? 'स्थिति' : 'Status'}: ${orderStatusText(order.status, language)}`,
     ...order.items.map(
-      (item) => `${item.name} × ${item.quantity} ${item.unit} = ${price(item.lineTotalPaise)}`,
+      (item) =>
+        `${item.name} × ${item.quantity} ${unitLabel(item.unit, language)} = ${price(item.lineTotalPaise)}`,
     ),
     `${hi ? 'डिलीवरी' : 'Delivery'}: ${price(order.deliveryFeePaise)}`,
     `${hi ? 'कुल' : 'Total'}: ${price(order.totalPaise)}`,

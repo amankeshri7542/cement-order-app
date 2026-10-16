@@ -7,9 +7,11 @@ import {
   DEMO_PHONE_PREFIX,
   DEMO_PREFIX,
   PRACTICE_PINCODE,
+  demoPhones,
   demoTarget,
   sampleData,
 } from './demo-lib.mjs';
+import { restore } from './demo.mjs';
 import { preflight, preflightArgs, table } from './demo-preflight.mjs';
 
 const url = (db, host = '127.0.0.1') => `postgresql://owner:s3cret-pw@${host}:5432/${db}`;
@@ -51,6 +53,30 @@ test('demo guard accepts only *_test databases, or staging with DEMO_TARGET=stag
       JSON.stringify(env),
     );
   }
+});
+
+test('staging demo customers use family-approved numbers and restore reapplies grants', () => {
+  assert.throws(() => demoPhones({}, true), /DEMO_PHONES/);
+  assert.throws(() => demoPhones({ DEMO_PHONES: '+919876543210' }, true), /exactly three/);
+  const approved = '+919876543210, +919876543211,+919876543212';
+  const phones = demoPhones({ DEMO_PHONES: approved }, true);
+  assert.deepEqual(phones, ['+919876543210', '+919876543211', '+919876543212']);
+  const data = sampleData(phones);
+  assert.deepEqual(
+    data.customers.map((c) => [c.phone, c.address.phone]),
+    phones.map((p) => [p, p]),
+  );
+  // Local _test databases keep the sample block without any setting.
+  assert(demoPhones({}, false).every((p) => p.startsWith(DEMO_PHONE_PREFIX)));
+  const staging = demoTarget({
+    DATABASE_URL: url('shiv_staging', 'db.example'),
+    DEMO_TARGET: 'staging',
+  });
+  assert.throws(() => restore(staging, import.meta.filename, true), /--runtime-role/);
+  assert.throws(
+    () => restore(staging, import.meta.filename, true, 'x; DROP ROLE y'),
+    /plain role name/,
+  );
 });
 
 test('sample catalogue is clearly labelled, bilingual and sellable', () => {

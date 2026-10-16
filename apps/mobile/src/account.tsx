@@ -453,7 +453,7 @@ export function Account() {
               <Notice>
                 {t(
                   'Deletion removes your profile, addresses, basket and sign-ins on every phone. Order records without your details stay for the shop’s accounts. Finish open orders first. This cannot be undone.',
-                  'खाता हटाने से आपकी प्रोफ़ाइल, पते, टोकरी और सभी फ़ोन से साइन इन हट जाएँगे। आपकी जानकारी के बिना ऑर्डर का हिसाब दुकान के खातों में रहेगा। पहले खुले ऑर्डर पूरे करें। यह वापस नहीं होगा।',
+                  'खाता हटाने से आपकी प्रोफ़ाइल, पते, टोकरी और सभी फ़ोन से साइन इन हट जाएँगे। आपकी जानकारी के बिना ऑर्डर का हिसाब दुकान के रिकॉर्ड में रहेगा। पहले खुले ऑर्डर पूरे करें। यह वापस नहीं होगा।',
                 )}
               </Notice>
               <Field
