@@ -123,3 +123,31 @@ test('a Hindi name saved on the desk reaches Hindi readers; English is unchanged
   await expect(card).toContainText('/ bag');
   await expect(card).not.toContainText(nameHi);
 });
+
+test('the app shows the Hindi name and unit to Hindi readers', async ({ browser }) => {
+  const db = database();
+  try {
+    await db.product.update({ where: { id: productId }, data: { nameHi, descriptionHi } });
+  } finally {
+    await db.$disconnect();
+  }
+  // A fresh phone that chose Hindi on first launch.
+  const context = await browser.newContext();
+  await context.addInitScript(() => localStorage.setItem('shiv_language', '"hi"'));
+  const page = await context.newPage();
+  await page.goto('http://localhost:8082');
+  await page.getByRole('tab', { name: 'सामग्री', exact: true }).click();
+  const search = page.getByRole('textbox', { name: 'सामग्री खोजें', exact: true });
+  await expect(
+    page.getByText(/^\d+ (materials?|सामग्री)( · (more below|नीचे और))?$/),
+  ).toBeVisible();
+  await expect(async () => {
+    await search.fill('हिन्दी सीमेंट');
+    await expect(search).toHaveValue('हिन्दी सीमेंट', { timeout: 1000 });
+  }).toPass();
+  const row = page.getByTestId(`product-${productId}`);
+  await expect(row).toContainText(nameHi);
+  await expect(row).toContainText('बोरी');
+  await expect(row).not.toContainText('/ bag');
+  await context.close();
+});

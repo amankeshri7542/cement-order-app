@@ -118,7 +118,9 @@ export const customerFeatures: readonly CustomerFeature[] = [
     en: 'Share an order summary on WhatsApp',
     hi: 'ऑर्डर का सारांश WhatsApp पर भेजें',
     app: ['tests/app-account.spec.ts › an order summary can be shared'],
-    web: ['tests/storefront-account.spec.ts'],
+    web: [
+      'tests/storefront-account.spec.ts › each order can be shared on WhatsApp without the delivery address',
+    ],
   },
   {
     id: 'bulk-quote',
@@ -166,20 +168,36 @@ export const customerFeatures: readonly CustomerFeature[] = [
     en: 'Edit name and profile',
     hi: 'नाम और प्रोफ़ाइल बदलें',
     app: ['tests/app-account.spec.ts › the profile name can be changed'],
-    web: ['tests/storefront-account.spec.ts'],
+    web: [
+      'tests/storefront-account.spec.ts › a customer edits their name on the website and it stays after reload',
+    ],
   },
   {
     id: 'devices',
     en: 'See signed-in devices and sign one out',
     hi: 'साइन इन वाले फ़ोन देखें और किसी से साइन आउट करें',
     app: ['tests/app-account.spec.ts › another signed-in phone can be signed out'],
-    web: ['tests/storefront-account.spec.ts'],
+    web: [
+      'tests/storefront-account.spec.ts › signed-in devices mark this browser and sign out another phone',
+    ],
   },
   {
     id: 'delete-account',
     en: 'Delete the account (after open orders finish)',
     hi: 'खाता हटाएँ (खुले ऑर्डर पूरे होने के बाद)',
     app: ['tests/app-account.spec.ts › the account can be deleted once no order is open'],
-    web: ['tests/storefront-account.spec.ts'],
+    web: [
+      'tests/storefront-account.spec.ts › deleting the account is refused while an order is open',
+      'tests/storefront-account.spec.ts › deleting an account with no open orders signs out and returns home',
+    ],
+  },
+  {
+    id: 'hindi-catalogue',
+    en: 'Hindi product names and units',
+    hi: 'सामग्री के हिन्दी नाम और इकाई',
+    app: ['tests/catalogue-hindi.spec.ts › the app shows the Hindi name and unit to Hindi readers'],
+    web: [
+      'tests/catalogue-hindi.spec.ts › a Hindi name saved on the desk reaches Hindi readers; English is unchanged',
+    ],
   },
 ];
