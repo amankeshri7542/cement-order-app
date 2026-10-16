@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import type { Address, AddressInput, User } from '@shiv/shared';
 import { addressSchema } from '@shiv/shared';
-import { customerApi } from '../lib/customer-api';
+import { customerApi, localPhone } from '../lib/customer-api';
 import { useCommerce } from './commerce';
 import { useLanguage } from './language';
 
@@ -184,7 +184,7 @@ export function AccountPage() {
               pattern="(\+91)?[6-9][0-9]{9}"
               disabled={!c.ready || sent || busy}
               value={phone}
-              onChange={(e) => setPhone(e.target.value)}
+              onChange={(e) => setPhone(localPhone(e.target.value))}
             />
           </label>
           {sent && (

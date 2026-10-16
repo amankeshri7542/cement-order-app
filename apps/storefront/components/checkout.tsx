@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import type { CheckoutReview, Order } from '@shiv/shared';
-import { placeOrderSchema } from '@shiv/shared';
+import { deliveryDateOptions, placeOrderSchema } from '@shiv/shared';
 import { useCommerce, saved, persist } from './commerce';
 import { AccountRequired, AddressBook } from './account';
 import { customerApi, CustomerError } from '../lib/customer-api';
@@ -41,7 +41,8 @@ function Checkout() {
   const router = useRouter();
   const id = c.user!.id;
   const [addressId, setAddress] = useState('');
-  const [date, setDate] = useState(new Date(Date.now() + 86400000).toISOString().slice(0, 10));
+  // Tomorrow in Patna: between 00:00 and 05:30 IST the UTC date is still yesterday there.
+  const [date, setDate] = useState(() => deliveryDateOptions(new Date(), 1, 1)[0]!);
   const [notes, setNotes] = useState('');
   const [review, setReview] = useState<CheckoutReview | null>(null);
   const [consent, setConsent] = useState(false);
@@ -63,7 +64,8 @@ function Checkout() {
     setReview(null);
     setConsent(false);
   }
-  useLiveRefresh(invalidate);
+  // Only a catalogue, price or store change drops the review; returning to the tab keeps it.
+  useLiveRefresh(invalidate, { messagesOnly: true });
   useEffect(() => {
     invalidate();
     setLoaded(false);
@@ -133,7 +135,8 @@ function Checkout() {
         if (current()) c.showError(error);
       });
       if (!current()) return;
-      router.push(`/orders/${encodeURIComponent(order.id)}?confirmed=1`);
+      // Replace, so Back from the confirmation does not return to an emptied checkout.
+      router.replace(`/orders/${encodeURIComponent(order.id)}?confirmed=1`);
     } catch (e) {
       if (!current()) return;
       if (e instanceof CustomerError && rejected.has(e.code)) {

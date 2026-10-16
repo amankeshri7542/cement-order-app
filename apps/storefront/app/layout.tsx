@@ -5,7 +5,6 @@ import type { ReactNode } from 'react';
 import { LanguageProvider } from '../components/language';
 import { Header, Footer } from '../components/shell';
 import { CommerceAlert, CommerceProvider, CommerceFeedback } from '../components/commerce';
-import { AssistantLauncher } from '../components/assistant-launcher';
 import './globals.css';
 
 // Self-hosted condensed display face for Latin headings on every device. Devanagari falls back
@@ -42,7 +41,6 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
             </main>
             <Footer />
             <CommerceFeedback />
-            <AssistantLauncher />
           </CommerceProvider>
         </LanguageProvider>
       </body>

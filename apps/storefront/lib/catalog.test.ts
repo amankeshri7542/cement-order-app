@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { deliveryDateOptions } from '@shiv/shared';
 import { categoryResponse, deliveryResponse, productResponse } from './api';
 import {
   MAX_PAGES,
@@ -10,6 +11,7 @@ import {
   readQuery,
   uniqueProducts,
 } from './catalog';
+import { localPhone } from './customer-api';
 
 // Isolated synthetic contract fixture: never used as storefront fallback content.
 const fixture = {
@@ -159,4 +161,28 @@ test('rate board keeps the cheapest in-stock item per material with its own sell
     ratesFrom(['a', 'b', 'c', 'd', 'e', 'f'].map((slug) => item(slug, slug, 100, 1))).length,
     5,
   );
+});
+
+test('sign-in phone accepts autofilled and pasted Indian mobile formats', () => {
+  for (const value of [
+    '9876543210',
+    '+91 98765 43210',
+    '+91-98765-43210',
+    '098765 43210',
+    '0091 98765 43210',
+    '919876543210',
+    '(98765) 43210',
+  ])
+    assert.equal(localPhone(value), '9876543210', value);
+  // Ten-digit numbers that start with 91 and half-typed prefixes stay as typed.
+  assert.equal(localPhone('9198765432'), '9198765432');
+  assert.equal(localPhone('+91'), '+91');
+  assert.equal(localPhone('0'), '0');
+  assert.equal(localPhone('98765abc'), '98765abc');
+});
+
+test('checkout default delivery date is tomorrow in Patna, not tomorrow in UTC', () => {
+  // 01:30 IST on 17 Oct is still 16 Oct in UTC.
+  assert.deepEqual(deliveryDateOptions(new Date('2026-10-16T20:00:00Z'), 1, 1), ['2026-10-18']);
+  assert.deepEqual(deliveryDateOptions(new Date('2026-10-16T12:00:00Z'), 1, 1), ['2026-10-17']);
 });

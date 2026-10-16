@@ -71,6 +71,18 @@ export async function customerApi<T>(
     );
   return data as T;
 }
+/**
+ * The ten-digit part of an Indian mobile as typed, pasted or autofilled: "+91 98765 43210",
+ * "098765-43210" and "(0091) 98765 43210" all become "9876543210". A prefix is dropped only
+ * once a digit follows, so typing "+91" by hand is not erased mid-entry.
+ */
+export function localPhone(value: string) {
+  return value
+    .replace(/[\s().-]/g, '')
+    .replace(/^(?:\+91|0091)(?=\d)/, '')
+    .replace(/^91(?=[6-9]\d{9}$)/, '')
+    .replace(/^0(?=[6-9])/, '');
+}
 // Messages come from the catalogue shared with the Android app (@shiv/shared errors.ts).
 export function errorText(error: unknown, hi: boolean) {
   return error instanceof CustomerError

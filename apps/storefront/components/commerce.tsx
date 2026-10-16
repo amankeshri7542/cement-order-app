@@ -54,10 +54,27 @@ export function saved<T>(key: string): T | null {
     return null;
   }
 }
+// A failed save throws so the caller can stop before sending a request it could not keep for
+// recovery. Clearing never throws: it runs after the server confirmed the result.
 export function persist(key: string, value: unknown) {
-  if (value === null) localStorage.removeItem(key);
-  else localStorage.setItem(key, JSON.stringify(value));
+  if (value !== null) localStorage.setItem(key, JSON.stringify(value));
+  else
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      /* A stale record is replayed safely by its idempotency key. */
+    }
 }
+/** Cross-tab signals and other hints whose loss must never interrupt sign-in or sign-out. */
+function remember(key: string, value: unknown) {
+  try {
+    persist(key, value);
+  } catch {
+    /* Other tabs notice on their next focus check instead. */
+  }
+}
+// A second tap on Add within this window is the same intent, not another pack.
+const REPEAT_ADD_MS = 600;
 
 function useCommerceValue() {
   const { language, t } = useLanguage();
@@ -89,6 +106,15 @@ function useCommerceValue() {
   const sessionRequest = useRef(0);
   const mergeLock = useRef(false);
   const [compare, setCompare] = useState<Product[]>([]);
+  const lastGuestAdd = useRef({ productId: '', at: 0 });
+  // Products that left the catalogue cannot be compared; the compare page drops them.
+  const dropCompare = useCallback((ids: string[]) => {
+    setCompare((old) => {
+      const next = old.filter((item) => !ids.includes(item.id));
+      keepCompare(next);
+      return next;
+    });
+  }, []);
   useEffect(() => {
     try {
       const saved = compareSchema.safeParse(JSON.parse(sessionStorage.getItem(compareKey) || '[]'));
@@ -132,8 +158,12 @@ function useCommerceValue() {
       mergeRef.current = pending?.success ? pending.data : null;
       if (next && next.role !== 'ADMIN' && !mergeRef.current && guestRef.current?.lines.length) {
         const draft = { ...guestRef.current, uncertain: false };
-        persist(`shiv_guest_merge_${next.id}`, draft);
-        updateGuest(fresh());
+        try {
+          persist(`shiv_guest_merge_${next.id}`, draft);
+          updateGuest(fresh());
+        } catch {
+          /* The draft stays in memory; the guest basket stays saved until the merge succeeds. */
+        }
         mergeRef.current = draft;
       }
       setMergeDraft(mergeRef.current);
@@ -311,10 +341,14 @@ function useCommerceValue() {
           (line) => !own.lines.some((old) => old.product.id === line.product.id),
         ),
       ].slice(0, 50);
-      updateQuote({ key: crypto.randomUUID(), lines });
-      persist('shiv_quote_intent_guest', null);
+      try {
+        updateQuote({ key: crypto.randomUUID(), lines });
+        persist('shiv_quote_intent_guest', null);
+      } catch {
+        /* The guest list stays saved and joins this account on the next sign-in. */
+      }
     }
-    persist('shiv_account_signal', crypto.randomUUID());
+    remember('shiv_account_signal', crypto.randomUUID());
     await merge();
     await refresh().catch(showError);
   }
@@ -324,8 +358,10 @@ function useCommerceValue() {
       await tail.current.catch(() => {});
       await customerApi('/auth/logout', 'POST', {});
       identify(null);
-      updateQuote(fresh());
-      persist('shiv_account_signal', crypto.randomUUID());
+      persist('shiv_quote_intent_guest', null);
+      quoteRef.current = fresh();
+      setQuote(quoteRef.current);
+      remember('shiv_account_signal', crypto.randomUUID());
       setMessage(t('Signed out.', 'साइन आउट हो गया।'));
     } catch (e) {
       showError(e);
@@ -354,6 +390,13 @@ function useCommerceValue() {
       return;
     }
     if (!owner) {
+      // Guests save instantly with no busy state, so a double tap would add the pack twice.
+      const now = Date.now();
+      if (add) {
+        const last = lastGuestAdd.current;
+        if (last.productId === product.id && now - last.at < REPEAT_ADD_MS) return;
+        lastGuestAdd.current = { productId: product.id, at: now };
+      }
       const intent = guestRef.current || fresh();
       const old = intent.lines.find((line) => line.product.id === product.id)?.quantity || 0;
       const next = add ? old + value : value;
@@ -475,6 +518,7 @@ function useCommerceValue() {
       keepCompare([]);
       setCompare([]);
     },
+    dropCompare,
   };
 }
 const Commerce = createContext<ReturnType<typeof useCommerceValue> | null>(null);
@@ -569,6 +613,7 @@ export function BuyActions({ product }: { product: Product }) {
   const c = useCommerce();
   const { t } = useLanguage();
   const [quantity, setQuantity] = useState(product.minQuantity);
+  const unavailable = product.stock < product.minQuantity;
   return (
     <div className="buy-actions">
       <Quantity
@@ -580,12 +625,16 @@ export function BuyActions({ product }: { product: Product }) {
       />
       <button
         className="button"
-        disabled={!c.ready || c.busy || c.mergePending || product.stock < product.minQuantity}
+        disabled={!c.ready || c.busy || c.mergePending || unavailable}
         onClick={async () => {
           await c.quantity(product, quantity, true);
         }}
       >
-        {t('Add to basket', 'टोकरी में जोड़ें')}
+        {product.stock <= 0
+          ? t('Out of stock', 'स्टॉक नहीं')
+          : unavailable
+            ? t('Not enough stock', 'पर्याप्त स्टॉक नहीं')
+            : t('Add to basket', 'टोकरी में जोड़ें')}
       </button>
       {product.stock > 0 && product.stock < product.minQuantity && (
         <p>
