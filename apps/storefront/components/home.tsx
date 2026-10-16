@@ -2,7 +2,6 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useLanguage } from './language';
-import { MaterialArt } from './material-art';
 import { Catalogue } from './catalogue';
 import { Delivery } from './delivery';
 import { ShopContent } from './shop-content';
@@ -26,14 +25,11 @@ export function Home() {
   return (
     <>
       <section className="hero" aria-labelledby="hero-title">
+        <h1 id="hero-title">
+          <span>{t('Building materials,', 'निर्माण सामग्री,')}</span>{' '}
+          <span>{t('every rate in plain sight.', 'हर भाव साफ़-साफ़।')}</span>
+        </h1>
         <div className="hero-copy">
-          <p className="hero-kicker">
-            {t('Family materials shop · Patna, Bihar', 'पारिवारिक सामग्री दुकान · पटना, बिहार')}
-          </p>
-          <h1 id="hero-title">
-            <span>{t('Building materials,', 'निर्माण सामग्री,')}</span>
-            <span>{t('every rate in plain sight.', 'हर भाव साफ़-साफ़।')}</span>
-          </h1>
           <p className="hero-description">
             {t(
               'Cement, steel, bricks and sand with the selling unit beside every price. Order for your home with cash on delivery, or send a site list for a written quotation.',
@@ -57,11 +53,9 @@ export function Home() {
       </section>
       <section className="buying-routes" aria-labelledby="routes-title">
         <h2 id="routes-title">{t('Two ways to buy.', 'खरीदने के दो तरीके।')}</h2>
+        {/* The home counter is a parchi slip; the site counter answers on the shop letterhead. */}
         <div className="route route-retail">
           <div className="route-head">
-            <span className="route-art" aria-hidden="true">
-              <MaterialArt category="cement" />
-            </span>
             <div>
               <h3>{t('For your home', 'घर के काम के लिए')}</h3>
               <p>{t('A few bags to a few hundred.', 'कुछ बोरी से कुछ सौ तक।')}</p>
@@ -84,14 +78,14 @@ export function Home() {
               {t('Pay cash when the material arrives.', 'सामग्री पहुँचने पर नकद भुगतान करें।')}
             </li>
           </ul>
-          <Link className="text-link" href="/products">
+          <Link className="button" href="/products">
             {t('Shop materials', 'सामग्री खरीदें')} <span aria-hidden="true">→</span>
           </Link>
         </div>
         <div className="route route-bulk">
           <div className="route-head">
-            <span className="route-art" aria-hidden="true">
-              <MaterialArt category="steel" />
+            <span className="brand-stamp" aria-hidden="true">
+              शिव
             </span>
             <div>
               <h3>{t('For your site', 'साइट के काम के लिए')}</h3>
@@ -120,7 +114,7 @@ export function Home() {
               )}
             </li>
           </ul>
-          <Link className="text-link" href="/quotes">
+          <Link className="button secondary" href="/quotes">
             {t('Request bulk quote', 'थोक भाव माँगें')} <span aria-hidden="true">→</span>
           </Link>
         </div>
@@ -131,7 +125,7 @@ export function Home() {
           className="brands-section"
           aria-label={t('Brands in the current catalogue', 'मौजूदा सूची के ब्रांड')}
         >
-          <p className="eyebrow">{t('Brands in our catalogue', 'हमारी सामग्री सूची के ब्रांड')}</p>
+          <h2>{t('Brands in our catalogue', 'हमारी सामग्री सूची के ब्रांड')}</h2>
           <div>
             {brands.slice(0, 10).map((brand) => (
               <Link href={`/products?brand=${encodeURIComponent(brand)}`} key={brand}>
@@ -185,7 +179,6 @@ export function CatalogueHeading() {
   const { t } = useLanguage();
   return (
     <div className="page-heading">
-      <p className="eyebrow">{t('Shiv Cement Store · Patna', 'शिव सीमेंट स्टोर · पटना')}</p>
       <h1>{t('The materials counter.', 'सामग्री का काउंटर।')}</h1>
       <p>
         {t(

@@ -169,10 +169,7 @@ export function Catalogue({ preview = false }: { preview?: boolean }) {
     >
       {preview ? (
         <div className="section-heading">
-          <div>
-            <p className="eyebrow">{t('From the catalogue', 'सामग्री सूची से')}</p>
-            <h2>{t('Find what your site needs.', 'आपके काम की सामग्री।')}</h2>
-          </div>
+          <h2>{t('Find what your site needs.', 'आपके काम की सामग्री।')}</h2>
           <Link className="text-link" href="/products">
             {t('All materials', 'सारी सामग्री')} <span aria-hidden="true">↗</span>
           </Link>

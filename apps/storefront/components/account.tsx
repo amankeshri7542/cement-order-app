@@ -30,7 +30,6 @@ export function AccountRequired({
     // Offline or outage: the customer may well be signed in, so do not ask them to sign in again.
     return (
       <section className="account-gate" role="status">
-        <p className="eyebrow">{t('Your customer account', 'आपका ग्राहक खाता')}</p>
         <Heading>
           {t('We could not confirm your sign-in.', 'आपका साइन इन जाँचा नहीं जा सका।')}
         </Heading>
@@ -48,7 +47,6 @@ export function AccountRequired({
   if (!c.user)
     return (
       <section className="account-gate">
-        <p className="eyebrow">{t('Your customer account', 'आपका ग्राहक खाता')}</p>
         <Heading>{t('Pick up where you left off.', 'जहाँ रुके थे, वहीं से शुरू करें।')}</Heading>
         <p>
           {t(
@@ -136,7 +134,6 @@ export function AccountPage() {
   return (
     <div className="account-page">
       <div className="page-heading">
-        <p className="eyebrow">{t('Your account', 'आपका खाता')}</p>
         <h1>{t('Your next project, together.', 'आपका अगला काम, साथ मिलकर।')}</h1>
       </div>
       {c.user ? (

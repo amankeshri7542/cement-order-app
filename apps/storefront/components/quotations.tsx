@@ -25,9 +25,6 @@ export function QuotationsPage() {
   return (
     <div className="commerce-page">
       <div className="page-heading">
-        <p className="eyebrow">
-          {t('For your site · bulk requirements', 'आपकी साइट के लिए · थोक ज़रूरतें')}
-        </p>
         <h1>{t('One list. A considered offer.', 'एक सूची। सोच-समझकर दिया भाव।')}</h1>
         <p>
           {t(
@@ -36,8 +33,12 @@ export function QuotationsPage() {
           )}
         </p>
       </div>
+      {/* The quotation list is written on the shop's letterhead. */}
       <section className="quote-builder">
         <div className="section-heading">
+          <span className="brand-stamp" aria-hidden="true">
+            शिव
+          </span>
           <h2>{t('Your quotation list', 'आपकी भाव सूची')}</h2>
           <Link className="text-link" href="/products">
             {t('Add materials +', 'सामग्री जोड़ें +')}

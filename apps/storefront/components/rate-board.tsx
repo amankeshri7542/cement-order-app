@@ -22,9 +22,12 @@ const hindi: Record<string, string> = {
 export function RateBoard() {
   const { t, language } = useLanguage();
   const [rates, setRates] = useState<Rate[] | null>(null);
+  // Materials whose lowest price changed since the board last loaded; their figure rolls once.
+  const [changed, setChanged] = useState<ReadonlySet<string>>(new Set());
   const [failed, setFailed] = useState(false);
   const [checkedAt, setCheckedAt] = useState<string | null>(null);
   const request = useRef(0);
+  const shown = useRef<Rate[] | null>(null);
   const load = useCallback(async () => {
     const current = ++request.current;
     try {
@@ -33,7 +36,24 @@ export function RateBoard() {
         pageResponse,
       );
       if (current !== request.current) return;
-      setRates(ratesFrom(page.items));
+      const next = ratesFrom(page.items);
+      const before = shown.current;
+      shown.current = next;
+      setChanged(
+        new Set(
+          before
+            ? next
+                .filter((rate) =>
+                  before.some(
+                    (old) =>
+                      old.slug === rate.slug && old.product.pricePaise !== rate.product.pricePaise,
+                  ),
+                )
+                .map((rate) => rate.slug)
+            : [],
+        ),
+      );
+      setRates(next);
       setCheckedAt(new Date().toISOString());
       setFailed(false);
     } catch {
@@ -52,48 +72,19 @@ export function RateBoard() {
     };
   }, [load]);
 
+  // The materials are folder tabs on the shop's rate file; the ink folder in front carries the
+  // board's title, when it was checked and what the figures mean.
   return (
     <aside className="rate-board" aria-labelledby="rate-board-title">
-      <header>
-        <span className="rate-stamp" aria-hidden="true">
-          शिव
-        </span>
-        <div>
-          <h2 id="rate-board-title">
-            <span lang="hi">मौजूदा भाव</span>
-            <span lang="en">Current rates</span>
-          </h2>
-          <p>
-            {failed && !rates
-              ? t('Rates could not load right now.', 'भाव अभी लोड नहीं हो सके।')
-              : checkedAt
-                ? t(
-                    `Lowest in-stock price per material · checked ${timeLabel(checkedAt)}`,
-                    `हर सामग्री का सबसे कम उपलब्ध भाव · ${timeLabel(checkedAt)} पर जाँचा`,
-                  )
-                : t('Checking the catalogue…', 'सूची जाँची जा रही है…')}
-          </p>
-        </div>
-      </header>
       {rates === null && !failed ? (
         <ol className="rate-rows" aria-hidden="true">
-          {[0, 1, 2, 3].map((row) => (
+          {[0, 1, 2, 3, 4].map((row) => (
             <li className="rate-row rate-row-placeholder" key={row}>
               <span />
               <span />
             </li>
           ))}
         </ol>
-      ) : null}
-      {failed && !rates ? (
-        <div className="rate-fallback">
-          <Link className="text-link" href="/products">
-            {t('Browse all materials', 'सारी सामग्री देखें')} <span aria-hidden="true">↗</span>
-          </Link>
-          <button className="text-button" onClick={() => void load()}>
-            {t('Retry rates', 'भाव फिर लोड करें')}
-          </button>
-        </div>
       ) : null}
       {rates?.length ? (
         <ol className="rate-rows">
@@ -111,8 +102,12 @@ export function RateBoard() {
                   <small>{productName(rate.product, language)}</small>
                 </span>
                 <span className="rate-price">
-                  <small>{t('from', 'से')}</small>
-                  <strong>{price(rate.product.pricePaise)}</strong>
+                  <strong
+                    key={rate.product.pricePaise}
+                    className={changed.has(rate.slug) ? 'rolled' : undefined}
+                  >
+                    {price(rate.product.pricePaise)}
+                  </strong>
                   <small>/ {unitLabel(rate.product.unit, language)}</small>
                 </span>
               </Link>
@@ -120,20 +115,52 @@ export function RateBoard() {
           ))}
         </ol>
       ) : null}
-      {rates && !rates.length ? (
-        <p className="rate-empty">
-          {t('No materials are in stock right now.', 'अभी कोई सामग्री स्टॉक में नहीं है।')}{' '}
-          <Link className="text-link" href="/quotes">
-            {t('Ask for a written quote', 'लिखित भाव माँगें')}
-          </Link>
+      <div className="rate-panel">
+        <header>
+          <span className="rate-stamp" aria-hidden="true">
+            शिव
+          </span>
+          <div>
+            <h2 id="rate-board-title">
+              <span lang="hi">आज के भाव</span> <span lang="en">Current rates</span>
+            </h2>
+            <p className={checkedAt && !failed ? 'rate-checked' : undefined}>
+              {failed && !rates
+                ? t('Rates could not load right now.', 'भाव अभी लोड नहीं हो सके।')
+                : checkedAt
+                  ? t(
+                      `Lowest in-stock price per material · checked ${timeLabel(checkedAt)}`,
+                      `हर सामग्री का सबसे कम उपलब्ध भाव · ${timeLabel(checkedAt)} पर जाँचा`,
+                    )
+                  : t('Checking the catalogue…', 'सूची जाँची जा रही है…')}
+            </p>
+          </div>
+        </header>
+        {failed && !rates ? (
+          <div className="rate-fallback">
+            <Link className="text-link" href="/products">
+              {t('Browse all materials', 'सारी सामग्री देखें')} <span aria-hidden="true">↗</span>
+            </Link>
+            <button className="text-button" onClick={() => void load()}>
+              {t('Retry rates', 'भाव फिर लोड करें')}
+            </button>
+          </div>
+        ) : null}
+        {rates && !rates.length ? (
+          <p className="rate-empty">
+            {t('No materials are in stock right now.', 'अभी कोई सामग्री स्टॉक में नहीं है।')}{' '}
+            <Link className="text-link" href="/quotes">
+              {t('Ask for a written quote', 'लिखित भाव माँगें')}
+            </Link>
+          </p>
+        ) : null}
+        <p className="rate-note">
+          {t(
+            'Illustrations show the material type, not the exact product. Delivery is added at checkout.',
+            'चित्र सामग्री का प्रकार दिखाते हैं, सटीक सामान नहीं। डिलीवरी शुल्क चेकआउट में जुड़ता है।',
+          )}
         </p>
-      ) : null}
-      <p className="rate-note">
-        {t(
-          'Illustrations show the material type, not the exact product. Delivery is added at checkout.',
-          'चित्र सामग्री का प्रकार दिखाते हैं, सटीक सामान नहीं। डिलीवरी शुल्क चेकआउट में जुड़ता है।',
-        )}
-      </p>
+      </div>
     </aside>
   );
 }
