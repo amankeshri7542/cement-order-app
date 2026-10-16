@@ -8,6 +8,21 @@ const hour = 3600000;
 export const clientIp = (req: { ip?: string; socket: { remoteAddress?: string } }) =>
   req.ip || req.socket.remoteAddress || 'unknown';
 
+const budgetKey = (scope: string, subject: string) =>
+  `budget:${scope}:${createHmac('sha256', getConfig().OTP_HASH_SECRET)
+    .update(`${scope}:${subject}`)
+    .digest('hex')}`;
+
+/** How much of a budget window is used, without charging it (0 once the window has ended). */
+export async function budgetUsed(
+  db: Pick<Prisma.TransactionClient, 'authRateLimit'>,
+  scope: string,
+  subject: string,
+) {
+  const row = await db.authRateLimit.findUnique({ where: { key: budgetKey(scope, subject) } });
+  return row && row.expiresAt > new Date() ? row.count : 0;
+}
+
 // All callers use SERIALIZABLE transactions: shared budget rows also serialize competing demand.
 export async function budget(
   tx: Prisma.TransactionClient,
@@ -17,10 +32,7 @@ export async function budget(
   duration = hour,
   cost = 1,
 ) {
-  const digest = createHmac('sha256', getConfig().OTP_HASH_SECRET)
-    .update(`${scope}:${subject}`)
-    .digest('hex');
-  const key = `budget:${scope}:${digest}`;
+  const key = budgetKey(scope, subject);
   const now = new Date();
   const old = await tx.authRateLimit.findUnique({ where: { key } });
   const fresh = !old || old.expiresAt <= now;

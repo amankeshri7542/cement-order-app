@@ -59,6 +59,7 @@ describe('operator diagnostics never echo secrets', () => {
 
 describe('startup configuration', () => {
   const base = {
+    NODE_ENV: 'development',
     DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
     OTP_HASH_SECRET: 'unit-test-secret-with-at-least-32-characters',
   };
