@@ -17,7 +17,7 @@ import { productResponse } from '../lib/api';
 import { customerApi, CustomerError, errorText } from '../lib/customer-api';
 import { price } from '../lib/catalog';
 import { useLanguage } from './language';
-import { MAX_LINE_QUANTITY, quantityProblem } from '@shiv/shared';
+import { MAX_LINE_QUANTITY, productName, quantityProblem, unitLabel } from '@shiv/shared';
 
 type Intent = { product: Product; quantity: number };
 const guestSchema = z.object({
@@ -373,9 +373,12 @@ function useCommerceValue() {
     count
       ? t(
           `${product.name}: ${count} × ${product.unit} in your basket.`,
-          `${product.name}: टोकरी में ${count} × ${product.unit}।`,
+          `${productName(product, 'hi')}: टोकरी में ${count} × ${unitLabel(product.unit, 'hi')}।`,
         )
-      : t(`${product.name} removed from your basket.`, `${product.name} टोकरी से हटाई गई।`);
+      : t(
+          `${product.name} removed from your basket.`,
+          `${productName(product, 'hi')} टोकरी से हटाई गई।`,
+        );
   async function quantity(product: Product, value: number, add = false) {
     setError('');
     if (!ready || mergeLock.current || mergePending) return;
@@ -546,6 +549,7 @@ export function Quantity({
   disabled?: boolean;
 }) {
   const { t } = useLanguage();
+  const hindiName = productName(product, 'hi');
   const [draft, setDraft] = useState(String(value));
   const [invalid, setInvalid] = useState(false);
   useEffect(() => {
@@ -565,14 +569,14 @@ export function Quantity({
     <div>
       <div className="quantity">
         <button
-          aria-label={t(`Decrease ${product.name}`, `${product.name} घटाएँ`)}
+          aria-label={t(`Decrease ${product.name}`, `${hindiName} घटाएँ`)}
           disabled={disabled || value <= product.minQuantity}
           onClick={() => onChange(Math.max(product.minQuantity, value - product.quantityStep))}
         >
           −
         </button>
         <input
-          aria-label={t(`Quantity for ${product.name}`, `${product.name} की मात्रा`)}
+          aria-label={t(`Quantity for ${product.name}`, `${hindiName} की मात्रा`)}
           inputMode="numeric"
           value={draft}
           disabled={disabled}
@@ -590,7 +594,7 @@ export function Quantity({
           }}
         />
         <button
-          aria-label={t(`Increase ${product.name}`, `${product.name} बढ़ाएँ`)}
+          aria-label={t(`Increase ${product.name}`, `${hindiName} बढ़ाएँ`)}
           disabled={disabled || value + product.quantityStep > max}
           onClick={() => onChange(value + product.quantityStep)}
         >

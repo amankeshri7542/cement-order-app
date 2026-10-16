@@ -13,6 +13,7 @@ import * as SecureStore from 'expo-secure-store';
 import {
   guestIntentSchema,
   istToday,
+  productName,
   quantityProblem,
   toMergePayload,
   MAX_LINE_QUANTITY,
@@ -779,7 +780,7 @@ function useStoreValue() {
         tap();
         setToast(
           languageRef.current === 'hi'
-            ? `${product.name} टोकरी में जुड़ गया`
+            ? `${productName(product, 'hi')} टोकरी में जुड़ गया`
             : `${product.name} added to basket`,
         );
       }

@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { productName, unitLabel } from '@shiv/shared';
 import { pageResponse, publicGet } from '../lib/api';
 import { price, ratesFrom, timeLabel, type Rate } from '../lib/catalog';
 import { useLanguage } from './language';
@@ -107,12 +108,12 @@ export function RateBoard() {
                 </span>
                 <span className="rate-name">
                   <strong>{language === 'hi' ? hindi[rate.slug] || rate.name : rate.name}</strong>
-                  <small>{rate.product.name}</small>
+                  <small>{productName(rate.product, language)}</small>
                 </span>
                 <span className="rate-price">
                   <small>{t('from', 'से')}</small>
                   <strong>{price(rate.product.pricePaise)}</strong>
-                  <small>/ {rate.product.unit}</small>
+                  <small>/ {unitLabel(rate.product.unit, language)}</small>
                 </span>
               </Link>
             </li>

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import { money, space, textSize, type Product } from '@shiv/shared';
+import { money, productName, space, textSize, unitLabel, type Product } from '@shiv/shared';
 import { useStore } from './store';
 import { categoryName, MaterialArt } from './catalog';
 import { Button, C, Icon, Notice, Screen, s } from './ui';
@@ -20,13 +20,15 @@ export function Compare() {
       .filter(
         (product) =>
           !words ||
-          `${product.name} ${product.brand} ${product.category.name}`.toLowerCase().includes(words),
+          `${product.name} ${product.nameHi ?? ''} ${product.brand} ${product.category.name}`
+            .toLowerCase()
+            .includes(words),
       )
       .slice(0, 8);
   }, [products, knownProducts, compare, query]);
   const units = new Set(compare.map((product) => product.unit));
   const rows: [string, (product: Product) => string][] = [
-    [t('Price', 'भाव'), (p) => `${money(p.pricePaise)} / ${p.unit}`],
+    [t('Price', 'भाव'), (p) => `${money(p.pricePaise)} / ${unitLabel(p.unit, language)}`],
     [t('Brand', 'ब्रांड'), (p) => p.brand],
     [t('Material', 'सामग्री'), (p) => categoryName(p.category.slug, p.category.name, language)],
     [t('Type', 'प्रकार'), (p) => p.type || '—'],
@@ -83,7 +85,7 @@ export function Compare() {
                     <MaterialArt product={product} size={48} />
                     <Pressable
                       accessibilityRole="button"
-                      accessibilityLabel={`${t('Remove from comparison', 'तुलना से हटाएँ')}: ${product.name}`}
+                      accessibilityLabel={`${t('Remove from comparison', 'तुलना से हटाएँ')}: ${productName(product, language)}`}
                       onPress={() => toggleCompare(product)}
                       style={{ padding: space.sm }}
                     >
@@ -91,7 +93,7 @@ export function Compare() {
                     </Pressable>
                   </View>
                   <Text style={s.h3} numberOfLines={3}>
-                    {product.name}
+                    {productName(product, language)}
                   </Text>
                   {rows.map(([label, value]) => (
                     <View key={label}>
@@ -133,7 +135,7 @@ export function Compare() {
             <Pressable
               key={product.id}
               accessibilityRole="button"
-              accessibilityLabel={`${t('Add to comparison', 'तुलना में जोड़ें')}: ${product.name}`}
+              accessibilityLabel={`${t('Add to comparison', 'तुलना में जोड़ें')}: ${productName(product, language)}`}
               onPress={() => toggleCompare(product)}
               style={({ pressed }) => [
                 s.card,
@@ -144,9 +146,11 @@ export function Compare() {
             >
               <Icon name="add-circle" color={C.clay} size={26} />
               <View style={{ flex: 1 }}>
-                <Text style={[s.body, { color: C.ink, fontWeight: '700' }]}>{product.name}</Text>
+                <Text style={[s.body, { color: C.ink, fontWeight: '700' }]}>
+                  {productName(product, language)}
+                </Text>
                 <Text style={s.small}>
-                  {money(product.pricePaise)} / {product.unit}
+                  {money(product.pricePaise)} / {unitLabel(product.unit, language)}
                 </Text>
               </View>
             </Pressable>
