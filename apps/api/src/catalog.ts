@@ -28,7 +28,7 @@ import { Db } from './db';
 import { Lifecycle } from './lifecycle';
 import { Admin, AuthRequest, Contract, Input, Public, fail } from './http';
 import { paginate } from './pagination';
-import { moveStock } from './inventory';
+import { moveStock, pastBalance } from './inventory';
 import { getConfig, onlineReady } from './config';
 
 @Injectable()
@@ -225,7 +225,10 @@ export class CatalogController {
     @Input(productUpdateSchema) input: z.infer<typeof productUpdateSchema>,
     @Req() req: AuthRequest,
   ) {
-    const { expectedVersion, ...data } = input;
+    // Stock is never written here: it changes only through the ledger. The editor still sends
+    // the balance it loaded, which orders may have moved since; a balance the product never had
+    // is an attempt to replace stock and is refused.
+    const { expectedVersion, stock, ...data } = input;
     if (data.minQuantity % data.quantityStep)
       fail('INVALID_QUANTITY', 'Minimum quantity must be a multiple of the quantity step.');
     const product = await this.db.atomic(async (tx) => {
@@ -233,7 +236,7 @@ export class CatalogController {
       const old = await tx.product.findUniqueOrThrow({ where: { id } });
       if (old.version !== expectedVersion)
         fail('CONFLICT', 'Product changed. Refresh before saving.', 409);
-      if (old.stock !== data.stock)
+      if (stock !== old.stock && !(await pastBalance(tx, id, stock)))
         fail(
           'USE_INVENTORY_MOVEMENT',
           'Record a stock movement instead of replacing the balance.',

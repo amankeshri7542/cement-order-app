@@ -24,13 +24,12 @@ import {
   orderStatusSchema,
   orderStatusText,
   placeOrderSchema,
-  totals,
   transitions,
 } from '@shiv/shared';
 import { Db } from './db';
 import { Admin, AuthRequest, Contract, Input, fail } from './http';
 import { paginate } from './pagination';
-import { deliveryFor, moveStock, validateQuantity } from './inventory';
+import { deliveryFor, moveStock, orderTotals, validateQuantity } from './inventory';
 import { getConfig, onlineReady } from './config';
 import { enqueueWhatsApp } from './alerts';
 import { workInclude } from './owner-work';
@@ -213,12 +212,16 @@ export class OrdersService {
           lineTotalPaise: product.pricePaise * quantity,
         };
       });
-      const zone = await deliveryFor(tx, address.pincode, totals(items, 0, null).subtotalPaise);
+      const zone = await deliveryFor(
+        tx,
+        address.pincode,
+        orderTotals(items, 0, null).subtotalPaise,
+      );
       const snapshot = {
         ...input,
         address,
         items,
-        ...totals(items, zone.deliveryFeePaise, zone.freeDeliveryAbovePaise),
+        ...orderTotals(items, zone.deliveryFeePaise, zone.freeDeliveryAbovePaise),
         deliveryZoneId: zone.id,
         deliveryZoneVersion: zone.version,
         deliveryEstimate: zone.estimate,
@@ -308,7 +311,11 @@ export class OrdersService {
           idempotencyKey: `order:${review.id}:${product.id}`,
         });
       }
-      const amounts = totals(snapshot.items, zone.deliveryFeePaise, zone.freeDeliveryAbovePaise);
+      const amounts = orderTotals(
+        snapshot.items,
+        zone.deliveryFeePaise,
+        zone.freeDeliveryAbovePaise,
+      );
       const online = snapshot.paymentMethod === 'ONLINE';
       const order = await tx.order.create({
         data: {
@@ -507,6 +514,18 @@ export class OrdersService {
           fail(
             'IDEMPOTENCY_CONFLICT',
             'This delivery action was already used with different details.',
+            409,
+          );
+        // Only a repeat of the latest step is a retry; after a newer step it would do nothing.
+        const latest = await tx.deliveryAttempt.findFirst({
+          where: { orderId: id },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          select: { id: true },
+        });
+        if (latest?.id !== previous.id)
+          fail(
+            'IDEMPOTENCY_CONFLICT',
+            'This delivery update was recorded before a newer one. Refresh the order and record it again.',
             409,
           );
         return order;

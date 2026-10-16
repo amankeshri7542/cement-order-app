@@ -8,9 +8,8 @@ import {
   quoteRequestSchema,
   quoteRespondSchema,
   storeQuoteRespondSchema,
-  totals,
 } from '@shiv/shared';
-import { moveStock, validateQuantity } from './inventory';
+import { moveStock, orderTotals, validateQuantity } from './inventory';
 import { paginate } from './pagination';
 import { Db } from './db';
 import { workInclude } from './owner-work';
@@ -188,7 +187,7 @@ export class QuotesController {
         unit: currentProducts.find((p) => p.id === i.productId)!.unit,
         pricePaise: body.items.find((x) => x.productId === i.productId)!.unitPricePaise,
       }));
-      const total = totals(lines, body.deliveryFeePaise, null);
+      const total = orderTotals(lines, body.deliveryFeePaise, null);
       for (const line of lines)
         await tx.quoteItem.update({
           where: { id: line.id },
@@ -252,7 +251,17 @@ export class QuotesController {
   @Post('admin/quotes/:id/convert')
   async convert(
     @Param('id') id: string,
-    @Input(z.strictObject({ revision: z.number().int().min(1) })) body: { revision: number },
+    // deliveryDate: a new date agreed with the customer, for when the quoted date has passed.
+    @Input(
+      z.strictObject({
+        revision: z.number().int().min(1),
+        deliveryDate: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional(),
+      }),
+    )
+    body: { revision: number; deliveryDate?: string },
     @Req() req: AuthRequest,
   ) {
     const result = await this.db.atomic(async (tx) => {
@@ -271,18 +280,22 @@ export class QuotesController {
           fail('QUOTE_CHANGED', 'This quote revision does not match the converted order.', 409);
         return tx.order.findUniqueOrThrow({ where: { id: quote.order.id }, include: orderInclude });
       }
+      // An acceptance given while the offer was valid stays binding after validUntil; stock,
+      // unit and totals are still checked below.
       if (
         quote.status !== 'ACCEPTED' ||
         quote.revision !== body.revision ||
         !quote.validUntil ||
-        quote.validUntil < new Date()
+        !quote.decisionAt ||
+        quote.decisionAt > quote.validUntil
       )
         fail(
           'QUOTE_CHANGED',
           'A current accepted revision is required. Send a new offer and obtain consent if terms changed.',
           409,
         );
-      validDelivery(quote.deliveryDate);
+      const deliveryDate = body.deliveryDate || quote.deliveryDate;
+      validDelivery(deliveryDate);
       if (!quote.deliveryConfirmed)
         fail(
           'DELIVERY_CONFIRMATION_REQUIRED',
@@ -323,7 +336,7 @@ export class QuotesController {
           lineTotalPaise: line.unitPricePaise * line.quantity,
         });
       }
-      const amounts = totals(lines, quote.deliveryFeePaise, null);
+      const amounts = orderTotals(lines, quote.deliveryFeePaise, null);
       if (amounts.totalPaise !== quote.totalPaise)
         fail('QUOTE_CHANGED', 'Agreed totals do not match. Send a new offer.', 409);
       const review = await tx.checkoutReview.create({
@@ -351,7 +364,7 @@ export class QuotesController {
           idempotencyKey: `quote:${id}:${quote.revision}`,
           status: 'CONFIRMED',
           address: quote.address as Prisma.InputJsonValue,
-          deliveryDate: quote.deliveryDate,
+          deliveryDate,
           notes: quote.notes,
           ...amounts,
           items: { create: lines },
@@ -387,6 +400,7 @@ export class QuotesController {
             revision: quote.revision,
             totalPaise: amounts.totalPaise,
             decisionSource: quote.decisionSource,
+            ...(deliveryDate !== quote.deliveryDate ? { deliveryDate } : {}),
           },
         },
       });
