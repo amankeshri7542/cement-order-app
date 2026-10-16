@@ -3,10 +3,15 @@
 This checkout is for local review. No deployment, real SMS or money movement has been performed.
 Use the **TEST — Cement PPC** practice product and **800099** practice pincode below; neither is a real commercial offer or coverage claim.
 
-The current V2 review branch is `codex/v2-customer-experience`, based on the preserved
-foundation `8816dd913fcb1b67a9102ea2163953f8959b19a2`. It adds the redesigned storefront,
-customer commerce and Shiv Assistant. Final verification is in progress: this
-checklist defines expected results and does not claim every step has passed. See
+Current branch (16 October 2026): wave 2 work is on `codex/p7-parity-demo`, stacked on
+`codex/p6-hardening`. PR #1 is merged into `main`; the later phases are an open stack of draft
+PRs (#2 → #12). Use the commit SHA from the latest handoff. For a shorter, task-by-task guide see
+[TESTING_GUIDE.md](TESTING_GUIDE.md).
+
+History: this checklist started on the V2 review branch `codex/v2-customer-experience`, based on
+the preserved foundation `8816dd913fcb1b67a9102ea2163953f8959b19a2`, which added the
+redesigned storefront, customer commerce and Shiv Assistant. The checklist defines expected
+results and does not claim every step has passed. See
 [feature parity](V2_CUSTOMER_FEATURE_PARITY.md), [design/motion](V2_DESIGN_MOTION.md)
 and [the roadmap](V2_INTEGRATION_ROADMAP.md) for scope and open approvals.
 
@@ -17,7 +22,7 @@ Use Node **22.12 or newer** (verified here on 24.19.0), npm (verified 11.17.0), 
 ```sh
 brew install node@22 postgresql@16
 export PATH="$(brew --prefix node@22)/bin:$(brew --prefix postgresql@16)/bin:$PATH"
-git clone --branch codex/v2-customer-experience https://github.com/amankeshri7542/cement-order-app.git
+git clone --branch codex/p7-parity-demo https://github.com/amankeshri7542/cement-order-app.git
 cd cement-order-app
 # For an exact review, check out the commit SHA supplied in the review handoff.
 npm ci

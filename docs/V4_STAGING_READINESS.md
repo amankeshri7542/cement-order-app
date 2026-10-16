@@ -20,6 +20,11 @@ Operational procedures: [STAGING_RUNBOOK.md](STAGING_RUNBOOK.md). Acceptance mat
 | PR #4                   | Draft, `codex/v3-ux-excellence` → `codex/v2-customer-experience`, head `ba6c372`; `verify` run 38111747732 was in progress at the start and **passed** during this phase; no reviews or comments |
 | Tooling on this machine | PostgreSQL 16 client/server, Chrome, Playwright WebKit. **No Docker, no Xcode simulator, no Android tooling, no physical devices.**                                                              |
 
+> **Superseded (16 October 2026):** the PR rows above record the state on that date. PR #1 has
+> since merged into `main` (13 October). PRs #2–#4 are still open drafts, now the bottom of a
+> longer stack (#2 → #12, top `codex/p6-hardening`). Check GitHub for each head's current
+> `verify` result. Android tooling was added on 12 October (see [P2_ANDROID_APP.md](P2_ANDROID_APP.md)).
+
 ## What is real, simulated or pending
 
 | Area                                        | Implemented and exercised locally                                                 | Simulated in tests               | Needs credentials / external setup        | Unverified                             |

@@ -40,6 +40,12 @@
 - Distributed rate limits, cross-instance SSE, multi-worker work claiming, sophisticated analytics or warehouse management. V1 intentionally targets one store and one API instance.
 - Full historical-list pagination beyond the documented bounded list queries (100 customer orders, 300 admin orders/customers/quotes, 1,000 admin products). These limits should be replaced with cursor pagination when real history approaches them.
 
+> **Update (16 October 2026):** quote-to-order conversion has since been implemented. After the
+> customer accepts the current revision, staff choose **Create supply order** on the owner desk;
+> it creates one cash-on-delivery order at the agreed prices and freight and reserves stock once
+> (`apps/api/src/quotes.ts`). It is staff-triggered, not automatic. The "Bulk acceptance" note
+> above describes the initial MVP.
+
 ## Requires external credentials
 
 Razorpay key/secret/webhook secret; Twilio Verify; Firebase service account and Android config; Cloudflare R2 endpoint/bucket/access keys/public asset domain; production Neon/PostgreSQL; Expo/EAS and app-store signing/publishing accounts; hosting accounts.

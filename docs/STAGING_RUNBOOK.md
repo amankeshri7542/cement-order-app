@@ -96,6 +96,13 @@ New tables get `SELECT, INSERT, UPDATE` automatically (default privileges), neve
 release makes the API delete from a new table, add it to the `GRANT DELETE` list in the script.
 Do not paste older inline grant blocks: they grant `DELETE` on every table.
 
+**Wave 1 release (October 2026):** `scripts/runtime-grants.sql` is the single source of the
+runtime grants. This release changed it to revoke the broad `DELETE` that earlier grants gave.
+Re-run it on every existing database after deploying this release, even if no migration ran.
+Then, connected as the runtime role, `DELETE FROM "Order" WHERE false;` must fail with
+"permission denied" (the same check `npm run test:restore` makes on its own disposable
+database).
+
 The API refuses to start under `NODE_ENV=production` if its role could change the schema.
 
 ## 6. Release procedure

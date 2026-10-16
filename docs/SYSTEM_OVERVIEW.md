@@ -35,22 +35,22 @@ desk); clients then re-read what they need.
 
 ## What each product does
 
-| Feature                                                                       |   Android app   |       Website        |                   Owner desk                   |
-| ----------------------------------------------------------------------------- | :-------------: | :------------------: | :--------------------------------------------: |
-| Today's rates (cheapest in-stock per material)                                |     ✓ Home      |        ✓ Home        |           Rate Studio publishes them           |
-| Browse, search, filter, compare                                               |        ✓        |          ✓           |               Products and stock               |
-| Basket as a guest, merged at sign-in                                          |        ✓        |          ✓           |                       —                        |
-| Cash-on-delivery order with review and consent                                |        ✓        |          ✓           |        Receives, acknowledges, fulfils         |
-| Order tracking, reorder, cancel, share summary                                |        ✓        |          ✓           |     Status, collection, delivery, refunds      |
-| Bulk quote request, per-revision acceptance                                   |        ✓        |          ✓           | Price, freight, send, revise, convert to order |
-| Shiv Sahayak assistant (voice in the app)                                     |        ✓        |          ✓           |                       —                        |
-| Delivery pincode check                                                        |        ✓        |          ✓           |           Delivery zones and charges           |
-| Hindi and English                                                             | ✓ (Hindi first) |          ✓           |          Menus; full Hindi is Phase 4          |
-| Account, addresses, signed-in devices, delete account                         |        ✓        | ✓ (W1–W3 in Phase 6) |                 Customers list                 |
-| Stock ledger, counter sale, damage, returns                                   |        —        |          —           |                       ✓                        |
-| Rate Studio: photo of a supplier sheet → reviewed prices → WhatsApp rate card |        —        |          —           |                       ✓                        |
-| Audit trail, staff sessions, demand pause switches                            |        —        |          —           |                       ✓                        |
-| Forced app update (`/client-config`)                                          |        ✓        |          —           |          Set by the server's settings          |
+| Feature                                                                       |   Android app   |     Website      |                   Owner desk                   |
+| ----------------------------------------------------------------------------- | :-------------: | :--------------: | :--------------------------------------------: |
+| Today's rates (cheapest in-stock per material)                                |     ✓ Home      |      ✓ Home      |           Rate Studio publishes them           |
+| Browse, search, filter, compare                                               |        ✓        |        ✓         |               Products and stock               |
+| Basket as a guest, merged at sign-in                                          |        ✓        |        ✓         |                       —                        |
+| Cash-on-delivery order with review and consent                                |        ✓        |        ✓         |        Receives, acknowledges, fulfils         |
+| Order tracking, reorder, cancel, share summary                                |        ✓        |        ✓         |     Status, collection, delivery, refunds      |
+| Bulk quote request, per-revision acceptance                                   |        ✓        |        ✓         | Price, freight, send, revise, convert to order |
+| Shiv Sahayak assistant (voice in the app)                                     |        ✓        |        ✓         |                       —                        |
+| Delivery pincode check                                                        |        ✓        |        ✓         |           Delivery zones and charges           |
+| Hindi and English                                                             | ✓ (Hindi first) |        ✓         |      ✓ Hindi first (delivered in Phase 4)      |
+| Account, addresses, signed-in devices, delete account                         |        ✓        | ✓ (W1–W3 wave 2) |                 Customers list                 |
+| Stock ledger, counter sale, damage, returns                                   |        —        |        —         |                       ✓                        |
+| Rate Studio: photo of a supplier sheet → reviewed prices → WhatsApp rate card |        —        |        —         |                       ✓                        |
+| Audit trail, staff sessions, demand pause switches                            |        —        |        —         |                       ✓                        |
+| Forced app update (`/client-config`)                                          |        ✓        |        —         |          Set by the server's settings          |
 
 ## How the API is organised
 

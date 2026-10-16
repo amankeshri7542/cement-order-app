@@ -223,6 +223,10 @@ Local evidence on 13 October 2026 (Node 24.19.0; GitHub CI uses Node 22):
 | Browser Chrome suite                                     | 82 passed                                                                 |
 | Browser WebKit suite                                     | 81 passed; alert-worker check intentionally runs only in Chrome           |
 
+> **Correction (16 October 2026):** the WebKit row is the local result. CI run 38377635607 at
+> the same commit failed WebKit (1 failed, 80 passed), so WebKit was not green in CI for this
+> phase. Treat the CI result as authoritative.
+
 The final fault-injection test passed against a freshly reset test database and checks
 that exactly two POSTs reached its barrier. The catalogue timing regression also passed
 in isolation. Full suites use their normal separate database resets; failed development
