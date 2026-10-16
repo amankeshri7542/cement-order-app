@@ -7,6 +7,7 @@ import { useCommerce, saved, persist } from './commerce';
 import { AccountRequired } from './account';
 import { customerApi, CustomerError } from '../lib/customer-api';
 import { dayLabel, price } from '../lib/catalog';
+import { orderShareText, whatsappShareUrl } from '../lib/share';
 import { useLanguage } from './language';
 import { historyNote, orderStatusText } from '@shiv/shared';
 
@@ -257,6 +258,14 @@ function Orders({ orderId }: { orderId?: string }) {
                 >
                   {t('Reorder at current prices', 'मौजूदा भाव पर फिर खरीदें')}
                 </button>
+                <a
+                  className="text-link"
+                  href={whatsappShareUrl(orderShareText(order, language))}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {t('Share on WhatsApp', 'WhatsApp पर भेजें')}
+                </a>
                 {['CONFIRMED', 'PENDING_PAYMENT'].includes(order.status) && (
                   <button
                     className="text-link"
