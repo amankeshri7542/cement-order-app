@@ -69,19 +69,25 @@ Open http://localhost:3003 in the customer profile.
    material + delivery = total. Tick the consent box, then **Place COD order** once. Tap twice on
    purpose: you still get one order number.
 6. **Track.** Open Orders. Status changes from the desk appear without reloading.
-7. **Share on WhatsApp (wave 2).** On the order page, choose the WhatsApp share action. WhatsApp
-   (or WhatsApp Web) opens with an order summary ready to send. Check: order number, items,
-   total and status are right; no staff phone number and no address beyond what the customer
-   typed. Do not press Send in WhatsApp unless you mean to.
-8. **Profile edit (wave 2).** In Account, change the name and the business/contractor choice,
-   save, reload. The new values stay. Sign in on the app as the same person: the same profile
-   shows there.
-9. **Signed-in devices (wave 2).** Account lists every place this number is signed in (website
-   and app), with "this device" marked. Sign out the app's entry from the website. The app asks
-   Ravi to sign in again on its next request.
-10. **Delete account (wave 2).** Use a throwaway customer number, not Ravi. Finish or cancel its
-    open orders first. Follow the delete step in Account and its typed confirmation. Afterwards
-    the number signs in as a new, empty customer. On the desk, the old orders stay but show
+7. **Share on WhatsApp (wave 2).** In Orders, press **Share on WhatsApp** (**WhatsApp पर
+   भेजें**) on the order. WhatsApp (or WhatsApp Web) opens with an order summary ready to send.
+   Check: order number, status, items, delivery and total are right; no address and no phone
+   number. Do not press Send in WhatsApp unless you mean to.
+8. **Profile edit (wave 2).** In Account, press **Edit profile** (**प्रोफ़ाइल बदलें**), change
+   **Full name** (**पूरा नाम**) and, if you like, the contractor box, then **Save profile**
+   (**प्रोफ़ाइल सहेजें**). Reload. The new values stay. Sign in on the app as the same person:
+   the same profile shows there.
+9. **Signed-in devices (wave 2).** Account → **Signed-in devices** lists every place this number
+   is signed in (website and app). This browser is marked **This device** (**यह डिवाइस**).
+   Press **Sign out device** (**डिवाइस से साइन आउट**) on the app's row (screen readers hear
+   "Sign out device: <device name>"). The app asks Ravi to sign in again on its next request.
+   **Sign out other devices** (**बाकी सभी डिवाइस से साइन आउट**) asks first, then signs out
+   every other place.
+10. **Delete account (wave 2).** Use a throwaway customer number, not Ravi. Press **Delete
+    account** (**खाता हटाएँ**), type DELETE, then **Permanently delete my account** (**मेरा खाता
+    हमेशा के लिए हटाएँ**). While an order is open it is refused, with a **See open orders**
+    (**खुले ऑर्डर देखें**) link; finish or cancel those orders first. Afterwards the number
+    signs in as a new, empty customer. On the desk, the old orders stay but show
     "खाता हटाने पर संपर्क जानकारी हटा दी गई।" instead of contact details.
 11. **Bulk quote.** **Add to quote** on two materials, open Bulk quotes, choose address and
     date, **Request written quotation**. Keep the reference number for the desk test.
@@ -120,8 +126,14 @@ Then:
    website (section 2, step 2).
 2. Browse, add 50 bags, sign in as Ravi, place a COD order. One order number.
 3. Orders: the desk's steps show as status changes. No staff phone number is visible.
-4. Share the order: the share sheet offers WhatsApp with the same summary as the website.
-5. Account: edit profile, signed-in phones, sign out, delete account (throwaway number).
+4. Open the order → **Share order summary** (**ऑर्डर सारांश भेजें**). The phone's share sheet
+   opens; WhatsApp is one choice. The app's summary has the order number, items, delivery and
+   total, but no status line. The website's summary also has a status line, so the two are not
+   identical.
+5. Account: the pencil button (**Edit profile** / **प्रोफ़ाइल बदलें** for screen readers) →
+   **Save** (**सहेजें**); **Signed-in phones** (**साइन इन वाले फ़ोन**) → **Sign out**
+   (**साइन आउट**) on another phone; **Delete account** (**खाता हटाएँ**) → **Permanently delete
+   my account** (**मेरा खाता हमेशा के लिए हटाएँ**) with a throwaway number.
 6. Turn on airplane mode, reopen the app, turn it off. Ravi stays signed in. A bar says
    "Cannot reach the store. Check your connection and try again." with **Retry** (Hindi:
    **फिर से**), then it recovers.
@@ -141,8 +153,13 @@ button switches to English.
 2. **आज (Today).** Leave it open. A new website or app order appears under **नया काम** within
    15 seconds without a reload.
 3. **Order steps.** Open the order → **ज़िम्मेदारी लें** → **तैयार करना शुरू करें** →
-   **माल रवाना करें** → **नकद मिला · डिलीवरी पूरी** (or **UPI मिला · डिलीवरी पूरी**). Each
-   step asks to confirm. The customer sees each status.
+   **माल रवाना करें** → **नकद मिला · डिलीवरी पूरी** (or **UPI मिला · डिलीवरी पूरी**).
+   **ज़िम्मेदारी लें** acts at once. **तैयार करना शुरू करें**, **माल रवाना करें**, the money
+   buttons (**नकद मिला · डिलीवरी पूरी**, **UPI मिला · डिलीवरी पूरी**, **नकद मिल गया**,
+   **UPI मिल गया**) and **ऑर्डर रद्द करें** ask to confirm first. The customer sees each status.
+   A cancelled COD order whose money was already taken shows two refund buttons:
+   **नकद लौटाया** (Cash refund returned) and **UPI से लौटाया** (UPI refund returned). Each asks
+   to confirm.
 4. **हिसाब (Money).** More (**और**) → **हिसाब** → **आज**. The cash from step 3 shows.
    **Excel के लिए डाउनलोड (CSV)** opens in Excel with Hindi intact.
 5. **काउंटर बिक्री.** From Today's quick actions: material, quantity, price, cash or UPI,
@@ -150,11 +167,15 @@ button switches to English.
 6. **भाव और स्टॉक.** **बदलें** on TEST — Cement PPC, change the price, **सामग्री सहेजें**. The
    website and app show the new price without reload. **स्टॉक खाता** → **माल आया** with a
    reference → **एंट्री दर्ज करें**. Old entries never change.
-7. **Hindi product name (wave 2).** In the product form, fill the Hindi name and save. The
-   website and app show it in Hindi mode.
+7. **Hindi product name (wave 2).** In the product form (**बदलें**), fill **हिन्दी नाम (अगर
+   हो)** and, if you like, **हिन्दी विवरण (अगर हो)** (in English mode: **Hindi name / हिन्दी
+   नाम** and **Hindi description / हिन्दी विवरण**), then **सामग्री सहेजें**. The website and app
+   show the Hindi name in Hindi mode. A unit stored as "bag" reads **बोरी** in Hindi.
 8. **थोक भाव (Bulk quotes).** Open Ravi's request → **ज़िम्मेदारी लें** → price every line, set
    भाड़ा, date and **कब तक मान्य**, tick the site/route/vehicle check → **भाव भेजें**. Ravi
-   accepts on the website or app. Then **ऑर्डर बनाएँ**: one order, with the agreed prices.
+   accepts on the website or app. Then **ऑर्डर बनाएँ** → confirm: one order, with the agreed
+   prices. If the agreed delivery day has already passed, the desk first asks for
+   **नई डिलीवरी तारीख़ (तय दिन बीत गया)**; choose the day agreed with the customer.
 9. **स्टाफ़ और अलर्ट.** **यहाँ अलर्ट चालू करें**, then **जाँच अलर्ट भेजें**. A notification
    with sound arrives.
 10. **Lost connection.** Stop the API (`npm run local:stop`, or block `localhost:4000` in
@@ -164,45 +185,65 @@ button switches to English.
 
 ## 5. Ten-minute check of all three (before every family session)
 
-| #   | Where              | Do                                                        | Expect                                                              |
-| --- | ------------------ | --------------------------------------------------------- | ------------------------------------------------------------------- |
-| 1   | Website, Hindi     | Open home, switch to हिन्दी                               | Today's rates show; every price has its unit, in Hindi              |
-| 2   | Website            | Search a material, open it, add 50 bags                   | Basket count rises; quantity rules explained if wrong               |
-| 3   | Website            | Sign in as Ravi, choose TEST Site 800099, review          | Material + delivery = total; consent box                            |
-| 4   | Website            | Place the order once (double-tap on purpose)              | One order number, never two                                         |
-| 5   | Desk, Papa         | Wait on आज without refreshing                             | The order appears under नया काम within 15 seconds                   |
-| 6   | Desk               | ज़िम्मेदारी लें → तैयार → रवाना → नकद मिला · डिलीवरी पूरी | Each step asks to confirm; हिसाब shows the cash                     |
-| 7   | App, Ravi          | Open Orders                                               | Same order, status Delivered; no staff phone number                 |
-| 8   | App                | Airplane mode on, reopen, airplane mode off               | Still signed in; "Cannot reach the store" with Retry, then recovery |
-| 9   | Desk, Chacha + App | Bulk quote: price, send; customer accepts; ऑर्डर बनाएँ    | One order created on convert                                        |
-| 10  | Desk               | भाव और स्टॉक: change a price                              | Website and app show the new price without reload                   |
-| 11  | Website or app     | Share the order on WhatsApp                               | Correct summary opens in WhatsApp; nothing sent by itself           |
+| #   | Where              | Do                                                        | Expect                                                                 |
+| --- | ------------------ | --------------------------------------------------------- | ---------------------------------------------------------------------- |
+| 1   | Website, Hindi     | Open home, switch to हिन्दी                               | Today's rates show; every price has its unit, in Hindi                 |
+| 2   | Website            | Search a material, open it, add 50 bags                   | Basket count rises; quantity rules explained if wrong                  |
+| 3   | Website            | Sign in as Ravi, choose TEST Site 800099, review          | Material + delivery = total; consent box                               |
+| 4   | Website            | Place the order once (double-tap on purpose)              | One order number, never two                                            |
+| 5   | Desk, Papa         | Wait on आज without refreshing                             | The order appears under नया काम within 15 seconds                      |
+| 6   | Desk               | ज़िम्मेदारी लें → तैयार → रवाना → नकद मिला · डिलीवरी पूरी | Every step after ज़िम्मेदारी लें asks to confirm; हिसाब shows the cash |
+| 7   | App, Ravi          | Open Orders                                               | Same order, status Delivered; no staff phone number                    |
+| 8   | App                | Airplane mode on, reopen, airplane mode off               | Still signed in; "Cannot reach the store" with Retry, then recovery    |
+| 9   | Desk, Chacha + App | Bulk quote: price, send; customer accepts; ऑर्डर बनाएँ    | One order created on convert                                           |
+| 10  | Desk               | भाव और स्टॉक: change a price                              | Website and app show the new price without reload                      |
+| 11  | Website or app     | Share the order on WhatsApp                               | Correct summary opens in WhatsApp; nothing sent by itself              |
 
 ## 6. Demo kit
 
 The demo kit loads a sample catalogue (realistic materials, Hindi names and units, practice
 pincode 800099) so the family sees a believable shop instead of TEST products.
 
-| Command                    | What it does                                                         |
-| -------------------------- | -------------------------------------------------------------------- |
-| `npm run demo:preflight`   | Read-only check that the stack is ready for a demo. Must pass first. |
-| `npm run demo -- prepare`  | Loads the sample catalogue, practice zone and practice people.       |
-| `npm run demo -- snapshot` | Saves the current demo database so you can return to it.             |
-| `npm run demo -- restore`  | Puts the database back to the last snapshot.                         |
-| `npm run demo -- reset`    | Clears demo orders and quotes and reloads the sample catalogue.      |
+| Command                                                                        | What it does                                                                                                                                                                                                                            |
+| ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run demo -- snapshot <file>`                                              | Saves the whole target database to a new file (for example `.local/demo-before.dump`). The file must not exist yet.                                                                                                                     |
+| `npm run demo -- prepare`                                                      | Adds the sample catalogue, the practice delivery zone, three demo customers, their orders and a quote. Never creates staff accounts.                                                                                                    |
+| `npm run demo:preflight -- <api base URL> --site <shop URL> --desk <desk URL>` | Read-only: API up, catalogue sellable, practice pincode delivers, payments off, website and desk security headers. Must pass. Without a URL it checks `http://localhost:4000/api/v1`.                                                   |
+| `npm run demo -- reset`                                                        | Removes the demo-kit data: sample catalogue, zone, demo customers, their orders and quotes. Anything the permanent stock or money ledgers point at stays (those products are hidden). It does not reload anything; run `prepare` again. |
+| `npm run demo -- restore <file> --yes`                                         | Replaces every table with the snapshot. The complete rollback. On staging also add `--runtime-role=<API login role>`.                                                                                                                   |
 
-Typical order: `demo:preflight` → `prepare` → `snapshot` → run the demo → `restore` (or `reset`).
+Typical order: `snapshot <file>` → `prepare` → `demo:preflight` → run the demo →
+`restore <file> --yes` (or `reset`, then `prepare` for the next session).
+
+Setting the target:
+
+- `DATABASE_URL` names the target database and must use the migration (owner) login, not the
+  API's runtime login. The runtime login is not allowed to delete orders, payments or audit
+  rows.
+- Locally, the database name must end in `_test`. Use a dedicated one, for example
+  `shiv_demo_test` (create it and run `npm run db:migrate` against it first). Do not use
+  `shiv_cement_test`: the automated suites wipe it. The local practice database `shiv_cement`
+  is refused. The local stack (`npm run local:start`) always uses `shiv_cement`, so it never
+  shows demo-kit data: on this Mac, review with the practice people and products from section 1
+  instead. The demo kit is meant for staging; a local `_test` database only tests the kit itself.
+- On staging, set `DEMO_TARGET=staging`; the database name must contain "staging".
+- On staging, `prepare` also needs `DEMO_PHONES`: exactly three family-approved mobile numbers,
+  comma-separated (`+91…`). Staging sends real SMS and WhatsApp messages to whatever number an
+  order carries. Locally the sample block +91 99000 901xx is used.
+- On staging, `restore` needs `--runtime-role=<API login role>`. The snapshot carries no
+  privileges, so restore reapplies `scripts/runtime-grants.sql` for that role.
+- `PG_BIN` points at PostgreSQL 16 tools if `pg_dump` is not found.
 
 Safety rules:
 
-- Only on this Mac's local practice database, or a staging database that holds **no real
-  customer data**. Never point it at production.
-- Never run it while a family member is placing an order. Stop, then reset.
-- Take a `snapshot` before every demo, and `restore` afterwards. Do not edit snapshot files by
-  hand.
+- Only on a local `_test` database, or a staging database that holds **no real customer
+  data**. Never point it at production.
+- Never run it while a family member is placing an order.
+- Take a `snapshot` before `prepare`, and `restore` it afterwards. `reset` alone leaves ledger
+  rows behind. Do not edit snapshot files by hand.
 - Sample prices are examples, not the shop's rates. Say so out loud during the demo.
-- Do not use real customer phone numbers in the demo. Use the practice people above or the
-  approved test numbers on staging.
+- Do not use real customer phone numbers in the demo. Locally the sample numbers are used; on
+  staging only the three family-approved numbers in `DEMO_PHONES`.
 - Online payments stay off. The demo uses cash on delivery only.
 
 ## 7. Automated checks (what CI runs)
@@ -233,6 +274,7 @@ Browser suites in `tests/`:
 | Spec                                   | Covers                                                          |
 | -------------------------------------- | --------------------------------------------------------------- |
 | `journeys.spec.ts`                     | Customer app journeys end to end                                |
+| `app-account.spec.ts`                  | Wave 2 app: profile name, sign out another phone, delete, share |
 | `cart-feedback.spec.ts`                | Basket quantities, feedback and recovery                        |
 | `customer-recovery.spec.ts`            | Lost replies, offline, uncertain order submit                   |
 | `owner-desk.spec.ts`                   | Desk opens in Hindi, counter sale, low stock, staff alerts      |
@@ -245,9 +287,14 @@ Browser suites in `tests/`:
 | `storefront-commerce.spec.ts`          | Website basket, checkout, orders, quotes                        |
 | `storefront-experience.spec.ts`        | Website rates board, outages, phone layout, review notes        |
 | `storefront-hardening.spec.ts`         | Wave 1 website fixes: checkout review, double tap, sign-in      |
-| `storefront-account.spec.ts`           | Wave 2: profile edit, signed-in devices, delete account         |
-| `catalogue-hindi.spec.ts`              | Wave 2: Hindi product names and units                           |
+| `storefront-orders.spec.ts`            | Wave 2 website order history: track, cancel, reorder            |
+| `storefront-account.spec.ts`           | Wave 2 website: profile, signed-in devices, delete, WhatsApp    |
+| `catalogue-hindi.spec.ts`              | Wave 2: Hindi product names and units, desk to website and app  |
 | `storefront-webkit-diagnostic.spec.ts` | Opt-in WebKit diagnostic (`RUN_STOREFRONT_WEBKIT_DIAGNOSTIC=1`) |
+
+Parity check: `packages/shared/src/features.ts` lists every customer feature with the tests
+that prove it on the app and on the website. `npm test -w @shiv/shared` fails when a feature
+has a test on one side only.
 
 To run one spec: `npm run test:e2e -- --config=playwright.qa.config.ts --project=chrome tests/storefront-account.spec.ts`.
 
@@ -279,7 +326,8 @@ committing unless you meant to update them.
 
 - [ ] Latest commit passed CI (`verify`), and you know its SHA.
 - [ ] `npm run local:status` (or `staging:smoke`) is all green.
-- [ ] `npm run demo:preflight` passed; `npm run demo -- snapshot` taken.
+- [ ] `npm run demo -- snapshot <file>` taken before `prepare`; `npm run demo:preflight` passed
+      (with `--site` and `--desk`).
 - [ ] The ten-minute check (section 5) passed today, on the phones you will use.
 - [ ] Each phone: charged, app installed, signed in, language set to हिन्दी, font size as the
       person normally uses it, notifications allowed for the desk.
@@ -287,4 +335,5 @@ committing unless you meant to update them.
 - [ ] Sample prices clearly called examples. Online payments off.
 - [ ] No real customer numbers or addresses on any screen.
 - [ ] Feedback form printed or open ([DEMO_SCRIPT.md](DEMO_SCRIPT.md), last section).
-- [ ] After the demo: `npm run demo -- restore`, and write up the notes the same day.
+- [ ] After the demo: `npm run demo -- restore <file> --yes` (on staging also
+      `--runtime-role=<API login role>`), and write up the notes the same day.
