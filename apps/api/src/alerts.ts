@@ -324,7 +324,9 @@ export class AlertsController {
 
   @Delete('push/subscriptions')
   async unsubscribe(@Body() body: { endpoint?: unknown }, @Req() req: AuthRequest) {
-    const endpoint = z.string().url().max(1000).parse(body?.endpoint);
+    const parsed = z.string().url().max(1000).safeParse(body?.endpoint);
+    if (!parsed.success) fail('INVALID_INPUT', 'A valid alert endpoint is required.', 400);
+    const endpoint = parsed.data;
     await this.db.pushSubscription.deleteMany({ where: { endpoint, userId: req.user.id } });
     return { ok: true };
   }
