@@ -1,5 +1,9 @@
 # Review handoff — 9 October 2026
 
+> **Status update (16 October 2026):** PR #1 (`codex/pilot-readiness` → `main`) was merged on
+> 13 October 2026. Where this page says "existing draft", it describes the state on 9 October.
+> Test counts below are from that date and have since been superseded.
+
 This is a source-review release on `codex/pilot-readiness`, not approval for public staging or shop operation. Online payments remain disabled. Nothing in this release authorizes deployment, live data migration or customer messages. The proposed next product is described separately in [V2_INTEGRATION_ROADMAP.md](V2_INTEGRATION_ROADMAP.md).
 
 ## Baseline and change scope

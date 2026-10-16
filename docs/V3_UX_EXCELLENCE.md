@@ -13,6 +13,11 @@ migrations, payment activation or real messages.
 | PR #2 (foundation)          | Open draft, `codex/v2-storefront-foundation` → `codex/pilot-readiness`, head `8816dd9`, `verify` passed, mergeable, no reviews                          |
 | PR #3 (customer experience) | Open draft, `codex/v2-customer-experience` → `codex/v2-storefront-foundation`, head `8ccfe2c`, `verify` passed (run 37943221288), mergeable, no reviews |
 
+> **Superseded (16 October 2026):** these rows record the state on 11 October. PR #1 has since
+> merged into `main` (13 October). PRs #2 and #3 are still open drafts, now the bottom of a
+> longer stack (#2 → #12, top `codex/p6-hardening`). Check GitHub for each head's current
+> `verify` result.
+
 The audit rendered the API-backed storefront at 360, 390, 768, 1024 and 1440 px in English
 and Hindi (90 full-page captures, no horizontal overflow, no page errors), then drove guest
 basket, comparison and the signed-in journeys through the existing Playwright suites. Issues,
