@@ -1015,6 +1015,10 @@ dialog::backdrop {
   background: none;
   color: #fff;
 }
+/* A failure: the error colour, no tick. */
+.toast.toast-error {
+  background: #9f352e;
+}
 .loading-page {
   min-height: 100vh;
   display: grid;

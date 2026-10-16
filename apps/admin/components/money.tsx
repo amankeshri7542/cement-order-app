@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { MoneyReport as Report, istToday, money, shortDayLabel } from '@shiv/shared';
 import { Download } from 'lucide-react';
 import { api, download } from '../lib/api';
@@ -19,15 +19,21 @@ export function MoneyReport() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const query = `from=${range.from}&to=${range.to}`;
+  // Only the latest request may fill the cards: a slow earlier range must not replace the
+  // range the owner picked last.
+  const sequence = useRef(0);
   const load = useCallback(async () => {
+    const current = ++sequence.current;
     setBusy(true);
     try {
-      setReport(await api<Report>(`/admin/reports/money?${query}`));
+      const next = await api<Report>(`/admin/reports/money?${query}`);
+      if (current !== sequence.current) return;
+      setReport(next);
       setError('');
     } catch (e) {
-      setError(say(e));
+      if (current === sequence.current) setError(say(e));
     } finally {
-      setBusy(false);
+      if (current === sequence.current) setBusy(false);
     }
   }, [query]);
   useEffect(() => {
