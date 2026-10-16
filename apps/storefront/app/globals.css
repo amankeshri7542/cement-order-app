@@ -1,25 +1,16 @@
 :root {
-  --paper: #f5f3ed;
-  --surface: #fff;
-  --ink: #173345;
-  --ink-soft: #3d5a69;
-  --muted: #55646c;
-  --line: #cdd3ce;
-  --stone: #e5e8e2;
-  --kraft: #ddd5ba;
-  --clay: #b45438;
-  --clay-deep: #8d422e;
-  --green: #276047;
-  --body:
-    'Avenir Next', 'Segoe UI', Roboto, 'Kohinoor Devanagari', 'Noto Sans Devanagari', Arial,
-    sans-serif;
-  --display:
-    var(--font-anek), 'Trebuchet MS', 'Kohinoor Devanagari', 'Noto Sans Devanagari', sans-serif;
-  /* Motion: one curve, three durations. Feedback stays at or under 220ms. */
-  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
-  --quick: 160ms;
-  --base: 220ms;
-  --enter: 420ms;
+  /* Direction A tokens (--ground, --surface, --paper, --ink, --accent, --rule, --t-*, --r, --ease,
+     --display, --text, --hand ...) come from ./theme.css, generated from packages/shared. The
+     names below are the old ones, kept as aliases until each page is restyled. */
+  --ink-soft: var(--ink-2);
+  --line: var(--rule);
+  --stone: var(--surface);
+  --kraft: var(--m-kraft);
+  --clay: var(--accent);
+  --clay-deep: var(--accent-press);
+  --green: var(--ok);
+  /* Body text reads --body so a test or a page can swap the face in one place. */
+  --body: var(--text);
 }
 * {
   box-sizing: border-box;
@@ -30,9 +21,9 @@ html {
 }
 body {
   margin: 0;
-  background: var(--paper);
+  background: var(--ground);
   color: var(--ink);
-  font: 16px/1.6 var(--body);
+  font: 400 var(--t-body) / 1.6 var(--body);
   -webkit-font-smoothing: antialiased;
 }
 a {
@@ -105,10 +96,9 @@ p {
 h1,
 h2 {
   font-family: var(--display);
-  font-weight: 700;
-  font-stretch: 84%;
-  letter-spacing: -0.012em;
-  line-height: 1.02;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 0.95;
   text-wrap: balance;
 }
 h1 {
@@ -119,7 +109,7 @@ h2 {
 }
 :lang(hi) h1,
 :lang(hi) h2 {
-  line-height: 1.18;
+  line-height: 1.12;
   letter-spacing: 0;
 }
 h3 {
