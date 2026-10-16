@@ -303,13 +303,7 @@ export function RateStudio({
     <div className="rate-studio">
       <header className="rs-intro">
         <div>
-          <span className="rs-eyebrow">
-            {t('SHIV CEMENT STORE / PRICE OPERATIONS', 'SHIV CEMENT STORE / भाव का काम')}
-          </span>
-          <h1>
-            {t('Rate Studio', 'भाव स्टूडियो')}
-            <span>.</span>
-          </h1>
+          <h1>{t('Rate Studio', 'भाव स्टूडियो')}</h1>
           <p>
             {t(
               'From the supplier’s sheet to your store’s next price.',
@@ -373,12 +367,12 @@ export function RateStudio({
                 }}
               >
                 <FileImage size={30} strokeWidth={1.5} />
-                <span className="rs-eyebrow">
-                  {t('SCREENSHOT · PHOTO · PRINTED SHEET', 'स्क्रीनशॉट · फ़ोटो · छपी शीट')}
-                </span>
                 <strong>{t('Scan a rate sheet', 'भाव शीट स्कैन करें')}</strong>
                 <span>
                   {t('Keep the original. Review every number.', 'असली शीट रखें। हर अंक जाँचें।')}
+                </span>
+                <span className="rs-eyebrow">
+                  {t('Screenshot · photo · printed sheet', 'स्क्रीनशॉट · फ़ोटो · छपी शीट')}
                 </span>
                 <ArrowRight size={22} />
               </button>
@@ -430,7 +424,6 @@ export function RateStudio({
           <div className="rs-history" ref={historyRef}>
             <div className="rs-section-heading">
               <div>
-                <span className="rs-eyebrow">{t('THE PRICE REGISTER', 'भाव का रजिस्टर')}</span>
                 <h3>
                   {historyOnly
                     ? t('Marketing rate cards & history', 'प्रचार के भाव कार्ड और पुराना रिकॉर्ड')
@@ -728,7 +721,6 @@ export function RateStudio({
             >
               <div className="rs-review-heading">
                 <div>
-                  <span className="rs-eyebrow">{t('CHECK EVERY NUMBER', 'हर अंक जाँचें')}</span>
                   <h3>
                     {batch.status === 'PUBLISHED'
                       ? t('Published price record', 'लागू भाव का रिकॉर्ड')

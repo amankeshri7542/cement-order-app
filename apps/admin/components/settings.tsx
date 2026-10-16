@@ -141,7 +141,6 @@ export function Settings({
         </button>
       </div>
       <aside className="finance-note">
-        <span className="eyebrow">{t('YOU’RE IN CONTROL', 'फ़ैसला आपका')}</span>
         <h2>{t('Clear prices. No surprises.', 'साफ़ भाव। कोई छुपा ख़र्च नहीं।')}</h2>
         <p>
           {t(

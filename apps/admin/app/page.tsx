@@ -7,7 +7,6 @@ import {
   ArrowUpRight,
   Bell,
   BellRing,
-  Building2,
   Check,
   ChevronRight,
   CircleAlert,
@@ -529,14 +528,18 @@ function StoreDesk({ recoverSession }: { recoverSession: () => void }) {
   if (checking)
     return (
       <div className="loading-page">
-        <Building2 size={36} />
+        <span className="stamp" aria-hidden="true">
+          शिव
+        </span>
         <p>{t('Opening your store desk…', 'दुकान डेस्क खुल रहा है…')}</p>
       </div>
     );
   if (sessionUnknown)
     return (
       <div className="loading-page" role="alert">
-        <Building2 size={36} />
+        <span className="stamp" aria-hidden="true">
+          शिव
+        </span>
         <p>
           {t(
             'Could not check sign-in. Check the connection, then try again.',
@@ -598,16 +601,14 @@ function StoreDesk({ recoverSession }: { recoverSession: () => void }) {
     <div className="shell">
       <aside id="store-navigation" className={`sidebar ${navOpen ? 'open' : ''}`}>
         <a href="/" className="brand">
-          <span className="brand-icon">
-            <Building2 size={25} />
+          <span className="stamp" aria-hidden="true">
+            शिव
           </span>
-          <span>
-            SHIV<span>CEMENT STORE</span>
+          <span className="brand-name">
+            {t('Shiv Cement Store', 'शिव सीमेंट स्टोर')}
+            <small>{t('Store desk · ledger', 'दुकान डेस्क · बही-खाता')}</small>
           </span>
         </a>
-        <div className="workspace-label">
-          {t('STORE DESK', 'दुकान डेस्क')} <span>{t('STAFF', 'स्टाफ़')}</span>
-        </div>
         <nav aria-label={t('Main navigation', 'मुख्य मेनू')}>
           {navigation.map(({ label, icon: Icon }) => (
             <button
@@ -675,6 +676,9 @@ function StoreDesk({ recoverSession }: { recoverSession: () => void }) {
             >
               <Menu size={22} />
             </button>
+            <span className="stamp topbar-stamp" aria-hidden="true">
+              शिव
+            </span>
             <span>{t('Store desk', 'दुकान डेस्क')}</span>
             <ChevronRight size={14} />
             <b>{name(tab)}</b>
@@ -706,7 +710,6 @@ function StoreDesk({ recoverSession }: { recoverSession: () => void }) {
           {tab !== 'Rate Studio' && (
             <div className="page-heading">
               <div>
-                <span className="eyebrow">{t('SHIV CEMENT STORE', 'शिव सीमेंट स्टोर')}</span>
                 <h1>{name(tab)}</h1>
                 <p>{t(...screens[tab].sub)}</p>
               </div>
@@ -787,7 +790,6 @@ function StoreDesk({ recoverSession }: { recoverSession: () => void }) {
                       'Cash/UPI received + verified online payments',
                       'मिला नकद/UPI + जाँचा ऑनलाइन भुगतान',
                     ),
-                    icon: IndianRupee,
                   },
                   {
                     label: t('Today’s orders', 'आज के ऑर्डर'),
@@ -796,26 +798,20 @@ function StoreDesk({ recoverSession }: { recoverSession: () => void }) {
                       `${dashboard.pendingOrders} awaiting fulfilment`,
                       `${dashboard.pendingOrders} भेजना बाकी`,
                     ),
-                    icon: ShoppingBag,
                   },
                   {
                     label: t('Out for delivery', 'रास्ते में'),
                     value: String(dashboard.pendingDeliveries).padStart(2, '0'),
                     note: t('On their way to your customers', 'ग्राहकों तक जा रहे हैं'),
-                    icon: Truck,
                   },
                   {
                     label: t('Bulk requests', 'थोक अनुरोध'),
                     value: String(dashboard.bulkRequests).padStart(2, '0'),
                     note: t('Ready for your best offer', 'आपके भाव का इंतज़ार'),
-                    icon: ClipboardList,
                   },
-                ].map(({ label, value, note, icon: Icon }) => (
+                ].map(({ label, value, note }) => (
                   <article className="stat-card" key={label}>
-                    <div>
-                      <span>{label}</span>
-                      <Icon size={19} />
-                    </div>
+                    <span>{label}</span>
                     <strong>{value}</strong>
                     <small>{note}</small>
                   </article>
@@ -1245,15 +1241,15 @@ function Login({ onLogin, forbidden }: { onLogin: (u: User) => void; forbidden: 
     <div className="login-page">
       <section className="login-story">
         <a className="brand" href="/">
-          <span className="brand-icon">
-            <Building2 size={27} />
+          <span className="stamp" aria-hidden="true">
+            शिव
           </span>
-          <span>
-            SHIV<span>CEMENT STORE</span>
+          <span className="brand-name">
+            {t('Shiv Cement Store', 'शिव सीमेंट स्टोर')}
+            <small>{t('Store desk · ledger', 'दुकान डेस्क · बही-खाता')}</small>
           </span>
         </a>
         <div>
-          <span className="eyebrow">{t('YOUR STORE. YOUR PEOPLE.', 'आपकी दुकान। आपके लोग।')}</span>
           <h1>{t('Good foundations. Great business.', 'मज़बूत नींव। बढ़िया कारोबार।')}</h1>
           <p>
             {t(
@@ -1261,7 +1257,6 @@ function Login({ onLogin, forbidden }: { onLogin: (u: User) => void; forbidden: 
               'बिहार को बनाते रहने के लिए सब कुछ, एक जगह।',
             )}
           </p>
-          <div className="login-rule" />
         </div>
         <small>{t('Serving Patna & Bihar', 'पटना और बिहार में सेवा')}</small>
       </section>
@@ -1270,7 +1265,6 @@ function Login({ onLogin, forbidden }: { onLogin: (u: User) => void; forbidden: 
           <div className="login-language">
             <LanguageSwitch />
           </div>
-          <span className="eyebrow">{t('STORE DESK', 'दुकान डेस्क')}</span>
           <h2>{t('Welcome back.', 'नमस्ते।')}</h2>
           <p className="muted">
             {t('Sign in to manage your store.', 'दुकान सँभालने के लिए साइन इन करें।')}
