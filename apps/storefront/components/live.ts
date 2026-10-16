@@ -4,9 +4,17 @@ import { useEffect, useRef, useState } from 'react';
 import { API_URL } from '../lib/api';
 
 export type Connection = 'connecting' | 'connected' | 'disconnected' | 'offline';
-export function useLiveRefresh(refresh: () => void) {
+/**
+ * Calls `refresh` on catalogue, price and store notifications. By default it also calls it on
+ * focus, visibility, `online` and every stream (re)open, which suits read-only views. Pass
+ * `messagesOnly` when the callback discards customer work (a checkout review and its consent):
+ * the server re-checks every term when the order is placed.
+ */
+export function useLiveRefresh(refresh: () => void, { messagesOnly = false } = {}) {
   const latest = useRef(refresh);
   latest.current = refresh;
+  const onlyMessages = useRef(messagesOnly);
+  onlyMessages.current = messagesOnly;
   const [connection, setConnection] = useState<Connection>('connecting');
   useEffect(() => {
     let source: EventSource | undefined;
@@ -32,7 +40,7 @@ export function useLiveRefresh(refresh: () => void) {
       updateConnection();
       source.onopen = () => {
         updateConnection();
-        latest.current();
+        if (!onlyMessages.current) latest.current();
       };
       source.onerror = updateConnection;
       source.onmessage = (event) => {
@@ -48,7 +56,7 @@ export function useLiveRefresh(refresh: () => void) {
           )
             latest.current();
         } catch {
-          /* Ignore malformed notifications; focus and reconnect still refresh. */
+          /* Ignore malformed notifications; focus and reconnect still refresh views. */
         }
       };
     };
@@ -59,7 +67,7 @@ export function useLiveRefresh(refresh: () => void) {
     const resume = () => {
       if (paused) return;
       connect();
-      latest.current();
+      if (!onlyMessages.current) latest.current();
     };
     const show = (event: PageTransitionEvent) => {
       paused = false;
