@@ -1237,13 +1237,6 @@ function Login({ onLogin, forbidden }: { onLogin: (u: User) => void; forbidden: 
       }
     } catch (e) {
       setError(say(e));
-      // An expired or used-up code cannot be retried: start again from a new code. (A wrong
-      // passphrase keeps the code, so staff can correct it.)
-      if (e instanceof ApiError && e.code === 'INVALID_OTP') {
-        setSent(false);
-        setCode('');
-        setDevCode('');
-      }
     } finally {
       setBusy(false);
     }
