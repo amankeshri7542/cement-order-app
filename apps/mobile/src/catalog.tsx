@@ -39,17 +39,21 @@ import {
   Button,
   C,
   Chip,
+  display,
+  displaySize,
   Empty,
   Field,
+  headingScale,
   Icon,
   Notice,
   Roll,
+  s,
   Screen,
   Section,
   Stamp,
   Tag,
+  teko,
   TornEdge,
-  s,
   type IconName,
 } from './ui';
 
@@ -366,7 +370,7 @@ function RateBoard() {
   ];
   return (
     <View>
-      <Text style={cs.ratesTitle} accessibilityRole="header">
+      <Text style={cs.ratesTitle} maxFontSizeMultiplier={headingScale} accessibilityRole="header">
         {t('Current rates', 'मौजूदा भाव')}
       </Text>
       <Text style={s.small}>
@@ -556,7 +560,7 @@ export function Home() {
       <View style={[s.paper, { gap: space.md }]}>
         <View style={[s.row, { alignItems: 'flex-start' }]}>
           <Stamp size={44} />
-          <Text style={[s.h2, { flex: 1 }]}>
+          <Text style={[s.h2, { flex: 1 }]} maxFontSizeMultiplier={headingScale}>
             {t('One list. A written price for your site.', 'एक सूची। आपकी साइट का लिखित भाव।')}
           </Text>
         </View>
@@ -1055,7 +1059,9 @@ export function ProductDetail() {
       <View style={[s.row, { alignItems: 'flex-start' }]}>
         <MaterialArt product={product} size={96} />
         <View style={{ flex: 1, gap: 4 }}>
-          <Text style={s.h1}>{productName(product, language)}</Text>
+          <Text style={s.h1} maxFontSizeMultiplier={headingScale}>
+            {productName(product, language)}
+          </Text>
           {/* The English name is what is printed on the bag, so Hindi readers see it too. */}
           {language === 'hi' && product.nameHi ? <Text style={s.small}>{product.name}</Text> : null}
           <Text style={s.small}>{product.brand}</Text>
@@ -1301,9 +1307,7 @@ const cs = StyleSheet.create({
   },
   rowPrice: {
     color: C.ink,
-    fontSize: textSize.lead,
-    lineHeight: 26,
-    fontWeight: '800',
+    ...teko(displaySize.figure),
     fontVariant: ['tabular-nums'],
   },
   add: {
@@ -1341,12 +1345,12 @@ const cs = StyleSheet.create({
     minHeight: 48,
     textAlign: 'center',
     color: C.ink,
-    fontSize: textSize.lead,
-    fontWeight: '800',
+    ...display,
+    fontSize: displaySize.figure,
     fontVariant: ['tabular-nums'],
   },
   // Home: the rate folders.
-  ratesTitle: { color: C.ink, fontSize: textSize.head, lineHeight: 40, fontWeight: '800' },
+  ratesTitle: { color: C.ink, ...teko(displaySize.head) },
   folderTabRow: { flexDirection: 'row', height: 8, pointerEvents: 'none' },
   slantLeft: {
     width: 0,
@@ -1374,7 +1378,7 @@ const cs = StyleSheet.create({
     paddingTop: space.md,
     paddingBottom: space.md,
   },
-  folderName: { color: C.ink, fontSize: textSize.lead, lineHeight: 28, fontWeight: '800' },
+  folderName: { color: C.ink, ...teko(displaySize.figure) },
   folderRate: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1383,9 +1387,7 @@ const cs = StyleSheet.create({
   },
   folderPrice: {
     color: C.ink,
-    fontSize: textSize.lead,
-    lineHeight: 28,
-    fontWeight: '800',
+    ...teko(displaySize.figure),
     fontVariant: ['tabular-nums'],
   },
   folderUnit: { color: C.ink2, fontSize: textSize.small, lineHeight: 20 },
@@ -1406,9 +1408,7 @@ const cs = StyleSheet.create({
   linkItem: { minHeight: 48, justifyContent: 'center' },
   slipNumber: {
     color: C.ink,
-    fontSize: textSize.lead,
-    lineHeight: 26,
-    fontWeight: '800',
+    ...teko(displaySize.figure),
     fontVariant: ['tabular-nums'],
   },
   facts: { flexDirection: 'row', flexWrap: 'wrap', gap: 2 },
@@ -1416,8 +1416,7 @@ const cs = StyleSheet.create({
   brands: { flexDirection: 'row', flexWrap: 'wrap', gap: 2 },
   brand: {
     color: C.ink,
-    fontSize: textSize.body,
-    fontWeight: '800',
+    ...teko(displaySize.small),
     paddingHorizontal: space.md,
     paddingVertical: space.sm,
     backgroundColor: C.surface,

@@ -19,16 +19,43 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, motion, radius, space, textSize, touch } from '@shiv/shared';
+import { displayFont } from './fonts';
 
 // Direction A, "counter and sindoor" (packages/shared/src/theme.ts): cement-stone ground,
 // surfaces one tone up, slip paper for the parchi and the latest-order slip, steel ink for the
 // top bar and the open rate folder, and sindoor red only for actions and the शिव stamp.
-// The app has no Teko: display text is the phone's own face, heavy, with a tighter line.
+// Teko 600 sets display text, headings and prices, as the website's var(--display); body text
+// stays in the phone's own face.
 export const C = colors;
 export type IconName = ComponentProps<typeof Ionicons>['name'];
 
 /** Prices and quantities line up in columns. */
 const figures: TextStyle = { fontVariant: ['tabular-nums'] };
+
+/**
+ * Teko 600. The file carries its own weight, so the style asks for none (Android would
+ * otherwise thicken it a second time).
+ */
+export const display: TextStyle = { fontFamily: displayFont, fontWeight: 'normal' };
+
+/**
+ * Teko is condensed and small on its body, so it runs one optical step above the reading sizes
+ * (as the website's --t-title and --t-figure). Each line is 1.15 em: Teko's Devanagari vowel
+ * signs reach 0.85 em above the baseline, and a tighter line would cut them off.
+ */
+export const displaySize = { display: 56, head: 40, title: 30, figure: 26, small: 22 } as const;
+export const displayLine = (size: number) => Math.round(size * 1.15);
+/**
+ * Teko headings already start large, so, like Android 14's non-linear font scaling, they grow
+ * at most 1.5× with the phone's font size: reading text still doubles, and a heading never
+ * fills the screen. Pass it as maxFontSizeMultiplier.
+ */
+export const headingScale = 1.5;
+export const teko = (size: number): TextStyle => ({
+  ...display,
+  fontSize: size,
+  lineHeight: displayLine(size),
+});
 
 export function Icon({
   name,
@@ -47,7 +74,7 @@ export function Stamp({ size = 44 }: { size?: number }) {
   return (
     <View accessible={false} style={[s.stamp, { width: size, height: size }]}>
       <Text
-        style={[s.stampText, { fontSize: Math.round(size * 0.46) }]}
+        style={[s.stampText, teko(Math.round(size * 0.56))]}
         maxFontSizeMultiplier={1}
         aria-hidden
       >
@@ -326,7 +353,9 @@ export function Empty({
       <View style={s.emptyIcon}>
         <Icon name={icon} size={32} color={C.ink2} />
       </View>
-      <Text style={s.emptyTitle}>{title}</Text>
+      <Text style={s.emptyTitle} maxFontSizeMultiplier={headingScale}>
+        {title}
+      </Text>
       {body ? <Text style={s.emptyBody}>{body}</Text> : null}
       {action && onAction && (
         <Button onPress={onAction} style={{ marginTop: space.xl, alignSelf: 'stretch' }}>
@@ -348,7 +377,7 @@ export function Section({
 }) {
   return (
     <View style={s.section}>
-      <Text style={s.h2} accessibilityRole="header">
+      <Text style={s.h2} maxFontSizeMultiplier={headingScale} accessibilityRole="header">
         {title}
       </Text>
       {action && onAction && (
@@ -494,7 +523,7 @@ export const s = StyleSheet.create({
     backgroundColor: C.accent,
     paddingTop: 2,
   },
-  stampText: { color: C.onAccent, fontWeight: '800', includeFontPadding: false },
+  stampText: { color: C.onAccent, ...display, includeFontPadding: false },
   codStamp: {
     width: 96,
     height: 96,
@@ -506,13 +535,7 @@ export const s = StyleSheet.create({
     padding: space.sm,
     transform: [{ rotate: '-11deg' }],
   },
-  codStampText: {
-    color: C.accent,
-    fontSize: textSize.small,
-    lineHeight: 17,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
+  codStampText: { color: C.accent, ...teko(18), textAlign: 'center' },
   torn: { height: TOOTH / 2, flexDirection: 'row', overflow: 'hidden', pointerEvents: 'none' },
   tooth: { width: TOOTH, height: TOOTH / 2 },
   toothShape: {
@@ -595,9 +618,7 @@ export const s = StyleSheet.create({
     marginBottom: space.lg,
   },
   emptyTitle: {
-    fontSize: textSize.lead,
-    lineHeight: 26,
-    fontWeight: '800',
+    ...teko(displaySize.title),
     color: C.ink,
     textAlign: 'center',
     maxWidth: 320,
@@ -621,15 +642,10 @@ export const s = StyleSheet.create({
   },
   sectionAction: { flexDirection: 'row', gap: 4, alignItems: 'center', minHeight: touch },
   /** Display: the one big line on a screen (rates, prices). */
-  display: {
-    color: C.ink,
-    fontSize: textSize.display,
-    lineHeight: 54,
-    fontWeight: '800',
-    ...figures,
-  },
-  h1: { color: C.ink, fontSize: textSize.head, lineHeight: 38, fontWeight: '800' },
-  h2: { color: C.ink, fontSize: textSize.lead, lineHeight: 26, fontWeight: '800', flexShrink: 1 },
+  display: { color: C.ink, ...teko(displaySize.display), ...figures },
+  h1: { color: C.ink, ...teko(displaySize.head) },
+  h2: { color: C.ink, ...teko(displaySize.title), flexShrink: 1 },
+  /** Sub-headings and item names stay in the reading face, as on the website's product cards. */
   h3: { color: C.ink, fontSize: textSize.lead, lineHeight: 26, fontWeight: '700' },
   link: {
     color: C.ink,
@@ -685,14 +701,8 @@ export const s = StyleSheet.create({
   },
   body: { color: C.muted, fontSize: textSize.body, lineHeight: 25 },
   small: { color: C.muted, fontSize: textSize.small, lineHeight: 20 },
-  price: { color: C.ink, fontSize: textSize.lead, lineHeight: 26, fontWeight: '800', ...figures },
-  priceBig: {
-    color: C.ink,
-    fontSize: textSize.head,
-    lineHeight: 38,
-    fontWeight: '800',
-    ...figures,
-  },
+  price: { color: C.ink, ...teko(displaySize.figure), ...figures },
+  priceBig: { color: C.ink, ...teko(displaySize.head), ...figures },
   divider: { height: 1, backgroundColor: C.rule, marginVertical: space.xs },
   screen: {
     width: '100%',

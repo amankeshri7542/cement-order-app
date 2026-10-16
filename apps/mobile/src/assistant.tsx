@@ -4,7 +4,7 @@ import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from 'expo-spe
 import { money, radius, space, textSize } from '@shiv/shared';
 import { api } from './api';
 import { useStore } from './store';
-import { Button, C, Icon, IconButton, Notice, s } from './ui';
+import { Button, C, headingScale, Icon, IconButton, Notice, s } from './ui';
 
 type AssistantProduct = {
   id: string;
@@ -168,7 +168,7 @@ export function Assistant() {
             <Icon name="chatbubbles" color={C.onInkMuted} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={s.h2} accessibilityRole="header">
+            <Text style={s.h2} maxFontSizeMultiplier={headingScale} accessibilityRole="header">
               {t('Shiv Sahayak', 'शिव सहायक')}
             </Text>
             <Text style={s.small}>

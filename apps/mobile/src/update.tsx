@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { clientConfigSchema, compareVersions, space } from '@shiv/shared';
 import { api } from './api';
 import { useStore } from './store';
-import { Button, C, Notice, Stamp, s } from './ui';
+import { Button, C, headingScale, Notice, s, Stamp } from './ui';
 
 export const appVersion = Constants.expoConfig?.version || '1.0.0';
 
@@ -74,7 +74,9 @@ export function UpdateGate({ children }: { children: ReactNode }) {
         }}
       >
         <Stamp size={64} />
-        <Text style={s.h1}>{t('Please update the app', 'कृपया ऐप अपडेट करें')}</Text>
+        <Text style={s.h1} maxFontSizeMultiplier={headingScale}>
+          {t('Please update the app', 'कृपया ऐप अपडेट करें')}
+        </Text>
         <Text style={s.body}>
           {t(
             'This version can no longer place orders safely. Updating takes a minute and keeps your basket and orders.',

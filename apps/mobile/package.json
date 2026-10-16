@@ -12,6 +12,7 @@
     "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
+    "@expo-google-fonts/teko": "^0.4.1",
     "@expo/vector-icons": "^15.0.3",
     "@sentry/react-native": "~7.11.0",
     "@shiv/shared": "1.0.0",

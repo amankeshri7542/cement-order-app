@@ -3,7 +3,7 @@ import { Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { space } from '@shiv/shared';
 import { reportError } from './monitoring';
-import { Button, C, Stamp, s } from './ui';
+import { Button, C, headingScale, s, Stamp } from './ui';
 
 type State = { failed: boolean; attempt: number };
 
@@ -36,7 +36,9 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
         }}
       >
         <Stamp size={64} />
-        <Text style={s.h1}>कुछ गड़बड़ हो गई · Something went wrong</Text>
+        <Text style={s.h1} maxFontSizeMultiplier={headingScale}>
+          कुछ गड़बड़ हो गई · Something went wrong
+        </Text>
         <Text style={s.body}>
           यह स्क्रीन दिखाने में दिक्कत हुई। कृपया फिर कोशिश करें। · The app had a problem showing
           this screen. Please try again.

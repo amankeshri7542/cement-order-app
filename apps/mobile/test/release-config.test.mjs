@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 import ts from 'typescript';
@@ -9,7 +10,12 @@ const compiled = ts.transpileModule(readFileSync('app.config.ts', 'utf8'), {
 }).outputText;
 function config(env) {
   const exports = {};
-  runInNewContext(compiled, { exports, process: { env }, URL });
+  runInNewContext(compiled, {
+    exports,
+    process: { env },
+    URL,
+    require: createRequire(import.meta.url),
+  });
   return exports.default({ config: JSON.parse(readFileSync('app.json', 'utf8')).expo });
 }
 const release = {
@@ -52,6 +58,14 @@ test('release builds require real HTTPS API and privacy URLs, without local clea
   assert.equal(config(release).extra.appEnv, 'staging');
   assert.equal(config({}).extra.appEnv, 'development');
   assert.ok(config({ APP_VARIANT: 'local' }).plugins.includes('./plugins/local-cleartext'));
+});
+
+test('every build embeds Teko 600 for display text and prices', () => {
+  const font = config(release).plugins.find((plugin) => plugin[0] === 'expo-font');
+  assert.ok(font, 'expo-font plugin is configured');
+  // The config runs in another realm, so compare plain strings rather than arrays.
+  assert.equal(font[1].fonts.map((file) => file.split('/').at(-1)).join(), 'Teko_600SemiBold.ttf');
+  assert.ok(existsSync(font[1].fonts[0]));
 });
 
 test('EAS preview APK and closed-test AAB use preview environment; submissions remain drafts', () => {
