@@ -67,7 +67,7 @@ export function UpdateGate({ children }: { children: ReactNode }) {
       <SafeAreaView
         style={{
           flex: 1,
-          backgroundColor: C.paper,
+          backgroundColor: C.ground,
           padding: space.xl,
           justifyContent: 'center',
           gap: space.lg,
@@ -111,7 +111,7 @@ export function UpdateGate({ children }: { children: ReactNode }) {
           <View
             style={[
               s.row,
-              { justifyContent: 'flex-end', backgroundColor: C.stone, paddingBottom: space.xs },
+              { justifyContent: 'flex-end', backgroundColor: C.surface, paddingBottom: space.xs },
             ]}
           >
             <Button kind="quiet" onPress={() => setDismissed(true)}>

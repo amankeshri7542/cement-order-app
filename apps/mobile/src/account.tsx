@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   addressSchema,
   momentLabel,
+  radius,
   space,
   textSize,
   type Address,
@@ -294,7 +295,7 @@ export function Account() {
     <Screen>
       <View style={[s.card, s.row]}>
         <View style={ac.avatar}>
-          <Icon name="person" color={C.inkSoft} size={30} />
+          <Icon name="person" color={C.ink2} size={30} />
         </View>
         <View style={{ flex: 1 }}>
           <Text style={s.h2}>
@@ -341,7 +342,7 @@ export function Account() {
             <Switch
               value={contractor}
               onValueChange={setContractor}
-              trackColor={{ true: C.clay, false: C.line }}
+              trackColor={{ true: C.accent, false: C.rule }}
               accessibilityLabel={t(
                 'I buy for business or construction projects',
                 'मैं व्यापार या निर्माण के लिए खरीदता/खरीदती हूँ',
@@ -360,7 +361,7 @@ export function Account() {
           </Button>
         </View>
       )}
-      <View style={[s.card, { paddingVertical: 0 }]}>
+      <View style={{ gap: 2 }}>
         {rows.map((row) => (
           <Pressable
             accessibilityRole="button"
@@ -368,13 +369,13 @@ export function Account() {
             key={row.label}
             style={({ pressed }) => [ac.accountRow, pressed && { opacity: 0.7 }]}
           >
-            <Icon name={row.icon} color={C.clay} />
+            <Icon name={row.icon} color={C.ink} />
             <Text style={ac.rowLabel}>{row.label}</Text>
             <Icon name="chevron-forward" size={18} color={C.muted} />
           </Pressable>
         ))}
-        <View style={[ac.accountRow, { borderBottomWidth: 0 }]}>
-          <Icon name="language-outline" color={C.clay} />
+        <View style={ac.accountRow}>
+          <Icon name="language-outline" color={C.ink} />
           <Text style={ac.rowLabel}>{t('Language', 'भाषा')}</Text>
           <Chip
             label="हिंदी"
@@ -759,31 +760,41 @@ export function Addresses() {
 }
 
 const ac = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: '#17334599', justifyContent: 'flex-end' },
+  // Dialogs are the one raised object besides menus and toasts.
+  overlay: { flex: 1, backgroundColor: 'rgba(28, 34, 39, 0.6)', justifyContent: 'flex-end' },
   sheet: {
     width: '100%',
     maxWidth: 560,
     alignSelf: 'center',
     maxHeight: '94%',
-    backgroundColor: C.paper,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    backgroundColor: C.ground,
+    borderTopLeftRadius: radius.control,
+    borderTopRightRadius: radius.control,
+    elevation: 12,
   },
   avatar: {
     width: 56,
     height: 56,
-    backgroundColor: C.stone,
-    borderRadius: 28,
+    backgroundColor: C.tab1,
     justifyContent: 'center',
     alignItems: 'center',
   },
   accountRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     gap: space.md,
     minHeight: 60,
-    borderBottomWidth: 1,
-    borderBottomColor: C.stone,
+    paddingHorizontal: space.lg,
+    paddingVertical: space.sm,
+    backgroundColor: C.surface,
   },
-  rowLabel: { flex: 1, color: C.ink, fontSize: textSize.body, fontWeight: '700' },
+  rowLabel: {
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 120,
+    color: C.ink,
+    fontSize: textSize.body,
+    fontWeight: '700',
+  },
 });

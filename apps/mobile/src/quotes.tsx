@@ -179,7 +179,7 @@ export function Quotes() {
                 >
                   <Icon
                     name={consents[q.id] === q.revision ? 'checkbox' : 'square-outline'}
-                    color={C.clay}
+                    color={C.accent}
                     size={28}
                   />
                   <Text style={[s.body, { flex: 1, color: C.ink }]}>
@@ -537,7 +537,7 @@ export function QuoteRequest() {
                 pressed && { opacity: 0.7 },
               ]}
             >
-              <Icon name="add-circle" color={C.clay} size={26} />
+              <Icon name="add-circle" color={C.accent} size={26} />
               <Text style={[s.body, { color: C.ink, flex: 1 }]}>{p.name}</Text>
               <Text style={s.small}>{p.unit}</Text>
             </Pressable>
@@ -562,7 +562,7 @@ export function QuoteRequest() {
           onPress={() => update({ addressId: a.id })}
           style={[s.card, s.row, addressId === a.id && { borderColor: C.ink, borderWidth: 2 }]}
         >
-          <Icon name={addressId === a.id ? 'radio-button-on' : 'radio-button-off'} color={C.clay} />
+          <Icon name={addressId === a.id ? 'radio-button-on' : 'radio-button-off'} color={C.ink} />
           <Text style={[s.body, { flex: 1, color: C.ink }]}>
             {a.label} · {a.line1}, {a.city}
           </Text>

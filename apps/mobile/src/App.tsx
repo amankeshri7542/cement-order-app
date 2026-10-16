@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
-import { space, textSize } from '@shiv/shared';
+import { radius, space, textSize } from '@shiv/shared';
 import { StoreProvider, tabs, useStore, type Route, type Tab } from './store';
 import { Button, C, Icon, IconButton, Stamp, type IconName } from './ui';
 import { Home, Catalogue, ProductDetail } from './catalog';
@@ -145,7 +145,7 @@ function Shell() {
     return (
       <SafeAreaView style={[a.app, a.center]}>
         <Stamp size={64} />
-        <ActivityIndicator color={C.clay} style={{ marginTop: space.xl }} />
+        <ActivityIndicator color={C.accent} style={{ marginTop: space.xl }} />
       </SafeAreaView>
     );
   if (languageState === 'unset') return <LanguageChooser choose={setLanguage} />;
@@ -163,7 +163,7 @@ function Shell() {
           style={a.brand}
           onPress={() => navigate({ screen: 'Home' })}
         >
-          <Stamp size={38} tone="clay" />
+          <Stamp size={40} />
           <View style={{ flexShrink: 1 }}>
             <Text style={a.brandName} numberOfLines={1} maxFontSizeMultiplier={1.15}>
               {t('Shiv Cement', 'शिव सीमेंट')}
@@ -183,7 +183,7 @@ function Shell() {
         {Platform.OS === 'web' && (
           <IconButton
             icon="refresh"
-            color={C.paper}
+            color={C.onInk}
             label={t('Refresh current screen', 'यह पेज रीफ़्रेश करें')}
             disabled={refreshing}
             onPress={() => void refreshCurrent()}
@@ -193,13 +193,13 @@ function Shell() {
           <>
             <IconButton
               icon="call"
-              color={C.paper}
+              color={C.onInk}
               label={t('Call the store', 'दुकान पर फ़ोन करें')}
               onPress={() => open(`tel:+${phone}`)}
             />
             <IconButton
               icon="logo-whatsapp"
-              color={C.paper}
+              color={C.onInk}
               label={t('WhatsApp the store', 'दुकान को WhatsApp करें')}
               onPress={() => open(`https://wa.me/${phone}`)}
             />
@@ -248,7 +248,7 @@ function Shell() {
           onPress={() => navigate({ screen: 'Checkout' })}
           style={a.pending}
         >
-          <Icon name="time-outline" color={C.clayDeep} />
+          <Icon name="time-outline" color={C.warn} />
           <Text style={a.pendingText}>
             {t(
               'Your last order request needs its result checked. Tap to check.',
@@ -259,7 +259,7 @@ function Shell() {
       )}
       <KeyboardAvoidingView
         behavior={Platform.OS === 'web' ? undefined : 'padding'}
-        style={{ flex: 1, backgroundColor: C.paper }}
+        style={{ flex: 1, backgroundColor: C.ground }}
       >
         <View style={[{ flex: 1 }, detail ? a.hidden : null]}>
           <TabScreen route={tabRoute} />
@@ -279,7 +279,7 @@ function Shell() {
             <Text accessibilityLiveRegion="polite" style={a.toastText}>
               {toast}
             </Text>
-            <Icon name="close" color={C.paper} size={18} />
+            <Icon name="close" color={C.onInk} size={18} />
           </Pressable>
         ) : null}
       </KeyboardAvoidingView>
@@ -305,11 +305,12 @@ function Shell() {
               onPress={() => navigate({ screen: name })}
               style={a.navItem}
             >
-              <View style={[a.navIcon, selected && { backgroundColor: C.ink }]}>
+              <View style={[a.navMark, selected && { backgroundColor: C.accent }]} />
+              <View style={a.navIcon}>
                 <Icon
                   name={(selected ? icon : `${icon}-outline`) as IconName}
-                  size={22}
-                  color={selected ? C.paper : C.inkSoft}
+                  size={24}
+                  color={selected ? C.ink : C.muted}
                 />
                 {name === 'Cart' && basketCount > 0 && (
                   <View style={a.navBadge}>
@@ -319,6 +320,7 @@ function Shell() {
               </View>
               <Text
                 numberOfLines={1}
+                maxFontSizeMultiplier={1.3}
                 style={[a.navLabel, selected && { color: C.ink, fontWeight: '800' }]}
               >
                 {label}
@@ -337,7 +339,7 @@ function LanguageChooser({ choose }: { choose: (language: 'hi' | 'en') => void }
   return (
     <SafeAreaView style={[a.app, a.center, { backgroundColor: C.ink, padding: space.xl }]}>
       <StatusBar barStyle="light-content" backgroundColor={C.ink} />
-      <Stamp size={72} tone="clay" />
+      <Stamp size={72} />
       <Text style={a.chooserTitle}>शिव सीमेंट स्टोर</Text>
       <Text style={a.chooserSub}>Shiv Cement Store · पटना</Text>
       <Text style={a.chooserAsk}>अपनी भाषा चुनें · Choose your language</Text>
@@ -346,7 +348,7 @@ function LanguageChooser({ choose }: { choose: (language: 'hi' | 'en') => void }
           हिंदी
         </Button>
         <Button
-          secondary
+          kind="paper"
           onPress={() => choose('en')}
           label="Choose English"
           style={{ minHeight: 64 }}
@@ -362,7 +364,7 @@ function LanguageChooser({ choose }: { choose: (language: 'hi' | 'en') => void }
 }
 
 const a = StyleSheet.create({
-  app: { flex: 1, backgroundColor: C.paper },
+  app: { flex: 1, backgroundColor: C.ground },
   center: { alignItems: 'center', justifyContent: 'center' },
   hidden: { display: 'none' },
   header: {
@@ -373,29 +375,29 @@ const a = StyleSheet.create({
     paddingVertical: space.sm,
     gap: 2,
   },
-  brand: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.sm, minHeight: 48 },
-  brandName: { color: C.paper, fontSize: textSize.lead, fontWeight: '800' },
-  brandPlace: { color: C.clayOnInk, fontSize: 13 },
+  brand: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.md, minHeight: 48 },
+  brandName: { color: C.onInk, fontSize: textSize.lead, lineHeight: 26, fontWeight: '800' },
+  brandPlace: { color: C.onInkMuted, fontSize: textSize.small, lineHeight: 18 },
   testMark: {
-    borderRadius: 4,
+    borderRadius: radius.control,
     borderWidth: 1,
-    borderColor: C.clayOnInk,
+    borderColor: C.onInkMuted,
     paddingHorizontal: 5,
     paddingVertical: 1,
   },
-  testMarkText: { color: C.clayOnInk, fontSize: 11, fontWeight: '800', letterSpacing: 0.8 },
+  testMarkText: { color: C.onInkMuted, fontSize: textSize.small, fontWeight: '800' },
   languageTarget: { minWidth: 52, height: 48, alignItems: 'center', justifyContent: 'center' },
   language: {
     minWidth: 48,
-    height: 40,
-    borderRadius: 8,
-    borderWidth: 1.5,
-    borderColor: C.clayOnInk,
+    height: 44,
+    borderRadius: radius.control,
+    borderWidth: 1,
+    borderColor: C.muted,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 8,
   },
-  languageText: { color: C.paper, fontSize: 15, fontWeight: '800' },
+  languageText: { color: C.onInk, fontSize: textSize.body, fontWeight: '800' },
   back: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -403,8 +405,6 @@ const a = StyleSheet.create({
     minHeight: 48,
     paddingHorizontal: space.lg,
     backgroundColor: C.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: C.line,
   },
   backText: { color: C.ink, fontSize: textSize.body, fontWeight: '700' },
   pending: {
@@ -412,7 +412,7 @@ const a = StyleSheet.create({
     alignItems: 'center',
     gap: space.sm,
     padding: space.md,
-    backgroundColor: C.dangerSoft,
+    backgroundColor: C.paper,
   },
   offline: {
     flexDirection: 'row',
@@ -422,37 +422,39 @@ const a = StyleSheet.create({
     paddingVertical: space.xs,
     backgroundColor: C.dangerSoft,
   },
-  offlineText: { flex: 1, color: C.danger, fontSize: textSize.caption },
-  pendingText: { flex: 1, color: C.clayDeep, fontSize: textSize.caption, fontWeight: '700' },
-  nav: {
-    flexDirection: 'row',
-    backgroundColor: C.surface,
-    borderTopWidth: 1,
-    borderTopColor: C.line,
-    paddingVertical: 6,
+  offlineText: { flex: 1, color: C.danger, fontSize: textSize.small, lineHeight: 20 },
+  pendingText: {
+    flex: 1,
+    color: C.warn,
+    fontSize: textSize.small,
+    lineHeight: 20,
+    fontWeight: '700',
   },
-  navItem: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3, minHeight: 56 },
-  navIcon: {
-    width: 52,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  navLabel: { fontSize: 13, color: C.inkSoft, fontWeight: '600' },
+  // Paper tabs on the cement ground; the open tab is ink with a sindoor mark.
+  nav: { flexDirection: 'row', backgroundColor: C.paper, paddingBottom: 6 },
+  navItem: { flex: 1, alignItems: 'center', gap: 2, minHeight: 60 },
+  navMark: { alignSelf: 'stretch', height: 3, marginHorizontal: space.md, marginBottom: 5 },
+  navIcon: { width: 52, height: 28, alignItems: 'center', justifyContent: 'center' },
+  navLabel: { fontSize: textSize.small, color: C.muted, fontWeight: '600' },
   navBadge: {
     position: 'absolute',
-    top: -4,
-    right: 2,
+    top: -6,
+    right: 0,
     minWidth: 20,
     height: 20,
-    borderRadius: 10,
+    borderRadius: radius.pill,
     paddingHorizontal: 4,
-    backgroundColor: C.clay,
+    backgroundColor: C.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  navBadgeText: { color: C.surface, fontSize: 12, fontWeight: '800' },
+  navBadgeText: {
+    color: C.onAccent,
+    fontSize: textSize.small,
+    lineHeight: 18,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+  },
   // Messages appear at the top of the screen so they never cover a screen's main button.
   toast: {
     position: 'absolute',
@@ -462,24 +464,38 @@ const a = StyleSheet.create({
     maxWidth: 560,
     backgroundColor: C.ink,
     padding: space.lg,
-    borderRadius: 12,
+    borderRadius: radius.control,
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.md,
+    // Toasts, menus and dialogs are the only raised objects.
+    elevation: 6,
+    shadowColor: C.ink,
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
   },
-  toastText: { flex: 1, color: C.paper, fontSize: textSize.body - 1, lineHeight: 22 },
-  chooserTitle: { color: C.paper, fontSize: 32, fontWeight: '800', marginTop: space.xl },
-  chooserSub: { color: C.clayOnInk, fontSize: textSize.body, marginTop: 4 },
+  toastText: { flex: 1, color: C.onInk, fontSize: textSize.body, lineHeight: 24 },
+  chooserTitle: {
+    color: C.onInk,
+    fontSize: textSize.head,
+    lineHeight: 42,
+    fontWeight: '800',
+    marginTop: space.xl,
+    textAlign: 'center',
+  },
+  chooserSub: { color: C.onInkMuted, fontSize: textSize.body, marginTop: 4, textAlign: 'center' },
   chooserAsk: {
-    color: C.paper,
+    color: C.onInk,
     fontSize: textSize.lead,
+    lineHeight: 28,
     fontWeight: '700',
     marginTop: space.xxl,
     textAlign: 'center',
   },
   chooserNote: {
-    color: '#C9D3D8',
-    fontSize: textSize.caption,
+    color: C.onInkMuted,
+    fontSize: textSize.small,
     textAlign: 'center',
     marginTop: space.xl,
     lineHeight: 21,
