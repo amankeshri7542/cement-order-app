@@ -125,10 +125,10 @@ async function openDelete(page: Page) {
   await page.getByRole('button', { name: 'Delete account', exact: true }).click();
   const confirmation = page.getByRole('main').getByLabel('Type DELETE to confirm');
   const remove = page.getByRole('button', { name: 'Permanently delete my account', exact: true });
-  // Only the typed word unlocks deletion.
-  await confirmation.fill('delete');
+  // Only the whole typed word unlocks deletion (any case, as phone keyboards capitalise).
+  await confirmation.fill('DELET');
   await expect(remove).toBeDisabled();
-  await confirmation.fill('DELETE');
+  await confirmation.fill('delete ');
   await expect(remove).toBeEnabled();
   return remove;
 }
