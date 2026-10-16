@@ -156,7 +156,6 @@ function Orders({ orderId }: { orderId?: string }) {
   return (
     <div className="commerce-page">
       <div className="page-heading">
-        <p className="eyebrow">{t('Your orders', 'आपके ऑर्डर')}</p>
         <h1>
           {orderId
             ? t('Your order, in progress.', 'आपका ऑर्डर, हर कदम पर।')
@@ -184,7 +183,6 @@ function Orders({ orderId }: { orderId?: string }) {
         <article className="order-record" key={order.id}>
           <div className="section-heading">
             <div>
-              <p className="eyebrow">{t('Confirmed record', 'सहेजा रिकॉर्ड')}</p>
               <h2>
                 <Link href={`/orders/${order.id}`}>{order.number}</Link>
               </h2>

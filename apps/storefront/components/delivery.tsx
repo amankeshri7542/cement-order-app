@@ -48,12 +48,9 @@ export function Delivery() {
   }
   return (
     <section className="delivery-section" id="delivery" aria-labelledby="delivery-title">
+      {/* The delivery coupon: an ink slip with a dotted tear line between its two halves. */}
       <div className="delivery-heading">
-        <span className="delivery-mark" aria-hidden="true">
-          ↗
-        </span>
         <div>
-          <p className="eyebrow">{t('Before you plan a delivery', 'डिलीवरी की तैयारी से पहले')}</p>
           <h2 id="delivery-title">{t('Start with your pincode.', 'अपने पिनकोड से शुरू करें।')}</h2>
           <p>
             {t(
