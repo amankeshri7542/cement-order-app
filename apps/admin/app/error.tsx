@@ -1,6 +1,5 @@
 'use client';
 import { useEffect } from 'react';
-import { Building2 } from 'lucide-react';
 import { LanguageProvider, useLanguage } from '../lib/i18n';
 
 // The desk's last line of defence: one malformed reply must not leave staff with a blank page.
@@ -20,7 +19,9 @@ function Recovery({ retry }: { retry: () => void }) {
   const { language, setLanguage, t } = useLanguage();
   return (
     <div className="loading-page" role="alert">
-      <Building2 size={36} />
+      <span className="stamp" aria-hidden="true">
+        शिव
+      </span>
       <h1>{t('Something went wrong', 'कुछ गड़बड़ हो गई')}</h1>
       <p>
         {t(
