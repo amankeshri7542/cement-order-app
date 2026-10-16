@@ -24,6 +24,7 @@ import {
   rateAdjustmentSchema,
   rateCardSchema,
   rateExtractionSchema,
+  hasDevanagari,
   type RateIssue,
 } from '@shiv/shared';
 import { Db } from '../db';
@@ -774,6 +775,9 @@ export class RateStudioService {
           );
       }
       const settings = await tx.storeSettings.findUniqueOrThrow({ where: { id: 'store' } });
+      // A card headed in Hindi is a Hindi card: it names each material by its Hindi name where
+      // the shop has saved one (prices, units and specifications stay as published).
+      const hindi = hasDevanagari(input.heading);
       const snapshot = {
         heading: input.heading,
         deliveryMessage: input.deliveryMessage,
@@ -789,7 +793,8 @@ export class RateStudioService {
             specification: string;
             unit: string;
           };
-          return { ...p, pricePaise: row.publishedPricePaise! };
+          const name = (hindi && row.product?.nameHi) || p.name;
+          return { ...p, name, pricePaise: row.publishedPricePaise! };
         }),
       };
       const card = await tx.rateCard.create({

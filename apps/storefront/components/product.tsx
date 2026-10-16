@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import type { Product } from '@shiv/shared';
+import { productName, unitLabel, type Product } from '@shiv/shared';
 import { approvedPhoto } from '../lib/api';
 import { dateLabel, timeLabel, price } from '../lib/catalog';
 import { useLanguage } from './language';
@@ -11,7 +11,7 @@ import type { Connection } from './live';
 import { BuyActions } from './commerce';
 
 export function ProductImage({ product, large = false }: { product: Product; large?: boolean }) {
-  const { t } = useLanguage();
+  const { language, t } = useLanguage();
   const photo = approvedPhoto(product);
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [photo]);
@@ -20,7 +20,7 @@ export function ProductImage({ product, large = false }: { product: Product; lar
       {photo && !failed ? (
         <img
           src={photo}
-          alt={product.name}
+          alt={productName(product, language)}
           width={640}
           height={440}
           loading={large ? 'eager' : 'lazy'}
@@ -44,7 +44,7 @@ export function ProductImage({ product, large = false }: { product: Product; lar
 }
 
 export function ProductCard({ product }: { product: Product }) {
-  const { t } = useLanguage();
+  const { language, t } = useLanguage();
   return (
     <article className="product-card">
       <Link href={`/products/${encodeURIComponent(product.id)}`} prefetch={false}>
@@ -56,13 +56,13 @@ export function ProductCard({ product }: { product: Product }) {
               {product.stock > 0 ? t('In stock', 'स्टॉक में') : t('Out of stock', 'स्टॉक नहीं')}
             </span>
           </div>
-          <h3>{product.name}</h3>
+          <h3>{productName(product, language)}</h3>
           <p className="product-spec">
             {product.type} · {product.grade}
           </p>
           <div className="product-price">
             <strong>{price(product.pricePaise)}</strong>
-            <span>/ {product.unit}</span>
+            <span>/ {unitLabel(product.unit, language)}</span>
           </div>
           {product.packSize ? (
             <p className="pack-size">

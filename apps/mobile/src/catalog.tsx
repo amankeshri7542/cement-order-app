@@ -16,8 +16,11 @@ import {
   money,
   maxOrderable,
   orderStatusText,
+  productDescription,
+  productName,
   quantityProblem,
   ratesFrom,
+  unitLabel,
   timeLabel,
   MAX_LINE_QUANTITY,
   space,
@@ -97,7 +100,7 @@ export function MaterialArt({ product, size = 64 }: { product: Product; size?: n
 }
 
 const unitText = (product: Product, language: Language) =>
-  language === 'hi' ? `प्रति ${product.unit}` : `per ${product.unit}`;
+  language === 'hi' ? `प्रति ${unitLabel(product.unit, language)}` : `per ${product.unit}`;
 
 /**
  * One row per material: everything needed to choose it, and the basket control, in ~100dp.
@@ -105,30 +108,33 @@ const unitText = (product: Product, language: Language) =>
  * entry, not forty taps).
  */
 export function ProductRow({ product }: { product: Product }) {
-  const { t, navigate, add, setQuantity, basketQuantity, cartBusy, setToast } = useStore();
+  const { t, language, navigate, add, setQuantity, basketQuantity, cartBusy, setToast } =
+    useStore();
   const [busy, setBusy] = useState(false);
   const inBasket = basketQuantity(product.id);
   const available = product.active && product.stock >= product.minQuantity;
+  const name = productName(product, language);
+  const unit = unitLabel(product.unit, language);
   return (
     <View style={cs.row} testID={`product-${product.id}`}>
       <View style={[s.row, { gap: space.sm }]}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`${t('View', 'देखें')} ${product.name}`}
+          accessibilityLabel={`${t('View', 'देखें')} ${name}`}
           onPress={() => navigate({ screen: 'Product', id: product.id })}
           style={({ pressed }) => [cs.rowMain, pressed && { opacity: 0.75 }]}
         >
           <MaterialArt product={product} />
           <View style={{ flex: 1, gap: 2 }}>
             <Text style={cs.rowName} numberOfLines={2}>
-              {product.name}
+              {name}
             </Text>
             <Text style={s.small} numberOfLines={1}>
               {[product.brand, product.grade, product.packSize].filter(Boolean).join(' · ')}
             </Text>
             <View style={[s.row, { gap: space.xs, marginTop: 2 }]}>
               <Text style={cs.rowPrice}>{money(product.pricePaise)}</Text>
-              <Text style={s.small}>/ {product.unit}</Text>
+              <Text style={s.small}>/ {unit}</Text>
             </View>
             {!available && <Tag tone="grey">{t('Out of stock', 'स्टॉक नहीं')}</Tag>}
           </View>
@@ -157,10 +163,10 @@ export function ProductRow({ product }: { product: Product }) {
         <View style={cs.inBasket}>
           <Icon name="basket" color={C.green} size={18} />
           <Text style={[s.small, { flex: 1, color: C.green, fontWeight: '700' }]}>
-            {t('In basket', 'टोकरी में')} · {product.unit}
+            {t('In basket', 'टोकरी में')} · {unit}
           </Text>
           <Quantity
-            label={`${product.name} ${t('quantity', 'मात्रा')}`}
+            label={`${name} ${t('quantity', 'मात्रा')}`}
             value={inBasket}
             min={product.minQuantity}
             step={product.quantityStep}
@@ -349,12 +355,12 @@ function RateBoard() {
               <View style={{ flex: 1 }}>
                 <Text style={cs.rateName}>{categoryName(rate.slug, rate.name, language)}</Text>
                 <Text style={cs.rateProduct} numberOfLines={1}>
-                  {rate.product.name}
+                  {productName(rate.product, language)}
                 </Text>
               </View>
               <View style={{ alignItems: 'flex-end' }}>
                 <Text style={cs.ratePrice}>{money(rate.product.pricePaise)}</Text>
-                <Text style={cs.rateProduct}>/ {rate.product.unit}</Text>
+                <Text style={cs.rateProduct}>/ {unitLabel(rate.product.unit, language)}</Text>
               </View>
               <Icon name="chevron-forward" color={C.clayOnInk} size={18} />
             </Pressable>
@@ -993,7 +999,9 @@ export function ProductDetail() {
         <MaterialArt product={product} size={96} />
         <View style={{ flex: 1, gap: 4 }}>
           <Text style={s.eyebrow}>{product.brand.toUpperCase()}</Text>
-          <Text style={[s.h1, { fontSize: 26 }]}>{product.name}</Text>
+          <Text style={[s.h1, { fontSize: 26 }]}>{productName(product, language)}</Text>
+          {/* The English name is what is printed on the bag, so Hindi readers see it too. */}
+          {language === 'hi' && product.nameHi ? <Text style={s.small}>{product.name}</Text> : null}
           <Tag tone={available ? 'green' : 'grey'}>
             {available ? t('In stock', 'स्टॉक में') : t('Out of stock', 'स्टॉक नहीं')}
           </Tag>
@@ -1014,7 +1022,7 @@ export function ProductDetail() {
           <Notice tone="good">
             {t(
               `${inBasket} × ${product.unit} already in your basket`,
-              `${inBasket} × ${product.unit} पहले से टोकरी में`,
+              `${inBasket} × ${unitLabel(product.unit, language)} पहले से टोकरी में`,
             )}
           </Notice>
         )}
@@ -1030,7 +1038,7 @@ export function ProductDetail() {
             [t('Type', 'प्रकार'), product.type],
             [t('Grade', 'ग्रेड'), product.grade],
             [t('Pack', 'पैक'), product.packSize],
-            [t('Sold per', 'बिक्री इकाई'), product.unit],
+            [t('Sold per', 'बिक्री इकाई'), unitLabel(product.unit, language)],
             [
               t('Order', 'ऑर्डर'),
               t(
@@ -1048,7 +1056,9 @@ export function ProductDetail() {
             </View>
           ))}
       </View>
-      {product.description ? <Text style={s.body}>{product.description}</Text> : null}
+      {product.description ? (
+        <Text style={s.body}>{productDescription(product, language)}</Text>
+      ) : null}
       {product.recommendedUse ? (
         <View style={{ gap: space.xs }}>
           <Text style={s.h3}>{t('Recommended use', 'कहाँ इस्तेमाल करें')}</Text>

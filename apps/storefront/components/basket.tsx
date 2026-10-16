@@ -6,11 +6,11 @@ import { ProductImage } from './product';
 import { price } from '../lib/catalog';
 import { useLanguage } from './language';
 import { ApiError, publicGet, productResponse } from '../lib/api';
-import type { Product } from '@shiv/shared';
+import { productName, unitLabel, type Product } from '@shiv/shared';
 
 export function BasketPage() {
   const c = useCommerce();
-  const { t } = useLanguage();
+  const { language, t } = useLanguage();
   const checkoutLabel = c.user
     ? t('Review delivery & checkout', 'डिलीवरी और चेकआउट जाँचें')
     : t('Sign in to checkout', 'चेकआउट के लिए साइन इन');
@@ -56,7 +56,7 @@ export function BasketPage() {
               </p>
               {c.mergeDraft.lines.map(({ product, quantity }) => (
                 <div className="quote-line" key={product.id}>
-                  <strong>{product.name}</strong>
+                  <strong>{productName(product, language)}</strong>
                   <Quantity
                     product={product}
                     value={quantity}
@@ -88,14 +88,14 @@ export function BasketPage() {
                 <div>
                   <p className="eyebrow">{product.brand}</p>
                   <h2>
-                    <Link href={`/products/${product.id}`}>{product.name}</Link>
+                    <Link href={`/products/${product.id}`}>{productName(product, language)}</Link>
                   </h2>
                   <p>
                     {product.grade}
                     {product.packSize ? ` · ${product.packSize}` : ''}
                   </p>
                   <p>
-                    {price(product.pricePaise)} / {product.unit}
+                    {price(product.pricePaise)} / {unitLabel(product.unit, language)}
                   </p>
                   <Quantity
                     value={quantity}
@@ -106,7 +106,7 @@ export function BasketPage() {
                   />
                   <p className="quantity-rule">
                     {t('Minimum', 'न्यूनतम')} {product.minQuantity} · {t('Step', 'बढ़ोतरी')}{' '}
-                    {product.quantityStep} × {product.unit}
+                    {product.quantityStep} × {unitLabel(product.unit, language)}
                   </p>
                   <button
                     className="text-link"
@@ -185,7 +185,7 @@ export function BasketPage() {
 }
 export function ComparePage() {
   const c = useCommerce();
-  const { t } = useLanguage();
+  const { language, t } = useLanguage();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [removed, setRemoved] = useState(false);
@@ -254,7 +254,10 @@ export function ComparePage() {
           <section className="empty-state">
             <h2>
               {products.length === 1
-                ? t(`${products[0]!.name} is selected.`, `${products[0]!.name} चुनी गई है।`)
+                ? t(
+                    `${products[0]!.name} is selected.`,
+                    `${productName(products[0]!, 'hi')} चुनी गई है।`,
+                  )
                 : t('Nothing to compare yet.', 'तुलना के लिए अभी कुछ नहीं।')}
             </h2>
             <p>
@@ -273,16 +276,19 @@ export function ComparePage() {
           {products.map((p) => (
             <article key={p.id}>
               <ProductImage product={p} />
-              <h2>{p.name}</h2>
+              <h2>{productName(p, language)}</h2>
               <dl>
                 {[
                   [t('Brand', 'ब्रांड'), p.brand],
                   [t('Grade', 'ग्रेड'), p.grade],
-                  [t('Price / unit', 'कीमत / इकाई'), `${price(p.pricePaise)} / ${p.unit}`],
+                  [
+                    t('Price / unit', 'कीमत / इकाई'),
+                    `${price(p.pricePaise)} / ${unitLabel(p.unit, language)}`,
+                  ],
                   [t('Pack', 'पैक'), p.packSize || t('Not listed', 'दर्ज नहीं')],
                   [
                     t('Minimum / step', 'न्यूनतम / बढ़ोतरी'),
-                    `${p.minQuantity} / ${p.quantityStep} × ${p.unit}`,
+                    `${p.minQuantity} / ${p.quantityStep} × ${unitLabel(p.unit, language)}`,
                   ],
                   [
                     t('Recommended use', 'इस्तेमाल की सलाह'),

@@ -6,7 +6,9 @@ import {
   shortDayLabel,
   weekdayLabel,
   money,
+  productName,
   space,
+  unitLabel,
   MAX_LINE_QUANTITY,
   type CheckoutReview,
   type Order,
@@ -206,6 +208,7 @@ export function Cart() {
     basketLoading,
     cartBusy,
     t,
+    language,
     navigate,
     setQuantity,
     user,
@@ -288,14 +291,14 @@ export function Cart() {
           <View style={[s.row, { alignItems: 'flex-start' }]}>
             <MaterialArt product={line.product} size={52} />
             <View style={{ flex: 1 }}>
-              <Text style={s.h3}>{line.product.name}</Text>
+              <Text style={s.h3}>{productName(line.product, language)}</Text>
               <Text style={s.small}>
-                {money(line.product.pricePaise)} / {line.product.unit}
+                {money(line.product.pricePaise)} / {unitLabel(line.product.unit, language)}
               </Text>
             </View>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={`${t('Remove', 'हटाएँ')} ${line.product.name}`}
+              accessibilityLabel={`${t('Remove', 'हटाएँ')} ${productName(line.product, language)}`}
               disabled={Boolean(busy) || cartBusy}
               onPress={() => void change(line.productId, 0)}
               style={{
@@ -311,7 +314,7 @@ export function Cart() {
           </View>
           <View style={s.between}>
             <Quantity
-              label={`${line.product.name} ${t('quantity', 'मात्रा')}`}
+              label={`${productName(line.product, language)} ${t('quantity', 'मात्रा')}`}
               value={line.quantity}
               min={line.product.minQuantity}
               step={line.product.quantityStep}

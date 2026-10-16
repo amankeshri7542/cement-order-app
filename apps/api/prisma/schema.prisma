@@ -141,6 +141,8 @@ model Product {
   movements      InventoryMovement[]
   id             String                 @id @default(cuid())
   name           String
+  // Hindi name and description; Hindi readers see the English text while these are empty.
+  nameHi         String?
   brand          String
   categoryId     String
   category       Category               @relation(fields: [categoryId], references: [id])
@@ -156,6 +158,7 @@ model Product {
   active         Boolean                @default(true)
   images         String[]
   description    String
+  descriptionHi  String?
   recommendedUse String
   createdAt      DateTime               @default(now())
   updatedAt      DateTime               @updatedAt
@@ -174,6 +177,7 @@ model Product {
   @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "Product_name_search")
   @@index([brand(ops: raw("gin_trgm_ops"))], type: Gin, map: "Product_brand_search")
   @@index([grade(ops: raw("gin_trgm_ops"))], type: Gin, map: "Product_grade_search")
+  @@index([nameHi(ops: raw("gin_trgm_ops"))], type: Gin, map: "Product_nameHi_search")
 }
 
 model ProductPriceHistory {

@@ -31,6 +31,13 @@ export const phoneSchema = z
 const text = (max = 200) => z.string().trim().min(1).max(max);
 const paise = z.number().int().min(0).max(100_000_000);
 const id = z.string().min(1).max(100);
+// An optional translation: blank clears it (null), leaving the field out keeps the saved text.
+// A preprocess rather than a transform, so the API contract still renders as JSON Schema.
+const translation = (max: number) =>
+  z.preprocess(
+    (value) => (typeof value === 'string' && !value.trim() ? null : value),
+    z.string().trim().max(max).nullable().optional(),
+  );
 export const otpRequestSchema = z.strictObject({ phone: phoneSchema });
 export const otpVerifySchema = z.strictObject({
   phone: phoneSchema,
@@ -82,6 +89,8 @@ export const productSchema = z.strictObject({
   minQuantity: z.number().int().min(1).max(10000).default(1),
   quantityStep: z.number().int().min(1).max(10000).default(1),
   name: text(120),
+  // Hindi name and description, shown to Hindi readers when set (see productName).
+  nameHi: translation(120),
   brand: text(80),
   categoryId: id,
   type: text(80),
@@ -93,6 +102,7 @@ export const productSchema = z.strictObject({
   lowStockAt: z.number().int().min(0).max(1_000_000).default(25),
   active: z.boolean(),
   description: text(1500),
+  descriptionHi: translation(1500),
   recommendedUse: text(500),
   images: z.array(z.url().startsWith('https://')).max(6).default([]),
 });
@@ -491,6 +501,7 @@ export type SessionInfo = {
 export * from './rate-studio';
 export * from './i18n';
 export * from './labels';
+export * from './product-text';
 export * from './errors';
 export * from './quantity';
 export * from './dates';
