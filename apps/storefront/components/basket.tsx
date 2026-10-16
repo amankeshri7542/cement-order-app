@@ -17,7 +17,6 @@ export function BasketPage() {
   return (
     <div className="commerce-page">
       <div className="page-heading">
-        <p className="eyebrow">{t('Your basket', 'आपकी टोकरी')}</p>
         <h1>
           {c.lines.length || !c.ready
             ? t('Ready for the next step.', 'अगले कदम के लिए तैयार।')
@@ -79,54 +78,59 @@ export function BasketPage() {
       ) : null}
       {c.lines.length ? (
         <div className="purchase-layout">
-          <div className="basket-lines">
-            {c.lines.map(({ product, quantity }) => (
-              <article className="basket-line" key={product.id}>
-                <Link href={`/products/${product.id}`}>
-                  <ProductImage product={product} />
-                </Link>
-                <div>
-                  <p className="eyebrow">{product.brand}</p>
-                  <h2>
-                    <Link href={`/products/${product.id}`}>{productName(product, language)}</Link>
-                  </h2>
-                  <p>
-                    {product.grade}
-                    {product.packSize ? ` · ${product.packSize}` : ''}
-                  </p>
-                  <p>
-                    {price(product.pricePaise)} / {unitLabel(product.unit, language)}
-                  </p>
-                  <Quantity
-                    value={quantity}
-                    product={product}
-                    onChange={(value) => void c.quantity(product, value)}
-                    max={product.stock}
-                    disabled={c.busy || c.mergePending}
-                  />
-                  <p className="quantity-rule">
-                    {t('Minimum', 'न्यूनतम')} {product.minQuantity} · {t('Step', 'बढ़ोतरी')}{' '}
-                    {product.quantityStep} × {unitLabel(product.unit, language)}
-                  </p>
-                  <button
-                    className="text-link"
-                    disabled={c.busy || c.mergePending}
-                    onClick={() => void c.quantity(product, 0)}
-                  >
-                    {t('Remove', 'हटाएँ')}
-                  </button>
-                </div>
-                <strong>{price(product.pricePaise * quantity)}</strong>
-              </article>
-            ))}
+          {/* The basket is the counter's parchi: a paper slip with ruled lines, the shopkeeper's
+              hand for each line and the total, a cash-on-delivery stamp and a torn edge. */}
+          <div className="parchi">
+            <div className="basket-lines">
+              {c.lines.map(({ product, quantity }) => (
+                <article className="basket-line" key={product.id}>
+                  <div>
+                    <h2>
+                      <Link href={`/products/${product.id}`}>{productName(product, language)}</Link>
+                    </h2>
+                    <p>
+                      {product.brand} · {product.grade}
+                      {product.packSize ? ` · ${product.packSize}` : ''}
+                    </p>
+                    <p>
+                      {price(product.pricePaise)} / {unitLabel(product.unit, language)}
+                    </p>
+                    <Quantity
+                      value={quantity}
+                      product={product}
+                      onChange={(value) => void c.quantity(product, value)}
+                      max={product.stock}
+                      disabled={c.busy || c.mergePending}
+                    />
+                    <p className="quantity-rule">
+                      {t('Minimum', 'न्यूनतम')} {product.minQuantity} · {t('Step', 'बढ़ोतरी')}{' '}
+                      {product.quantityStep} × {unitLabel(product.unit, language)}
+                    </p>
+                    <button
+                      className="text-link"
+                      disabled={c.busy || c.mergePending}
+                      onClick={() => void c.quantity(product, 0)}
+                    >
+                      {t('Remove', 'हटाएँ')}
+                    </button>
+                  </div>
+                  <strong>{price(product.pricePaise * quantity)}</strong>
+                </article>
+              ))}
+            </div>
+            <p className="parchi-total">
+              <span>{t('Materials estimate', 'सामग्री का अनुमान')}</span>{' '}
+              <strong>
+                {price(
+                  c.lines.reduce((sum, line) => sum + line.product.pricePaise * line.quantity, 0),
+                )}
+              </strong>
+            </p>
+            <span className="cod-stamp" aria-hidden="true">
+              {t('Cash on delivery', 'पहुँचने पर नकद')}
+            </span>
           </div>
           <aside className="order-summary">
-            <p className="eyebrow">{t('Materials estimate', 'सामग्री का अनुमान')}</p>
-            <h2>
-              {price(
-                c.lines.reduce((sum, line) => sum + line.product.pricePaise * line.quantity, 0),
-              )}
-            </h2>
             <p>
               {t(
                 'Delivery is calculated after you choose an address. Stock is reserved only when an order is confirmed.',

@@ -408,17 +408,23 @@ test('catalog refresh retains loaded pages and search selection', async ({ page,
     await page.goto(web);
     await searchMaterials(page, 'Recovery material');
     const rows = page.getByRole('button', { name: /^View Recovery material/ });
-    await expect(rows).toHaveCount(24);
+    // The list is virtualised, so count loaded materials by the list's own count line.
+    const loaded = (text: string) => page.getByText(text, { exact: true });
+    await expect(loaded('24 materials · more below')).toBeVisible();
     // Reaching the end of the list loads the next page.
     await rows.last().scrollIntoViewIfNeeded();
-    await page.mouse.wheel(0, 4000);
-    await expect(rows).toHaveCount(25);
+    // Scroll with the pointer over the list, as a finger or mouse would, until the end is reached.
+    await rows.last().hover();
+    await expect(async () => {
+      await page.mouse.wheel(0, 2000);
+      await expect(loaded('25 materials')).toBeVisible({ timeout: 1000 });
+    }).toPass();
     const refreshed = page.waitForResponse(
       (response) => response.url().includes('/products?') && response.url().includes('cursor='),
     );
     await page.getByRole('button', { name: 'Refresh current screen', exact: true }).click();
     await refreshed;
-    await expect(rows).toHaveCount(25);
+    await expect(loaded('25 materials')).toBeVisible();
     await expect(page.getByRole('textbox', { name: 'Search materials', exact: true })).toHaveValue(
       'Recovery material',
     );
@@ -427,7 +433,7 @@ test('catalog refresh retains loaded pages and search selection', async ({ page,
     await expect(
       page.getByRole('alert').filter({ hasText: 'Check your connection' }).first(),
     ).toBeVisible();
-    await expect(rows).toHaveCount(25);
+    await expect(loaded('25 materials')).toBeVisible();
     await page.screenshot({ path: 'test-results/recovery-catalogue-pages.png', fullPage: true });
   } finally {
     for (const created of createdProducts) {

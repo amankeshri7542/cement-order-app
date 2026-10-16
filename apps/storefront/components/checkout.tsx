@@ -153,7 +153,6 @@ function Checkout() {
   return (
     <div className="commerce-page">
       <div className="page-heading">
-        <p className="eyebrow">{t('Delivery and payment', 'डिलीवरी और भुगतान')}</p>
         <h1>{t('Every detail, before you order.', 'ऑर्डर से पहले हर जानकारी।')}</h1>
         <p>
           {t(
@@ -224,10 +223,11 @@ function Checkout() {
                 : t('Review current order', 'मौजूदा ऑर्डर जाँचें')}
             </button>
           </div>
-          <aside className="order-summary">
+          {/* A fresh review is printed as the challan: the parchi's lines, address, totals and the
+              cash-on-delivery stamp, on paper, before the customer confirms. */}
+          <aside className={`order-summary${review ? ' challan' : ''}`}>
             {review ? (
               <>
-                <p className="eyebrow">{t('Fresh checkout review', 'चेकआउट की नई जाँच')}</p>
                 <h2>{t('Check, then confirm.', 'जाँचें, फिर पुष्टि करें।')}</h2>
                 <ul className="review-items">
                   {review.items.map((item) => (
@@ -268,6 +268,9 @@ function Checkout() {
                     <dd>{price(review.totalPaise)}</dd>
                   </div>
                 </dl>
+                <span className="cod-stamp" aria-hidden="true">
+                  {t('Cash on delivery', 'पहुँचने पर नकद')}
+                </span>
                 {review.changes.length > 0 && (
                   <div className="notice" role="status">
                     {t(

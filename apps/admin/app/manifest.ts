@@ -1,4 +1,5 @@
 import type { MetadataRoute } from 'next';
+import { colors } from '@shiv/shared';
 
 // Lets Papa and Chacha add the desk to the phone's home screen and receive order alerts.
 export default function manifest(): MetadataRoute.Manifest {
@@ -11,8 +12,8 @@ export default function manifest(): MetadataRoute.Manifest {
     scope: '/',
     display: 'standalone',
     orientation: 'portrait',
-    background_color: '#F5F3ED',
-    theme_color: '#173345',
+    background_color: colors.ground,
+    theme_color: colors.ink,
     icons: [
       { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
       { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },

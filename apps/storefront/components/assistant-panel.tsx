@@ -358,7 +358,6 @@ export default function AssistantPanel({
     >
       <header>
         <div>
-          <p className="eyebrow">{t('At your materials counter', 'आपकी सामग्री की दुकान पर')}</p>
           <h2 id="assistant-title">{t('Shiv Assistant', 'शिव सहायक')}</h2>
         </div>
         <button aria-label={t('Close assistant', 'सहायक बंद करें')} onClick={close}>

@@ -28,6 +28,9 @@ export function ProductDetail({
   const [error, setError] = useState(!initial && !initiallyMissing);
   const [busy, setBusy] = useState(false);
   const [checkedAt, setCheckedAt] = useState(checked);
+  // A live price change rolls the figure once, like the shop's rate board being re-chalked.
+  const [rolled, setRolled] = useState(false);
+  const shownPrice = useRef(initial?.pricePaise ?? null);
   const request = useRef(0);
   const inFlight = useRef(false);
   const pending = useRef(false);
@@ -45,6 +48,8 @@ export function ProductDetail({
     try {
       const data = await publicGet(`/products/${encodeURIComponent(id)}`, productResponse);
       if (current !== request.current) return;
+      setRolled(shownPrice.current !== null && shownPrice.current !== data.pricePaise);
+      shownPrice.current = data.pricePaise;
       setProduct(data);
       setMissing(false);
       setCheckedAt(new Date().toISOString());
@@ -125,10 +130,10 @@ export function ProductDetail({
               </p>
             </div>
             <div className="detail-copy">
-              <p className="eyebrow">
+              <h1>{productName(product, language)}</h1>
+              <p className="detail-type">
                 {product.brand} · {product.category.name}
               </p>
-              <h1>{productName(product, language)}</h1>
               {/* The English name is what is printed on the bag, so Hindi readers see it too. */}
               {language === 'hi' && product.nameHi ? (
                 <p className="detail-type" lang="en">
@@ -142,7 +147,9 @@ export function ProductDetail({
                 {product.stock > 0 ? t('In stock', 'स्टॉक में') : t('Out of stock', 'स्टॉक नहीं')}
               </span>
               <div className="detail-price">
-                <strong>{price(product.pricePaise)}</strong>
+                <strong key={product.pricePaise} className={rolled ? 'rolled' : undefined}>
+                  {price(product.pricePaise)}
+                </strong>
                 <span>/ {unit}</span>
               </div>
               <p className="price-updated">
@@ -230,7 +237,6 @@ export function Unavailable() {
   const { t } = useLanguage();
   return (
     <div className="empty-state">
-      <p className="eyebrow">{t('Material unavailable', 'सामग्री उपलब्ध नहीं')}</p>
       <h1>{t('This material is not available.', 'यह सामग्री उपलब्ध नहीं है।')}</h1>
       <p>
         {t(

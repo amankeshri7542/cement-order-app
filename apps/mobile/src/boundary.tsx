@@ -29,7 +29,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
         accessibilityRole="alert"
         style={{
           flex: 1,
-          backgroundColor: C.paper,
+          backgroundColor: C.ground,
           padding: space.xl,
           justifyContent: 'center',
           gap: space.lg,

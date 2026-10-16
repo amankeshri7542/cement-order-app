@@ -30,8 +30,10 @@ export function ReviewNote({ children }: { children: ReactNode }) {
     </aside>
   );
 }
+const approvedSrc = (src: string) =>
+  /^\/shop-assets\/[a-zA-Z0-9_-]+\.(?:png|jpe?g|webp)$/.test(src);
 function ApprovedImage({ src, alt }: { src: string; alt: string }) {
-  if (!/^\/shop-assets\/[a-zA-Z0-9_-]+\.(?:png|jpe?g|webp)$/.test(src)) return null;
+  if (!approvedSrc(src)) return null;
   return <img src={src} alt={alt} width={640} height={480} loading="lazy" decoding="async" />;
 }
 export function ShopContent() {
@@ -58,16 +60,31 @@ export function ShopContent() {
     shop?.contactApproved && /^https:\/\/(www\.)?google\.com\/maps\//.test(shop.directionsUrl)
       ? shop.directionsUrl
       : null;
+  const cover = shop?.gallery.find((item) => approvedSrc(item.image));
   return (
     <>
       <section className="shop-story" id="our-shop">
-        <div className="story-sign">
-          <span>शिव</span>
-          <p>सीमेंट एवं निर्माण सामग्री</p>
-          <strong>PATNA · BIHAR</strong>
-        </div>
+        {/* Honest imagery: the family's own photograph, or a labelled slot until one is approved. */}
+        {cover ? (
+          <figure className="photo-slot photo-slot-filled">
+            <ApprovedImage src={cover.image} alt={cover.alt} />
+          </figure>
+        ) : (
+          <div className="photo-slot">
+            <div>
+              <strong>
+                {t("The shop's own photograph goes here", 'यहाँ दुकान की असली तस्वीर आएगी')}
+              </strong>
+              <p>
+                {t(
+                  'The counter, the rate board and the godown, photographed by the family.',
+                  'काउंटर, भाव-पट और गोदाम, परिवार की खींची हुई।',
+                )}
+              </p>
+            </div>
+          </div>
+        )}
         <div>
-          <p className="eyebrow">{t('A family at the counter', 'काउंटर पर एक परिवार')}</p>
           <h2>{t('For the work that makes a home.', 'उस काम के लिए, जो घर बनाता है।')}</h2>
           <p>
             {shop?.story[language] ||
@@ -122,7 +139,6 @@ export function ShopContent() {
       </section>
       <section className="visit-section" id="visit">
         <div>
-          <p className="eyebrow">{t('Questions before you buy', 'खरीदने से पहले सवाल')}</p>
           {shop?.contactApproved ? (
             <>
               <h2>{t('Your shop in Patna.', 'पटना में आपकी दुकान।')}</h2>
@@ -148,6 +164,12 @@ export function ShopContent() {
           )}
         </div>
         <div className="visit-actions">
+          {/* Only an approved number is printed, in the shop's large counter type. */}
+          {phone && (
+            <p className="shop-phone" lang="en">
+              {phone.slice(3, 8)} {phone.slice(8)}
+            </p>
+          )}
           {phone && (
             <a className="button" href={`tel:${phone}`}>
               {t('Call the shop', 'दुकान पर फ़ोन करें')}

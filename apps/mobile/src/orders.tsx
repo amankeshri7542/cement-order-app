@@ -247,7 +247,7 @@ export function Orders() {
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
-          colors={[C.clay]}
+          colors={[C.accent]}
           onRefresh={() => {
             setRefreshing(true);
             void load().finally(() => setRefreshing(false));
@@ -304,7 +304,7 @@ export function Orders() {
           style={({ pressed }) => [s.card, { gap: space.sm }, pressed && { opacity: 0.8 }]}
         >
           <View style={s.between}>
-            <Text style={s.h3}>{o.number}</Text>
+            <Text style={[s.h3, { fontVariant: ['tabular-nums'] }]}>{o.number}</Text>
             <OrderStatusTag status={o.status} language={language} />
           </View>
           <Text style={s.small} numberOfLines={2}>
@@ -314,7 +314,7 @@ export function Orders() {
             <Text style={s.small}>
               {t('Delivery', 'डिलीवरी')} {dayLabel(o.deliveryDate, language)}
             </Text>
-            <Text style={[s.price, { fontSize: 20 }]}>{money(o.totalPaise)}</Text>
+            <Text style={s.price}>{money(o.totalPaise)}</Text>
           </View>
         </Pressable>
       )}
@@ -467,8 +467,7 @@ export function OrderDetail() {
           style={{
             width: 64,
             height: 64,
-            borderRadius: 32,
-            backgroundColor: needsAttention ? C.dangerSoft : C.greenSoft,
+            backgroundColor: needsAttention ? C.dangerSoft : C.okSoft,
             alignItems: 'center',
             justifyContent: 'center',
           }}
@@ -478,7 +477,7 @@ export function OrderDetail() {
               order.status === 'CANCELLED' ? 'close' : needsAttention ? 'time-outline' : 'checkmark'
             }
             size={32}
-            color={needsAttention ? C.clayDeep : C.green}
+            color={needsAttention ? C.danger : C.ok}
           />
         </View>
         <Text style={[s.h1, { textAlign: 'center' }]} accessibilityRole="header">
@@ -497,7 +496,7 @@ export function OrderDetail() {
                   height: 30,
                   width: 30,
                   borderRadius: 15,
-                  backgroundColor: i <= current ? C.green : C.stone,
+                  backgroundColor: i <= current ? C.ok : C.tab1,
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}
@@ -616,29 +615,33 @@ export function OrderDetail() {
           )}
         </Notice>
       )}
-      <View style={[s.card, { gap: space.sm }]}>
+      {/* The order's parchi: paper, ruled lines, square corners. */}
+      <View style={[s.paper, { gap: space.sm }]}>
         <Text style={s.h3}>{t('Materials', 'सामग्री')}</Text>
         {order.items.map((i) => (
-          <View key={i.productId} style={s.between}>
-            <View style={{ flex: 1 }}>
+          <View key={i.productId} style={[s.between, s.ruled, { paddingBottom: space.sm }]}>
+            <View style={{ flex: 1, minWidth: 160 }}>
               <Text style={[s.body, { color: C.ink, fontWeight: '700' }]}>{i.name}</Text>
               <Text style={s.small}>
                 {i.quantity} × {money(i.pricePaise)} / {i.unit}
               </Text>
             </View>
-            <Text style={[s.body, { color: C.ink, fontWeight: '700' }]}>
+            <Text
+              style={[s.body, { color: C.ink, fontWeight: '700', fontVariant: ['tabular-nums'] }]}
+            >
               {money(i.lineTotalPaise)}
             </Text>
           </View>
         ))}
-        <View style={s.divider} />
-        <View style={s.between}>
+        <View style={[s.between, s.ruled, { paddingBottom: space.sm }]}>
           <Text style={s.body}>{t('Delivery', 'डिलीवरी')}</Text>
           <Text style={s.body}>{money(order.deliveryFeePaise)}</Text>
         </View>
         <View style={s.between}>
           <Text style={s.h3}>{t('Total', 'कुल')}</Text>
-          <Text style={s.price}>{money(order.totalPaise)}</Text>
+          <Text style={s.priceBig} maxFontSizeMultiplier={1.5}>
+            {money(order.totalPaise)}
+          </Text>
         </View>
         <Text style={s.small}>
           {cod ? t('Cash on delivery', 'डिलीवरी पर भुगतान') : t('Online', 'ऑनलाइन')} ·{' '}
@@ -694,10 +697,7 @@ export function OrderDetail() {
       )}
       <Text style={s.h3}>{t('Order history', 'ऑर्डर का इतिहास')}</Text>
       {order.history.map((h) => (
-        <View
-          key={h.id}
-          style={{ borderLeftWidth: 3, borderLeftColor: C.line, paddingLeft: space.md, gap: 2 }}
-        >
+        <View key={h.id} style={{ backgroundColor: C.surface, padding: space.md, gap: 2 }}>
           <Text style={[s.body, { color: C.ink, fontWeight: '700' }]}>
             {orderStatusText(h.status, language)}
           </Text>
