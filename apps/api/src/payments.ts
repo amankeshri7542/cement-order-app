@@ -314,13 +314,26 @@ export class PaymentsService {
     }
     return { ignored: true };
   }
-  /** Cash on delivery: money received at the site (cash or UPI), or a cash refund returned. */
+  /** Cash on delivery: money received at the site (cash or UPI), or that money given back. */
   async cod(orderId: string, actorId: string, refund = false, channel: '' | 'CASH' | 'UPI' = '') {
     return this.db.atomic(async (tx) => {
-      const p = await tx.payment.findUnique({ where: { orderId }, include: { order: true } });
+      const p = await tx.payment.findUnique({
+        where: { orderId },
+        include: { order: true, movements: true },
+      });
       if (!p || p.method !== 'COD')
         fail('INVALID_PAYMENT_STATE', 'This is not a cash-on-delivery order.');
-      if (p.status === (refund ? 'REFUNDED' : 'CAPTURED')) return { ok: true, duplicate: true };
+      if (p.status === (refund ? 'REFUNDED' : 'CAPTURED')) {
+        // A repeat naming another channel would leave the wrong record in place silently.
+        const recorded = p.movements.find((m) => m.kind === (refund ? 'REFUND' : 'COLLECTION'));
+        if (channel && recorded?.channel && recorded.channel !== channel)
+          fail(
+            'IDEMPOTENCY_CONFLICT',
+            `This payment was already recorded as ${recorded.channel}. Refresh the order.`,
+            409,
+          );
+        return { ok: true, duplicate: true };
+      }
       if (
         refund
           ? p.status !== 'REFUND_PENDING'
@@ -328,6 +341,13 @@ export class PaymentsService {
             !['CONFIRMED', 'PREPARING', 'OUT_FOR_DELIVERY'].includes(p.order.status)
       )
         fail('INVALID_PAYMENT_STATE', 'Payment cannot be updated in this state.', 409);
+      // Money goes back the way it came unless staff say otherwise; a collection recorded
+      // without a channel was taken as cash.
+      if (refund)
+        channel =
+          channel ||
+          (p.movements.find((m) => m.kind === 'COLLECTION')?.channel as typeof channel) ||
+          'CASH';
       await tx.payment.update({
         where: { id: p.id },
         data: { status: refund ? 'REFUNDED' : 'CAPTURED' },
@@ -336,7 +356,7 @@ export class PaymentsService {
         data: {
           paymentId: p.id,
           kind: refund ? 'REFUND' : 'COLLECTION',
-          channel: refund ? 'CASH' : channel,
+          channel,
           amountPaise: p.amountPaise,
           actorId,
         },
@@ -347,7 +367,11 @@ export class PaymentsService {
           data: {
             status: 'REFUNDED',
             history: {
-              create: { status: 'REFUNDED', actorId, note: 'Cash refund recorded by store staff.' },
+              create: {
+                status: 'REFUNDED',
+                actorId,
+                note: `${channel === 'UPI' ? 'UPI' : 'Cash'} refund recorded by store staff.`,
+              },
             },
           },
         });
@@ -423,11 +447,13 @@ export class PaymentsController {
   ) {
     return this.payments.cod(id, req.user.id, false, body?.channel || '');
   }
-  @Admin() @Post('admin/orders/:id/cash-refunded') refund(
+  // The channel defaults to how the money was collected; the desk sends no body.
+  @Admin() @Post('admin/orders/:id/cash-refunded') @Contract(collectionSchema) refund(
     @Param('id') id: string,
+    @Input(collectionSchema.optional()) body: z.infer<typeof collectionSchema> | undefined,
     @Req() req: AuthRequest,
   ) {
-    return this.payments.cod(id, req.user.id, true);
+    return this.payments.cod(id, req.user.id, true, body?.channel || '');
   }
   @Admin() @Post('admin/orders/:id/reconcile-payment') @Contract(reconcileSchema) reconcile(
     @Param('id') id: string,

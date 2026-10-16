@@ -48,6 +48,7 @@ function staffFixture() {
   };
   const user = { id: 'staff', phone, role: 'ADMIN', deletedAt: null };
   const credential = { passwordHash };
+  const limits = new Map<string, { key: string; count: number; expiresAt: Date }>();
   const db = {
     otpChallenge: {
       findUnique: vi.fn(async () => ({ ...challenge })),
@@ -70,7 +71,24 @@ function staffFixture() {
       count: vi.fn(async () => 0),
       create: vi.fn(async () => ({})),
       deleteMany: vi.fn(async () => ({ count: 1 })),
+      // Budget rows (store-wide OTP checks, staff passphrase failures).
+      findUnique: vi.fn(async ({ where }: { where: { key: string } }) => limits.get(where.key)),
+      upsert: vi.fn(
+        async ({
+          where,
+          create,
+          update,
+        }: {
+          where: { key: string };
+          create: { key: string; count: number; expiresAt: Date };
+          update: { count: number; expiresAt?: Date };
+        }) => {
+          const old = limits.get(where.key);
+          limits.set(where.key, old ? { ...old, ...update } : create);
+        },
+      ),
     },
+    auditLog: { create: vi.fn(async () => ({})) },
     session: { create: vi.fn(async () => ({})) },
     atomic: async (run: (tx: unknown) => Promise<unknown>) => {
       const consumed = challenge.consumed;
@@ -126,11 +144,12 @@ describe('Twilio staff OTP recovery (provider-contract simulation)', () => {
     expect(db.session.create).not.toHaveBeenCalled();
   });
 
+  // Staff get one answer for a wrong or expired code and a wrong passphrase (no passphrase oracle).
   it.each([
-    [404, { code: 20404 }, 'INVALID_OTP', 401],
+    [404, { code: 20404 }, 'INVALID_CREDENTIALS', 401],
     [503, { message: 'Temporarily unavailable' }, 'OTP_UNAVAILABLE', 503],
     [200, {}, 'OTP_UNAVAILABLE', 503],
-    [200, { status: 'pending' }, 'INVALID_OTP', 401],
+    [200, { status: 'pending' }, 'INVALID_CREDENTIALS', 401],
   ])('maps provider HTTP %s honestly', async (status, body, code, expectedStatus) => {
     const { service, db } = staffFixture();
     fetchMock.mockResolvedValueOnce(Response.json(body, { status }));

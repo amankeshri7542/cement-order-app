@@ -2397,19 +2397,21 @@ dd {
     gap: 12px;
   }
   .assistant-launcher {
-    right: 12px;
-    bottom: 80px;
-    width: 56px;
-    height: 56px;
-    min-height: 56px;
+    position: static;
+    order: 2;
+    flex: none;
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
     padding: 0;
     justify-content: center;
+    box-shadow: none;
   }
   .assistant-launcher > span:first-child {
     width: auto;
     height: auto;
     background: none;
-    font-size: 24px;
+    font-size: 21px;
   }
   .assistant-launcher > span:last-child {
     position: absolute;

@@ -27,8 +27,18 @@ import {
   type StoreSettings,
   type User,
 } from '@shiv/shared';
-import { API_URL, ApiError, api, logout, message, onSessionEnded, restoreSession } from './api';
+import {
+  API_URL,
+  ApiError,
+  api,
+  cannotReach,
+  logout,
+  message,
+  onSessionEnded,
+  restoreSession,
+} from './api';
 import { tap } from './feedback';
+import { liveStream } from './live';
 export type { Language };
 export type Route = {
   screen:
@@ -223,6 +233,24 @@ function useStoreValue() {
   const accountRequest = useRef(0);
   const t = useCallback((en: string, hi: string) => (language === 'hi' ? hi : en), [language]);
   const say = useCallback((e: unknown) => message(e, languageRef.current), []);
+  // Set while the saved sign-in could not be checked (no signal at launch). The phone keeps it and
+  // checks again on Retry, on return to the app, on reconnect and before a signed-in screen.
+  const sessionUnknown = useRef(false);
+  const restoring = useRef<Promise<User | null | 'offline'> | null>(null);
+  const restore = useCallback(() => {
+    restoring.current ??= restoreSession()
+      .then(async (found) => {
+        sessionUnknown.current = found === 'offline';
+        if (found === 'offline') setError(say(cannotReach()));
+        else if (found && !userRef.current) await completeLogin(found);
+        else if (!found && !userRef.current && pendingRoute.current) setLoginVisible(true);
+        return found;
+      })
+      .finally(() => {
+        restoring.current = null;
+      });
+    return restoring.current;
+  }, [say]);
   function remember(items: Product[]) {
     if (!items.length) return;
     setKnownProducts((old) => {
@@ -348,13 +376,20 @@ function useStoreValue() {
     (next: Route) => {
       if (protectedScreens.includes(next.screen) && !userRef.current) {
         pendingRoute.current = next;
-        setLoginVisible(true);
+        // A saved sign-in that could not be checked is tried again before asking for an SMS code.
+        if (sessionUnknown.current)
+          void restore()
+            .then((found) => {
+              if (found === 'offline') setToast(say(cannotReach()));
+            })
+            .catch((e) => setToast(say(e)));
+        else setLoginVisible(true);
         return;
       }
       if (next.screen === 'Addresses') addressOrigin.current = routeRef.current;
       showRoute(next);
     },
-    [showRoute],
+    [showRoute, restore, say],
   );
   /** Returns false when there is nowhere to go back to (Android then leaves the app). */
   const goBack = useCallback(() => {
@@ -412,12 +447,14 @@ function useStoreValue() {
       setCategories(c);
       setSettings(st);
       setError('');
+      // The store answers again: check the saved sign-in that could not be checked earlier.
+      if (sessionUnknown.current) void restore().catch(() => {});
     } catch (e) {
       if (current === catalogRequest.current) setError(say(e));
     } finally {
       if (current === catalogRequest.current) setLoading(false);
     }
-  }, [say]);
+  }, [say, restore]);
   const refreshAccount = useCallback(async () => {
     const current = ++accountRequest.current;
     if (!userRef.current) {
@@ -498,6 +535,7 @@ function useStoreValue() {
     if (owner) void setMergeDraft(owner.id, null).catch(() => {});
   }
   async function completeLogin(next: User) {
+    sessionUnknown.current = false;
     setUser(next);
     if (languageStatusRef.current !== 'set') setLanguage(next.language === 'en' ? 'en' : 'hi');
     setLoginVisible(false);
@@ -541,17 +579,17 @@ function useStoreValue() {
         }
       })
       .catch(() => {});
-    void restoreSession()
-      .then(async (u) => {
-        if (u) await completeLogin(u);
+    void restore()
+      .then((found) => {
         const initial = routeFromHash();
-        if (!u && protectedScreens.includes(initial.screen)) {
+        if (!userRef.current && protectedScreens.includes(initial.screen)) {
           pendingRoute.current = initial;
-          setLoginVisible(true);
+          // With no signal the screen opens once the saved sign-in is confirmed.
+          if (found !== 'offline') setLoginVisible(true);
         } else showRoute(initial, true);
       })
       .catch((e) => setToast(say(e)));
-  }, [refreshCatalog, showRoute]);
+  }, [refreshCatalog, showRoute, restore, say]);
   useEffect(() => {
     onSessionEnded(() => {
       if (!userRef.current) return;
@@ -632,25 +670,26 @@ function useStoreValue() {
     };
   }, [missing]);
   useEffect(() => {
-    const source = new EventSource(`${API_URL}/events`);
-    source.addEventListener('open', () => {
-      void refreshCatalog();
-      if (user) void refreshAccount().catch(() => {});
-    });
-    source.addEventListener('message', (event) => {
-      if (event.data && !event.data.includes('HEARTBEAT')) {
+    const live = liveStream(
+      () => new EventSource(`${API_URL}/events`),
+      () => {
         void refreshCatalog();
-        if (user) void refreshAccount().catch(() => {});
-      }
-    });
+        if (userRef.current) void refreshAccount().catch(() => {});
+      },
+    );
+    live.start();
+    // A background app holds no connection; it reopens and catches up when the customer returns.
     const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') void refreshCurrent();
+      if (state === 'active') {
+        live.start();
+        void refreshCurrent();
+      } else if (state === 'background') live.stop();
     });
     return () => {
-      source.close();
+      live.stop();
       sub.remove();
     };
-  }, [refreshCatalog, refreshAccount, refreshCurrent, user]);
+  }, [refreshCatalog, refreshAccount, refreshCurrent]);
   useEffect(() => {
     if (Platform.OS !== 'web') return;
     const focus = () => void refreshCurrent();
@@ -775,7 +814,9 @@ function useStoreValue() {
   const basketLoading = !user && guest.lines.length > basket.length;
   async function signout() {
     try {
+      // On a phone this forgets the session at once, even with no signal.
       await logout();
+      sessionUnknown.current = false;
       await storageTail.current.catch(() => {});
       // Retain only reconciliation identifiers across sign-out; another user cannot load them.
       if (userRef.current)

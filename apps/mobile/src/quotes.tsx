@@ -313,7 +313,7 @@ export function QuoteRequest() {
   useEffect(() => {
     let active = true;
     if (route.id && !draftsLoading && !draftRef.current.submitted)
-      void api<Product>(`/products/${route.id}`)
+      void api<Product>(`/products/${encodeURIComponent(route.id)}`)
         .then((p) => {
           if (!active) return;
           setProducts((old) => [...old.filter((x) => x.id !== p.id), p]);

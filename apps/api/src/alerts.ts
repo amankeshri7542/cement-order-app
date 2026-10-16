@@ -18,7 +18,7 @@ import { z } from 'zod';
 import { pushSubscriptionSchema, staffUpdateSchema } from '@shiv/shared';
 import { getConfig } from './config';
 import { Db } from './db';
-import { Admin, AuthRequest, Contract, Input, fail } from './http';
+import { Admin, AuthRequest, Contract, Input, errorCause, fail } from './http';
 import { paginate } from './pagination';
 
 /** WhatsApp message templates. Each must be approved in Meta Business Manager with these names
@@ -59,6 +59,15 @@ export async function enqueueWhatsApp(
 }
 
 const masked = (phone: string) => `…${phone.slice(-4)}`;
+/** Browser push services the owner desk may subscribe through (Chrome/Edge, Firefox, Safari,
+ * legacy Edge). Any other endpoint would make the worker post alerts to an arbitrary server. */
+export function knownPushService(endpoint: string) {
+  const host = new URL(endpoint).hostname;
+  return (
+    ['fcm.googleapis.com', 'web.push.apple.com'].includes(host) ||
+    ['.push.services.mozilla.com', '.notify.windows.com'].some((suffix) => host.endsWith(suffix))
+  );
+}
 const log = (event: string, details: Record<string, unknown>) =>
   console.log(JSON.stringify({ event, ...details, timestamp: new Date().toISOString() }));
 
@@ -73,8 +82,12 @@ export class AlertsService {
 
   /** One worker pass: owner web push, then the WhatsApp outbox. Never throws. */
   async deliver() {
-    await this.webPush().catch(() => log('WEB_PUSH_FAILED', {}));
-    await this.whatsapp().catch(() => log('WHATSAPP_WORKER_FAILED', {}));
+    await this.webPush().catch((error) =>
+      log('WEB_PUSH_FAILED', { step: 'webPush', ...errorCause(error) }),
+    );
+    await this.whatsapp().catch((error) =>
+      log('WHATSAPP_WORKER_FAILED', { step: 'whatsapp', ...errorCause(error) }),
+    );
   }
 
   private async webPush() {
@@ -108,6 +121,8 @@ export class AlertsService {
         tag: note.orderId || note.id,
       });
       for (const subscription of note.user.pushSubscriptions) {
+        // Subscriptions saved before endpoints were checked are never posted to.
+        if (!knownPushService(subscription.endpoint)) continue;
         try {
           await webPush.sendNotification(
             {
@@ -157,11 +172,12 @@ export class AlertsService {
           c.WHATSAPP_PROVIDER === 'meta'
             ? await this.sendMeta(message.recipient, message.template, params)
             : `fake-${message.id}`;
+        // Parameters carry order numbers and customer areas: count them, never print them.
         if (c.WHATSAPP_PROVIDER === 'fake')
           log('WHATSAPP_FAKE_SENT', {
             template: message.template,
             to: masked(message.recipient),
-            params,
+            params: params.length,
           });
         await this.db.outboundMessage.update({
           where: { id: message.id },
@@ -291,6 +307,8 @@ export class AlertsController {
   ) {
     if (!this.alerts.pushKey())
       fail('PUSH_UNAVAILABLE', 'Alerts on this device are not set up on the server yet.', 503);
+    if (!knownPushService(body.endpoint))
+      fail('INVALID_PUSH_ENDPOINT', 'This browser’s alert service is not supported.', 400);
     await this.db.pushSubscription.upsert({
       where: { endpoint: body.endpoint },
       update: { userId: req.user.id, p256dh: body.keys.p256dh, auth: body.keys.auth },
@@ -306,7 +324,9 @@ export class AlertsController {
 
   @Delete('push/subscriptions')
   async unsubscribe(@Body() body: { endpoint?: unknown }, @Req() req: AuthRequest) {
-    const endpoint = z.string().url().max(1000).parse(body?.endpoint);
+    const parsed = z.string().url().max(1000).safeParse(body?.endpoint);
+    if (!parsed.success) fail('INVALID_INPUT', 'A valid alert endpoint is required.', 400);
+    const endpoint = parsed.data;
     await this.db.pushSubscription.deleteMany({ where: { endpoint, userId: req.user.id } });
     return { ok: true };
   }

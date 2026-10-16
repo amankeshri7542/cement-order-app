@@ -111,6 +111,10 @@ export const errorCodes = [
   'UPLOADS_PAUSED',
   'UPLOAD_TOO_LARGE',
   'USE_INVENTORY_MOVEMENT',
+  // Money and stock records.
+  'ORDER_TOO_LARGE',
+  // Infra hardening: owner-desk web push.
+  'INVALID_PUSH_ENDPOINT',
 ] as const;
 export type ErrorCode = (typeof errorCodes)[number];
 
@@ -156,6 +160,10 @@ export const customerErrorCodes = [
   'CUSTOMER_DELETED',
   'ACTIVE_ORDERS',
   'DEMAND_PAUSED',
+  // Money and stock records.
+  'ORDER_TOO_LARGE',
+  // Infra hardening: owner-desk web push.
+  'INVALID_PUSH_ENDPOINT',
 ] as const satisfies readonly ErrorCode[];
 export type CustomerErrorCode = (typeof customerErrorCodes)[number];
 
@@ -304,6 +312,16 @@ export const customerErrors: Record<CustomerErrorCode, Bilingual> = {
     'नई बुकिंग अभी रुकी है। कृपया दुकान पर फ़ोन या WhatsApp करें।',
   ],
   CUSTOMER_DELETED: ['This customer account has been removed.', 'यह ग्राहक खाता हटा दिया गया है।'],
+  // Money and stock records.
+  ORDER_TOO_LARGE: [
+    'This order is larger than the shop can accept online. Split it or call the shop.',
+    'यह ऑर्डर ऑनलाइन लेने के लिए बहुत बड़ा है। इसे बाँटें या दुकान पर फ़ोन करें।',
+  ],
+  // Infra hardening: owner-desk web push.
+  INVALID_PUSH_ENDPOINT: [
+    'This browser’s alert service is not supported. Use Chrome, Edge, Firefox or Safari.',
+    'इस ब्राउज़र की अलर्ट सेवा समर्थित नहीं है। Chrome, Edge, Firefox या Safari इस्तेमाल करें।',
+  ],
 };
 
 /**

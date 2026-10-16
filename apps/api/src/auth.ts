@@ -22,7 +22,20 @@ import { otpRequestSchema, otpVerifySchema, refreshSchema } from '@shiv/shared';
 import { Db } from './db';
 import { getConfig } from './config';
 import { AuthRequest, Contract, Input, Public, cookie, fail, hash, safeEqual } from './http';
-import { assertSession, limitOtp, refreshLifetime, verifyPassword } from './security';
+import {
+  assertSession,
+  assertStaffAttempts,
+  limitOtp,
+  otpBudget,
+  recordStaffFailure,
+  refreshLifetime,
+  verifyPassword,
+} from './security';
+
+// One answer for every failed staff sign-in, whichever factor was wrong.
+const staffRejection = 'The sign-in details could not be verified.';
+// How long a rotated-out refresh token may repeat its refresh (a reply lost on a weak signal).
+const refreshGraceMs = 5 * 60000;
 
 // Headers added by TLS-terminating tunnels and proxies (ngrok, cloudflared, nginx and similar).
 // A bare X-Forwarded-For is not listed: Express ignores it while TRUST_PROXY_HOPS=0, and the
@@ -127,8 +140,8 @@ export class AuthService {
     ).catch(() =>
       fail('OTP_UNAVAILABLE', 'SMS verification is unavailable. Try again shortly.', 503),
     );
-    if (path === 'VerificationCheck' && result.status === 404)
-      fail('INVALID_OTP', 'Code expired or already used. Request a new one.', 401);
+    // Twilio answers 404 once a verification has expired, been approved or used up its attempts.
+    if (path === 'VerificationCheck' && result.status === 404) return { status: 'expired' };
     if (!result.ok)
       fail('OTP_UNAVAILABLE', 'Could not verify your number. Try again shortly.', 503);
     const body = await result.json().catch(() => null);
@@ -140,11 +153,15 @@ export class AuthService {
     db: Pick<Prisma.TransactionClient, 'adminCredential'>,
     userId: string,
     adminPassword?: string,
+    failures?: { db: Db; ip: string },
   ) {
     const credential = await db.adminCredential.findUnique({ where: { userId } });
     if (credential) {
-      if (!adminPassword || !(await verifyPassword(adminPassword, credential.passwordHash)))
-        fail('INVALID_CREDENTIALS', 'The sign-in details could not be verified.', 401);
+      if (!adminPassword || !(await verifyPassword(adminPassword, credential.passwordHash))) {
+        // Only guesses count towards the lockout; a missing passphrase guesses nothing.
+        if (failures && adminPassword) await recordStaffFailure(failures.db, userId, failures.ip);
+        fail('INVALID_CREDENTIALS', staffRejection, 401);
+      }
       return new Date();
     }
     if (getConfig().NODE_ENV === 'production')
@@ -163,6 +180,7 @@ export class AuthService {
           (now.getTime() - old.windowStart.getTime() < 3600000 && old.sends >= 5))
       )
         fail('RATE_LIMITED', 'Wait before requesting another code.', 429);
+      await otpBudget(tx, 'send');
       const freshWindow = !old || now.getTime() - old.windowStart.getTime() >= 3600000;
       const data = {
         codeHash: this.otpHash(phone, code),
@@ -185,7 +203,13 @@ export class AuthService {
         : {}),
     };
   }
-  async verify(phone: string, code: string, adminPassword?: string, label = 'Unknown device') {
+  async verify(
+    phone: string,
+    code: string,
+    adminPassword?: string,
+    label = 'Unknown device',
+    ip = 'unknown',
+  ) {
     const challenge = await this.db.otpChallenge.findUnique({ where: { phone } });
     if (
       !challenge ||
@@ -194,27 +218,46 @@ export class AuthService {
       challenge.attempts >= 5
     )
       fail('INVALID_OTP', 'Code expired or invalid. Request a new one.', 401);
-    const attempt = await this.db.otpChallenge.updateMany({
-      where: {
-        phone,
-        codeHash: challenge.codeHash,
-        consumed: false,
-        expiresAt: { gt: new Date() },
-        attempts: { lt: 5 },
-      },
-      data: { attempts: { increment: 1 } },
+    // Only checks against a live challenge use the store-wide budget, so junk calls cannot.
+    const attempt = await this.db.atomic(async (tx) => {
+      const counted = await tx.otpChallenge.updateMany({
+        where: {
+          phone,
+          codeHash: challenge.codeHash,
+          consumed: false,
+          expiresAt: { gt: new Date() },
+          attempts: { lt: 5 },
+        },
+        data: { attempts: { increment: 1 } },
+      });
+      if (counted.count) await otpBudget(tx, 'verify');
+      return counted;
     });
     if (!attempt.count) fail('INVALID_OTP', 'Code expired or invalid.', 401);
-    // Twilio deletes an approved verification. Check the passphrase before consuming it.
     const existing = await this.db.user.findUnique({ where: { phone } });
     if (existing?.deletedAt) fail('UNAUTHORIZED', 'This account has been deleted.', 401);
-    if (existing?.role === 'ADMIN') await this.verifyStaff(this.db, existing.id, adminPassword);
-    const valid =
+    // Staff (and desk) sign-in answers a wrong code exactly like a wrong passphrase, so neither
+    // can be confirmed without the other.
+    const staffForm = existing?.role === 'ADMIN' || Boolean(adminPassword);
+    // Twilio deletes an approved verification. Check the passphrase before consuming it, so staff
+    // can correct a mistyped passphrase with the same code.
+    if (existing?.role === 'ADMIN') {
+      await assertStaffAttempts(this.db, existing.id, ip);
+      await this.verifyStaff(this.db, existing.id, adminPassword, { db: this.db, ip });
+    }
+    const status =
       getConfig().OTP_PROVIDER === 'mock'
         ? safeEqual(challenge.codeHash, this.otpHash(phone, code))
+          ? 'approved'
+          : 'pending'
         : (await this.twilio('VerificationCheck', new URLSearchParams({ To: phone, Code: code })))
-            .status === 'approved';
-    if (!valid) fail('INVALID_OTP', 'That code is not correct.', 401);
+            .status;
+    if (status !== 'approved') {
+      if (staffForm) fail('INVALID_CREDENTIALS', staffRejection, 401);
+      if (status === 'expired')
+        fail('INVALID_OTP', 'Code expired or already used. Request a new one.', 401);
+      fail('INVALID_OTP', 'That code is not correct.', 401);
+    }
     const accessToken = randomBytes(32).toString('base64url');
     const refreshToken = randomBytes(32).toString('base64url');
     return this.db.atomic(async (tx) => {
@@ -248,27 +291,65 @@ export class AuthService {
     });
   }
   async refresh(token: string) {
-    const accessToken = randomBytes(32).toString('base64url');
-    const refreshToken = randomBytes(32).toString('base64url');
-    return this.db.atomic(async (tx) => {
-      const session = await tx.session.findUnique({
-        where: { refreshHash: hash(token) },
+    // The next pair is derived from the presented token, so a repeat of the same refresh (a lost
+    // reply, or two tabs refreshing at once) gets the same pair instead of orphaning the other.
+    const derive = (kind: string) =>
+      createHmac('sha256', getConfig().OTP_HASH_SECRET)
+        .update(`refresh-rotation:${kind}:${token}`)
+        .digest('base64url');
+    const accessToken = derive('access');
+    const refreshToken = derive('refresh');
+    const presented = hash(token);
+    const result = await this.db.atomic(async (tx) => {
+      const session = await tx.session.findFirst({
+        where: { OR: [{ refreshHash: presented }, { previousRefreshHash: presented }] },
         include: { user: true },
       });
       if (!session || session.refreshExpiresAt < new Date())
         fail('UNAUTHORIZED', 'Please sign in again.', 401);
+      const previous = session.refreshHash !== presented;
+      if (
+        previous &&
+        !(session.previousRefreshUntil && session.previousRefreshUntil > new Date())
+      ) {
+        // A rotated-out token came back after its grace window: someone else holds a copy of it.
+        // End the session for both holders; the owner signs in again with a new code.
+        await tx.session.delete({ where: { id: session.id } });
+        await tx.auditLog.create({
+          data: {
+            actorId: session.userId,
+            event: 'REFRESH_TOKEN_REUSED',
+            entityId: session.id,
+            details: { label: session.label },
+          },
+        });
+        return null;
+      }
       await assertSession(tx, session);
       await tx.session.update({
         where: { id: session.id },
         data: {
           accessHash: hash(accessToken),
           refreshHash: hash(refreshToken),
+          // A repeat with the previous token returns the same pair and keeps the original grace
+          // window, so the window cannot be stretched by retrying.
+          ...(previous
+            ? {}
+            : {
+                previousRefreshHash: presented,
+                previousRefreshUntil: new Date(Date.now() + refreshGraceMs),
+              }),
           expiresAt: new Date(Date.now() + 1800000),
           lastSeenAt: new Date(),
         },
       });
       return { user: session.user, accessToken, refreshToken };
     });
+    if (!result) {
+      console.warn(JSON.stringify({ event: 'REFRESH_TOKEN_REUSED' }));
+      fail('UNAUTHORIZED', 'Please sign in again.', 401);
+    }
+    return result;
   }
 }
 
@@ -318,13 +399,15 @@ export class AuthController {
     @Req() req: AuthRequest,
     @Res({ passthrough: true }) res: Response,
   ) {
-    await limitOtp(this.db, req.ip || req.socket.remoteAddress || 'unknown', 'verify');
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    await limitOtp(this.db, ip, 'verify');
     return this.sendSession(
       await this.auth.verify(
         body.phone,
         body.code,
         body.adminPassword,
         req.get('user-agent') || 'Unknown device',
+        ip,
       ),
       req,
       res,
@@ -356,7 +439,10 @@ export class AuthController {
       where: {
         OR: [
           ...(access ? [{ accessHash: hash(access) }] : []),
-          ...(refresh ? [{ refreshHash: hash(refresh) }] : []),
+          // A sign-out racing a refresh still ends the session it rotated.
+          ...(refresh
+            ? [{ refreshHash: hash(refresh) }, { previousRefreshHash: hash(refresh) }]
+            : []),
         ],
       },
     });

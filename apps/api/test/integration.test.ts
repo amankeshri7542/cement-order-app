@@ -274,14 +274,17 @@ describe('Authentication and authorization over HTTP', () => {
       .get('/api/v1/me')
       .set('Authorization', `Bearer ${v.body.accessToken}`)
       .expect(401);
-    await request(server)
+    // Within the grace window a retry with the rotated-out token (its reply was lost) repeats the
+    // same pair, so both copies keep working.
+    const retried = await request(server)
       .post('/api/v1/auth/refresh')
       .send({ refreshToken: v.body.refreshToken })
-      .expect(401);
+      .expect(201);
     await request(server)
       .get('/api/v1/me')
-      .set('Authorization', `Bearer ${refreshed.body.accessToken}`)
+      .set('Authorization', `Bearer ${retried.body.accessToken}`)
       .expect(200);
+    expect(retried.body.refreshToken).toBe(refreshed.body.refreshToken);
     const p = '+918888888883';
     const c = await request(server).post('/api/v1/auth/otp/request').send({ phone: p });
     for (let i = 0; i < 5; i++)

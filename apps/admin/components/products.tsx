@@ -18,7 +18,7 @@ export function Products({
   onFilter: (query: string) => void;
   categories: Category[];
   refresh: () => Promise<void>;
-  notice: (value: string) => void;
+  notice: (value: string, error?: boolean) => void;
 }) {
   const { t, error: say } = useWords();
   const [search, setSearch] = useState('');
@@ -149,19 +149,21 @@ export function Products({
             e.preventDefault();
             const form = e.currentTarget;
             const name = String(new FormData(form).get('name'));
+            const slug = name
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, '-')
+              .replace(/^-|-$/g, '');
             try {
               await api('/admin/categories', 'POST', {
                 name,
-                slug: name
-                  .toLowerCase()
-                  .replace(/[^a-z0-9]+/g, '-')
-                  .replace(/^-|-$/g, ''),
+                // A Hindi-only name has no Latin letters for the web address; use a short code.
+                slug: slug || `cat-${Date.now().toString(36)}`,
               });
               form.reset();
               await refresh();
               notice(t('Category added', 'श्रेणी जुड़ी'));
             } catch (err) {
-              notice(say(err));
+              notice(say(err), true);
             }
           }}
         >

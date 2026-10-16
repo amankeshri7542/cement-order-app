@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useLanguage } from './language';
 import { useCommerce } from './commerce';
+import { AssistantLauncher } from './assistant-launcher';
 
 export function Header() {
   const { language, setLanguage, t } = useLanguage();
@@ -53,6 +54,9 @@ export function Header() {
             {language === 'en' ? 'हिन्दी' : 'English'}
             <span aria-hidden="true"> ⇄</span>
           </button>
+          {/* Floats at the corner on wide screens; on phones it sits in this row so it never
+              covers the rate board or basket bar. */}
+          <AssistantLauncher />
         </div>
       </header>
     </>

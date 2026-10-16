@@ -24,13 +24,12 @@ import {
   orderStatusSchema,
   orderStatusText,
   placeOrderSchema,
-  totals,
   transitions,
 } from '@shiv/shared';
 import { Db } from './db';
-import { Admin, AuthRequest, Contract, Input, fail } from './http';
+import { Admin, AuthRequest, Contract, Input, errorCause, fail } from './http';
 import { paginate } from './pagination';
-import { deliveryFor, moveStock, validateQuantity } from './inventory';
+import { deliveryFor, moveStock, orderTotals, validateQuantity } from './inventory';
 import { getConfig, onlineReady } from './config';
 import { enqueueWhatsApp } from './alerts';
 import { workInclude } from './owner-work';
@@ -43,6 +42,12 @@ export const orderInclude = {
   payment: true,
   history: { orderBy: { createdAt: 'asc' as const } },
 };
+// Customers see who is handling their request by name only. Staff phones (also their sign-in
+// identifiers), technical owners and alert retries stay on the owner desk.
+export const customerWork = {
+  select: { acknowledgedAt: true, assignedTo: { select: { name: true } } },
+} as const;
+export const customerOrderInclude = { ...orderInclude, work: customerWork };
 const reorderSchema = z.strictObject({ idempotencyKey: z.string().uuid().optional() }).default({});
 const normalizeReturns = (items: unknown) =>
   Array.isArray(items)
@@ -207,12 +212,16 @@ export class OrdersService {
           lineTotalPaise: product.pricePaise * quantity,
         };
       });
-      const zone = await deliveryFor(tx, address.pincode, totals(items, 0, null).subtotalPaise);
+      const zone = await deliveryFor(
+        tx,
+        address.pincode,
+        orderTotals(items, 0, null).subtotalPaise,
+      );
       const snapshot = {
         ...input,
         address,
         items,
-        ...totals(items, zone.deliveryFeePaise, zone.freeDeliveryAbovePaise),
+        ...orderTotals(items, zone.deliveryFeePaise, zone.freeDeliveryAbovePaise),
         deliveryZoneId: zone.id,
         deliveryZoneVersion: zone.version,
         deliveryEstimate: zone.estimate,
@@ -239,7 +248,7 @@ export class OrdersService {
     const result = await this.db.atomic(async (tx) => {
       const existing = await tx.order.findUnique({
         where: { userId_idempotencyKey: { userId, idempotencyKey: input.idempotencyKey } },
-        include: orderInclude,
+        include: customerOrderInclude,
       });
       if (existing) {
         if (existing.reviewId !== input.reviewId)
@@ -255,7 +264,7 @@ export class OrdersService {
       if (review.order)
         return tx.order.findUniqueOrThrow({
           where: { id: review.order.id },
-          include: orderInclude,
+          include: customerOrderInclude,
         });
       const snapshot = review.snapshot as unknown as CheckoutReview;
       await requestBudget(tx, 'order', userId, ip);
@@ -302,7 +311,11 @@ export class OrdersService {
           idempotencyKey: `order:${review.id}:${product.id}`,
         });
       }
-      const amounts = totals(snapshot.items, zone.deliveryFeePaise, zone.freeDeliveryAbovePaise);
+      const amounts = orderTotals(
+        snapshot.items,
+        zone.deliveryFeePaise,
+        zone.freeDeliveryAbovePaise,
+      );
       const online = snapshot.paymentMethod === 'ONLINE';
       const order = await tx.order.create({
         data: {
@@ -329,7 +342,7 @@ export class OrdersService {
             },
           },
         },
-        include: orderInclude,
+        include: customerOrderInclude,
       });
       await tx.cartItem.deleteMany({ where: { userId } });
       await tx.auditLog.create({
@@ -471,16 +484,30 @@ export class OrdersService {
       where: { status: 'PENDING_PAYMENT', reservedUntil: { lt: new Date() } },
       take: 100,
     });
+    let failed = 0;
+    // One order that cannot be cancelled must not hold back the others.
     for (const order of expired)
-      await this.changeStatus(
-        order.id,
-        'CANCELLED',
-        'system',
-        'Payment reservation expired.',
-        undefined,
-        true,
-      );
-    return { processed: expired.length };
+      try {
+        await this.changeStatus(
+          order.id,
+          'CANCELLED',
+          'system',
+          'Payment reservation expired.',
+          undefined,
+          true,
+        );
+      } catch (error) {
+        failed++;
+        console.error(
+          JSON.stringify({
+            event: 'RESERVATION_EXPIRY_FAILED',
+            orderId: order.id,
+            ...errorCause(error),
+            timestamp: new Date().toISOString(),
+          }),
+        );
+      }
+    return { processed: expired.length - failed, failed };
   }
 
   async delivery(id: string, input: z.infer<typeof deliveryActionSchema>, actorId: string) {
@@ -501,6 +528,18 @@ export class OrdersService {
           fail(
             'IDEMPOTENCY_CONFLICT',
             'This delivery action was already used with different details.',
+            409,
+          );
+        // Only a repeat of the latest step is a retry; after a newer step it would do nothing.
+        const latest = await tx.deliveryAttempt.findFirst({
+          where: { orderId: id },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          select: { id: true },
+        });
+        if (latest?.id !== previous.id)
+          fail(
+            'IDEMPOTENCY_CONFLICT',
+            'This delivery update was recorded before a newer one. Refresh the order and record it again.',
             409,
           );
         return order;
@@ -698,7 +737,7 @@ export class OrdersController {
     return page.finish(
       await this.db.order.findMany({
         where: { userId: req.user.id, ...page.after },
-        include: orderInclude,
+        include: customerOrderInclude,
         orderBy: page.orderBy,
         take: page.take,
       }),
@@ -707,7 +746,7 @@ export class OrdersController {
   @Get('orders/:id') async detail(@Param('id') id: string, @Req() req: AuthRequest) {
     const order = await this.db.order.findFirst({
       where: { id, userId: req.user.id },
-      include: orderInclude,
+      include: customerOrderInclude,
     });
     if (!order) fail('ORDER_NOT_FOUND', 'Order not found.', 404);
     return order;
@@ -727,14 +766,16 @@ export class OrdersController {
   ) {
     return this.orders.reorder(id, req.user.id, body.idempotencyKey);
   }
-  @Post('orders/:id/cancel') cancel(@Param('id') id: string, @Req() req: AuthRequest) {
-    return this.orders.changeStatus(
+  @Post('orders/:id/cancel') async cancel(@Param('id') id: string, @Req() req: AuthRequest) {
+    await this.orders.changeStatus(
       id,
       'CANCELLED',
       req.user.id,
       'Cancelled by customer.',
       req.user.id,
     );
+    // Re-read through the customer view: changeStatus returns the desk view.
+    return this.detail(id, req);
   }
   @Admin() @Get('admin/orders') async all(@Query() query: Record<string, string>) {
     const parsed = z

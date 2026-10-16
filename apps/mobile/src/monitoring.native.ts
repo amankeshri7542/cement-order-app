@@ -10,6 +10,15 @@ if (dsn)
     environment: process.env.EXPO_PUBLIC_APP_ENV || 'development',
     sendDefaultPii: false,
     tracesSampleRate: 0.1,
+    // Request and navigation trails keep only the path: query strings can carry search words,
+    // phone numbers or other customer input.
+    beforeBreadcrumb(breadcrumb) {
+      const data = breadcrumb.data;
+      if (data)
+        for (const key of ['url', 'from', 'to'])
+          if (typeof data[key] === 'string') data[key] = data[key].split(/[?#]/)[0];
+      return breadcrumb;
+    },
   });
 
 type Root = ComponentType<Record<string, unknown>>;

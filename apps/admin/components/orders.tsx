@@ -8,6 +8,21 @@ import { Badge, Empty, Modal, Field } from './ui';
 import { AlertRetry } from './quotes';
 
 type T = (en: string, hi: string) => string;
+// Delivery attempt codes from the server, in words.
+const attemptActions: Record<string, [string, string]> = {
+  REPORT: ['Problem reported', 'समस्या दर्ज'],
+  RETRY: ['Retry scheduled', 'दोबारा भेजना तय'],
+  RETURN: ['Returned to the shop', 'माल दुकान में वापस'],
+};
+const attemptReasons: Record<string, [string, string]> = {
+  UNAVAILABLE: ['Customer unavailable', 'ग्राहक नहीं मिला'],
+  REFUSED: ['Refused', 'ग्राहक ने मना किया'],
+  INACCESSIBLE: ['Site inaccessible', 'रास्ता बंद'],
+};
+const attemptText = (labels: Record<string, [string, string]>, code: string, t: T) => {
+  const words = labels[code];
+  return words ? t(...words) : code;
+};
 const remaining = (order: Order) =>
   order.payment.status === 'PENDING' && !['CANCELLED', 'REFUNDED'].includes(order.status)
     ? order.totalPaise
@@ -193,7 +208,7 @@ export function Orders({
 }: {
   orders: Order[];
   refresh: () => Promise<void>;
-  notice: (value: string) => void;
+  notice: (value: string, error?: boolean) => void;
   onFilter: (query: string) => void;
   query: string;
   onQueue: (queue: string) => void;
@@ -217,6 +232,25 @@ export function Orders({
     else next.delete(key);
     onFilter(next.toString());
   };
+  // The search box applies after a short pause, like Products: every keystroke reloading the
+  // desk would spend the API's request budget.
+  const [term, setTerm] = useState(search);
+  const [routeSearch, setRouteSearch] = useState(search);
+  if (routeSearch !== search) {
+    // A queue tab or the back button changed the search; show it.
+    setRouteSearch(search);
+    setTerm(search);
+  }
+  useEffect(() => {
+    if (term === search) return;
+    const timer = setTimeout(() => {
+      const next = new URLSearchParams(query);
+      if (term) next.set('q', term);
+      else next.delete('q');
+      onFilter(next.toString());
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [term, search, query, onFilter]);
   const [detail, setDetail] = useState<Order | null>(null);
   useEffect(() => {
     let live = true;
@@ -225,7 +259,7 @@ export function Orders({
         .then((o) => {
           if (live) setDetail(o);
         })
-        .catch((e) => notice(say(e)));
+        .catch((e) => notice(say(e), true));
     else setDetail(null);
     return () => {
       live = false;
@@ -254,8 +288,8 @@ export function Orders({
           <input
             aria-label={t('Search orders', 'ऑर्डर खोजें')}
             placeholder={t('Search order number or customer', 'ऑर्डर नंबर या ग्राहक खोजें')}
-            value={search}
-            onChange={(e) => updateFilter('q', e.target.value)}
+            value={term}
+            onChange={(e) => setTerm(e.target.value)}
           />
         </label>
         <select
@@ -308,16 +342,26 @@ function OrderDetail({
       .then(setOwners)
       .catch((e) => setError(say(e)));
   }, []);
-  async function run(steps: () => Promise<void>, done = t('Order updated', 'ऑर्डर अपडेट हुआ')) {
-    if (saving.current) return;
+  /** Runs one desk action; resolves true when it went through. */
+  async function run(
+    steps: () => Promise<void>,
+    done = t('Order updated', 'ऑर्डर अपडेट हुआ'),
+    sentNote = false,
+  ): Promise<boolean> {
+    if (saving.current) return false;
     saving.current = true;
     setBusy(true);
     setError('');
     try {
       await steps();
+      // The note went with this action; a later status change must not repeat it. Actions that
+      // did not send it (taking an order on, cash only) leave it for the next status change.
+      if (sentNote) setNote('');
       notice(done);
+      return true;
     } catch (e) {
       setError(say(e));
+      return false;
     } finally {
       // Refresh even after a partial failure so the screen shows what was saved.
       await refresh().catch(() => {});
@@ -350,7 +394,10 @@ function OrderDetail({
     };
     const signature = JSON.stringify(body);
     const idempotencyKey = (deliveryKeys.current[signature] ||= crypto.randomUUID());
-    await run(() => call('delivery', { ...body, idempotencyKey }).then(() => {}));
+    // The key is kept only to repeat an attempt whose result was uncertain; once recorded, the
+    // same report later (after a retry) is a new attempt.
+    if (await run(() => call('delivery', { ...body, idempotencyKey }).then(() => {})))
+      delete deliveryKeys.current[signature];
   }
   /** Money first, then the delivery: one tap for the common case at the site. */
   function collectAndDeliver(channel: 'CASH' | 'UPI') {
@@ -370,6 +417,7 @@ function OrderDetail({
         await call('status', { status: 'DELIVERED', note });
       },
       t('Payment recorded and delivery completed', 'पैसा दर्ज हुआ और डिलीवरी पूरी हुई'),
+      true,
     );
   }
   function collectOnly(channel: 'CASH' | 'UPI') {
@@ -572,26 +620,39 @@ function OrderDetail({
           </div>
         )}
         {order.payment.method === 'COD' && order.payment.status === 'REFUND_PENDING' && (
-          <button
-            disabled={busy}
-            className="secondary"
-            onClick={() => {
-              if (
-                window.confirm(
-                  t(
-                    'Confirm the full cash refund has been returned to the customer?',
-                    'ग्राहक को पूरा नकद पैसा लौटा दिया गया, पुष्टि करें?',
-                  ),
-                )
-              )
-                void run(
-                  () => call('cash-refunded').then(() => {}),
-                  t('Refund recorded', 'वापसी दर्ज हुई'),
-                );
-            }}
-          >
-            {t('Cash refund returned', 'नकद लौटाया')}
-          </button>
+          // The ledger records how the money went back, so each button names its channel.
+          <div className="button-row">
+            {(['CASH', 'UPI'] as const).map((channel) => (
+              <button
+                key={channel}
+                disabled={busy}
+                className="secondary"
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      channel === 'CASH'
+                        ? t(
+                            'Confirm the full refund has been returned to the customer in cash?',
+                            'ग्राहक को पूरा पैसा नकद लौटा दिया गया, पुष्टि करें?',
+                          )
+                        : t(
+                            'Confirm the full refund has been returned to the customer by UPI?',
+                            'ग्राहक को पूरा पैसा UPI से लौटा दिया गया, पुष्टि करें?',
+                          ),
+                    )
+                  )
+                    void run(
+                      () => call('cash-refunded', { channel }).then(() => {}),
+                      t('Refund recorded', 'वापसी दर्ज हुई'),
+                    );
+                }}
+              >
+                {channel === 'CASH'
+                  ? t('Cash refund returned', 'नकद लौटाया')
+                  : t('UPI refund returned', 'UPI से लौटाया')}
+              </button>
+            ))}
+          </div>
         )}
         {order.payment.method === 'ONLINE' && order.payment.status === 'REFUND_PENDING' && (
           <section className="form-stack">
@@ -753,11 +814,12 @@ function OrderDetail({
               {order.deliveryAttempts.map((attempt) => (
                 <li key={attempt.id}>
                   <strong>
-                    {attempt.action} · {attempt.reason}
+                    {attemptText(attemptActions, attempt.action, t)}
+                    {attempt.reason && ` · ${attemptText(attemptReasons, attempt.reason, t)}`}
                   </strong>
                   <p>
                     {attempt.note}
-                    {attempt.retryDate && ` · ${attempt.retryDate}`}
+                    {attempt.retryDate && ` · ${dayLabel(attempt.retryDate, language)}`}
                   </p>
                   <small>{moment(attempt.createdAt)}</small>
                 </li>
@@ -778,8 +840,10 @@ function OrderDetail({
                   className={s === 'CANCELLED' ? 'danger' : 'primary'}
                   onClick={() => {
                     if (window.confirm(confirmStatus[s] || statusText(s)))
-                      void run(() =>
-                        call('status', { status: s as OrderStatus, note }).then(() => {}),
+                      void run(
+                        () => call('status', { status: s as OrderStatus, note }).then(() => {}),
+                        undefined,
+                        true,
                       );
                   }}
                 >

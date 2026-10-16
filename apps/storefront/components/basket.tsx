@@ -5,12 +5,15 @@ import { useCommerce, Quantity } from './commerce';
 import { ProductImage } from './product';
 import { price } from '../lib/catalog';
 import { useLanguage } from './language';
-import { publicGet, productResponse } from '../lib/api';
+import { ApiError, publicGet, productResponse } from '../lib/api';
 import type { Product } from '@shiv/shared';
 
 export function BasketPage() {
   const c = useCommerce();
   const { t } = useLanguage();
+  const checkoutLabel = c.user
+    ? t('Review delivery & checkout', 'डिलीवरी और चेकआउट जाँचें')
+    : t('Sign in to checkout', 'चेकआउट के लिए साइन इन');
   return (
     <div className="commerce-page">
       <div className="page-heading">
@@ -130,15 +133,16 @@ export function BasketPage() {
                 'पता चुनने के बाद डिलीवरी की गणना होती है। ऑर्डर पक्का होने पर ही स्टॉक आरक्षित होता है।',
               )}
             </p>
-            <Link
-              className="button"
-              aria-disabled={c.busy || c.mergePending}
-              href={c.user ? '/checkout' : '/account?next=/checkout'}
-            >
-              {c.user
-                ? t('Review delivery & checkout', 'डिलीवरी और चेकआउट जाँचें')
-                : t('Sign in to checkout', 'चेकआउट के लिए साइन इन')}
-            </Link>
+            {/* A link cannot be disabled, so a basket that is still saving shows a button. */}
+            {c.busy || c.mergePending ? (
+              <button className="button" disabled>
+                {checkoutLabel}
+              </button>
+            ) : (
+              <Link className="button" href={c.user ? '/checkout' : '/account?next=/checkout'}>
+                {checkoutLabel}
+              </Link>
+            )}
             <button
               className="text-link"
               onClick={() =>
@@ -183,24 +187,45 @@ export function ComparePage() {
   const c = useCommerce();
   const { t } = useLanguage();
   const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [removed, setRemoved] = useState(false);
   const ids = c.compare.map((p) => p.id).join(',');
+  const { dropCompare, showError } = c;
   useEffect(() => {
     let active = true;
     setProducts([]);
-    void Promise.all(
-      ids
-        .split(',')
-        .filter(Boolean)
-        .map((id) => publicGet(`/products/${encodeURIComponent(id)}`, productResponse)),
-    )
-      .then((items) => {
-        if (active) setProducts(items);
-      })
-      .catch(c.showError);
+    setLoading(true);
+    const wanted = ids.split(',').filter(Boolean);
+    void Promise.allSettled(
+      wanted.map((id) => publicGet(`/products/${encodeURIComponent(id)}`, productResponse)),
+    ).then((results) => {
+      if (!active) return;
+      // One product leaving the catalogue must not hold back the rest of the comparison.
+      const gone = wanted.filter((_, index) => {
+        const result = results[index]!;
+        return (
+          result.status === 'rejected' &&
+          result.reason instanceof ApiError &&
+          result.reason.status === 404
+        );
+      });
+      const failed = results.find(
+        (result, index) => result.status === 'rejected' && !gone.includes(wanted[index]!),
+      );
+      setProducts(
+        results.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : [])),
+      );
+      setLoading(false);
+      if (failed?.status === 'rejected') showError(failed.reason);
+      if (gone.length) {
+        setRemoved(true);
+        dropCompare(gone);
+      }
+    });
     return () => {
       active = false;
     };
-  }, [ids, c.showError]);
+  }, [ids, dropCompare, showError]);
   return (
     <div className="commerce-page">
       <div className="page-heading">
@@ -212,8 +237,16 @@ export function ComparePage() {
           )}
         </p>
       </div>
+      {removed && (
+        <p className="notice" role="status">
+          {t(
+            'A selected material is no longer available and was removed from the comparison.',
+            'चुनी गई एक सामग्री अब उपलब्ध नहीं है, इसलिए तुलना से हटा दी गई।',
+          )}
+        </p>
+      )}
       {products.length < 2 ? (
-        ids.split(',').filter(Boolean).length >= 2 && !products.length ? (
+        loading && ids.split(',').filter(Boolean).length >= 2 ? (
           <p className="loading-state" role="status">
             {t('Loading the selected materials…', 'चुनी गई सामग्री लोड हो रही है…')}
           </p>

@@ -44,6 +44,13 @@ test('release builds require real HTTPS API and privacy URLs, without local clea
     /api\/v1/,
   );
   assert.equal(config({ ...release, EXPO_PUBLIC_APP_ENV: 'production' }).name, 'Shiv Cement Store');
+  // Only production hides the header's TEST mark (staging builds share the production package).
+  assert.equal(
+    config({ ...release, EXPO_PUBLIC_APP_ENV: 'production' }).extra.appEnv,
+    'production',
+  );
+  assert.equal(config(release).extra.appEnv, 'staging');
+  assert.equal(config({}).extra.appEnv, 'development');
   assert.ok(config({ APP_VARIANT: 'local' }).plugins.includes('./plugins/local-cleartext'));
 });
 
