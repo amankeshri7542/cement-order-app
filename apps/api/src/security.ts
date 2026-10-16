@@ -66,18 +66,24 @@ export async function otpBudget(tx: Prisma.TransactionClient, action: 'send' | '
   );
 }
 
-// Wrong staff passphrases per account per hour. After that the account refuses staff sign-in,
-// even with the right passphrase, until the hour ends; existing staff sessions are unaffected.
+// Wrong staff passphrases per account and network address per hour. After that, that address
+// cannot start staff sign-in for the account, even with the right passphrase, until the hour
+// ends; existing staff sessions are unaffected. Keyed by address as well, so someone who only
+// knows an owner's number cannot lock the owner out from elsewhere. Every guess also needs a live
+// SMS challenge (5 checks per code, 5 codes an hour per phone), which bounds guessing overall.
 export const staffPassphraseFailures = 10;
 const passphraseScope = 'staff:passphrase';
-export async function assertStaffAttempts(db: Db, userId: string) {
-  if ((await budgetUsed(db, passphraseScope, userId)) >= staffPassphraseFailures)
+const staffSubject = (userId: string, ip: string) =>
+  `${userId}:${createHmac('sha256', getConfig().OTP_HASH_SECRET).update(`staff-ip:${ip}`).digest('hex').slice(0, 32)}`;
+export async function assertStaffAttempts(db: Db, userId: string, ip: string) {
+  if ((await budgetUsed(db, passphraseScope, staffSubject(userId, ip))) >= staffPassphraseFailures)
     fail('RATE_LIMITED', 'Too many sign-in attempts. Please try again later.', 429);
 }
-export async function recordStaffFailure(db: Db, userId: string) {
+export async function recordStaffFailure(db: Db, userId: string, ip: string) {
+  const subject = staffSubject(userId, ip);
   await db.atomic(async (tx) => {
-    await budget(tx, passphraseScope, userId, staffPassphraseFailures);
-    if ((await budgetUsed(tx, passphraseScope, userId)) < staffPassphraseFailures) return;
+    await budget(tx, passphraseScope, subject, staffPassphraseFailures);
+    if ((await budgetUsed(tx, passphraseScope, subject)) < staffPassphraseFailures) return;
     console.warn(JSON.stringify({ event: 'STAFF_PASSPHRASE_LOCKED', userId }));
     await tx.auditLog.create({
       data: {

@@ -47,6 +47,12 @@ const deskErrors: Record<string, string> = {
   STORAGE_NOT_CONFIGURED: 'फ़ोटो रखने की जगह अभी सेट नहीं है। तकनीकी व्यक्ति से बात करें।',
   PUSH_UNAVAILABLE: 'इस फ़ोन पर अलर्ट अभी सर्वर पर सेट नहीं हैं। तकनीकी व्यक्ति से बात करें।',
   PUSH_UNSUPPORTED: 'यह ब्राउज़र अलर्ट नहीं दिखा सकता। Android पर Chrome इस्तेमाल करें।',
+  // Wave 1: replays that no longer match, and amounts beyond the safe limit.
+  IDEMPOTENCY_CONFLICT:
+    'यह काम पहले ही अलग जानकारी के साथ दर्ज हो चुका है। रीफ़्रेश करके दर्ज एंट्री देखें; ज़रूरत हो तो नई एंट्री करें।',
+  ORDER_TOO_LARGE: 'रकम बहुत बड़ी है। मात्रा कम करके दो हिस्सों में दर्ज करें।',
+  INVALID_PUSH_ENDPOINT:
+    'इस ब्राउज़र की अलर्ट सेवा समर्थित नहीं है। Android पर Chrome इस्तेमाल करें।',
   PUSH_DENIED: 'अलर्ट बंद हैं। ब्राउज़र की सेटिंग में Notifications चालू करें।',
 };
 

@@ -200,17 +200,18 @@ test('an unreachable server at load offers a retry, not the sign-in form (F15)',
 }) => {
   await signIn(page);
   await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
-  let failed = false;
-  await page.route('**/api/v1/me', (route) => {
-    if (failed) return route.continue();
-    failed = true;
-    return route.abort('connectionfailed');
-  });
+  // Unreachable until Try again: the dev server checks the session twice on load (React strict
+  // mode), so failing only the first check would let the second one through.
+  let offline = true;
+  await page.route('**/api/v1/me', (route) =>
+    offline ? route.abort('connectionfailed') : route.continue(),
+  );
   await page.reload();
   await expect(
     page.getByRole('alert').filter({ hasText: 'Could not check sign-in' }),
   ).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Welcome back.' })).toHaveCount(0);
+  offline = false;
   await page.getByRole('button', { name: 'Try again' }).click();
   await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
 });

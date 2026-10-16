@@ -30,10 +30,12 @@ export function Settings({
     const f = new FormData(e.currentTarget);
     try {
       await api('/admin/store', 'PATCH', {
-        expectedVersion: base.version,
+        // Once the change elsewhere is on screen (the notice above), saving keeps this form's
+        // fields and takes everything else from the latest settings.
+        expectedVersion: changed ? settings.version : base.version,
         phone: `+91${String(f.get('phone')).replace(/^\+91/, '')}`,
-        deliveryFeePaise: base.deliveryFeePaise,
-        freeDeliveryAbovePaise: base.freeDeliveryAbovePaise,
+        deliveryFeePaise: settings.deliveryFeePaise,
+        freeDeliveryAbovePaise: settings.freeDeliveryAbovePaise,
         onlinePaymentsEnabled: f.get('online') === 'on',
         deliveryMessage: String(f.get('message')),
       });
@@ -57,8 +59,8 @@ export function Settings({
         {changed && (
           <p className="warning" role="status">
             {t(
-              'These settings were changed elsewhere. Your edits are kept; saving checks for the change.',
-              'यह सेटिंग कहीं और बदली गई है। आपके बदलाव सुरक्षित हैं; सहेजते समय बदलाव जाँचा जाएगा।',
+              'These settings were changed elsewhere. Your edits are kept; saving puts your phone number, payment and delivery message in place of the other change.',
+              'यह सेटिंग कहीं और बदली गई है। आपके बदलाव सुरक्षित हैं; सहेजने पर फ़ोन नंबर, भुगतान और डिलीवरी संदेश आपके वाले रहेंगे।',
             )}{' '}
             <button
               type="button"

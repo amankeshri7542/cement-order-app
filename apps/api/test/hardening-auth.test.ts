@@ -190,7 +190,7 @@ describe('F07: staff sign-in does not reveal the passphrase', () => {
       requestId: null,
     });
   });
-  it('locks staff sign-in after ten wrong passphrases, even with the right one', async () => {
+  it('locks staff sign-in from one address after ten wrong passphrases, even with the right one', async () => {
     for (let i = 0; i < 10; i++) {
       // Five attempts per code: request a fresh one (skipping the 60-second resend wait).
       if (i % 5 === 0) {
@@ -206,6 +206,7 @@ describe('F07: staff sign-in does not reveal the passphrase', () => {
     }
     expect(await db.auditLog.count({ where: { event: 'STAFF_PASSPHRASE_LOCKED' } })).toBe(1);
     await db.otpChallenge.deleteMany({ where: { phone: phones.admin } });
+    await db.authRateLimit.deleteMany({ where: { key: { startsWith: 'send:' } } });
     const fresh = await otpRequest(phones.admin).expect(201);
     const locked = await otpVerify({
       phone: phones.admin,
@@ -216,6 +217,10 @@ describe('F07: staff sign-in does not reveal the passphrase', () => {
     expect(
       await db.session.count({ where: { userId: 'admin', adminVerifiedAt: { not: null } } }),
     ).toBe(0);
+    // The lockout is per address: the owner signing in from elsewhere is not locked out by
+    // someone who only knows the number.
+    const { assertStaffAttempts } = await import('../src/security');
+    await expect(assertStaffAttempts(db, 'admin', '203.0.113.9')).resolves.toBeUndefined();
   }, 60000);
 });
 
@@ -313,12 +318,27 @@ function partialPost(path: string, headers: Record<string, string>, length: numb
 
 describe('F09: upload routes refuse anonymous bodies before reading them', () => {
   it('answers anonymous uploads without waiting for the body', async () => {
+    // No credential, a made-up token of the right shape or a made-up cookie: none reaches the body
+    // parser.
+    const callers: Record<string, string>[] = [
+      {},
+      { Authorization: `Bearer ${'z'.repeat(43)}` },
+      { Cookie: 'shiv_access=made-up' },
+    ];
+    for (const path of ['/api/v1/admin/uploads', '/api/v1/admin/rate-studio/batches'])
+      for (const headers of callers) {
+        const started = Date.now();
+        const anonymous = await partialPost(path, headers, 5 * 1024 * 1024);
+        expect(anonymous.status).toBe(401);
+        expect(anonymous.body.error.code).toBe('UNAUTHORIZED');
+        expect(anonymous.body.error.requestId).toMatch(/^[0-9a-f-]{36}$/);
+        expect(Date.now() - started).toBeLessThan(1000);
+      }
+    // A customer's real session is refused as before (403), also without reading the body.
     for (const path of ['/api/v1/admin/uploads', '/api/v1/admin/rate-studio/batches']) {
       const started = Date.now();
-      const anonymous = await partialPost(path, {}, 5 * 1024 * 1024);
-      expect(anonymous.status).toBe(401);
-      expect(anonymous.body.error.code).toBe('UNAUTHORIZED');
-      expect(anonymous.body.error.requestId).toMatch(/^[0-9a-f-]{36}$/);
+      const customer = await partialPost(path, auth('customer'), 5 * 1024 * 1024);
+      expect(customer.status).toBe(403);
       expect(Date.now() - started).toBeLessThan(1000);
     }
     // Preflight requests carry no credentials and must still reach CORS.
@@ -331,7 +351,7 @@ describe('F09: upload routes refuse anonymous bodies before reading them', () =>
 });
 
 describe('F20: refresh-token grace and reuse detection', () => {
-  it('lets a lost refresh reply be retried within a minute, then treats reuse as theft', async () => {
+  it('repeats a lost refresh reply within the grace window, then treats reuse as theft', async () => {
     const phone = '+917733333333';
     const sent = await otpRequest(phone).expect(201);
     const signed = await otpVerify({ phone, code: sent.body.devCode }).expect(201);
@@ -345,8 +365,24 @@ describe('F20: refresh-token grace and reuse detection', () => {
     expect(await db.session.count({ where: { userId } })).toBe(1);
     const me = (token: string) =>
       request(server).get('/api/v1/me').set('Authorization', `Bearer ${token}`);
+    // Same pair both times: whichever reply arrives (or both tabs that raced) stays signed in.
+    expect(retried.body.refreshToken).toBe(lost.body.refreshToken);
+    expect(retried.body.accessToken).toBe(lost.body.accessToken);
     await me(retried.body.accessToken).expect(200);
-    await me(lost.body.accessToken).expect(401);
+    // Signing out with the rotated-out token (a sign-out racing a refresh) still ends it.
+    const other = await otpVerify({
+      phone,
+      code: await (async () => {
+        await db.otpChallenge.deleteMany({ where: { phone } });
+        return (await otpRequest(phone).expect(201)).body.devCode;
+      })(),
+    }).expect(201);
+    await refresh(other.body.refreshToken).expect(201);
+    await request(server)
+      .post('/api/v1/auth/logout')
+      .send({ refreshToken: other.body.refreshToken })
+      .expect(201);
+    expect(await db.session.count({ where: { userId } })).toBe(1);
     // After the window, the rotated-out token means someone else holds a copy: end the session.
     await db.session.updateMany({
       where: { userId },

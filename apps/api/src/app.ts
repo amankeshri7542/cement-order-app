@@ -16,7 +16,7 @@ import { AuthController, AuthGuard, AuthService } from './auth';
 import { AccountController, CatalogController, Events } from './catalog';
 import { Db } from './db';
 import { OwnerWorkController, OwnerWorkService } from './owner-work';
-import { Errors, Public, cookie, fail } from './http';
+import { Errors, Public, cookie, fail, hash } from './http';
 import { getConfig } from './config';
 import { OrdersController, OrdersService } from './orders';
 import { PaymentsController, PaymentsService } from './payments';
@@ -102,27 +102,43 @@ class HealthController {
 })
 export class AppModule {}
 /**
- * A cheap credential-shaped check only; AuthGuard still verifies the session afterwards. Bodies
- * announced above 5 MB are left to raw(), which refuses them (413) without buffering them.
+ * Before any upload body is read: the request must carry a live staff session. One indexed
+ * lookup; AuthGuard still runs every check afterwards. Bodies announced above 5 MB are left to
+ * raw(), which refuses them (413) without buffering them.
  */
-export function uploadGate(
-  req: Request & { requestId?: string },
-  res: Response,
-  next: NextFunction,
-) {
-  if (
-    req.method === 'OPTIONS' ||
-    /^Bearer [A-Za-z0-9_-]{43}$/.test(req.headers.authorization || '') ||
-    cookie(req, 'shiv_access')
-  )
-    return next();
-  res.status(401).json({
-    error: {
-      code: 'UNAUTHORIZED',
-      message: 'Please sign in to continue.',
-      requestId: req.requestId,
-    },
-  });
+export function uploadGate(db: Db) {
+  return (req: Request & { requestId?: string }, res: Response, next: NextFunction) => {
+    if (req.method === 'OPTIONS') return next();
+    const token =
+      req.headers.authorization?.match(/^Bearer ([A-Za-z0-9_-]{43})$/)?.[1] ||
+      cookie(req, 'shiv_access');
+    const refuse = (staffOnly = false) =>
+      res.status(staffOnly ? 403 : 401).json({
+        error: staffOnly
+          ? {
+              code: 'FORBIDDEN',
+              message: 'Store staff access is required.',
+              requestId: req.requestId,
+            }
+          : {
+              code: 'UNAUTHORIZED',
+              message: 'Please sign in to continue.',
+              requestId: req.requestId,
+            },
+      });
+    if (!token) return refuse();
+    db.session
+      .findUnique({
+        where: { accessHash: hash(token) },
+        select: { expiresAt: true, user: { select: { role: true } } },
+      })
+      .then((session) => {
+        if (!session || session.expiresAt <= new Date()) return refuse();
+        if (session.user.role !== 'ADMIN') return refuse(true);
+        next();
+      })
+      .catch(next);
+  };
 }
 export async function createApp() {
   const c = getConfig();
@@ -159,9 +175,9 @@ export async function createApp() {
     });
     next();
   });
-  // Staff upload routes read bodies of up to 5 MB before Nest's guards run. Refuse requests that
-  // carry no credential before reading any of the body.
-  app.use(['/api/v1/admin/uploads', '/api/v1/admin/rate-studio'], uploadGate);
+  // Staff upload routes read bodies of up to 5 MB before Nest's guards run. Refuse requests
+  // without a live staff session before reading any of the body.
+  app.use(['/api/v1/admin/uploads', '/api/v1/admin/rate-studio'], uploadGate(app.get(Db)));
   const rateJson = json({ limit: '512kb' });
   app.use(
     '/api/v1/admin/rate-studio',

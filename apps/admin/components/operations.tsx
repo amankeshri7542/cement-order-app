@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { DeliveryZone, InventoryMovement, Page, Product, SessionInfo, money } from '@shiv/shared';
 import { api } from '../lib/api';
 import { useWords } from '../lib/i18n';
@@ -225,9 +225,7 @@ export function CounterSale({
   const [productId, setProductId] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  // One key per distinct sale: a retry of the same uncertain sale repeats safely, while an edited
-  // sale (another quantity, price or buyer) is a new attempt instead of an idempotency conflict.
-  const keys = useRef<Record<string, string>>({});
+  const [key] = useState(() => crypto.randomUUID());
   useEffect(() => {
     // Its own list: the Products tab may be filtered or only partly loaded.
     void api<Page<Product>>('/admin/products?limit=100')
@@ -260,19 +258,14 @@ export function CounterSale({
             return;
           setBusy(true);
           setError('');
-          const body = {
-            kind: 'WALK_IN_SALE',
-            quantity,
-            reference: '',
-            note: String(f.get('note') || t('Counter sale', 'काउंटर बिक्री')),
-            ...counterBody(f),
-          };
-          const signature = `${product.id}:${JSON.stringify(body)}`;
-          const idempotencyKey = (keys.current[signature] ||= crypto.randomUUID());
           try {
             await api(`/admin/products/${product.id}/movements`, 'POST', {
-              ...body,
-              idempotencyKey,
+              kind: 'WALK_IN_SALE',
+              quantity,
+              reference: '',
+              note: String(f.get('note') || t('Counter sale', 'काउंटर बिक्री')),
+              idempotencyKey: key,
+              ...counterBody(f),
             });
             await done(
               t(`Counter sale recorded · ${money(total)}`, `काउंटर बिक्री दर्ज · ${money(total)}`),

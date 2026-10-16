@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { Order, Quote, User, dayLabel, money } from '@shiv/shared';
+import { Order, Quote, User, dayLabel, deliveryDateOptions, istToday, money } from '@shiv/shared';
 import { ArrowUpRight } from 'lucide-react';
 import { api } from '../lib/api';
 import { useWords } from '../lib/i18n';
@@ -259,13 +259,18 @@ function QuoteEditor({
       setBusy(false);
     }
   }
+  // A quote accepted before it expired still converts, but its agreed delivery day may have
+  // passed: then the owner picks a new day agreed with the customer.
+  const dateOptions = deliveryDateOptions(new Date(), 0, 14);
+  const datePassed = Boolean(quote.deliveryDate && quote.deliveryDate < istToday());
+  const [newDate, setNewDate] = useState(dateOptions[1] ?? dateOptions[0]!);
   async function convert() {
     if (saving.current) return;
     if (
       !window.confirm(
         t(
-          `Create a cash-on-delivery order for ${money(quote.totalPaise || 0)} at the agreed terms?`,
-          `तय शर्तों पर ${money(quote.totalPaise || 0)} का डिलीवरी पर भुगतान वाला ऑर्डर बनाएँ?`,
+          `Create a cash-on-delivery order for ${money(quote.totalPaise || 0)} at the agreed terms${datePassed ? `, delivering ${dayLabel(newDate, 'en')}` : ''}?`,
+          `तय शर्तों पर ${money(quote.totalPaise || 0)} का डिलीवरी पर भुगतान वाला ऑर्डर बनाएँ${datePassed ? `, डिलीवरी ${dayLabel(newDate, 'hi')}` : ''}?`,
         ),
       )
     )
@@ -276,6 +281,7 @@ function QuoteEditor({
     try {
       const order = await api<Order>(`/admin/quotes/${quote.id}/convert`, 'POST', {
         revision: quote.revision,
+        ...(datePassed ? { deliveryDate: newDate } : {}),
       });
       await save(t(`Order ${order.number} created`, `ऑर्डर ${order.number} बन गया`));
       window.location.hash = `orders?order=${encodeURIComponent(order.id)}`;
@@ -376,6 +382,22 @@ function QuoteEditor({
                 'ग्राहक ने यह भाव मंज़ूर किया है। इन्हीं तय भाव और भाड़े पर डिलीवरी पर भुगतान वाला एक ऑर्डर बनाएँ; स्टॉक फिर जाँचा जाएगा।',
               )}
             </p>
+            {datePassed && (
+              <Field
+                label={t(
+                  'New delivery day (agreed day has passed)',
+                  'नई डिलीवरी तारीख़ (तय दिन बीत गया)',
+                )}
+              >
+                <select value={newDate} onChange={(e) => setNewDate(e.target.value)}>
+                  {dateOptions.map((day) => (
+                    <option key={day} value={day}>
+                      {dayLabel(day, language)}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            )}
             <button
               type="button"
               className="primary wide"

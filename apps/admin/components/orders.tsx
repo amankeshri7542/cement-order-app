@@ -346,6 +346,7 @@ function OrderDetail({
   async function run(
     steps: () => Promise<void>,
     done = t('Order updated', 'ऑर्डर अपडेट हुआ'),
+    sentNote = false,
   ): Promise<boolean> {
     if (saving.current) return false;
     saving.current = true;
@@ -353,8 +354,9 @@ function OrderDetail({
     setError('');
     try {
       await steps();
-      // The note went with this action; a later status change must not repeat it.
-      setNote('');
+      // The note went with this action; a later status change must not repeat it. Actions that
+      // did not send it (taking an order on, cash only) leave it for the next status change.
+      if (sentNote) setNote('');
       notice(done);
       return true;
     } catch (e) {
@@ -415,6 +417,7 @@ function OrderDetail({
         await call('status', { status: 'DELIVERED', note });
       },
       t('Payment recorded and delivery completed', 'पैसा दर्ज हुआ और डिलीवरी पूरी हुई'),
+      true,
     );
   }
   function collectOnly(channel: 'CASH' | 'UPI') {
@@ -617,26 +620,39 @@ function OrderDetail({
           </div>
         )}
         {order.payment.method === 'COD' && order.payment.status === 'REFUND_PENDING' && (
-          <button
-            disabled={busy}
-            className="secondary"
-            onClick={() => {
-              if (
-                window.confirm(
-                  t(
-                    'Confirm the full cash refund has been returned to the customer?',
-                    'ग्राहक को पूरा नकद पैसा लौटा दिया गया, पुष्टि करें?',
-                  ),
-                )
-              )
-                void run(
-                  () => call('cash-refunded').then(() => {}),
-                  t('Refund recorded', 'वापसी दर्ज हुई'),
-                );
-            }}
-          >
-            {t('Cash refund returned', 'नकद लौटाया')}
-          </button>
+          // The ledger records how the money went back, so each button names its channel.
+          <div className="button-row">
+            {(['CASH', 'UPI'] as const).map((channel) => (
+              <button
+                key={channel}
+                disabled={busy}
+                className="secondary"
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      channel === 'CASH'
+                        ? t(
+                            'Confirm the full refund has been returned to the customer in cash?',
+                            'ग्राहक को पूरा पैसा नकद लौटा दिया गया, पुष्टि करें?',
+                          )
+                        : t(
+                            'Confirm the full refund has been returned to the customer by UPI?',
+                            'ग्राहक को पूरा पैसा UPI से लौटा दिया गया, पुष्टि करें?',
+                          ),
+                    )
+                  )
+                    void run(
+                      () => call('cash-refunded', { channel }).then(() => {}),
+                      t('Refund recorded', 'वापसी दर्ज हुई'),
+                    );
+                }}
+              >
+                {channel === 'CASH'
+                  ? t('Cash refund returned', 'नकद लौटाया')
+                  : t('UPI refund returned', 'UPI से लौटाया')}
+              </button>
+            ))}
+          </div>
         )}
         {order.payment.method === 'ONLINE' && order.payment.status === 'REFUND_PENDING' && (
           <section className="form-stack">
@@ -824,8 +840,10 @@ function OrderDetail({
                   className={s === 'CANCELLED' ? 'danger' : 'primary'}
                   onClick={() => {
                     if (window.confirm(confirmStatus[s] || statusText(s)))
-                      void run(() =>
-                        call('status', { status: s as OrderStatus, note }).then(() => {}),
+                      void run(
+                        () => call('status', { status: s as OrderStatus, note }).then(() => {}),
+                        undefined,
+                        true,
                       );
                   }}
                 >

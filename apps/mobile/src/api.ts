@@ -40,14 +40,16 @@ async function refresh(): Promise<RefreshResult> {
   const sent = refreshToken;
   if (Platform.OS !== 'web' && !sent) return 'rejected';
   try {
-    await saveSession(
-      await api<Session>(
-        '/auth/refresh',
-        'POST',
-        Platform.OS === 'web' ? {} : { refreshToken: sent },
-        false,
-      ),
+    const renewed = await api<Session>(
+      '/auth/refresh',
+      'POST',
+      Platform.OS === 'web' ? {} : { refreshToken: sent },
+      false,
     );
+    // Signed out (or signed in again) while this was in flight: keep the newer state. The store
+    // ends the renewed session too, because sign-out also matches the rotated-out token.
+    if (Platform.OS !== 'web' && refreshToken !== sent) return refreshToken ? 'ok' : 'rejected';
+    await saveSession(renewed);
     return 'ok';
   } catch (e) {
     // Weak signal, a timeout, a captive portal or a busy server keep the saved token, so the

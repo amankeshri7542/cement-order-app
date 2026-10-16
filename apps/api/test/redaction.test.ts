@@ -119,6 +119,8 @@ describe('Personal-data redaction preserves business evidence', () => {
         findUniqueOrThrow: async () => product,
       },
       financialMovement: {
+        findUnique: async ({ where }: Prisma.FinancialMovementFindUniqueArgs) =>
+          moneyRows.get(where.inventoryMovementId!) ?? null,
         upsert: vi.fn(async ({ where, create, update }: Prisma.FinancialMovementUpsertArgs) => {
           expect(update).toEqual({});
           if (!moneyRows.has(where.inventoryMovementId!))

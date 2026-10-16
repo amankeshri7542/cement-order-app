@@ -34,6 +34,8 @@ import {
 
 // One answer for every failed staff sign-in, whichever factor was wrong.
 const staffRejection = 'The sign-in details could not be verified.';
+// How long a rotated-out refresh token may repeat its refresh (a reply lost on a weak signal).
+const refreshGraceMs = 5 * 60000;
 
 // Headers added by TLS-terminating tunnels and proxies (ngrok, cloudflared, nginx and similar).
 // A bare X-Forwarded-For is not listed: Express ignores it while TRUST_PROXY_HOPS=0, and the
@@ -151,13 +153,13 @@ export class AuthService {
     db: Pick<Prisma.TransactionClient, 'adminCredential'>,
     userId: string,
     adminPassword?: string,
-    failures?: Db,
+    failures?: { db: Db; ip: string },
   ) {
     const credential = await db.adminCredential.findUnique({ where: { userId } });
     if (credential) {
       if (!adminPassword || !(await verifyPassword(adminPassword, credential.passwordHash))) {
         // Only guesses count towards the lockout; a missing passphrase guesses nothing.
-        if (failures && adminPassword) await recordStaffFailure(failures, userId);
+        if (failures && adminPassword) await recordStaffFailure(failures.db, userId, failures.ip);
         fail('INVALID_CREDENTIALS', staffRejection, 401);
       }
       return new Date();
@@ -201,7 +203,13 @@ export class AuthService {
         : {}),
     };
   }
-  async verify(phone: string, code: string, adminPassword?: string, label = 'Unknown device') {
+  async verify(
+    phone: string,
+    code: string,
+    adminPassword?: string,
+    label = 'Unknown device',
+    ip = 'unknown',
+  ) {
     const challenge = await this.db.otpChallenge.findUnique({ where: { phone } });
     if (
       !challenge ||
@@ -226,15 +234,16 @@ export class AuthService {
       return counted;
     });
     if (!attempt.count) fail('INVALID_OTP', 'Code expired or invalid.', 401);
-    // Twilio deletes an approved verification. Check the passphrase before consuming it.
     const existing = await this.db.user.findUnique({ where: { phone } });
     if (existing?.deletedAt) fail('UNAUTHORIZED', 'This account has been deleted.', 401);
     // Staff (and desk) sign-in answers a wrong code exactly like a wrong passphrase, so neither
     // can be confirmed without the other.
     const staffForm = existing?.role === 'ADMIN' || Boolean(adminPassword);
+    // Twilio deletes an approved verification. Check the passphrase before consuming it, so staff
+    // can correct a mistyped passphrase with the same code.
     if (existing?.role === 'ADMIN') {
-      await assertStaffAttempts(this.db, existing.id);
-      await this.verifyStaff(this.db, existing.id, adminPassword, this.db);
+      await assertStaffAttempts(this.db, existing.id, ip);
+      await this.verifyStaff(this.db, existing.id, adminPassword, { db: this.db, ip });
     }
     const status =
       getConfig().OTP_PROVIDER === 'mock'
@@ -282,8 +291,14 @@ export class AuthService {
     });
   }
   async refresh(token: string) {
-    const accessToken = randomBytes(32).toString('base64url');
-    const refreshToken = randomBytes(32).toString('base64url');
+    // The next pair is derived from the presented token, so a repeat of the same refresh (a lost
+    // reply, or two tabs refreshing at once) gets the same pair instead of orphaning the other.
+    const derive = (kind: string) =>
+      createHmac('sha256', getConfig().OTP_HASH_SECRET)
+        .update(`refresh-rotation:${kind}:${token}`)
+        .digest('base64url');
+    const accessToken = derive('access');
+    const refreshToken = derive('refresh');
     const presented = hash(token);
     const result = await this.db.atomic(async (tx) => {
       const session = await tx.session.findFirst({
@@ -316,13 +331,13 @@ export class AuthService {
         data: {
           accessHash: hash(accessToken),
           refreshHash: hash(refreshToken),
-          // A retry with the previous token (its reply was lost) rotates again but keeps the
-          // original grace window, so the window cannot be stretched by retrying.
+          // A repeat with the previous token returns the same pair and keeps the original grace
+          // window, so the window cannot be stretched by retrying.
           ...(previous
             ? {}
             : {
                 previousRefreshHash: presented,
-                previousRefreshUntil: new Date(Date.now() + 60000),
+                previousRefreshUntil: new Date(Date.now() + refreshGraceMs),
               }),
           expiresAt: new Date(Date.now() + 1800000),
           lastSeenAt: new Date(),
@@ -384,13 +399,15 @@ export class AuthController {
     @Req() req: AuthRequest,
     @Res({ passthrough: true }) res: Response,
   ) {
-    await limitOtp(this.db, req.ip || req.socket.remoteAddress || 'unknown', 'verify');
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    await limitOtp(this.db, ip, 'verify');
     return this.sendSession(
       await this.auth.verify(
         body.phone,
         body.code,
         body.adminPassword,
         req.get('user-agent') || 'Unknown device',
+        ip,
       ),
       req,
       res,
@@ -422,7 +439,10 @@ export class AuthController {
       where: {
         OR: [
           ...(access ? [{ accessHash: hash(access) }] : []),
-          ...(refresh ? [{ refreshHash: hash(refresh) }] : []),
+          // A sign-out racing a refresh still ends the session it rotated.
+          ...(refresh
+            ? [{ refreshHash: hash(refresh) }, { previousRefreshHash: hash(refresh) }]
+            : []),
         ],
       },
     });
