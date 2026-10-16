@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { Order, Quote, User, money } from '@shiv/shared';
+import { Order, Quote, User, dayLabel, money } from '@shiv/shared';
 import { ArrowUpRight } from 'lucide-react';
 import { api } from '../lib/api';
 import { useWords } from '../lib/i18n';
@@ -16,7 +16,7 @@ export function Quotes({
   notice: (s: string) => void;
   onDirtyChange: (value: boolean) => void;
 }) {
-  const { t, age } = useWords();
+  const { t, age, language } = useWords();
   const [selected, setSelected] = useState<Quote | null>(null);
   const [dirty, setDirty] = useState(false);
   useEffect(() => {
@@ -54,7 +54,7 @@ export function Quotes({
             </div>
             <h3>{q.company || q.address.name}</h3>
             <p>
-              {q.address.area}, {q.address.city} · {q.deliveryDate}
+              {q.address.area}, {q.address.city} · {dayLabel(q.deliveryDate, language)}
             </p>
             <p>
               {q.items.map((item) => `${item.name}: ${item.quantity} ${item.unit}`).join(' · ')}
@@ -200,7 +200,7 @@ function QuoteEditor({
   onDirty: () => void;
   changed: boolean;
 }) {
-  const { t, error: say } = useWords();
+  const { t, error: say, language } = useWords();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [revising, setRevising] = useState(false);
@@ -472,7 +472,7 @@ function QuoteEditor({
           <p>
             {quote.address.line1}, {quote.address.area}, {quote.address.city}
             <br />
-            {t('Delivery requested', 'चाही डिलीवरी')}: {quote.deliveryDate}
+            {t('Delivery requested', 'चाही डिलीवरी')}: {dayLabel(quote.deliveryDate, language)}
             {quote.address.landmark && (
               <>
                 <br />

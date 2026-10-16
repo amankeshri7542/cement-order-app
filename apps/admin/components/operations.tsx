@@ -632,6 +632,16 @@ const eventText = (t: T): Record<string, string> => ({
   RATE_BATCH_PUBLISHED: t('New rates published', 'नए भाव लागू'),
   RATE_BATCH_CANCELLED: t('Rate sheet cancelled', 'भाव सूची रद्द'),
   RATE_CARD_CREATED: t('Rate card made', 'भाव कार्ड बना'),
+  RATE_SOURCE_ATTACHED: t('Rate sheet file added', 'भाव सूची की फ़ाइल जोड़ी'),
+  RATE_EXTRACTION_STARTED: t('Reading prices from the file', 'फ़ाइल से भाव पढ़ना शुरू'),
+  RATE_EXTRACTION_COMPLETED: t('Prices read from the file', 'फ़ाइल से भाव पढ़े गए'),
+  RATE_EXTRACTION_FAILED: t('Could not read prices from the file', 'फ़ाइल से भाव नहीं पढ़ सके'),
+  RATE_ADJUSTMENT_PREVIEWED: t('Price change previewed', 'भाव बदलाव की झलक बनी'),
+  PAYMENT_CONFIRMED: t('Online payment confirmed', 'ऑनलाइन भुगतान पक्का'),
+  LATE_PAYMENT_REFUND_REQUIRED: t(
+    'Payment arrived after cancellation, refund due',
+    'रद्द होने के बाद भुगतान आया, पैसा लौटाना है',
+  ),
   CART_MERGED: t('Guest basket joined account', 'मेहमान टोकरी खाते में जुड़ी'),
   CART_REORDERED: t('Order added to basket again', 'ऑर्डर फिर टोकरी में'),
 });

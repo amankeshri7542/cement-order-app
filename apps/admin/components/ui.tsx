@@ -1,7 +1,7 @@
 'use client';
 import { X, Package, ArrowUpRight } from 'lucide-react';
 import { statusLabel } from '@shiv/shared';
-import { useEffect, useRef } from 'react';
+import { useEffect, useId, useRef } from 'react';
 import { useWords } from '../lib/i18n';
 // Desk-only states that are not order, quote or payment statuses.
 const deskStates: Record<string, [string, string]> = {
@@ -46,19 +46,21 @@ export function Modal({
 }) {
   const { t } = useWords();
   const ref = useRef<HTMLDialogElement>(null);
+  const heading = useId();
   useEffect(() => {
     ref.current?.showModal();
   }, []);
   return (
     <dialog
       ref={ref}
+      aria-labelledby={heading}
       onCancel={(event) => {
         event.preventDefault();
         close();
       }}
     >
       <div className="modal-head">
-        <h2>{title}</h2>
+        <h2 id={heading}>{title}</h2>
         <button className="icon-button" aria-label={t('Close dialog', 'बंद करें')} onClick={close}>
           <X size={21} />
         </button>

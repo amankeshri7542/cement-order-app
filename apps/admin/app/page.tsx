@@ -10,6 +10,7 @@ import {
   Building2,
   Check,
   ChevronRight,
+  CircleAlert,
   ClipboardList,
   IndianRupee,
   LayoutDashboard,
@@ -260,7 +261,14 @@ function StoreDesk({ recoverSession }: { recoverSession: () => void }) {
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [settings, setSettings] = useState<StoreSettings | null>(null);
-  const [message, setMessage] = useState('');
+  // The toast: a confirmation, or a failure shown as an alert rather than with a tick.
+  const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
+  const notice = useCallback(
+    (text: string, error = false) => setMessage(text ? { text, error } : null),
+    [],
+  );
+  // A failed sign-in check that was not the server saying "signed out" (an outage, a deploy).
+  const [sessionUnknown, setSessionUnknown] = useState(false);
   // The raw failure is kept so its text follows a language switch.
   const [failure, setFailure] = useState<unknown>(null);
   const [sessionExpired, setSessionExpired] = useState(false);
@@ -330,15 +338,25 @@ function StoreDesk({ recoverSession }: { recoverSession: () => void }) {
     },
     [selectedOrder],
   );
+  const checkSession = useCallback(
+    () =>
+      api<User>('/me')
+        .then((me) => {
+          setUser(me);
+          setSessionUnknown(false);
+        })
+        // Only the server saying so means signed out; staff with a valid session must not be
+        // sent to the sign-in form (and to request codes) while the server is unreachable.
+        .catch((e) => setSessionUnknown(!(e instanceof ApiError && e.code === 'UNAUTHORIZED')))
+        .finally(() => setChecking(false)),
+    [],
+  );
   useEffect(() => {
-    api<User>('/me')
-      .then(setUser)
-      .catch(() => {})
-      .finally(() => setChecking(false));
-  }, []);
+    void checkSession();
+  }, [checkSession]);
   useEffect(() => {
     if (!message) return;
-    const id = setTimeout(() => setMessage(''), 6000);
+    const id = setTimeout(() => setMessage(null), message.error ? 10000 : 6000);
     return () => clearTimeout(id);
   }, [message]);
   const refresh = useCallback(
@@ -413,13 +431,17 @@ function StoreDesk({ recoverSession }: { recoverSession: () => void }) {
     },
     [user, productQuery, orderQuery, lowStockOnly, quoteRequestedOnly],
   );
+  // The live stream and polling call the latest refresh through a ref, so a new search or
+  // filter does not close and reopen the stream.
+  const refreshRef = useRef(refresh);
   useEffect(() => {
+    refreshRef.current = refresh;
     void refresh();
   }, [refresh]);
   useEffect(() => {
     if (user?.role !== 'ADMIN') return;
     const update = () => {
-      if (document.visibilityState === 'visible') void refresh(true);
+      if (document.visibilityState === 'visible') void refreshRef.current(true);
     };
     let source: EventSource;
     let retry = 0;
@@ -463,7 +485,7 @@ function StoreDesk({ recoverSession }: { recoverSession: () => void }) {
       window.removeEventListener('online', update);
       document.removeEventListener('visibilitychange', update);
     };
-  }, [refresh, user?.role]);
+  }, [user?.role]);
   // A bell and the home-screen badge when new work arrives while the desk is open.
   useEffect(() => {
     if (!dashboard) return;
@@ -509,6 +531,28 @@ function StoreDesk({ recoverSession }: { recoverSession: () => void }) {
       <div className="loading-page">
         <Building2 size={36} />
         <p>{t('Opening your store desk…', 'दुकान डेस्क खुल रहा है…')}</p>
+      </div>
+    );
+  if (sessionUnknown)
+    return (
+      <div className="loading-page" role="alert">
+        <Building2 size={36} />
+        <p>
+          {t(
+            'Could not check sign-in. Check the connection, then try again.',
+            'साइन इन की जाँच नहीं हो सकी। इंटरनेट जाँचें, फिर कोशिश करें।',
+          )}
+        </p>
+        <button
+          className="primary"
+          onClick={() => {
+            setChecking(true);
+            void checkSession();
+          }}
+        >
+          {t('Try again', 'फिर कोशिश करें')}
+        </button>
+        <LanguageSwitch />
       </div>
     );
   if (!user || user.role !== 'ADMIN') return <Login onLogin={setUser} forbidden={Boolean(user)} />;
@@ -603,7 +647,7 @@ function StoreDesk({ recoverSession }: { recoverSession: () => void }) {
                   setBadge(0);
                   setUser(null);
                 } catch (e) {
-                  setMessage(say(e));
+                  notice(say(e), true);
                 }
               }}
             >
@@ -917,7 +961,7 @@ function StoreDesk({ recoverSession }: { recoverSession: () => void }) {
             <RateStudio
               categories={categories}
               refresh={refresh}
-              notice={setMessage}
+              notice={notice}
               onDirtyChange={setRateDirty}
             />
           )}
@@ -927,7 +971,7 @@ function StoreDesk({ recoverSession }: { recoverSession: () => void }) {
               products={products}
               categories={categories}
               refresh={refresh}
-              notice={setMessage}
+              notice={notice}
             />
           )}
           {tab === 'Orders' && (
@@ -937,7 +981,7 @@ function StoreDesk({ recoverSession }: { recoverSession: () => void }) {
               onQueue={(queue) => navigate('Orders', queue)}
               orders={orders}
               refresh={refresh}
-              notice={setMessage}
+              notice={notice}
               selectedId={selectedOrder}
               setSelectedId={(id) => {
                 setSelectedOrder(id);
@@ -951,7 +995,7 @@ function StoreDesk({ recoverSession }: { recoverSession: () => void }) {
             <Quotes
               quotes={quotes}
               refresh={refresh}
-              notice={setMessage}
+              notice={notice}
               onDirtyChange={setQuoteDirty}
             />
           )}
@@ -960,12 +1004,7 @@ function StoreDesk({ recoverSession }: { recoverSession: () => void }) {
               <DeliveryZones />
               <StaffSessions />
               <SecurityControls />
-              <Settings
-                key={settings.version}
-                settings={settings}
-                refresh={refresh}
-                notice={setMessage}
-              />
+              <Settings settings={settings} refresh={refresh} notice={notice} />
             </>
           )}
           {tab === 'Customers' && (
@@ -1001,7 +1040,7 @@ function StoreDesk({ recoverSession }: { recoverSession: () => void }) {
                             try {
                               setCustomer(await api(`/admin/customers/${c.id}`));
                             } catch (e) {
-                              setMessage(say(e));
+                              notice(say(e), true);
                             }
                           }}
                         >
@@ -1053,12 +1092,15 @@ function StoreDesk({ recoverSession }: { recoverSession: () => void }) {
         ))}
       </nav>
       {message && (
-        <div className="toast" role="status">
-          <Check size={18} />
-          {message}
+        <div
+          className={message.error ? 'toast toast-error' : 'toast'}
+          role={message.error ? 'alert' : 'status'}
+        >
+          {message.error ? <CircleAlert size={18} /> : <Check size={18} />}
+          {message.text}
           <button
             aria-label={t('Dismiss notification', 'सूचना हटाएँ')}
-            onClick={() => setMessage('')}
+            onClick={() => setMessage(null)}
           >
             <X size={16} />
           </button>
@@ -1069,7 +1111,7 @@ function StoreDesk({ recoverSession }: { recoverSession: () => void }) {
           close={() => setCounterSale(false)}
           done={async (text) => {
             setCounterSale(false);
-            setMessage(text);
+            notice(text);
             window.dispatchEvent(new Event('shiv-owner-refresh'));
             await refresh();
           }}
@@ -1108,9 +1150,9 @@ function StoreDesk({ recoverSession }: { recoverSession: () => void }) {
                     });
                     setCustomer(await api(`/admin/customers/${customer.id}`));
                     await refresh();
-                    setMessage(t('Contractor verification recorded', 'ठेकेदार सत्यापन दर्ज'));
+                    notice(t('Contractor verification recorded', 'ठेकेदार सत्यापन दर्ज'));
                   } catch (err) {
-                    setMessage(say(err));
+                    notice(say(err), true);
                   }
                 }}
               >

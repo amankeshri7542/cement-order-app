@@ -17,6 +17,12 @@ export function Settings({
   const { t, error: say } = useWords();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // The form keeps the version it was filled from. Another owner's save shows a notice instead
+  // of wiping edits in progress; saving still checks the version.
+  const [base, setBase] = useState(settings);
+  const [dirty, setDirty] = useState(false);
+  if (!dirty && base.version !== settings.version) setBase(settings);
+  const changed = dirty && base.version !== settings.version;
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
@@ -24,13 +30,14 @@ export function Settings({
     const f = new FormData(e.currentTarget);
     try {
       await api('/admin/store', 'PATCH', {
-        expectedVersion: settings.version,
+        expectedVersion: base.version,
         phone: `+91${String(f.get('phone')).replace(/^\+91/, '')}`,
-        deliveryFeePaise: settings.deliveryFeePaise,
-        freeDeliveryAbovePaise: settings.freeDeliveryAbovePaise,
+        deliveryFeePaise: base.deliveryFeePaise,
+        freeDeliveryAbovePaise: base.freeDeliveryAbovePaise,
         onlinePaymentsEnabled: f.get('online') === 'on',
         deliveryMessage: String(f.get('message')),
       });
+      setDirty(false);
       await refresh();
       notice(t('Store and finance settings saved', 'दुकान की सेटिंग सहेजी'));
     } catch (err) {
@@ -40,8 +47,32 @@ export function Settings({
     }
   }
   return (
-    <form className="settings-layout" onSubmit={submit}>
+    <form
+      key={base.version}
+      className="settings-layout"
+      onSubmit={submit}
+      onChange={() => setDirty(true)}
+    >
       <div className="form-stack">
+        {changed && (
+          <p className="warning" role="status">
+            {t(
+              'These settings were changed elsewhere. Your edits are kept; saving checks for the change.',
+              'यह सेटिंग कहीं और बदली गई है। आपके बदलाव सुरक्षित हैं; सहेजते समय बदलाव जाँचा जाएगा।',
+            )}{' '}
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => {
+                setBase(settings);
+                setDirty(false);
+                setError('');
+              }}
+            >
+              {t('Reload latest settings', 'नई सेटिंग दिखाएँ')}
+            </button>
+          </p>
+        )}
         <section className="panel padded">
           <h2>
             <Phone size={21} />
@@ -59,16 +90,11 @@ export function Settings({
               type="tel"
               required
               pattern="(\+91)?[6-9][0-9]{9}"
-              defaultValue={settings.phone.replace(/^\+91/, '')}
+              defaultValue={base.phone.replace(/^\+91/, '')}
             />
           </Field>
           <Field label={t('Delivery information for customers', 'ग्राहकों के लिए डिलीवरी जानकारी')}>
-            <textarea
-              name="message"
-              defaultValue={settings.deliveryMessage}
-              required
-              maxLength={250}
-            />
+            <textarea name="message" defaultValue={base.deliveryMessage} required maxLength={250} />
           </Field>
         </section>
         <section className="panel padded">
@@ -93,7 +119,7 @@ export function Settings({
             {t('Cash or UPI on delivery', 'डिलीवरी पर नकद या UPI')}
           </label>
           <label className="check">
-            <input type="checkbox" name="online" defaultChecked={settings.onlinePaymentsEnabled} />
+            <input type="checkbox" name="online" defaultChecked={base.onlinePaymentsEnabled} />
             {t('Enable Razorpay online payments', 'Razorpay ऑनलाइन भुगतान चालू करें')}
           </label>
           <p className="hint">
