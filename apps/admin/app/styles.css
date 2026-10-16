@@ -1,16 +1,13 @@
-@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=DM+Sans:wght@400;450;500;550;600;650;700&display=swap');
 :root {
-  --navy: #252c2b;
-  --ink: #252c2b;
-  --muted: #62665f;
-  --yellow: #e9ad32;
-  --paper: #f7f6f1;
-  --line: #e7ebef;
-  --green: #26775b;
-  --white: #fff;
-  font-family: 'DM Sans', Arial, sans-serif;
+  /* Direction A tokens (--ground, --surface, --paper, --ink, --accent, --rule, --t-*, --r, --ease,
+     --display, --text) come from ./theme.css, generated from packages/shared. The names below
+     are the desk's old ones, kept as aliases until each screen is restyled. */
+  --navy: var(--ink);
+  --yellow: var(--accent);
+  --line: var(--rule);
+  font-family: var(--text);
   color: var(--ink);
-  background: var(--paper);
+  background: var(--ground);
   font-size: 14px;
 }
 * {
@@ -54,7 +51,7 @@ a:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
 select:focus-visible {
-  outline: 3px solid #438ac5;
+  outline: 3px solid var(--accent);
   outline-offset: 3px;
 }
 h1,
@@ -120,7 +117,7 @@ small {
 }
 .brand-icon {
   background: var(--yellow);
-  color: var(--navy);
+  color: var(--on-accent);
   width: 43px;
   height: 46px;
   display: grid;
@@ -165,7 +162,7 @@ small {
 }
 .sidebar nav button.active {
   background: var(--yellow);
-  color: var(--navy);
+  color: var(--on-accent);
   font-weight: 700;
 }
 .nav-count {
@@ -318,10 +315,10 @@ main {
 }
 .primary {
   background: var(--yellow);
-  color: var(--navy);
+  color: var(--on-accent);
 }
 .primary:hover {
-  background: #edb82b;
+  background: var(--accent-press);
 }
 .secondary {
   background: white;
@@ -423,7 +420,7 @@ main {
 }
 .cement-bag strong {
   display: block;
-  font-family: 'Barlow Condensed', Impact, sans-serif;
+  font-family: var(--display);
   font-size: 26px;
   line-height: 0.96;
   margin: 14px 0;
@@ -955,7 +952,7 @@ dialog::backdrop {
   color: #697d8e;
 }
 .finance-note h2 {
-  font-family: 'Barlow Condensed', Impact, sans-serif;
+  font-family: var(--display);
   font-size: 36px;
   color: var(--navy);
   line-height: 1.1;
@@ -1060,10 +1057,10 @@ dialog::backdrop {
   justify-content: space-between;
 }
 .login-story .eyebrow {
-  color: var(--yellow);
+  color: var(--on-ink-muted);
 }
 .login-story h1 {
-  font-family: 'Barlow Condensed', Impact, sans-serif;
+  font-family: var(--display);
   font-size: 70px;
   line-height: 1.03;
   letter-spacing: -1px;
@@ -1377,7 +1374,7 @@ body {
 h1,
 h2,
 .brand {
-  font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+  font-family: var(--display);
 }
 h1 {
   font-size: clamp(32px, 4vw, 46px);

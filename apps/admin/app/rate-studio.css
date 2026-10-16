@@ -1,10 +1,11 @@
 .rate-studio {
-  --rs-ink: #252c2b;
-  --rs-paper: #f7f6f1;
-  --rs-sand: #eee5d3;
-  --rs-amber: #e9ad32;
-  --rs-green: #26775b;
-  --rs-rule: #dadbd1;
+  /* Old rate-studio names, aliased to the Direction A tokens in theme.css. */
+  --rs-ink: var(--ink);
+  --rs-paper: var(--paper);
+  --rs-sand: var(--surface);
+  --rs-amber: var(--accent);
+  --rs-green: var(--ok);
+  --rs-rule: var(--rule);
   color: var(--rs-ink);
   min-width: 0;
 }
@@ -25,7 +26,7 @@
   margin-bottom: 26px;
 }
 .rs-intro h1 {
-  font-family: 'Barlow Condensed', Arial, sans-serif;
+  font-family: var(--display);
   font-size: 64px;
   line-height: 1;
   letter-spacing: -1.5px;
@@ -70,6 +71,7 @@
 .rs-steps .current > span {
   background: var(--rs-amber);
   border-color: var(--rs-amber);
+  color: var(--on-accent);
 }
 .rs-start-grid {
   display: grid;
@@ -101,9 +103,10 @@
 .rs-start-feature {
   background: var(--rs-amber);
   border-color: var(--rs-amber);
+  color: var(--on-accent);
 }
 .rs-start > strong {
-  font-family: 'Barlow Condensed', Arial, sans-serif;
+  font-family: var(--display);
   font-size: 28px;
   line-height: 1.1;
   text-transform: uppercase;
@@ -222,7 +225,7 @@
   margin-bottom: 20px;
 }
 .rate-studio .rs-title-input {
-  font-family: 'Barlow Condensed', Arial, sans-serif;
+  font-family: var(--display);
   font-size: 32px;
   font-weight: 700;
   line-height: 1.2;
@@ -397,13 +400,13 @@
   font-weight: 650;
 }
 .rs-review-count {
-  font-family: 'Barlow Condensed', Arial, sans-serif;
+  font-family: var(--display);
   font-size: 38px;
   font-weight: 700;
   white-space: nowrap;
 }
 .rs-review-count small {
-  font-family: 'DM Sans', Arial, sans-serif;
+  font-family: var(--text);
   font-size: 14px;
   font-weight: 400;
 }
@@ -431,7 +434,7 @@
   gap: 12px;
 }
 .rs-row-number {
-  font-family: 'Barlow Condensed', Arial, sans-serif;
+  font-family: var(--display);
   font-size: 23px;
   line-height: 1;
   color: #8a8e81;
@@ -763,7 +766,7 @@
   letter-spacing: 1.5px;
 }
 .rs-template-sample > strong {
-  font-family: 'Barlow Condensed', Arial, sans-serif;
+  font-family: var(--display);
   font-size: 35px;
   line-height: 1.1;
 }
