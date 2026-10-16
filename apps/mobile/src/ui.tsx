@@ -1,7 +1,9 @@
-import { useEffect, useState, type ComponentProps, type ReactNode, type Ref } from 'react';
+import { useEffect, useRef, useState, type ComponentProps, type ReactNode, type Ref } from 'react';
 import {
   AccessibilityInfo,
   ActivityIndicator,
+  Animated,
+  Easing,
   Platform,
   Pressable,
   RefreshControl,
@@ -10,16 +12,23 @@ import {
   Text,
   TextInput,
   View,
+  type StyleProp,
   type TextInputProps,
+  type TextStyle,
   type ViewStyle,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, radius, space, textSize, touch } from '@shiv/shared';
+import { colors, motion, radius, space, textSize, touch } from '@shiv/shared';
 
-// One theme with the website and owner desk (packages/shared/src/theme.ts): ivory paper,
-// blueprint ink, clay for the one action that matters on each screen.
+// Direction A, "counter and sindoor" (packages/shared/src/theme.ts): cement-stone ground,
+// surfaces one tone up, slip paper for the parchi and the latest-order slip, steel ink for the
+// top bar and the open rate folder, and sindoor red only for actions and the शिव stamp.
+// The app has no Teko: display text is the phone's own face, heavy, with a tighter line.
 export const C = colors;
 export type IconName = ComponentProps<typeof Ionicons>['name'];
+
+/** Prices and quantities line up in columns. */
+const figures: TextStyle = { fontVariant: ['tabular-nums'] };
 
 export function Icon({
   name,
@@ -33,23 +42,88 @@ export function Icon({
   return <Ionicons name={name} color={color} size={size} aria-hidden accessible={false} />;
 }
 
-/** The "शिव" signboard stamp used on every surface of the shop. */
-export function Stamp({ size = 44, tone = 'ink' }: { size?: number; tone?: 'ink' | 'clay' }) {
+/** The "शिव" stamp: a square of sindoor with the name in white, as on the shop's signboard. */
+export function Stamp({ size = 44 }: { size?: number }) {
   return (
-    <View
-      accessible={false}
-      style={[
-        s.stamp,
-        {
-          width: size,
-          height: size * 1.08,
-          backgroundColor: tone === 'ink' ? C.ink : C.clay,
-          borderTopRightRadius: size * 0.3,
-        },
-      ]}
-    >
-      <Text style={[s.stampText, { fontSize: size * 0.52 }]}>शिव</Text>
+    <View accessible={false} style={[s.stamp, { width: size, height: size }]}>
+      <Text
+        style={[s.stampText, { fontSize: Math.round(size * 0.46) }]}
+        maxFontSizeMultiplier={1}
+        aria-hidden
+      >
+        शिव
+      </Text>
     </View>
+  );
+}
+
+/** The round cash-on-delivery stamp pressed on the parchi. */
+export function CodStamp({ label, text }: { label: string; text: string }) {
+  return (
+    <View accessible accessibilityRole="image" accessibilityLabel={label} style={s.codStamp}>
+      <Text style={s.codStampText} maxFontSizeMultiplier={1.2} aria-hidden>
+        {text}
+      </Text>
+    </View>
+  );
+}
+
+/** The torn bottom edge of a paper slip. Drawn with rotated squares, so no SVG is needed. */
+export function TornEdge({ color = C.paper }: { color?: string }) {
+  return (
+    <View style={s.torn} accessible={false} aria-hidden>
+      {Array.from({ length: 64 }, (_, i) => (
+        <View key={i} style={s.tooth}>
+          <View style={[s.toothShape, { backgroundColor: color }]} />
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/**
+ * A figure that rolls when its value changes, like a rate board number being turned. The
+ * phone's "remove animations" setting shows the new value at once.
+ */
+export function Roll({
+  value,
+  style,
+  maxFontSizeMultiplier,
+}: {
+  value: string;
+  style?: StyleProp<TextStyle>;
+  /** Caps very large figures so they wrap by line, not by character, at big font scales. */
+  maxFontSizeMultiplier?: number;
+}) {
+  const reduced = useReducedMotion();
+  const shift = useRef(new Animated.Value(0)).current;
+  const previous = useRef(value);
+  useEffect(() => {
+    if (previous.current === value) return;
+    previous.current = value;
+    if (reduced) return;
+    const native = Platform.OS !== 'web';
+    const easing = Easing.bezier(...motion.easing);
+    shift.setValue(0);
+    Animated.sequence([
+      Animated.timing(shift, { toValue: -1, duration: 315, easing, useNativeDriver: native }),
+      Animated.timing(shift, { toValue: 1, duration: 0, useNativeDriver: native }),
+      Animated.timing(shift, { toValue: 0, duration: 585, easing, useNativeDriver: native }),
+    ]).start();
+  }, [value, reduced, shift]);
+  return (
+    <Animated.View
+      style={{
+        opacity: shift.interpolate({ inputRange: [-1, 0, 1], outputRange: [0, 1, 0] }),
+        transform: [
+          { translateY: shift.interpolate({ inputRange: [-1, 1], outputRange: [-14, 14] }) },
+        ],
+      }}
+    >
+      <Text style={style} maxFontSizeMultiplier={maxFontSizeMultiplier}>
+        {value}
+      </Text>
+    </Animated.View>
   );
 }
 
@@ -66,7 +140,8 @@ export function Button({
 }: {
   children: ReactNode;
   onPress: () => void;
-  kind?: 'primary' | 'secondary' | 'quiet';
+  /** primary: sindoor; secondary: ink; quiet: an underlined link; paper: light on an ink ground. */
+  kind?: 'primary' | 'secondary' | 'quiet' | 'paper';
   /** Shorthand for kind="secondary". */
   secondary?: boolean;
   disabled?: boolean;
@@ -77,29 +152,44 @@ export function Button({
   label?: string;
 }) {
   const variant = secondary ? 'secondary' : kind;
-  const color = variant === 'primary' ? C.surface : C.ink;
+  const off = Boolean(disabled || loading);
+  const color =
+    off && variant !== 'quiet'
+      ? C.muted
+      : variant === 'primary'
+        ? C.onAccent
+        : variant === 'secondary'
+          ? C.onInk
+          : C.ink;
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityState={{ disabled: Boolean(disabled || loading), busy: Boolean(loading) }}
-      disabled={disabled || loading}
+      accessibilityState={{ disabled: off, busy: Boolean(loading) }}
+      disabled={off}
       onPress={onPress}
       style={({ pressed }) => [
         s.button,
         variant === 'secondary' && s.secondary,
+        variant === 'paper' && s.paperButton,
         variant === 'quiet' && s.quiet,
-        (disabled || loading) && { opacity: 0.45 },
-        pressed && { opacity: 0.82, transform: [{ scale: 0.985 }] },
+        pressed && variant === 'primary' && { backgroundColor: C.accentPress },
+        pressed && variant === 'secondary' && { backgroundColor: C.ink2 },
+        pressed && (variant === 'quiet' || variant === 'paper') && { opacity: 0.7 },
+        off && variant !== 'quiet' && s.buttonOff,
+        off && variant === 'quiet' && { opacity: 0.45 },
         style,
       ]}
     >
       {loading ? (
-        <ActivityIndicator color={color} />
+        <ActivityIndicator color={variant === 'secondary' ? C.onInk : C.ink} />
       ) : (
         <>
           {icon && <Icon name={icon} size={20} color={color} />}
-          <Text style={[s.buttonText, { color }]} numberOfLines={2}>
+          <Text
+            style={[s.buttonText, { color }, variant === 'quiet' && s.quietText]}
+            numberOfLines={2}
+          >
             {children}
           </Text>
         </>
@@ -108,7 +198,7 @@ export function Button({
   );
 }
 
-/** A round icon-only button with a visible-size touch target of 48dp. */
+/** An icon-only button with a 48dp touch target. */
 export function IconButton({
   icon,
   label,
@@ -167,8 +257,8 @@ export function Field({
         {...props}
         style={[
           s.input,
-          props.multiline && { minHeight: 88, textAlignVertical: 'top' },
-          props.editable === false && { backgroundColor: C.stone },
+          props.multiline && { minHeight: 96, textAlignVertical: 'top' },
+          props.editable === false && { backgroundColor: C.surface, color: C.muted },
           props.style,
         ]}
       />
@@ -184,25 +274,36 @@ export function Notice({
 }: {
   children: ReactNode;
   error?: boolean;
-  tone?: 'info' | 'good';
+  tone?: 'info' | 'good' | 'warn';
 }) {
   const good = tone === 'good';
+  const warn = tone === 'warn';
+  const color = error ? C.danger : good ? C.ok : warn ? C.warn : C.ink;
   return (
     <View
       accessibilityRole={error ? 'alert' : undefined}
       accessibilityLiveRegion={error ? 'assertive' : 'polite'}
       style={[
         s.notice,
-        error && { backgroundColor: C.dangerSoft, borderLeftColor: C.danger },
-        good && { backgroundColor: C.greenSoft, borderLeftColor: C.green },
+        error && { backgroundColor: C.dangerSoft },
+        good && { backgroundColor: C.okSoft },
+        warn && { backgroundColor: C.paper },
       ]}
     >
       <Icon
-        name={error ? 'alert-circle' : good ? 'checkmark-circle' : 'information-circle'}
-        color={error ? C.danger : good ? C.green : C.inkSoft}
+        name={
+          error
+            ? 'alert-circle'
+            : good
+              ? 'checkmark-circle'
+              : warn
+                ? 'warning'
+                : 'information-circle'
+        }
+        color={color}
         size={20}
       />
-      <Text style={[s.noticeText, error && { color: C.danger }]}>{children}</Text>
+      <Text style={[s.noticeText, { color }]}>{children}</Text>
     </View>
   );
 }
@@ -223,7 +324,7 @@ export function Empty({
   return (
     <View style={s.empty}>
       <View style={s.emptyIcon}>
-        <Icon name={icon} size={32} color={C.inkSoft} />
+        <Icon name={icon} size={32} color={C.ink2} />
       </View>
       <Text style={s.emptyTitle}>{title}</Text>
       {body ? <Text style={s.emptyBody}>{body}</Text> : null}
@@ -253,13 +354,14 @@ export function Section({
       {action && onAction && (
         <Pressable accessibilityRole="button" onPress={onAction} style={s.sectionAction}>
           <Text style={s.link}>{action}</Text>
-          <Icon name="arrow-forward" size={16} color={C.clay} />
+          <Icon name="arrow-forward" size={16} color={C.ink} />
         </Pressable>
       )}
     </View>
   );
 }
 
+/** A status pill. Pills are used for status only. */
 export function Tag({
   children,
   tone = 'green',
@@ -269,10 +371,10 @@ export function Tag({
 }) {
   const [background, color] =
     tone === 'green'
-      ? [C.greenSoft, C.green]
+      ? [C.okSoft, C.ok]
       : tone === 'clay'
-        ? [C.dangerSoft, C.clayDeep]
-        : [C.stone, C.muted];
+        ? [C.dangerSoft, C.danger]
+        : [C.tab1, C.ink2];
   return (
     <View style={[s.tag, { backgroundColor: background }]}>
       <Text style={[s.tagText, { color }]}>{children}</Text>
@@ -280,7 +382,7 @@ export function Tag({
   );
 }
 
-/** A selectable pill: filters, delivery dates, languages. */
+/** A selectable control: filters, delivery dates, languages. */
 export function Chip({
   label,
   selected,
@@ -305,15 +407,15 @@ export function Chip({
       onPress={onPress}
       style={({ pressed }) => [s.chip, selected && s.chipSelected, pressed && { opacity: 0.8 }]}
     >
-      <Text style={[s.chipText, selected && { color: C.surface }]}>{label}</Text>
+      <Text style={[s.chipText, selected && { color: C.onInk }]}>{label}</Text>
       {detail ? (
-        <Text style={[s.chipDetail, selected && { color: C.clayOnInk }]}>{detail}</Text>
+        <Text style={[s.chipDetail, selected && { color: C.onInkMuted }]}>{detail}</Text>
       ) : null}
     </Pressable>
   );
 }
 
-/** A grey placeholder block shown while content loads. */
+/** A placeholder block shown while content loads. */
 export function Bone({
   height = 16,
   width = '100%',
@@ -321,7 +423,7 @@ export function Bone({
   height?: number;
   width?: ViewStyle['width'];
 }) {
-  return <View style={{ height, width, backgroundColor: C.stone, borderRadius: radius.sm }} />;
+  return <View style={{ height, width, backgroundColor: C.tab1 }} />;
 }
 
 /**
@@ -351,8 +453,8 @@ export function Screen({
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              colors={[C.clay]}
-              tintColor={C.clay}
+              colors={[C.accent]}
+              tintColor={C.accent}
             />
           ) : undefined
         }
@@ -383,32 +485,65 @@ export function useReducedMotion() {
   return reduced;
 }
 
+const TOOTH = 14;
+
 export const s = StyleSheet.create({
   stamp: {
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 3,
-    paddingTop: 4,
+    backgroundColor: C.accent,
+    paddingTop: 2,
   },
-  stampText: { color: C.paper, fontWeight: '800', includeFontPadding: false },
+  stampText: { color: C.onAccent, fontWeight: '800', includeFontPadding: false },
+  codStamp: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    borderWidth: 3,
+    borderColor: C.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: space.sm,
+    transform: [{ rotate: '-11deg' }],
+  },
+  codStampText: {
+    color: C.accent,
+    fontSize: textSize.small,
+    lineHeight: 17,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  torn: { height: TOOTH / 2, flexDirection: 'row', overflow: 'hidden', pointerEvents: 'none' },
+  tooth: { width: TOOTH, height: TOOTH / 2 },
+  toothShape: {
+    position: 'absolute',
+    width: TOOTH / Math.SQRT2,
+    height: TOOTH / Math.SQRT2,
+    left: TOOTH / 2 - TOOTH / Math.SQRT2 / 2,
+    top: -TOOTH / Math.SQRT2 / 2,
+    transform: [{ rotate: '45deg' }],
+  },
   button: {
-    minHeight: 52,
+    minHeight: touch,
     paddingHorizontal: space.lg,
     paddingVertical: space.md,
-    borderRadius: radius.md,
-    backgroundColor: C.clay,
+    borderRadius: radius.control,
+    backgroundColor: C.accent,
     flexDirection: 'row',
     gap: space.sm,
     alignItems: 'center',
     justifyContent: 'center',
   },
   buttonText: { fontWeight: '700', fontSize: textSize.body, textAlign: 'center', flexShrink: 1 },
-  secondary: { backgroundColor: C.surface, borderWidth: 1.5, borderColor: C.ink },
-  quiet: { backgroundColor: 'transparent', minHeight: touch },
+  buttonOff: { backgroundColor: C.tab3 },
+  secondary: { backgroundColor: C.ink },
+  paperButton: { backgroundColor: C.paper },
+  quiet: { backgroundColor: 'transparent', paddingHorizontal: space.xs },
+  quietText: { textDecorationLine: 'underline' },
   iconButton: {
     width: touch,
     height: touch,
-    borderRadius: touch / 2,
+    borderRadius: radius.control,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -419,49 +554,49 @@ export const s = StyleSheet.create({
     minWidth: 20,
     height: 20,
     paddingHorizontal: 4,
-    borderRadius: 10,
-    backgroundColor: C.clay,
+    borderRadius: radius.pill,
+    backgroundColor: C.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  badgeText: { color: C.surface, fontSize: 12, fontWeight: '800' },
+  badgeText: { color: C.onAccent, fontSize: textSize.small, fontWeight: '800', ...figures },
   field: { gap: space.sm },
-  label: { fontSize: textSize.caption, color: C.ink, fontWeight: '700' },
-  hint: { fontSize: textSize.caption, color: C.muted, lineHeight: 20 },
+  label: { fontSize: textSize.body, color: C.ink, fontWeight: '700' },
+  hint: { fontSize: textSize.small, color: C.muted, lineHeight: 20 },
   input: {
     borderWidth: 1.5,
-    borderColor: C.line,
-    borderRadius: radius.md,
-    backgroundColor: C.surface,
+    borderColor: C.rule,
+    borderBottomWidth: 2,
+    borderBottomColor: C.muted,
+    borderRadius: radius.control,
+    backgroundColor: C.paper,
     color: C.ink,
     paddingHorizontal: space.md,
     paddingVertical: space.md,
     fontSize: textSize.body,
-    minHeight: 52,
+    minHeight: touch,
   },
   notice: {
-    backgroundColor: C.stone,
-    borderLeftWidth: 4,
-    borderLeftColor: C.inkSoft,
+    backgroundColor: C.surface,
     padding: space.md,
-    borderRadius: radius.sm,
+    borderRadius: radius.control,
     flexDirection: 'row',
     gap: space.sm,
     alignItems: 'flex-start',
   },
-  noticeText: { fontSize: textSize.caption + 1, lineHeight: 22, color: C.ink, flex: 1 },
+  noticeText: { fontSize: textSize.body, lineHeight: 24, color: C.ink, flex: 1 },
   empty: { paddingVertical: space.xxl, paddingHorizontal: space.lg, alignItems: 'center' },
   emptyIcon: {
     height: 72,
     width: 72,
-    borderRadius: 36,
-    backgroundColor: C.stone,
+    backgroundColor: C.surface,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: space.lg,
   },
   emptyTitle: {
-    fontSize: textSize.title,
+    fontSize: textSize.lead,
+    lineHeight: 26,
     fontWeight: '800',
     color: C.ink,
     textAlign: 'center',
@@ -470,13 +605,14 @@ export const s = StyleSheet.create({
   emptyBody: {
     fontSize: textSize.body,
     color: C.muted,
-    lineHeight: 24,
+    lineHeight: 25,
     textAlign: 'center',
     maxWidth: 320,
     marginTop: space.sm,
   },
   section: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginTop: space.xl,
@@ -484,55 +620,80 @@ export const s = StyleSheet.create({
     gap: space.md,
   },
   sectionAction: { flexDirection: 'row', gap: 4, alignItems: 'center', minHeight: touch },
-  h1: { color: C.ink, fontSize: textSize.heading, fontWeight: '800', letterSpacing: -0.6 },
-  h2: { color: C.ink, fontSize: textSize.title - 2, fontWeight: '800', flexShrink: 1 },
-  h3: { color: C.ink, fontSize: textSize.lead, fontWeight: '700' },
-  link: { color: C.clayDeep, fontWeight: '700', fontSize: textSize.body },
+  /** Display: the one big line on a screen (rates, prices). */
+  display: {
+    color: C.ink,
+    fontSize: textSize.display,
+    lineHeight: 54,
+    fontWeight: '800',
+    ...figures,
+  },
+  h1: { color: C.ink, fontSize: textSize.head, lineHeight: 38, fontWeight: '800' },
+  h2: { color: C.ink, fontSize: textSize.lead, lineHeight: 26, fontWeight: '800', flexShrink: 1 },
+  h3: { color: C.ink, fontSize: textSize.lead, lineHeight: 26, fontWeight: '700' },
+  link: {
+    color: C.ink,
+    fontWeight: '700',
+    fontSize: textSize.body,
+    textDecorationLine: 'underline',
+  },
   tag: {
     alignSelf: 'flex-start',
-    paddingVertical: 4,
-    paddingHorizontal: space.sm,
-    borderRadius: 4,
+    paddingVertical: 3,
+    paddingHorizontal: space.md,
+    borderRadius: radius.pill,
   },
-  tagText: { fontSize: textSize.caption, fontWeight: '700' },
+  tagText: { fontSize: textSize.small, fontWeight: '700' },
   chip: {
     minHeight: touch,
     justifyContent: 'center',
     paddingHorizontal: space.lg,
     paddingVertical: space.sm,
     borderWidth: 1.5,
-    borderColor: C.line,
-    borderRadius: radius.md,
-    backgroundColor: C.surface,
+    borderColor: C.rule,
+    borderRadius: radius.control,
+    backgroundColor: C.paper,
   },
   chipSelected: { backgroundColor: C.ink, borderColor: C.ink },
   chipText: {
-    fontSize: textSize.caption + 1,
+    fontSize: textSize.body,
     fontWeight: '700',
     color: C.ink,
     textAlign: 'center',
   },
-  chipDetail: { fontSize: 13, color: C.muted, textAlign: 'center' },
+  chipDetail: { fontSize: textSize.small, color: C.muted, textAlign: 'center' },
+  /** A surface: one tone up from the ground. No border, no shadow. */
   card: {
     backgroundColor: C.surface,
-    borderWidth: 1,
-    borderColor: C.line,
-    borderRadius: radius.md,
     padding: space.lg,
   },
+  /** Slip paper: the parchi, the latest-order slip, receipts. Square-cornered. */
+  paper: {
+    backgroundColor: C.paper,
+    padding: space.lg,
+  },
+  /** A ruled line: tables, forms and the parchi only. */
+  ruled: { borderBottomWidth: 1, borderBottomColor: C.rule },
   stack: { gap: space.lg },
   row: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   between: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: space.md,
   },
-  body: { color: C.muted, fontSize: textSize.body, lineHeight: 24 },
-  small: { color: C.muted, fontSize: textSize.caption, lineHeight: 20 },
-  eyebrow: { color: C.clayDeep, fontSize: textSize.caption, fontWeight: '800', letterSpacing: 0.6 },
-  price: { color: C.ink, fontSize: 24, fontWeight: '800', letterSpacing: -0.4 },
-  divider: { height: 1, backgroundColor: C.line, marginVertical: space.xs },
+  body: { color: C.muted, fontSize: textSize.body, lineHeight: 25 },
+  small: { color: C.muted, fontSize: textSize.small, lineHeight: 20 },
+  price: { color: C.ink, fontSize: textSize.lead, lineHeight: 26, fontWeight: '800', ...figures },
+  priceBig: {
+    color: C.ink,
+    fontSize: textSize.head,
+    lineHeight: 38,
+    fontWeight: '800',
+    ...figures,
+  },
+  divider: { height: 1, backgroundColor: C.rule, marginVertical: space.xs },
   screen: {
     width: '100%',
     alignSelf: 'center',
@@ -542,12 +703,9 @@ export const s = StyleSheet.create({
     gap: space.lg,
   },
   footer: {
-    backgroundColor: C.surface,
-    borderTopWidth: 1,
-    borderTopColor: C.line,
+    backgroundColor: C.paper,
     paddingHorizontal: space.lg,
     paddingVertical: space.md,
     gap: space.sm,
-    ...(Platform.OS === 'web' ? {} : { elevation: 8 }),
   },
 });

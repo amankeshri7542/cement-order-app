@@ -15,7 +15,20 @@ import {
 } from '@shiv/shared';
 import { makeKey, useStore } from './store';
 import { ApiError, api } from './api';
-import { Bone, Button, C, Chip, Empty, Field, Icon, Notice, Screen, s } from './ui';
+import {
+  Bone,
+  Button,
+  C,
+  Chip,
+  CodStamp,
+  Empty,
+  Field,
+  Icon,
+  Notice,
+  Screen,
+  TornEdge,
+  s,
+} from './ui';
 import { MaterialArt, Quantity } from './catalog';
 import { payOnline } from './payment';
 
@@ -106,7 +119,7 @@ function DeliveryDetails() {
               >
                 <Icon
                   name={item.id === addressId ? 'radio-button-on' : 'radio-button-off'}
-                  color={C.clay}
+                  color={C.ink}
                 />
                 <Text style={[s.body, { flex: 1, color: C.ink }]}>
                   <Text style={{ fontWeight: '800' }}>{item.label}</Text> · {item.line1},{' '}
@@ -286,57 +299,76 @@ export function Cart() {
       </Text>
       <MergeNotice />
       {basketLoading && <Bone height={88} />}
-      {basket.map((line) => (
-        <View key={line.productId} style={[s.card, { gap: space.md }]}>
-          <View style={[s.row, { alignItems: 'flex-start' }]}>
-            <MaterialArt product={line.product} size={52} />
-            <View style={{ flex: 1 }}>
-              <Text style={s.h3}>{productName(line.product, language)}</Text>
-              <Text style={s.small}>
-                {money(line.product.pricePaise)} / {unitLabel(line.product.unit, language)}
-              </Text>
-            </View>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`${t('Remove', 'हटाएँ')} ${productName(line.product, language)}`}
-              disabled={Boolean(busy) || cartBusy}
-              onPress={() => void change(line.productId, 0)}
-              style={{
-                padding: space.sm,
-                minWidth: 48,
-                minHeight: 48,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Icon name="trash-outline" color={C.muted} />
-            </Pressable>
+      {basket.length > 0 && (
+        // The basket is the counter slip (parchi): paper, ruled lines and the COD stamp.
+        <View>
+          <View style={[s.paper, { paddingVertical: space.sm }]}>
+            {basket.map((line) => (
+              <View
+                key={line.productId}
+                style={[s.ruled, { gap: space.md, paddingVertical: space.md }]}
+              >
+                <View style={[s.row, { alignItems: 'flex-start' }]}>
+                  <MaterialArt product={line.product} size={44} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.h3}>{productName(line.product, language)}</Text>
+                    <Text style={s.small}>
+                      {money(line.product.pricePaise)} / {unitLabel(line.product.unit, language)}
+                    </Text>
+                  </View>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`${t('Remove', 'हटाएँ')} ${productName(line.product, language)}`}
+                    disabled={Boolean(busy) || cartBusy}
+                    onPress={() => void change(line.productId, 0)}
+                    style={{
+                      padding: space.sm,
+                      minWidth: 48,
+                      minHeight: 48,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Icon name="trash-outline" color={C.muted} />
+                  </Pressable>
+                </View>
+                <View style={s.between}>
+                  <Quantity
+                    label={`${productName(line.product, language)} ${t('quantity', 'मात्रा')}`}
+                    value={line.quantity}
+                    min={line.product.minQuantity}
+                    step={line.product.quantityStep}
+                    max={Math.min(MAX_LINE_QUANTITY, line.product.stock)}
+                    disabled={Boolean(busy) || cartBusy}
+                    commitOnBlur
+                    allowRemove
+                    onInvalid={setError}
+                    change={(n) => void change(line.productId, n)}
+                  />
+                  <Text style={s.price}>{money(line.product.pricePaise * line.quantity)}</Text>
+                </View>
+                {(!line.product.active || line.quantity > line.product.stock) && (
+                  <Notice error>
+                    {t(
+                      'Only part of this is in stock now. Lower the quantity or remove it.',
+                      'अभी इतना स्टॉक नहीं है। मात्रा कम करें या हटाएँ।',
+                    )}
+                  </Notice>
+                )}
+              </View>
+            ))}
+            {checkoutDraft.paymentMethod === 'COD' && (
+              <View style={{ alignItems: 'flex-end', paddingTop: space.md }}>
+                <CodStamp
+                  label={t('Payment: cash on delivery', 'भुगतान: पहुँचने पर नकद')}
+                  text={t('Cash on\ndelivery', 'नकद\nपहुँचने पर')}
+                />
+              </View>
+            )}
           </View>
-          <View style={s.between}>
-            <Quantity
-              label={`${productName(line.product, language)} ${t('quantity', 'मात्रा')}`}
-              value={line.quantity}
-              min={line.product.minQuantity}
-              step={line.product.quantityStep}
-              max={Math.min(MAX_LINE_QUANTITY, line.product.stock)}
-              disabled={Boolean(busy) || cartBusy}
-              commitOnBlur
-              allowRemove
-              onInvalid={setError}
-              change={(n) => void change(line.productId, n)}
-            />
-            <Text style={s.price}>{money(line.product.pricePaise * line.quantity)}</Text>
-          </View>
-          {(!line.product.active || line.quantity > line.product.stock) && (
-            <Notice error>
-              {t(
-                'Only part of this is in stock now. Lower the quantity or remove it.',
-                'अभी इतना स्टॉक नहीं है। मात्रा कम करें या हटाएँ।',
-              )}
-            </Notice>
-          )}
+          <TornEdge />
         </View>
-      ))}
+      )}
       {Boolean(error) && <Notice error>{error}</Notice>}
       {user ? (
         <DeliveryDetails />
@@ -594,7 +626,7 @@ export function Checkout() {
                 onPress={() => setAccepted(!accepted)}
                 style={[s.row, { minHeight: 56 }]}
               >
-                <Icon name={accepted ? 'checkbox' : 'square-outline'} color={C.clay} size={28} />
+                <Icon name={accepted ? 'checkbox' : 'square-outline'} color={C.accent} size={28} />
                 <Text style={[s.body, { flex: 1, color: C.ink }]}>
                   {t(
                     `I accept the new prices and the total of ${money(review.totalPaise)}.`,
@@ -604,34 +636,48 @@ export function Checkout() {
               </Pressable>
             </View>
           )}
-          <View style={[s.card, { gap: space.sm }]}>
-            {review.items.map((i) => (
-              <View style={s.between} key={i.productId}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[s.body, { color: C.ink, fontWeight: '700' }]}>{i.name}</Text>
-                  <Text style={s.small}>
-                    {i.quantity} × {money(i.pricePaise)}
-                  </Text>
+          {/* The reviewed parchi: ruled lines, delivery on its own line, the total in big figures. */}
+          <View>
+            <View style={[s.paper, { paddingVertical: space.sm }]}>
+              {review.items.map((i) => (
+                <View style={[s.between, s.ruled, { paddingVertical: space.md }]} key={i.productId}>
+                  <View style={{ flex: 1, minWidth: 160 }}>
+                    <Text style={[s.body, { color: C.ink, fontWeight: '700' }]}>{i.name}</Text>
+                    <Text style={[s.small, { fontVariant: ['tabular-nums'] }]}>
+                      {i.quantity} × {money(i.pricePaise)}
+                    </Text>
+                  </View>
+                  <Text style={s.price}>{money(i.lineTotalPaise)}</Text>
                 </View>
-                <Text style={[s.body, { color: C.ink, fontWeight: '700' }]}>
-                  {money(i.lineTotalPaise)}
+              ))}
+              <View style={[s.between, s.ruled, { paddingVertical: space.sm }]}>
+                <Text style={s.body}>{t('Materials', 'सामग्री')}</Text>
+                <Text style={[s.body, { fontVariant: ['tabular-nums'] }]}>
+                  {money(review.subtotalPaise)}
                 </Text>
               </View>
-            ))}
-            <View style={s.divider} />
-            <View style={s.between}>
-              <Text style={s.body}>{t('Materials', 'सामग्री')}</Text>
-              <Text style={s.body}>{money(review.subtotalPaise)}</Text>
+              <View style={[s.between, s.ruled, { paddingVertical: space.sm }]}>
+                <Text style={s.body}>{t('Delivery', 'डिलीवरी')}</Text>
+                <Text style={[s.body, { fontVariant: ['tabular-nums'] }]}>
+                  {money(review.deliveryFeePaise)}
+                </Text>
+              </View>
+              <View style={[s.between, { paddingTop: space.md }]}>
+                <Text style={s.h3}>{t('Total', 'कुल')}</Text>
+                <Text style={s.priceBig} maxFontSizeMultiplier={1.5}>
+                  {money(review.totalPaise)}
+                </Text>
+              </View>
+              {review.paymentMethod === 'COD' && (
+                <View style={{ alignItems: 'flex-end', paddingVertical: space.sm }}>
+                  <CodStamp
+                    label={t('Payment: cash on delivery', 'भुगतान: पहुँचने पर नकद')}
+                    text={t('Cash on\ndelivery', 'नकद\nपहुँचने पर')}
+                  />
+                </View>
+              )}
             </View>
-            <View style={s.between}>
-              <Text style={s.body}>{t('Delivery', 'डिलीवरी')}</Text>
-              <Text style={s.body}>{money(review.deliveryFeePaise)}</Text>
-            </View>
-            <View style={s.divider} />
-            <View style={s.between}>
-              <Text style={s.h3}>{t('Total', 'कुल')}</Text>
-              <Text style={s.price}>{money(review.totalPaise)}</Text>
-            </View>
+            <TornEdge />
           </View>
           <View style={[s.card, { gap: space.xs }]}>
             <Text style={s.h3}>

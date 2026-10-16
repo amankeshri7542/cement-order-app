@@ -159,13 +159,13 @@ export function Assistant() {
             style={{
               width: 48,
               height: 48,
-              borderRadius: 24,
+              borderRadius: radius.control,
               backgroundColor: C.ink,
               alignItems: 'center',
               justifyContent: 'center',
             }}
           >
-            <Icon name="chatbubbles" color={C.clayOnInk} />
+            <Icon name="chatbubbles" color={C.onInkMuted} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={s.h2} accessibilityRole="header">
@@ -204,9 +204,7 @@ export function Assistant() {
               alignSelf: turn.role === 'user' ? 'flex-end' : 'stretch',
               maxWidth: turn.role === 'user' ? '86%' : '100%',
               backgroundColor: turn.role === 'user' ? C.ink : C.surface,
-              borderRadius: radius.lg,
-              borderWidth: turn.role === 'user' ? 0 : 1,
-              borderColor: C.line,
+              borderRadius: radius.control,
               padding: space.md,
               gap: space.sm,
             }}
@@ -214,7 +212,7 @@ export function Assistant() {
             <Text
               selectable
               style={{
-                color: turn.role === 'user' ? C.paper : C.ink,
+                color: turn.role === 'user' ? C.onInk : C.ink,
                 fontSize: textSize.body,
                 lineHeight: 24,
               }}
@@ -228,7 +226,7 @@ export function Assistant() {
                 onPress={() => navigate({ screen: 'Product', id: product.id })}
                 style={[
                   s.between,
-                  { backgroundColor: C.paper, borderRadius: radius.md, padding: space.md },
+                  { backgroundColor: C.paper, borderRadius: radius.control, padding: space.md },
                 ]}
               >
                 <View style={{ flex: 1 }}>
@@ -237,14 +235,14 @@ export function Assistant() {
                     {money(product.pricePaise)} / {product.unit}
                   </Text>
                 </View>
-                <Icon name="chevron-forward" color={C.clay} />
+                <Icon name="chevron-forward" color={C.ink} />
               </Pressable>
             ))}
           </View>
         ))}
         {busy && (
           <View style={[s.row, { padding: space.md }]}>
-            <ActivityIndicator color={C.clay} />
+            <ActivityIndicator color={C.ink} />
             <Text style={s.body}>{t('Thinking…', 'सोच रहा है…')}</Text>
           </View>
         )}
@@ -262,7 +260,7 @@ export function Assistant() {
         {listening && (
           <Text
             accessibilityLiveRegion="polite"
-            style={[s.small, { color: C.clayDeep, fontWeight: '700' }]}
+            style={[s.small, { color: C.ink, fontWeight: '700', textDecorationLine: 'underline' }]}
           >
             {t('Listening… tap the mic to stop', 'सुन रहा है… रोकने के लिए माइक दबाएँ')}
           </Text>
@@ -289,16 +287,16 @@ export function Assistant() {
                   ? t('Stop voice input', 'आवाज़ रोकें')
                   : t('Speak your question', 'सवाल बोलें')
               }
-              color={listening ? C.surface : C.ink}
-              background={listening ? C.clay : C.stone}
+              color={listening ? C.onAccent : C.ink}
+              background={listening ? C.accent : C.surface}
               onPress={() => void listen()}
             />
           )}
           <IconButton
             icon="send"
             label={t('Send question', 'सवाल भेजें')}
-            color={C.surface}
-            background={C.clay}
+            color={C.onAccent}
+            background={C.accent}
             disabled={!text.trim() || busy}
             onPress={() => void ask()}
           />

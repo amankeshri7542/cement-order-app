@@ -97,7 +97,7 @@ export function Compare() {
                   </Text>
                   {rows.map(([label, value]) => (
                     <View key={label}>
-                      <Text style={[s.small, { fontSize: 13 }]}>{label}</Text>
+                      <Text style={s.small}>{label}</Text>
                       <Text
                         style={{
                           color: C.ink,
@@ -144,7 +144,7 @@ export function Compare() {
                 pressed && { opacity: 0.7 },
               ]}
             >
-              <Icon name="add-circle" color={C.clay} size={26} />
+              <Icon name="add-circle" color={C.accent} size={26} />
               <View style={{ flex: 1 }}>
                 <Text style={[s.body, { color: C.ink, fontWeight: '700' }]}>
                   {productName(product, language)}

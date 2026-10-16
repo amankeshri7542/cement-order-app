@@ -43,10 +43,12 @@ import {
   Field,
   Icon,
   Notice,
+  Roll,
   Screen,
   Section,
   Stamp,
   Tag,
+  TornEdge,
   s,
   type IconName,
 } from './ui';
@@ -74,7 +76,19 @@ const categoryHindi: Record<string, string> = {
 export const categoryName = (slug: string, name: string, language: Language) =>
   language === 'hi' ? categoryHindi[slug] || name : name;
 
-/** A product photo, or a material tile in the shop's colours when there is none. */
+/** Each material's drawing colour (cement bag kraft, steel bar, brick, sand, stone). */
+const materialTone: Record<string, [string, string]> = {
+  cement: [C.mKraft, C.ink],
+  steel: [C.mSteel, C.onInk],
+  bricks: [C.mBrick, C.onInk],
+  sand: [C.mSand, C.ink],
+  aggregates: [C.mStone, C.ink],
+};
+
+/**
+ * The shop's own product photo, or a plain tile in the material's colour when there is none.
+ * Never a stock photo.
+ */
 export function MaterialArt({ product, size = 64 }: { product: Product; size?: number }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [product.images[0]]);
@@ -85,15 +99,16 @@ export function MaterialArt({ product, size = 64 }: { product: Product; size?: n
         source={{ uri: product.images[0] }}
         onError={() => setFailed(true)}
         resizeMode="contain"
-        style={{ width: size, height: size, borderRadius: radius.md, backgroundColor: C.stone }}
+        style={{ width: size, height: size, backgroundColor: C.paper }}
       />
     );
+  const [background, color] = materialTone[product.category.slug] || [C.tab2, C.ink];
   return (
-    <View style={[cs.tile, { width: size, height: size }]}>
+    <View style={[cs.tile, { width: size, height: size, backgroundColor: background }]}>
       <Icon
         name={categoryIcons[product.category.slug] || 'cube-outline'}
         size={size * 0.5}
-        color={C.inkSoft}
+        color={color}
       />
     </View>
   );
@@ -107,7 +122,7 @@ const unitText = (product: Product, language: Language) =>
  * Once in the basket the row shows a quantity bar that can be typed into (200 bags is one
  * entry, not forty taps).
  */
-export function ProductRow({ product }: { product: Product }) {
+export function ProductRow({ product, onInk }: { product: Product; onInk?: boolean }) {
   const { t, language, navigate, add, setQuantity, basketQuantity, cartBusy, setToast } =
     useStore();
   const [busy, setBusy] = useState(false);
@@ -115,26 +130,29 @@ export function ProductRow({ product }: { product: Product }) {
   const available = product.active && product.stock >= product.minQuantity;
   const name = productName(product, language);
   const unit = unitLabel(product.unit, language);
+  // On the open (ink) rate folder the row sits on steel ink; on Materials it is a surface.
+  const ink = onInk ? C.onInk : C.ink;
+  const quiet = onInk ? { color: C.onInkMuted } : null;
   return (
-    <View style={cs.row} testID={`product-${product.id}`}>
-      <View style={[s.row, { gap: space.sm }]}>
+    <View style={onInk ? cs.inkRow : cs.row} testID={`product-${product.id}`}>
+      <View style={[s.row, { gap: space.sm, alignItems: 'flex-start' }]}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`${t('View', 'देखें')} ${name}`}
           onPress={() => navigate({ screen: 'Product', id: product.id })}
           style={({ pressed }) => [cs.rowMain, pressed && { opacity: 0.75 }]}
         >
-          <MaterialArt product={product} />
+          <MaterialArt product={product} size={onInk ? 48 : 64} />
           <View style={{ flex: 1, gap: 2 }}>
-            <Text style={cs.rowName} numberOfLines={2}>
+            <Text style={[cs.rowName, { color: ink }]} numberOfLines={2}>
               {name}
             </Text>
-            <Text style={s.small} numberOfLines={1}>
+            <Text style={[s.small, quiet]} numberOfLines={1}>
               {[product.brand, product.grade, product.packSize].filter(Boolean).join(' · ')}
             </Text>
-            <View style={[s.row, { gap: space.xs, marginTop: 2 }]}>
-              <Text style={cs.rowPrice}>{money(product.pricePaise)}</Text>
-              <Text style={s.small}>/ {unit}</Text>
+            <View style={cs.rowPriceLine}>
+              <Roll value={money(product.pricePaise)} style={[cs.rowPrice, { color: ink }]} />
+              <Text style={[s.small, quiet]}>/ {unit}</Text>
             </View>
             {!available && <Tag tone="grey">{t('Out of stock', 'स्टॉक नहीं')}</Tag>}
           </View>
@@ -150,19 +168,32 @@ export function ProductRow({ product }: { product: Product }) {
             }}
             style={({ pressed }) => [
               cs.add,
-              (busy || cartBusy) && { opacity: 0.5 },
-              pressed && { opacity: 0.8 },
+              pressed && { backgroundColor: C.accentPress },
+              (busy || cartBusy) && { backgroundColor: C.tab3 },
             ]}
           >
-            <Icon name="add" color={C.surface} size={20} />
-            <Text style={cs.addText}>{t('Add', 'जोड़ें')}</Text>
+            <Icon name="add" color={busy || cartBusy ? C.muted : C.onAccent} size={20} />
+            <Text style={[cs.addText, (busy || cartBusy) && { color: C.muted }]}>
+              {t('Add', 'जोड़ें')}
+            </Text>
           </Pressable>
         )}
       </View>
       {inBasket > 0 && (
         <View style={cs.inBasket}>
-          <Icon name="basket" color={C.green} size={18} />
-          <Text style={[s.small, { flex: 1, color: C.green, fontWeight: '700' }]}>
+          <Icon name="basket" color={onInk ? C.onInk : C.ok} size={18} />
+          <Text
+            style={[
+              s.small,
+              {
+                flexGrow: 1,
+                flexShrink: 1,
+                flexBasis: 100,
+                color: onInk ? C.onInk : C.ok,
+                fontWeight: '700',
+              },
+            ]}
+          >
             {t('In basket', 'टोकरी में')} · {unit}
           </Text>
           <Quantity
@@ -250,10 +281,12 @@ export function DeliveryCheck() {
   return (
     <View style={[s.card, { gap: space.md }]}>
       <View style={s.row}>
-        <Icon name="location-outline" color={C.clay} />
-        <Text style={s.h3}>{t('Delivery to your site', 'आपकी साइट पर डिलीवरी')}</Text>
+        <Icon name="location-outline" color={C.ink} />
+        <Text style={[s.h3, { flex: 1 }]}>
+          {t('Delivery to your site', 'आपकी साइट पर डिलीवरी')}
+        </Text>
       </View>
-      <View style={[s.row, { gap: space.sm }]}>
+      <View style={[s.row, { gap: space.sm, flexWrap: 'wrap' }]}>
         <TextInput
           accessibilityLabel={t('Delivery pincode', 'डिलीवरी पिनकोड')}
           placeholder={t('6-digit pincode', '6 अंकों का पिनकोड')}
@@ -272,7 +305,7 @@ export function DeliveryCheck() {
             if (digits.length === 6) void check(digits);
           }}
           onSubmitEditing={() => void check()}
-          style={[s.input, { flex: 1 }]}
+          style={[s.input, { flexGrow: 1, flexBasis: 160 }]}
         />
         <Button loading={busy} onPress={() => void check()} style={{ minWidth: 104 }}>
           {t('Check', 'जाँचें')}
@@ -302,40 +335,62 @@ export function DeliveryCheck() {
   );
 }
 
-/** Today's lowest in-stock price per material, as on the shop's chalk board. */
+/** Folder tones from the front folder back; the open folder is steel ink. */
+const folderTones = [C.tab1, C.tab2, C.tab3, C.tab4, C.tab4, C.tab4];
+
+/** The tab of a rate folder: a raised strip over the left half, with slanted ends. */
+function FolderTab({ color }: { color: string }) {
+  return (
+    <View style={cs.folderTabRow} accessible={false}>
+      <View style={[cs.slantLeft, { borderBottomColor: color }]} />
+      <View style={[cs.folderTab, { backgroundColor: color }]} />
+      <View style={[cs.slantRight, { borderBottomColor: color }]} />
+    </View>
+  );
+}
+
+/**
+ * Today's lowest in-stock price per material, as stacked rate folders. The open folder comes to
+ * the front (last) as a steel-ink panel listing that material's products with Add.
+ */
 function RateBoard() {
   const { products, loading, error, t, language, navigate, refreshCatalog } = useStore();
   const rates = useMemo(() => ratesFrom(products, 6), [products]);
   const checkedAt = useMemo(() => new Date().toISOString(), [products]);
+  // null: the first material (cement) is open, as on the counter; '' closes every folder.
+  const [chosen, setChosen] = useState<string | null>(null);
+  const open = chosen === null ? rates[0]?.slug || '' : chosen;
+  const ordered = [
+    ...rates.filter((rate) => rate.slug !== open),
+    ...rates.filter((rate) => rate.slug === open),
+  ];
   return (
-    <View style={cs.board}>
-      <View style={[s.row, { alignItems: 'flex-start' }]}>
-        <Stamp size={46} tone="clay" />
-        <View style={{ flex: 1 }}>
-          <Text style={cs.boardTitle} accessibilityRole="header">
-            {t('Current rates', 'मौजूदा भाव')}
-          </Text>
-          <Text style={cs.boardSub}>
-            {loading
-              ? t('Checking today’s prices…', 'आज के भाव जाँचे जा रहे हैं…')
-              : t(
-                  `Lowest in-stock price · checked ${timeLabel(checkedAt)}`,
-                  `सबसे कम उपलब्ध भाव · ${timeLabel(checkedAt)} पर जाँचा`,
-                )}
-          </Text>
-        </View>
-      </View>
+    <View>
+      <Text style={cs.ratesTitle} accessibilityRole="header">
+        {t('Current rates', 'मौजूदा भाव')}
+      </Text>
+      <Text style={s.small}>
+        {loading
+          ? t('Checking today’s prices…', 'आज के भाव जाँचे जा रहे हैं…')
+          : t(
+              `Lowest in-stock price · checked ${timeLabel(checkedAt)}`,
+              `सबसे कम उपलब्ध भाव · ${timeLabel(checkedAt)} पर जाँचा`,
+            )}
+      </Text>
       {loading && !rates.length ? (
-        <View style={{ gap: space.sm, marginTop: space.md }}>
+        <View style={{ marginTop: space.md }}>
           {[0, 1, 2, 3].map((row) => (
-            <View key={row} style={cs.rateRow}>
-              <View style={{ height: 18, width: '55%', backgroundColor: '#2E4B5C' }} />
+            <View key={row} style={{ marginTop: row ? -4 : 0 }}>
+              <FolderTab color={folderTones[row]!} />
+              <View style={[cs.folder, { backgroundColor: folderTones[row] }]}>
+                <View style={{ height: 18, width: '45%', backgroundColor: C.ground }} />
+              </View>
             </View>
           ))}
         </View>
       ) : error && !rates.length ? (
-        <View style={{ gap: space.md, marginTop: space.md }}>
-          <Text style={cs.boardSub}>
+        <View style={[s.card, { gap: space.md, marginTop: space.md }]}>
+          <Text style={s.body}>
             {t('Today’s rates could not load.', 'आज के भाव लोड नहीं हो सके।')}
           </Text>
           <Button secondary onPress={() => void refreshCatalog()}>
@@ -343,38 +398,69 @@ function RateBoard() {
           </Button>
         </View>
       ) : rates.length ? (
-        <View style={{ marginTop: space.sm }}>
-          {rates.map((rate) => (
-            <Pressable
-              key={rate.slug}
-              accessibilityRole="button"
-              accessibilityLabel={`${categoryName(rate.slug, rate.name, language)}: ${t(`from ${money(rate.product.pricePaise)}`, `${money(rate.product.pricePaise)} से`)} ${unitText(rate.product, language)}`}
-              onPress={() => navigate({ screen: 'Products', category: rate.slug })}
-              style={({ pressed }) => [cs.rateRow, pressed && { opacity: 0.7 }]}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={cs.rateName}>{categoryName(rate.slug, rate.name, language)}</Text>
-                <Text style={cs.rateProduct} numberOfLines={1}>
-                  {productName(rate.product, language)}
-                </Text>
+        <View style={{ marginTop: space.md }}>
+          {ordered.map((rate, index) => {
+            const isOpen = rate.slug === open;
+            const tone = isOpen ? C.ink : folderTones[index] || C.tab4;
+            const name = categoryName(rate.slug, rate.name, language);
+            const unit = unitLabel(rate.product.unit, language);
+            return (
+              <View key={rate.slug} style={{ marginTop: index ? -4 : 0 }}>
+                <FolderTab color={tone} />
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`${name}: ${t(`from ${money(rate.product.pricePaise)}`, `${money(rate.product.pricePaise)} से`)} ${unitText(rate.product, language)}`}
+                  accessibilityState={{ expanded: isOpen }}
+                  aria-expanded={isOpen}
+                  onPress={() => setChosen(isOpen ? '' : rate.slug)}
+                  style={({ pressed }) => [
+                    cs.folder,
+                    { backgroundColor: tone },
+                    pressed && { opacity: 0.85 },
+                  ]}
+                >
+                  <Text style={[cs.folderName, isOpen && { color: C.onInk }]}>{name}</Text>
+                  <View style={cs.folderRate}>
+                    <Roll
+                      value={money(rate.product.pricePaise)}
+                      style={[cs.folderPrice, isOpen && { color: C.onInk }]}
+                    />
+                    <Text style={[cs.folderUnit, isOpen && { color: C.onInkMuted }]}>/ {unit}</Text>
+                  </View>
+                </Pressable>
+                {isOpen && (
+                  <View style={cs.folderPanel}>
+                    {products
+                      .filter((product) => product.category.slug === rate.slug)
+                      .slice(0, 4)
+                      .map((product) => (
+                        <ProductRow key={product.id} product={product} onInk />
+                      ))}
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => navigate({ screen: 'Products', category: rate.slug })}
+                      style={cs.folderMore}
+                    >
+                      <Text style={[s.link, { color: C.onInk }]}>
+                        {t('See all', 'सब देखें')} · {name}
+                      </Text>
+                      <Icon name="arrow-forward" size={18} color={C.onInk} />
+                    </Pressable>
+                  </View>
+                )}
               </View>
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text style={cs.ratePrice}>{money(rate.product.pricePaise)}</Text>
-                <Text style={cs.rateProduct}>/ {unitLabel(rate.product.unit, language)}</Text>
-              </View>
-              <Icon name="chevron-forward" color={C.clayOnInk} size={18} />
-            </Pressable>
-          ))}
+            );
+          })}
         </View>
       ) : (
-        <Text style={[cs.boardSub, { marginTop: space.md }]}>
+        <Text style={[s.body, { marginTop: space.md }]}>
           {t(
             'No materials are in stock right now. Call the store for today’s rates.',
             'अभी कोई सामग्री स्टॉक में नहीं है। आज के भाव के लिए दुकान पर फ़ोन करें।',
           )}
         </Text>
       )}
-      <Text style={[cs.boardSub, { marginTop: space.md, fontSize: 13 }]}>
+      <Text style={[s.small, { marginTop: space.md }]}>
         {t(
           'Delivery is added when you review your order.',
           'डिलीवरी शुल्क ऑर्डर की समीक्षा में जुड़ता है।',
@@ -384,45 +470,47 @@ function RateBoard() {
   );
 }
 
-/** Compact, first on Home for returning customers: where is my order, and order it again. */
+/** First on Home for returning customers: the latest order as a small paper slip. */
 function LatestOrder() {
   const { latestOrder, t, language, navigate } = useStore();
   const reorder = useReorder(latestOrder);
   if (!latestOrder) return null;
   return (
-    <View style={[s.card, { gap: space.sm, padding: space.md }]}>
-      <View style={s.between}>
-        <Text style={s.h3} numberOfLines={1}>
-          {t('Your latest order', 'आपका पिछला ऑर्डर')}
+    <View>
+      <View style={[s.paper, { gap: space.sm, paddingBottom: space.md }]}>
+        <View style={s.between}>
+          <Text style={s.small}>{t('Your latest order', 'आपका पिछला ऑर्डर')}</Text>
+          <OrderStatusTag status={latestOrder.status} language={language} />
+        </View>
+        <Text style={cs.slipNumber}>{latestOrder.number}</Text>
+        <Text style={s.small} numberOfLines={2}>
+          {latestOrder.items.map((item) => `${item.name} × ${item.quantity}`).join(', ')} ·{' '}
+          {money(latestOrder.totalPaise)}
         </Text>
-        <OrderStatusTag status={latestOrder.status} language={language} />
+        <View style={[s.row, { gap: space.sm, flexWrap: 'wrap', marginTop: space.xs }]}>
+          <Button
+            secondary
+            icon="navigate-outline"
+            style={{ flexGrow: 1, flexBasis: 128 }}
+            onPress={() => navigate({ screen: 'Order', id: latestOrder.id })}
+          >
+            {t('Track', 'ट्रैक करें')}
+          </Button>
+          <Button
+            icon="repeat"
+            style={{ flexGrow: 1, flexBasis: 128 }}
+            loading={reorder.busy}
+            disabled={!reorder.ready}
+            onPress={() => void reorder.run()}
+          >
+            {reorder.pending
+              ? t('Check reorder', 'दोबारा जाँचें')
+              : t('Order again', 'फिर से मँगाएँ')}
+          </Button>
+        </View>
+        {reorder.error ? <Notice error>{reorder.error}</Notice> : null}
       </View>
-      <Text style={s.small} numberOfLines={1}>
-        {latestOrder.number} ·{' '}
-        {latestOrder.items.map((item) => `${item.name} × ${item.quantity}`).join(', ')}
-      </Text>
-      <View style={[s.row, { gap: space.sm }]}>
-        <Button
-          secondary
-          icon="navigate-outline"
-          style={{ flex: 1, minHeight: 48 }}
-          onPress={() => navigate({ screen: 'Order', id: latestOrder.id })}
-        >
-          {t('Track', 'ट्रैक करें')}
-        </Button>
-        <Button
-          icon="repeat"
-          style={{ flex: 1, minHeight: 48 }}
-          loading={reorder.busy}
-          disabled={!reorder.ready}
-          onPress={() => void reorder.run()}
-        >
-          {reorder.pending
-            ? t('Check reorder', 'दोबारा जाँचें')
-            : t('Order again', 'फिर से मँगाएँ')}
-        </Button>
-      </View>
-      {reorder.error ? <Notice error>{reorder.error}</Notice> : null}
+      <TornEdge />
     </View>
   );
 }
@@ -436,79 +524,46 @@ export function OrderStatusTag({ status, language }: { status: string; language:
 }
 
 export function Home() {
-  const { categories, products, navigate, t, language, refreshCurrent, refreshing, user } =
-    useStore();
+  const { products, navigate, t, refreshCurrent, refreshing, user } = useStore();
   const brands = useMemo(
     () => [...new Set(products.map((product) => product.brand).filter(Boolean))].slice(0, 12),
     [products],
   );
-  const actions: [string, IconName, () => void][] = [
-    [t('All materials', 'सारी सामग्री'), 'grid-outline', () => navigate({ screen: 'Products' })],
-    [
-      t('Bulk quote', 'थोक भाव'),
-      'document-text-outline',
-      () => navigate({ screen: 'QuoteRequest' }),
-    ],
-    [
-      t('Ask Shiv Sahayak', 'शिव सहायक से पूछें'),
-      'chatbubbles-outline',
-      () => navigate({ screen: 'Assistant' }),
-    ],
-    [t('Compare', 'तुलना करें'), 'git-compare-outline', () => navigate({ screen: 'Compare' })],
+  // One row of plain links in place of shortcut cards.
+  const links: [string, () => void][] = [
+    [t('All materials', 'सारी सामग्री'), () => navigate({ screen: 'Products' })],
+    [t('Bulk quote', 'थोक भाव'), () => navigate({ screen: 'QuoteRequest' })],
+    [t('Ask Shiv Sahayak', 'शिव सहायक से पूछें'), () => navigate({ screen: 'Assistant' })],
+    [t('Compare', 'तुलना करें'), () => navigate({ screen: 'Compare' })],
   ];
   return (
     <Screen onRefresh={() => void refreshCurrent()} refreshing={refreshing}>
       {user && <LatestOrder />}
       <RateBoard />
-      <View style={cs.actions}>
-        {actions.map(([label, icon, onPress]) => (
+      <View style={cs.links}>
+        {links.map(([label, onPress]) => (
           <Pressable
             key={label}
             accessibilityRole="button"
             onPress={onPress}
-            style={({ pressed }) => [cs.action, pressed && { opacity: 0.75 }]}
+            style={({ pressed }) => [cs.linkItem, pressed && { opacity: 0.7 }]}
           >
-            <Icon name={icon} color={C.clay} size={26} />
-            <Text style={cs.actionText}>{label}</Text>
+            <Text style={s.link}>{label}</Text>
           </Pressable>
         ))}
       </View>
-      {categories.length > 0 && (
-        <View>
-          <Section title={t('Shop by material', 'सामग्री के हिसाब से')} />
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: space.sm }}
-          >
-            {categories.map((category) => (
-              <Pressable
-                accessibilityRole="button"
-                key={category.id}
-                style={({ pressed }) => [cs.category, pressed && { opacity: 0.75 }]}
-                onPress={() => navigate({ screen: 'Products', category: category.slug })}
-              >
-                <Icon name={categoryIcons[category.slug] || 'cube-outline'} size={28} />
-                <Text style={cs.categoryName}>
-                  {categoryName(category.slug, category.name, language)}
-                </Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-        </View>
-      )}
       <DeliveryCheck />
-      <View style={cs.bulk}>
-        <Text style={s.eyebrow}>
-          {t('BUILDING A HOUSE OR A SITE?', 'घर या बड़ी साइट बना रहे हैं?')}
-        </Text>
-        <Text style={s.h2}>
-          {t('One list. A written price for your site.', 'एक सूची। आपकी साइट का लिखित भाव।')}
-        </Text>
+      <View style={[s.paper, { gap: space.md }]}>
+        <View style={[s.row, { alignItems: 'flex-start' }]}>
+          <Stamp size={44} />
+          <Text style={[s.h2, { flex: 1 }]}>
+            {t('One list. A written price for your site.', 'एक सूची। आपकी साइट का लिखित भाव।')}
+          </Text>
+        </View>
         <Text style={s.body}>
           {t(
-            'Send quantities and your site address. The store prices each item with freight and sends a quote you can accept.',
-            'मात्रा और साइट का पता भेजें। दुकान हर सामग्री का भाव, भाड़े के साथ, लिखकर भेजेगी।',
+            'Building a house or a site? Send quantities and your site address. The store prices each item with freight and sends a quote you can accept.',
+            'घर या बड़ी साइट बना रहे हैं? मात्रा और साइट का पता भेजें। दुकान हर सामग्री का भाव, भाड़े के साथ, लिखकर भेजेगी।',
           )}
         </Text>
         <Button icon="arrow-forward" onPress={() => navigate({ screen: 'QuoteRequest' })}>
@@ -518,17 +573,19 @@ export function Home() {
       {awards.length > 0 && (
         <View>
           <Section title={t('Awards & recognition', 'पुरस्कार और सम्मान')} />
-          {awards.map((award) => (
-            <View key={award.title} style={[s.card, s.row, { marginBottom: space.sm }]}>
-              <Icon name="ribbon-outline" color={C.clay} size={28} />
-              <View style={{ flex: 1 }}>
-                <Text style={s.h3}>{award.title}</Text>
-                <Text style={s.small}>
-                  {award.issuer} · {award.year}
-                </Text>
+          <View style={{ gap: 2 }}>
+            {awards.map((award) => (
+              <View key={award.title} style={[s.card, s.row]}>
+                <Icon name="ribbon-outline" color={C.ink} size={28} />
+                <View style={{ flex: 1 }}>
+                  <Text style={s.h3}>{award.title}</Text>
+                  <Text style={s.small}>
+                    {award.issuer} · {award.year}
+                  </Text>
+                </View>
               </View>
-            </View>
-          ))}
+            ))}
+          </View>
         </View>
       )}
       {brands.length > 0 && (
@@ -688,7 +745,7 @@ export function Catalogue() {
   const header = (
     <View style={{ gap: space.md, paddingBottom: space.md }}>
       <View style={cs.searchBox}>
-        <Icon name="search-outline" color={C.inkSoft} />
+        <Icon name="search-outline" color={C.ink2} />
         <TextInput
           accessibilityLabel={t('Search materials', 'सामग्री खोजें')}
           placeholder={t('Search cement, steel, sand…', 'सीमेंट, सरिया, बालू खोजें…')}
@@ -841,7 +898,7 @@ export function Catalogue() {
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
-          colors={[C.clay]}
+          colors={[C.accent]}
           onRefresh={() => {
             setRefreshing(true);
             void load(undefined, true).finally(() => setRefreshing(false));
@@ -998,10 +1055,10 @@ export function ProductDetail() {
       <View style={[s.row, { alignItems: 'flex-start' }]}>
         <MaterialArt product={product} size={96} />
         <View style={{ flex: 1, gap: 4 }}>
-          <Text style={s.eyebrow}>{product.brand.toUpperCase()}</Text>
-          <Text style={[s.h1, { fontSize: 26 }]}>{productName(product, language)}</Text>
+          <Text style={s.h1}>{productName(product, language)}</Text>
           {/* The English name is what is printed on the bag, so Hindi readers see it too. */}
           {language === 'hi' && product.nameHi ? <Text style={s.small}>{product.name}</Text> : null}
+          <Text style={s.small}>{product.brand}</Text>
           <Tag tone={available ? 'green' : 'grey'}>
             {available ? t('In stock', 'स्टॉक में') : t('Out of stock', 'स्टॉक नहीं')}
           </Tag>
@@ -1009,8 +1066,8 @@ export function ProductDetail() {
       </View>
       <View style={[s.card, { gap: space.sm }]}>
         <View style={[s.row, { alignItems: 'baseline', flexWrap: 'wrap', gap: space.sm }]}>
-          <Text style={[s.price, { fontSize: 32 }]}>{money(product.pricePaise)}</Text>
-          <Text style={s.body}>{unitText(product, language)}</Text>
+          <Roll value={money(product.pricePaise)} style={s.display} maxFontSizeMultiplier={1.5} />
+          <Text style={[s.body, { color: C.ink }]}>{unitText(product, language)}</Text>
         </View>
         <Text style={s.small}>
           {t(
@@ -1027,34 +1084,36 @@ export function ProductDetail() {
           </Notice>
         )}
       </View>
-      <View style={[s.card, { gap: space.sm }]}>
+      <View style={{ gap: space.sm }}>
         <Text style={s.h3}>{t('Specification', 'विवरण')}</Text>
-        {(
-          [
+        <View style={cs.facts}>
+          {(
             [
-              t('Category', 'श्रेणी'),
-              categoryName(product.category.slug, product.category.name, language),
-            ],
-            [t('Type', 'प्रकार'), product.type],
-            [t('Grade', 'ग्रेड'), product.grade],
-            [t('Pack', 'पैक'), product.packSize],
-            [t('Sold per', 'बिक्री इकाई'), unitLabel(product.unit, language)],
-            [
-              t('Order', 'ऑर्डर'),
-              t(
-                `minimum ${product.minQuantity}, in steps of ${product.quantityStep}`,
-                `कम से कम ${product.minQuantity}, ${product.quantityStep} के गुणक में`,
-              ),
-            ],
-          ] as const
-        )
-          .filter(([, value]) => value)
-          .map(([label, value]) => (
-            <View key={label} style={[s.between, { alignItems: 'flex-start' }]}>
-              <Text style={s.small}>{label}</Text>
-              <Text style={[s.body, { color: C.ink, flex: 1, textAlign: 'right' }]}>{value}</Text>
-            </View>
-          ))}
+              [
+                t('Category', 'श्रेणी'),
+                categoryName(product.category.slug, product.category.name, language),
+              ],
+              [t('Type', 'प्रकार'), product.type],
+              [t('Grade', 'ग्रेड'), product.grade],
+              [t('Pack', 'पैक'), product.packSize],
+              [t('Sold per', 'बिक्री इकाई'), unitLabel(product.unit, language)],
+              [
+                t('Order', 'ऑर्डर'),
+                t(
+                  `minimum ${product.minQuantity}, in steps of ${product.quantityStep}`,
+                  `कम से कम ${product.minQuantity}, ${product.quantityStep} के गुणक में`,
+                ),
+              ],
+            ] as const
+          )
+            .filter(([, value]) => value)
+            .map(([label, value]) => (
+              <View key={label} style={cs.fact}>
+                <Text style={s.small}>{label}</Text>
+                <Text style={[s.body, { color: C.ink, fontWeight: '700' }]}>{value}</Text>
+              </View>
+            ))}
+        </View>
       </View>
       {product.description ? (
         <Text style={s.body}>{productDescription(product, language)}</Text>
@@ -1065,11 +1124,11 @@ export function ProductDetail() {
           <Text style={s.body}>{product.recommendedUse}</Text>
         </View>
       ) : null}
-      <View style={[s.row, { gap: space.sm }]}>
+      <View style={[s.row, { gap: space.sm, flexWrap: 'wrap' }]}>
         <Button
           secondary
           icon="document-text-outline"
-          style={{ flex: 1 }}
+          style={{ flexGrow: 1, flexBasis: 140 }}
           onPress={() => navigate({ screen: 'QuoteRequest', id: product.id })}
         >
           {t('Bulk quote', 'थोक भाव')}
@@ -1077,7 +1136,7 @@ export function ProductDetail() {
         <Button
           secondary
           icon={comparing ? 'checkmark' : 'git-compare-outline'}
-          style={{ flex: 1 }}
+          style={{ flexGrow: 1, flexBasis: 140 }}
           onPress={() => {
             if (!comparing) toggleCompare(product);
             navigate({ screen: 'Compare' });
@@ -1227,50 +1286,52 @@ const cs = StyleSheet.create({
     paddingTop: space.lg,
     paddingBottom: space.xxl,
   },
-  tile: {
-    backgroundColor: C.stone,
-    borderRadius: radius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  row: {
-    gap: space.sm,
-    backgroundColor: C.surface,
-    borderWidth: 1,
-    borderColor: C.line,
-    borderRadius: radius.md,
-    padding: space.md,
-  },
-  rowMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.md },
-  inBasket: {
+  tile: { alignItems: 'center', justifyContent: 'center' },
+  // Product rows are surfaces on the cement ground, separated by tone, not lines.
+  row: { gap: space.sm, backgroundColor: C.surface, padding: space.md },
+  inkRow: { gap: space.sm, paddingVertical: space.md },
+  rowMain: { flex: 1, flexDirection: 'row', alignItems: 'flex-start', gap: space.md },
+  rowName: { color: C.ink, fontSize: textSize.body, fontWeight: '800', lineHeight: 22 },
+  rowPriceLine: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.sm,
-    paddingTop: space.sm,
-    borderTopWidth: 1,
-    borderTopColor: C.stone,
+    flexWrap: 'wrap',
+    alignItems: 'baseline',
+    columnGap: space.xs,
+    marginTop: 2,
   },
-  rowName: { color: C.ink, fontSize: textSize.body, fontWeight: '800', lineHeight: 21 },
-  rowPrice: { color: C.ink, fontSize: 20, fontWeight: '800' },
+  rowPrice: {
+    color: C.ink,
+    fontSize: textSize.lead,
+    lineHeight: 26,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+  },
   add: {
     minHeight: 48,
     minWidth: 76,
     paddingHorizontal: space.md,
-    borderRadius: radius.md,
-    backgroundColor: C.clay,
+    borderRadius: radius.control,
+    backgroundColor: C.accent,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 2,
   },
-  addText: { color: C.surface, fontSize: textSize.body, fontWeight: '800' },
+  addText: { color: C.onAccent, fontSize: textSize.body, fontWeight: '800' },
+  inBasket: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: space.sm,
+    paddingTop: space.xs,
+  },
   stepper: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1.5,
-    borderColor: C.ink,
-    borderRadius: radius.md,
-    backgroundColor: C.surface,
+    borderColor: C.rule,
+    borderRadius: radius.control,
+    backgroundColor: C.paper,
   },
   stepButton: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
   quantityValue: {
@@ -1282,51 +1343,77 @@ const cs = StyleSheet.create({
     color: C.ink,
     fontSize: textSize.lead,
     fontWeight: '800',
+    fontVariant: ['tabular-nums'],
   },
-  board: { backgroundColor: C.ink, borderRadius: radius.lg, padding: space.lg },
-  boardTitle: { color: C.paper, fontSize: 26, fontWeight: '800' },
-  boardSub: { color: '#C9D3D8', fontSize: textSize.caption, lineHeight: 20 },
-  rateRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.md,
+  // Home: the rate folders.
+  ratesTitle: { color: C.ink, fontSize: textSize.head, lineHeight: 40, fontWeight: '800' },
+  folderTabRow: { flexDirection: 'row', height: 8, pointerEvents: 'none' },
+  slantLeft: {
+    width: 0,
+    height: 0,
+    borderBottomWidth: 8,
+    borderLeftWidth: 8,
+    borderLeftColor: 'transparent',
+  },
+  folderTab: { width: '44%', height: 8 },
+  slantRight: {
+    width: 0,
+    height: 0,
+    borderBottomWidth: 8,
+    borderRightWidth: 8,
+    borderRightColor: 'transparent',
+  },
+  folder: {
     minHeight: 56,
-    paddingVertical: space.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: '#2E4B5C',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    columnGap: space.md,
+    paddingHorizontal: space.md,
+    paddingTop: space.md,
+    paddingBottom: space.md,
   },
-  rateName: { color: C.paper, fontSize: textSize.lead, fontWeight: '800' },
-  rateProduct: { color: '#C9D3D8', fontSize: 13 },
-  ratePrice: { color: C.clayOnInk, fontSize: 22, fontWeight: '800' },
-  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
-  action: {
-    flexBasis: '47%',
-    flexGrow: 1,
-    minHeight: 76,
-    backgroundColor: C.surface,
-    borderWidth: 1,
-    borderColor: C.line,
-    borderRadius: radius.md,
-    padding: space.md,
-    gap: space.xs,
-    justifyContent: 'center',
+  folderName: { color: C.ink, fontSize: textSize.lead, lineHeight: 28, fontWeight: '800' },
+  folderRate: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'baseline',
+    columnGap: space.xs,
   },
-  actionText: { color: C.ink, fontSize: textSize.body, fontWeight: '800' },
-  category: {
-    backgroundColor: C.surface,
-    borderWidth: 1,
-    borderColor: C.line,
-    minWidth: 96,
-    minHeight: 88,
-    padding: space.md,
-    gap: space.sm,
-    borderRadius: radius.md,
+  folderPrice: {
+    color: C.ink,
+    fontSize: textSize.lead,
+    lineHeight: 28,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+  },
+  folderUnit: { color: C.ink2, fontSize: textSize.small, lineHeight: 20 },
+  folderPanel: {
+    backgroundColor: C.ink,
+    paddingHorizontal: space.md,
+    paddingBottom: space.md,
+    gap: 2,
+  },
+  folderMore: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: space.sm,
+    minHeight: 48,
   },
-  categoryName: { color: C.ink, fontSize: textSize.body, fontWeight: '700' },
-  bulk: { backgroundColor: C.kraft, padding: space.lg, borderRadius: radius.lg, gap: space.md },
-  brands: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
+  links: { flexDirection: 'row', flexWrap: 'wrap', columnGap: space.lg },
+  linkItem: { minHeight: 48, justifyContent: 'center' },
+  slipNumber: {
+    color: C.ink,
+    fontSize: textSize.lead,
+    lineHeight: 26,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+  },
+  facts: { flexDirection: 'row', flexWrap: 'wrap', gap: 2 },
+  fact: { flexGrow: 1, flexBasis: 150, backgroundColor: C.surface, padding: space.md, gap: 2 },
+  brands: { flexDirection: 'row', flexWrap: 'wrap', gap: 2 },
   brand: {
     color: C.ink,
     fontSize: textSize.body,
@@ -1334,19 +1421,18 @@ const cs = StyleSheet.create({
     paddingHorizontal: space.md,
     paddingVertical: space.sm,
     backgroundColor: C.surface,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: C.line,
   },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.sm,
     paddingHorizontal: space.md,
-    backgroundColor: C.surface,
+    backgroundColor: C.paper,
     borderWidth: 1.5,
-    borderColor: C.line,
-    borderRadius: radius.md,
+    borderColor: C.rule,
+    borderBottomWidth: 2,
+    borderBottomColor: C.muted,
+    borderRadius: radius.control,
   },
-  searchInput: { flex: 1, color: C.ink, fontSize: textSize.body, minHeight: 52 },
+  searchInput: { flex: 1, color: C.ink, fontSize: textSize.body, minHeight: 48 },
 });
