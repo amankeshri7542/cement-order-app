@@ -2627,3 +2627,64 @@ dd {
 .approved-gallery figcaption {
   padding-top: 0.6rem;
 }
+/* Account parity with the customer app: profile, signed-in devices and account deletion. */
+.account-panel {
+  margin-bottom: 40px;
+}
+.account-panel h2 {
+  font-size: 28px;
+}
+.account-panel form {
+  display: grid;
+  gap: 18px;
+  max-width: 560px;
+  padding: 22px;
+  margin-top: 20px;
+  background: var(--stone);
+  border-radius: 8px;
+}
+.account-panel form .action-row {
+  margin-top: 0;
+}
+.account-panel [role='alert'] {
+  margin: 0;
+  color: var(--clay-deep);
+  font-weight: 600;
+}
+.session-list {
+  list-style: none;
+  display: grid;
+  gap: 12px;
+  padding: 0;
+  margin: 20px 0;
+}
+.session-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 16px 20px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  overflow-wrap: anywhere;
+}
+.session-list li > div {
+  display: grid;
+  gap: 4px;
+}
+.session-list strong {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.session-list .status-badge {
+  padding: 2px 11px;
+  background: var(--kraft);
+}
+.session-list small {
+  color: var(--muted);
+  font-size: 15px;
+}
