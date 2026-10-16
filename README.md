@@ -6,6 +6,10 @@ been purchased or deployed; account, domain and physical-phone steps remain pend
 
 Planning your first release? See the [launch plan for 50–100 customers](docs/LAUNCH_PLAN.md).
 
+Testing and the family demo: [testing guide](docs/TESTING_GUIDE.md) for all three products,
+[manual setup](docs/MANUAL_SETUP.md) for accounts and keys, the
+[demo script](docs/DEMO_SCRIPT.md) and the Hindi [owner desk guide](docs/FAMILY_GUIDE_HI.md).
+
 An Expo customer app, Next.js store dashboard, and NestJS/PostgreSQL commerce backend for **Shiv Cement Store**, serving **Patna and Bihar**. Contact/WhatsApp initially **9297513707**, editable under **Finance & settings**.
 
 The backend owns prices, delivery charges, inventory and payment state. Local example inventory and mock OTP are for development. **Do not accept real payments until the production setup and provider verification below are complete.**
@@ -104,7 +108,7 @@ npm run build -w @shiv/admin
 npm run build -w @shiv/mobile
 ```
 
-Browser tests start separate API/admin/customer servers on 4010/3001/8082. They use Chrome (`npx playwright install chrome` if needed). Unit and integration tests cover server pricing, transaction races, OTP/session security, authorization, webhook replay, refunds and quote revisions. Browser tests cover ordering, admin management, quotations, localization, mobile sizing and network recovery. See [pilot implementation report](docs/PILOT_IMPLEMENTATION.md) for actual verification results and limits.
+Browser tests start separate API/admin/storefront/customer servers on 4010/3001/3004/8082. They use Chrome (`npx playwright install chrome` if needed). Unit and integration tests cover server pricing, transaction races, OTP/session security, authorization, webhook replay, refunds and quote revisions. Browser tests cover ordering, admin management, quotations, localization, mobile sizing and network recovery. See [pilot implementation report](docs/PILOT_IMPLEMENTATION.md) for actual verification results and limits.
 
 ## Native app
 

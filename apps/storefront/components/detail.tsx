@@ -4,7 +4,7 @@ import { AskAbout } from './assistant-launcher';
 
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Product } from '@shiv/shared';
+import { productDescription, productName, unitLabel, type Product } from '@shiv/shared';
 import { ApiError, productResponse, publicGet } from '../lib/api';
 import { dateLabel, price } from '../lib/catalog';
 import { useLanguage } from './language';
@@ -78,6 +78,7 @@ export function ProductDetail({
   const connection = useLiveRefresh(() => {
     void load();
   });
+  const unit = product ? unitLabel(product.unit, language) : '';
   return (
     <div className="detail-page">
       <div className="detail-breadcrumb">
@@ -127,7 +128,13 @@ export function ProductDetail({
               <p className="eyebrow">
                 {product.brand} · {product.category.name}
               </p>
-              <h1>{product.name}</h1>
+              <h1>{productName(product, language)}</h1>
+              {/* The English name is what is printed on the bag, so Hindi readers see it too. */}
+              {language === 'hi' && product.nameHi ? (
+                <p className="detail-type" lang="en">
+                  {product.name}
+                </p>
+              ) : null}
               <p className="detail-type">
                 {product.type} · {product.grade}
               </p>
@@ -136,7 +143,7 @@ export function ProductDetail({
               </span>
               <div className="detail-price">
                 <strong>{price(product.pricePaise)}</strong>
-                <span>/ {product.unit}</span>
+                <span>/ {unit}</span>
               </div>
               <p className="price-updated">
                 {t('Price updated', 'कीमत अपडेट हुई')}:{' '}
@@ -148,7 +155,7 @@ export function ProductDetail({
               <dl className="spec-grid">
                 <div>
                   <dt>{t('Selling unit', 'बिक्री इकाई')}</dt>
-                  <dd>{product.unit}</dd>
+                  <dd>{unit}</dd>
                 </div>
                 <div>
                   <dt>{t('Pack size', 'पैक का आकार')}</dt>
@@ -160,13 +167,13 @@ export function ProductDetail({
                 <div>
                   <dt>{t('Minimum quantity', 'न्यूनतम मात्रा')}</dt>
                   <dd>
-                    {product.minQuantity} × {product.unit}
+                    {product.minQuantity} × {unit}
                   </dd>
                 </div>
                 <div>
                   <dt>{t('Quantity increment', 'मात्रा की बढ़ोतरी')}</dt>
                   <dd>
-                    {product.quantityStep} × {product.unit}
+                    {product.quantityStep} × {unit}
                   </dd>
                 </div>
                 <div>
@@ -202,7 +209,7 @@ export function ProductDetail({
           <section className="detail-description">
             <div>
               <h2>{t('About this material', 'इस सामग्री के बारे में')}</h2>
-              <p>{product.description}</p>
+              <p>{productDescription(product, language)}</p>
             </div>
             <div>
               <h2>{t('Recommended use', 'इस्तेमाल की सलाह')}</h2>

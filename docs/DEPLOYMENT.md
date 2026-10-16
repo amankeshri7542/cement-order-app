@@ -34,7 +34,7 @@ If creating a gateway order times out, the backend intentionally blocks blind re
 
 ## Cloudflare R2
 
-Configure `R2_ENDPOINT`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_PUBLIC_URL`. Use credentials restricted to the product-image bucket. Configure bucket CORS for the exact admin origin with PUT and Content-Type, and a public/custom asset domain. Admin gets a short-lived URL for a random object key, approved raster content type and declared size (max 5 MiB). SVG/HTML uploads are not supported. Use a separate asset domain so untrusted image bytes never share the API/admin cookie origin. Verify the storage provider enforces the signed headers in your deployment.
+Configure `R2_ENDPOINT`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_PUBLIC_URL`. Use credentials restricted to the product-image bucket and a public/custom asset domain. Staff upload photos through the API itself: the owner desk sends the image bytes to `POST /api/v1/admin/uploads` (staff session required before the body is read, 5 MiB limit). The API checks the PNG/JPEG/WebP signature, re-encodes the photo as WebP (at most 1600 px, under 20 megapixels), writes it to R2 and records it as an approved asset; only recorded assets can be published on a product. The browser never receives a presigned URL, so the bucket needs no CORS rule for the admin. `UPLOADS_PAUSED=true` stops uploads. SVG/HTML uploads are not supported. Use a separate asset domain so image bytes never share the API/admin cookie origin, and set `NEXT_PUBLIC_ASSET_ORIGIN` (Next apps) and `EXPO_PUBLIC_ASSET_ORIGIN` (app) to it.
 
 ## Firebase / Android
 

@@ -105,6 +105,7 @@ export class CatalogController {
               ? {
                   OR: [
                     { name: { contains: f.q, mode: 'insensitive' } },
+                    { nameHi: { contains: f.q, mode: 'insensitive' } },
                     { brand: { contains: f.q, mode: 'insensitive' } },
                     { grade: { contains: f.q, mode: 'insensitive' } },
                   ],

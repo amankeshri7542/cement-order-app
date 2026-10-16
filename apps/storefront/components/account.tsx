@@ -1,10 +1,11 @@
 'use client';
-import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import type { Address, AddressInput, User } from '@shiv/shared';
-import { addressSchema } from '@shiv/shared';
-import { customerApi, localPhone } from '../lib/customer-api';
+import type { Address, AddressInput, SessionInfo, User } from '@shiv/shared';
+import { addressSchema, momentLabel, profileSchema } from '@shiv/shared';
+import { customerApi, CustomerError, errorText, localPhone } from '../lib/customer-api';
+import { deviceLabel } from '../lib/devices';
 import { useCommerce } from './commerce';
 import { useLanguage } from './language';
 
@@ -156,7 +157,10 @@ export function AccountPage() {
             </div>
           </section>
           <AccountRequired nested>
+            <Profile />
             <AddressBook />
+            <SignedInDevices />
+            <DeleteAccount />
           </AccountRequired>
         </>
       ) : (
@@ -235,6 +239,361 @@ export function AccountPage() {
         </form>
       )}
     </div>
+  );
+}
+/** False once the section unmounts (sign-out or another account), so late replies are dropped. */
+function useLive() {
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  return useCallback(() => mounted.current, []);
+}
+// customerApi leaves /auth/ paths to the session code, so these calls refresh an expired access
+// token themselves once before reporting that the customer must sign in again.
+async function authApi<T>(path: string, method: string, body: unknown, accountId: string) {
+  try {
+    return await customerApi<T>(path, method, body, accountId);
+  } catch (e) {
+    if (!(e instanceof CustomerError) || e.status !== 401) throw e;
+    try {
+      await customerApi('/auth/refresh', 'POST', {}, undefined, false);
+    } catch (refresh) {
+      if (refresh instanceof CustomerError && refresh.status === 401)
+        window.dispatchEvent(new CustomEvent('shiv-session-expired', { detail: { accountId } }));
+      throw refresh;
+    }
+    return customerApi<T>(path, method, body, accountId, false);
+  }
+}
+// Name and contractor request, as the Android app's Edit profile.
+function Profile() {
+  const c = useCommerce();
+  const { t, language } = useLanguage();
+  const live = useLive();
+  const user = c.user!;
+  const contractorAsked = user.contractorStatus === 'PENDING' || user.role === 'CONTRACTOR';
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(user.name);
+  const [contractor, setContractor] = useState(contractorAsked);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState('');
+  function edit() {
+    setName(user.name);
+    setContractor(contractorAsked);
+    setProblem('');
+    setEditing(true);
+  }
+  async function save() {
+    const parsed = profileSchema.safeParse({ name, language, contractor });
+    if (!parsed.success) {
+      setProblem(t('Enter your name, up to 100 letters.', 'अपना नाम लिखें, 100 अक्षरों तक।'));
+      return;
+    }
+    setBusy(true);
+    setProblem('');
+    try {
+      await customerApi<User>('/me', 'PATCH', parsed.data, user.id);
+      if (!live()) return;
+      await c.refresh();
+      if (!live()) return;
+      setEditing(false);
+      c.setMessage(t('Profile saved', 'प्रोफ़ाइल सहेजी गई'));
+    } catch (e) {
+      if (live()) setProblem(errorText(e, language === 'hi'));
+    } finally {
+      if (live()) setBusy(false);
+    }
+  }
+  return (
+    <section className="account-panel">
+      <div className="section-heading">
+        <h2>{t('Your profile', 'आपकी प्रोफ़ाइल')}</h2>
+        {!editing && (
+          <button className="text-link" onClick={edit}>
+            {t('Edit profile', 'प्रोफ़ाइल बदलें')}
+          </button>
+        )}
+      </div>
+      <p>
+        {t('Name', 'नाम')}: {user.name || t('Not added yet', 'अभी नहीं जोड़ा')}
+      </p>
+      {user.role === 'CONTRACTOR' ? (
+        <p>{t('Verified contractor', 'सत्यापित ठेकेदार')}</p>
+      ) : user.contractorStatus === 'PENDING' ? (
+        <p>
+          {t(
+            'Contractor verification requested. The shop will confirm.',
+            'ठेकेदार सत्यापन माँगा गया है। दुकान पुष्टि करेगी।',
+          )}
+        </p>
+      ) : null}
+      {editing && (
+        <form
+          noValidate
+          onSubmit={(e) => {
+            e.preventDefault();
+            void save();
+          }}
+        >
+          <label>
+            {t('Full name', 'पूरा नाम')}
+            <input
+              autoComplete="name"
+              maxLength={100}
+              required
+              aria-invalid={Boolean(problem)}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </label>
+          <label className="choice">
+            <input
+              type="checkbox"
+              checked={contractor}
+              disabled={user.role === 'CONTRACTOR'}
+              onChange={(e) => setContractor(e.target.checked)}
+            />
+            {t(
+              'I am a contractor or builder (ask for verification)',
+              'मैं ठेकेदार या बिल्डर हूँ (सत्यापन माँगें)',
+            )}
+          </label>
+          {problem && <p role="alert">{problem}</p>}
+          <div className="action-row">
+            <button className="button" disabled={busy}>
+              {busy ? t('Please wait…', 'कृपया रुकें…') : t('Save profile', 'प्रोफ़ाइल सहेजें')}
+            </button>
+            <button
+              type="button"
+              className="text-link"
+              disabled={busy}
+              onClick={() => setEditing(false)}
+            >
+              {t('Cancel', 'रद्द करें')}
+            </button>
+          </div>
+        </form>
+      )}
+    </section>
+  );
+}
+function SignedInDevices() {
+  const c = useCommerce();
+  const { t, language } = useLanguage();
+  const live = useLive();
+  const id = c.user!.id;
+  const [sessions, setSessions] = useState<SessionInfo[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState('');
+  const hi = language === 'hi';
+  const load = useCallback(async () => {
+    const items = await authApi<SessionInfo[]>('/auth/sessions', 'GET', undefined, id);
+    if (live()) setSessions(items);
+  }, [id, live]);
+  useEffect(() => {
+    void load().catch((e) => {
+      if (live()) setProblem(errorText(e, hi));
+    });
+  }, [load, live, hi]);
+  async function signOut(session?: SessionInfo) {
+    if (
+      !session &&
+      !window.confirm(
+        t(
+          'Sign out of every other device? This device stays signed in.',
+          'बाकी सभी डिवाइस से साइन आउट करें? यह डिवाइस साइन इन रहेगा।',
+        ),
+      )
+    )
+      return;
+    setBusy(true);
+    setProblem('');
+    try {
+      if (session)
+        await authApi(`/auth/sessions/${encodeURIComponent(session.id)}`, 'DELETE', undefined, id);
+      else await authApi('/auth/sessions/revoke-others', 'POST', {}, id);
+      if (!live()) return;
+      await load();
+      if (live())
+        c.setMessage(
+          session
+            ? t('That device is signed out.', 'उस डिवाइस से साइन आउट हो गया।')
+            : t('Other devices are signed out.', 'बाकी डिवाइस से साइन आउट हो गया।'),
+        );
+    } catch (e) {
+      if (live()) setProblem(errorText(e, hi));
+    } finally {
+      if (live()) setBusy(false);
+    }
+  }
+  return (
+    <section className="account-panel">
+      <h2>{t('Signed-in devices', 'साइन इन वाले डिवाइस')}</h2>
+      <p>
+        {t(
+          'Sign out phones and computers you no longer use, or a device you have lost.',
+          'जो फ़ोन या कंप्यूटर अब काम में नहीं या खो गया है, उससे साइन आउट करें।',
+        )}
+      </p>
+      {problem && <p role="alert">{problem}</p>}
+      {!sessions ? (
+        !problem && (
+          <p className="loading-state" role="status">
+            {t('Loading devices…', 'डिवाइस लोड हो रहे हैं…')}
+          </p>
+        )
+      ) : (
+        <ul className="session-list">
+          {sessions.map((session) => {
+            const label = deviceLabel(session.label, language);
+            return (
+              <li key={session.id}>
+                <div>
+                  <strong>
+                    {label}
+                    {session.current && (
+                      <span className="status-badge">{t('This device', 'यह डिवाइस')}</span>
+                    )}
+                  </strong>
+                  <small>
+                    {t('Last used', 'आख़िरी बार')} {momentLabel(session.lastSeenAt, language)}
+                  </small>
+                </div>
+                {!session.current && (
+                  <button
+                    className="text-link"
+                    disabled={busy}
+                    aria-label={t(`Sign out device: ${label}`, `डिवाइस से साइन आउट: ${label}`)}
+                    onClick={() => void signOut(session)}
+                  >
+                    {t('Sign out device', 'डिवाइस से साइन आउट')}
+                  </button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {sessions?.some((session) => !session.current) && (
+        <button className="button secondary" disabled={busy} onClick={() => void signOut()}>
+          {t('Sign out other devices', 'बाकी सभी डिवाइस से साइन आउट')}
+        </button>
+      )}
+    </section>
+  );
+}
+// Same request and wording as the Android app's Delete account; the server refuses while any
+// order or refund is still open (ACTIVE_ORDERS).
+function DeleteAccount() {
+  const c = useCommerce();
+  const { t, language } = useLanguage();
+  const router = useRouter();
+  const live = useLive();
+  const id = c.user!.id;
+  const [open, setOpen] = useState(false);
+  const [confirmation, setConfirmation] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<{ code: string; text: string } | null>(null);
+  async function remove() {
+    // Typed confirmation, forgiving case and spaces (phone keyboards capitalise and pad).
+    if (confirmation.trim().toUpperCase() !== 'DELETE') return;
+    setBusy(true);
+    setProblem(null);
+    try {
+      await customerApi('/me/delete', 'POST', { confirmation: 'DELETE' }, id);
+    } catch (e) {
+      if (live()) {
+        setProblem({
+          code: e instanceof CustomerError ? e.code : '',
+          text: errorText(e, language === 'hi'),
+        });
+        setBusy(false);
+      }
+      return;
+    }
+    // Drafts, pending requests and recovery records saved for this account on this browser.
+    try {
+      for (const store of [localStorage, sessionStorage])
+        for (const key of Object.keys(store))
+          if (key.startsWith('shiv_') && key.includes(id)) store.removeItem(key);
+    } catch {
+      /* Storage blocked: nothing was kept. */
+    }
+    // Every session is already gone; this clears the cookies and the signed-in view.
+    await c.signout();
+    c.setMessage(t('Account deleted', 'खाता हटा दिया गया'));
+    router.push('/');
+  }
+  return (
+    <section className="account-panel">
+      <h2>{t('Delete your account', 'अपना खाता हटाएँ')}</h2>
+      {!open ? (
+        <button className="text-link" onClick={() => setOpen(true)}>
+          {t('Delete account', 'खाता हटाएँ')}
+        </button>
+      ) : (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void remove();
+          }}
+        >
+          <p>
+            {t(
+              'Deletion removes your profile, addresses, basket and sign-ins on every phone. Order records without your details stay for the shop’s accounts. Finish open orders first. This cannot be undone.',
+              'खाता हटाने से आपकी प्रोफ़ाइल, पते, टोकरी और सभी फ़ोन से साइन इन हट जाएँगे। आपकी जानकारी के बिना ऑर्डर का हिसाब दुकान के रिकॉर्ड में रहेगा। पहले खुले ऑर्डर पूरे करें। यह वापस नहीं होगा।',
+            )}
+          </p>
+          <label>
+            {t('Type DELETE to confirm', 'पक्का करने के लिए DELETE लिखें')}
+            <input
+              autoComplete="off"
+              autoCapitalize="characters"
+              spellCheck={false}
+              value={confirmation}
+              onChange={(e) => setConfirmation(e.target.value)}
+              autoFocus
+            />
+          </label>
+          {problem && (
+            <p role="alert">
+              {problem.text}{' '}
+              {problem.code === 'ACTIVE_ORDERS' && (
+                <Link className="text-link" href="/orders">
+                  {t('See open orders', 'खुले ऑर्डर देखें')}
+                </Link>
+              )}
+            </p>
+          )}
+          <div className="action-row">
+            <button
+              className="button"
+              disabled={busy || confirmation.trim().toUpperCase() !== 'DELETE'}
+            >
+              {busy
+                ? t('Please wait…', 'कृपया रुकें…')
+                : t('Permanently delete my account', 'मेरा खाता हमेशा के लिए हटाएँ')}
+            </button>
+            <button
+              type="button"
+              className="text-link"
+              disabled={busy}
+              onClick={() => {
+                setOpen(false);
+                setConfirmation('');
+                setProblem(null);
+              }}
+            >
+              {t('Keep my account', 'खाता रखें')}
+            </button>
+          </div>
+        </form>
+      )}
+    </section>
   );
 }
 const blank: AddressInput = {

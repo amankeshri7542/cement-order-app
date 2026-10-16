@@ -17,6 +17,10 @@ real-world failures, and keeps being checked automatically.
 | Zero open P0/P1 bugs                   | ✅ from automated testing; the family bug bash (P8) is still to do                  |
 | Physical phones                        | ⏳ needs the phones; checklist and commands in RELEASE_CHECKLIST §C2                |
 
+> **Correction (16 October 2026):** "Playwright journeys green … Chrome and WebKit (CI and
+> local)" is not accurate for CI. Phase 3 CI run 38331541467 failed the WebKit suite. Treat the
+> CI result as authoritative.
+
 ## Failure drills (`scripts/android-drills.sh`)
 
 Each drill runs on the release build against the real API, through a loopback-only proxy that

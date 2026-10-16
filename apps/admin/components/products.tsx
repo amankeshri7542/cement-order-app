@@ -86,6 +86,7 @@ export function Products({
                     </span>
                     <div>
                       <strong>{p.name}</strong>
+                      {p.nameHi && <small lang="hi">{p.nameHi}</small>}
                       <small>
                         {p.brand} · {p.unit}
                       </small>
@@ -222,6 +223,8 @@ export function ProductEditor({
     const f = new FormData(e.currentTarget);
     const data = {
       name: String(f.get('name')),
+      // Blank clears the Hindi text; customers reading Hindi then see the English.
+      nameHi: String(f.get('nameHi')),
       brand: String(f.get('brand')),
       categoryId: String(f.get('categoryId')),
       type: String(f.get('type')),
@@ -235,6 +238,7 @@ export function ProductEditor({
       lowStockAt: Number(f.get('lowStockAt')),
       active: f.get('active') === 'on',
       description: String(f.get('description')),
+      descriptionHi: String(f.get('descriptionHi')),
       recommendedUse: String(f.get('recommendedUse')),
       images: [...(image ? [image] : []), ...(product?.images.slice(1) || [])],
     };
@@ -268,6 +272,15 @@ export function ProductEditor({
         <div className="form-grid">
           <Field label={t('Product name', 'सामग्री का नाम')}>
             <input name="name" defaultValue={product?.name} required maxLength={120} />
+          </Field>
+          <Field label={t('Hindi name / हिन्दी नाम', 'हिन्दी नाम (अगर हो)')}>
+            <input
+              name="nameHi"
+              lang="hi"
+              defaultValue={product?.nameHi ?? ''}
+              maxLength={120}
+              placeholder="अल्ट्राटेक पीपीसी सीमेंट"
+            />
           </Field>
           <Field label={t('Brand', 'ब्रांड')}>
             <input name="brand" defaultValue={product?.brand} required />
@@ -364,6 +377,14 @@ export function ProductEditor({
             name="description"
             defaultValue={product?.description}
             required
+            maxLength={1500}
+          />
+        </Field>
+        <Field label={t('Hindi description / हिन्दी विवरण', 'हिन्दी विवरण (अगर हो)')}>
+          <textarea
+            name="descriptionHi"
+            lang="hi"
+            defaultValue={product?.descriptionHi ?? ''}
             maxLength={1500}
           />
         </Field>
