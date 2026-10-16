@@ -51,6 +51,8 @@ export function Header() {
               </span>
             </Link>
           </nav>
+          {/* A header item at every width, so it never covers the rate board or basket bar. */}
+          <AssistantLauncher />
           <button
             className="language-button"
             lang={language === 'en' ? 'hi' : 'en'}
@@ -59,9 +61,6 @@ export function Header() {
             {language === 'en' ? 'हिन्दी' : 'English'}
             <span aria-hidden="true"> ⇄</span>
           </button>
-          {/* Floats at the corner on wide screens; on phones it sits in this row so it never
-              covers the rate board or basket bar. */}
-          <AssistantLauncher />
         </div>
       </header>
     </>

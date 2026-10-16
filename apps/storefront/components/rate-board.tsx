@@ -72,49 +72,10 @@ export function RateBoard() {
     };
   }, [load]);
 
-  // The materials are folder tabs on the shop's rate file; the ink folder in front carries the
-  // board's title, when it was checked and what the figures mean.
+  // One rate file: the ink cover carries the board's title and when it was checked; each material
+  // is a folder filed under it (a link to its rates), cheapest in-stock price on the right.
   return (
     <aside className="rate-board" aria-labelledby="rate-board-title">
-      {rates === null && !failed ? (
-        <ol className="rate-rows" aria-hidden="true">
-          {[0, 1, 2, 3, 4].map((row) => (
-            <li className="rate-row rate-row-placeholder" key={row}>
-              <span />
-              <span />
-            </li>
-          ))}
-        </ol>
-      ) : null}
-      {rates?.length ? (
-        <ol className="rate-rows">
-          {rates.map((rate, index) => (
-            <li key={rate.slug} style={{ '--row': index } as CSSProperties}>
-              <Link
-                className="rate-row"
-                href={`/products?category=${encodeURIComponent(rate.slug)}`}
-              >
-                <span className="rate-art" aria-hidden="true">
-                  <MaterialArt category={`${rate.name} ${rate.product.type}`} />
-                </span>
-                <span className="rate-name">
-                  <strong>{language === 'hi' ? hindi[rate.slug] || rate.name : rate.name}</strong>
-                  <small>{productName(rate.product, language)}</small>
-                </span>
-                <span className="rate-price">
-                  <strong
-                    key={rate.product.pricePaise}
-                    className={changed.has(rate.slug) ? 'rolled' : undefined}
-                  >
-                    {price(rate.product.pricePaise)}
-                  </strong>
-                  <small>/ {unitLabel(rate.product.unit, language)}</small>
-                </span>
-              </Link>
-            </li>
-          ))}
-        </ol>
-      ) : null}
       <div className="rate-panel">
         <header>
           <span className="rate-stamp" aria-hidden="true">
@@ -154,13 +115,52 @@ export function RateBoard() {
             </Link>
           </p>
         ) : null}
-        <p className="rate-note">
-          {t(
-            'Illustrations show the material type, not the exact product. Delivery is added at checkout.',
-            'चित्र सामग्री का प्रकार दिखाते हैं, सटीक सामान नहीं। डिलीवरी शुल्क चेकआउट में जुड़ता है।',
-          )}
-        </p>
       </div>
+      {rates === null && !failed ? (
+        <ol className="rate-rows" aria-hidden="true">
+          {[0, 1, 2, 3, 4].map((row) => (
+            <li className="rate-row rate-row-placeholder" key={row}>
+              <span />
+              <span />
+            </li>
+          ))}
+        </ol>
+      ) : null}
+      {rates?.length ? (
+        <ol className="rate-rows">
+          {rates.map((rate, index) => (
+            <li key={rate.slug} style={{ '--row': index } as CSSProperties}>
+              <Link
+                className="rate-row"
+                href={`/products?category=${encodeURIComponent(rate.slug)}`}
+              >
+                <span className="rate-art" aria-hidden="true">
+                  <MaterialArt category={`${rate.name} ${rate.product.type}`} />
+                </span>
+                <span className="rate-name">
+                  <strong>{language === 'hi' ? hindi[rate.slug] || rate.name : rate.name}</strong>
+                  <small>{productName(rate.product, language)}</small>
+                </span>
+                <span className="rate-price">
+                  <strong
+                    key={rate.product.pricePaise}
+                    className={changed.has(rate.slug) ? 'rolled' : undefined}
+                  >
+                    {price(rate.product.pricePaise)}
+                  </strong>
+                  <small>/ {unitLabel(rate.product.unit, language)}</small>
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ol>
+      ) : null}
+      <p className="rate-note">
+        {t(
+          'Illustrations show the material type, not the exact product. Delivery is added at checkout.',
+          'चित्र सामग्री का प्रकार दिखाते हैं, सटीक सामान नहीं। डिलीवरी शुल्क चेकआउट में जुड़ता है।',
+        )}
+      </p>
     </aside>
   );
 }

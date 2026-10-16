@@ -10,6 +10,7 @@ import {
   StatusBar,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
@@ -128,6 +129,11 @@ function Shell() {
       hidden.remove();
     };
   }, []);
+  // The top bar gives the shop's name the room left by the buttons; on a narrow phone (or a large
+  // font scale) the place line steps aside so the name stays readable.
+  const viewport = useWindowDimensions();
+  const room = viewport.width / Math.min(viewport.fontScale || 1, 1.15);
+  const roomy = room >= 420;
   const basketCount = basket.reduce((total, line) => total + line.quantity, 0);
   const activeTab: Tab = isTab(route) ? (route.screen as Tab) : (tabRoute.screen as Tab);
   const detail = isTab(route) ? null : route;
@@ -163,22 +169,32 @@ function Shell() {
           style={a.brand}
           onPress={() => navigate({ screen: 'Home' })}
         >
-          <Stamp size={40} />
-          <View style={{ flexShrink: 1 }}>
-            <Text style={a.brandName} numberOfLines={1} maxFontSizeMultiplier={1.15}>
+          <Stamp size={36} />
+          <View style={a.brandText}>
+            <Text
+              style={[a.brandName, room < 375 && a.brandNameNarrow]}
+              numberOfLines={1}
+              maxFontSizeMultiplier={1.15}
+            >
               {t('Shiv Cement', 'शिव सीमेंट')}
             </Text>
-            <Text style={a.brandPlace} numberOfLines={1} maxFontSizeMultiplier={1.15}>
-              {t('Store · Patna, Bihar', 'स्टोर · पटना, बिहार')}
-            </Text>
+            {roomy || testBuild ? (
+              <View style={a.brandLine}>
+                {testBuild ? (
+                  <View style={a.testMark}>
+                    <Text style={a.testMarkText} maxFontSizeMultiplier={1}>
+                      TEST
+                    </Text>
+                  </View>
+                ) : null}
+                {roomy ? (
+                  <Text style={a.brandPlace} numberOfLines={1} maxFontSizeMultiplier={1.15}>
+                    {t('Store · Patna, Bihar', 'स्टोर · पटना, बिहार')}
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
           </View>
-          {testBuild ? (
-            <View style={a.testMark}>
-              <Text style={a.testMarkText} maxFontSizeMultiplier={1.15}>
-                TEST
-              </Text>
-            </View>
-          ) : null}
         </Pressable>
         {Platform.OS === 'web' && (
           <IconButton
@@ -371,24 +387,41 @@ const a = StyleSheet.create({
     backgroundColor: C.ink,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: space.md,
+    paddingLeft: space.md,
+    paddingRight: space.sm,
     paddingVertical: space.sm,
-    gap: 2,
+    gap: 0,
   },
-  brand: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.md, minHeight: 48 },
+  brand: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    minHeight: 48,
+    paddingRight: space.xs,
+  },
+  brandText: { flex: 1, minWidth: 0 },
   brandName: { color: C.onInk, fontSize: textSize.lead, lineHeight: 26, fontWeight: '800' },
-  brandPlace: { color: C.onInkMuted, fontSize: textSize.small, lineHeight: 18 },
+  brandNameNarrow: { fontSize: textSize.body, lineHeight: 22 },
+  brandLine: { flexDirection: 'row', alignItems: 'center', gap: space.xs, minWidth: 0 },
+  brandPlace: { flexShrink: 1, color: C.onInkMuted, fontSize: textSize.small, lineHeight: 18 },
   testMark: {
     borderRadius: radius.control,
     borderWidth: 1,
     borderColor: C.onInkMuted,
-    paddingHorizontal: 5,
-    paddingVertical: 1,
+    paddingHorizontal: 3,
   },
-  testMarkText: { color: C.onInkMuted, fontSize: textSize.small, fontWeight: '800' },
-  languageTarget: { minWidth: 52, height: 48, alignItems: 'center', justifyContent: 'center' },
+  testMarkText: {
+    color: C.onInkMuted,
+    fontSize: textSize.small,
+    lineHeight: 16,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  languageTarget: { minWidth: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
   language: {
-    minWidth: 48,
+    minWidth: 44,
     height: 44,
     borderRadius: radius.control,
     borderWidth: 1,

@@ -530,122 +530,30 @@ textarea {
   text-decoration-color: var(--accent);
 }
 
-/* ---------- Home: the rate file. Each material is a folder tab (a link to its rates); the ink
-   folder in front holds the board's title, when it was checked and what the figures mean. ---- */
+/* ---------- Home: the rate file. One object: the ink cover on top carries the title and when the
+   board was checked; each material is a folder filed under it (a link to its rates), its tab
+   showing above the folder in front of it. Tones step through --tab-1..4 so any count reads. --- */
 .rate-board {
   display: grid;
+  align-content: start;
   margin-top: 8px;
 }
-.rate-rows {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-}
-.rate-rows > li {
-  display: flex;
-  margin-top: -6px;
-  animation: rise var(--base) var(--ease) both;
-  animation-delay: calc(160ms + var(--row, 0) * 45ms);
-}
-.rate-rows > li:first-child {
-  margin-top: 0;
-}
-.rate-row {
-  flex: 1;
-  min-width: 0;
-  display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 2px 12px;
-  min-height: 68px;
-  padding: 16px 14px 10px;
-  background: var(--tab-1);
-  color: var(--ink);
-  clip-path: polygon(0 8px, 8px 0, 52% 0, 56% 8px, 100% 8px, 100% 100%, 0 100%);
-}
-.rate-rows > li:nth-child(2) .rate-row {
-  background: var(--tab-2);
-}
-.rate-rows > li:nth-child(3) .rate-row {
-  background: var(--tab-3);
-}
-.rate-rows > li:nth-child(4) .rate-row {
-  background: var(--tab-4);
-}
-.rate-rows > li:nth-child(5) .rate-row {
-  background: var(--tab-4);
-  background: var(--tab-5);
-}
-/* An outline would be cut by the folder shape, so the tab shows focus inside its edge. */
-a.rate-row:focus-visible {
-  outline: none;
-  box-shadow: inset 0 0 0 3px var(--accent);
-}
-a.rate-row:hover .rate-name strong {
-  text-decoration: underline;
-  text-decoration-thickness: 2px;
-  text-underline-offset: 3px;
-}
-.rate-art {
-  display: block;
-  width: 44px;
-  height: 44px;
-}
-.rate-art .material-art {
-  width: 100%;
-  height: 100%;
-}
-.rate-name {
-  min-width: 0;
-  display: grid;
-}
-.rate-name strong {
-  font: 600 var(--t-figure) / 1 var(--display);
-  padding-top: 3px;
-}
-.rate-name small {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.rate-price {
-  display: grid;
-  justify-items: end;
-  text-align: right;
-}
-.rate-price strong {
-  font: 600 var(--t-figure) / 0.9 var(--display);
-  padding-top: 4px;
-  white-space: nowrap;
-}
-.rate-price small {
-  white-space: nowrap;
-}
-.rate-row-placeholder {
-  grid-template-columns: minmax(0, 1fr) 90px;
-}
-.rate-row-placeholder span {
-  height: 18px;
-  border-radius: var(--r);
-  background: var(--ground);
-}
 .rate-panel {
-  margin-top: -6px;
-  padding: 24px 20px;
+  padding: 22px 20px 26px;
   display: grid;
   gap: 14px;
   background: var(--ink);
   color: var(--on-ink);
-  clip-path: polygon(0 8px, 8px 0, 52% 0, 56% 8px, 100% 8px, 100% 100%, 0 100%);
-}
-.rate-board > .rate-panel:first-child {
-  margin-top: 0;
+  clip-path: polygon(0 8px, 8px 0, 40% 0, 44% 8px, 100% 8px, 100% 100%, 0 100%);
 }
 .rate-panel > header {
   display: flex;
   align-items: center;
   gap: 14px;
+  padding-top: 4px;
+}
+.rate-panel > header > div {
+  min-width: 0;
 }
 .rate-panel h2 {
   display: flex;
@@ -685,9 +593,105 @@ a.rate-row:hover .rate-name strong {
 .rate-panel .text-button {
   color: var(--on-ink);
 }
+.rate-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+}
+.rate-rows > li {
+  --tone: var(--tab-1);
+  display: flex;
+  min-width: 0;
+  margin-top: -8px;
+  animation: rise var(--base) var(--ease) both;
+  animation-delay: calc(160ms + var(--row, 0) * 45ms);
+}
+.rate-rows > li:nth-child(4n + 2) {
+  --tone: var(--tab-2);
+}
+.rate-rows > li:nth-child(4n + 3) {
+  --tone: var(--tab-3);
+}
+.rate-rows > li:nth-child(4n + 4) {
+  --tone: var(--tab-4);
+}
+.rate-row {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  min-height: 72px;
+  padding: 18px 16px 10px;
+  background: var(--tone);
+  color: var(--ink);
+  clip-path: polygon(0 8px, 8px 0, 52% 0, 56% 8px, 100% 8px, 100% 100%, 0 100%);
+}
+/* An outline would be cut by the folder shape, so the folder shows focus inside its edge. */
+a.rate-row:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 3px var(--accent);
+}
+a.rate-row:hover .rate-name strong {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+.rate-art {
+  display: block;
+  flex: none;
+  width: 40px;
+  height: 40px;
+}
+.rate-art .material-art {
+  width: 100%;
+  height: 100%;
+}
+.rate-name {
+  flex: 1 1 7rem;
+  min-width: 0;
+  display: grid;
+}
+.rate-name strong {
+  font: 600 var(--t-figure) / 1 var(--display);
+  padding-top: 3px;
+  overflow-wrap: anywhere;
+}
+.rate-name small {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rate-price {
+  display: grid;
+  justify-items: end;
+  margin-left: auto;
+  text-align: right;
+}
+.rate-price strong {
+  font: 600 var(--t-figure) / 0.9 var(--display);
+  font-variant-numeric: tabular-nums;
+  padding-top: 4px;
+  white-space: nowrap;
+}
+.rate-price small {
+  white-space: nowrap;
+}
+.rate-row-placeholder span {
+  flex: 1 1 0;
+  height: 18px;
+  border-radius: var(--r);
+  background: var(--ground);
+}
+.rate-row-placeholder span + span {
+  flex: 0 0 90px;
+}
 .rate-note {
+  margin-top: 10px;
   font-size: var(--t-small);
-  color: var(--on-ink-muted);
+  color: var(--muted);
 }
 /* The live rate roll: a changed figure slides out and the new one rolls in, once. */
 .rolled {
@@ -2020,7 +2024,7 @@ a.rate-row:hover .rate-name strong {
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  width: min(550px, calc(100% - 330px));
+  width: min(550px, calc(100% - 48px));
   min-height: 56px;
   padding: 12px 20px;
   border-radius: var(--r);
@@ -2053,35 +2057,51 @@ a.rate-row:hover .rate-name strong {
 .compare-launch:hover {
   background: var(--surface);
 }
+/* The assistant is a header item at every width: icon and label beside the main navigation where
+   the row has room, the icon alone (named by its hidden label) where it does not. */
 .assistant-launcher {
-  position: fixed;
-  z-index: 30;
-  right: 24px;
-  bottom: 20px;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
-  min-height: 56px;
-  padding: 10px 18px 10px 14px;
+  gap: 8px;
+  flex: none;
+  min-height: var(--touch);
+  padding: 10px 12px;
   border: 0;
   border-radius: var(--r);
-  background: var(--ink);
-  color: var(--on-ink);
-  font-weight: 650;
-  box-shadow: 0 0 0 3px var(--ground);
+  background: transparent;
+  color: var(--ink);
+  font-weight: 600;
+  white-space: nowrap;
 }
 .assistant-launcher:hover {
-  background: var(--ink-2);
+  background: var(--surface);
 }
 .assistant-launcher > span:first-child {
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  width: 26px;
+  height: 26px;
   border-radius: var(--r);
   background: var(--accent);
   color: var(--on-accent);
-  font-size: 1.1rem;
+  font-size: 0.95rem;
+  line-height: 1;
+}
+@media (max-width: 1399px) {
+  .assistant-launcher {
+    justify-content: center;
+    width: var(--touch);
+    height: var(--touch);
+    padding: 0;
+  }
+  .assistant-launcher > span:last-child {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 }
 .assistant-dialog {
   width: min(500px, calc(100% - 32px));
@@ -2362,72 +2382,28 @@ a.rate-row:hover .rate-name strong {
 }
 @media (min-width: 900px) {
   .hero {
-    grid-template-columns: 7fr 5fr;
-    align-items: end;
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+    align-items: start;
+    gap: 28px 48px;
     padding-top: 48px;
   }
   .hero h1 {
-    grid-column: 1;
+    grid-column: 1 / -1;
     grid-row: 1;
   }
   .hero-copy {
-    grid-column: 2;
-    grid-row: 1;
-    padding-bottom: 12px;
+    grid-column: 1;
+    grid-row: 2;
+    padding-top: 6px;
   }
+  /* The headline takes the full width; the copy and the rate file sit side by side under it. */
   .rate-board {
-    grid-column: 1 / -1;
-    margin-top: 20px;
-  }
-  /* Wide screens file the folders side by side: stepped tabs above the ink folder. */
-  .rate-rows {
-    display: flex;
-    align-items: stretch;
-  }
-  .rate-rows > li {
-    flex: 1 1 0;
-    min-width: 0;
-    margin: 0 -10px 0 0;
-  }
-  .rate-rows > li:last-child {
-    margin-right: 0;
-  }
-  .rate-row {
-    grid-template-columns: minmax(0, 1fr);
-    align-content: start;
-    gap: 2px;
-    min-height: 0;
-    padding: 14px 24px 12px 16px;
-    clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 100%, 0 100%);
-  }
-  .rate-rows > li:last-child .rate-row {
-    padding-right: 30px;
-  }
-  .rate-art {
-    display: none;
-  }
-  .rate-name strong {
-    font-size: clamp(1.5rem, 1rem + 1vw, 2rem);
-  }
-  .rate-price {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 0 6px;
-    justify-content: flex-start;
-    margin-top: 6px;
-    text-align: left;
+    grid-column: 2;
+    grid-row: 2;
+    margin-top: 0;
   }
   .rate-panel {
-    margin-top: 0;
-    padding: 28px 32px 30px;
-    clip-path: none;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 22rem);
-    align-items: end;
-    gap: 14px 40px;
-  }
-  .rate-panel > header {
-    grid-row: 1 / span 3;
+    padding: 26px 24px 30px;
   }
   .buying-routes {
     grid-template-columns: 5fr 7fr;
@@ -2670,32 +2646,9 @@ a.rate-row:hover .rate-name strong {
   .basket-feedback ~ .compare-launch {
     bottom: 148px;
   }
-  /* On phones the assistant sits in the header row so it never covers the rate board. */
+  /* On phones the assistant sits in the brand row so it never covers the rate board. */
   .assistant-launcher {
-    position: static;
     order: 2;
-    flex: none;
-    width: var(--touch);
-    height: var(--touch);
-    min-height: var(--touch);
-    padding: 0;
-    justify-content: center;
-    box-shadow: none;
-  }
-  .assistant-launcher > span:first-child {
-    width: auto;
-    height: auto;
-    background: none;
-    color: inherit;
-    font-size: 1.3rem;
-  }
-  .assistant-launcher > span:last-child {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
   }
   .assistant-dialog {
     width: calc(100% - 20px);
