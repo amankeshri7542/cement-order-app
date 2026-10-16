@@ -55,6 +55,7 @@ const systemNotes: Record<string, string> = {
   'Cancelled; refund requires store action.': 'रद्द; पैसा लौटाने का काम दुकान को करना है।',
   'Full refund verified by Razorpay.': 'Razorpay ने पूरा पैसा लौटाने की पुष्टि की।',
   'Cash refund recorded by store staff.': 'दुकान ने नकद लौटाना दर्ज किया।',
+  'UPI refund recorded by store staff.': 'दुकान ने UPI से पैसा लौटाना दर्ज किया।',
 };
 /**
  * The note to show under an order-history step. Older orders stored a generic
