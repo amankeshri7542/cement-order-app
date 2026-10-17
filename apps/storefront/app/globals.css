@@ -495,7 +495,9 @@ textarea {
 }
 .hero h1 > span {
   display: block;
-  animation: rise var(--enter) var(--ease) both;
+  /* Movement only: the headline is the page's largest text, so it is visible from the first
+     paint (a fade from transparent holds back Largest Contentful Paint). */
+  animation: lift var(--enter) var(--ease) both;
 }
 .hero h1 > span + span {
   animation-delay: 70ms;
@@ -2276,6 +2278,11 @@ a.rate-row:hover .rate-name strong {
   }
   to {
     transform: none;
+  }
+}
+@keyframes lift {
+  from {
+    transform: translateY(12px);
   }
 }
 @keyframes rise {
