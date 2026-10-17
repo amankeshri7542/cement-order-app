@@ -62,6 +62,13 @@ export function Login() {
   // After the code: a new account is asked for a name once (one field, skippable).
   const [naming, setNaming] = useState<User | null>(null);
   const [name, setName] = useState('');
+  // A sign-in finished elsewhere (a restored session closes the sheet) drops the question.
+  useEffect(() => {
+    if (!loginVisible) {
+      setNaming(null);
+      setName('');
+    }
+  }, [loginVisible]);
   async function finishNaming(user: User, save: boolean) {
     setBusy(true);
     setError('');
