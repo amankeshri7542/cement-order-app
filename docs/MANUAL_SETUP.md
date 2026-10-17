@@ -76,6 +76,10 @@ events (`API_STARTUP_FAILED`, `HTTP_REQUEST` with status, and so on). Read them 
 
 ## 6. Family content (decisions only the family can make)
 
+These C-numbers are this page's own. [FAMILY_CONTENT_CHECKLIST.md](FAMILY_CONTENT_CHECKLIST.md)
+numbers its content rows C1–C10 differently (there C5 is photographs); the operator checklist
+uses that file's numbers.
+
 | #   | Content                                                                                                           | Who                                  |
 | --- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
 | C1  | Real catalogue: names in Hindi and English, units, pack sizes, minimum and step quantities, prices, opening stock | Papa                                 |
