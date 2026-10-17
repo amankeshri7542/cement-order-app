@@ -411,10 +411,10 @@ test('catalog refresh retains loaded pages and search selection', async ({ page,
     // The list is virtualised, so count loaded materials by the list's own count line.
     const loaded = (text: string) => page.getByText(text, { exact: true });
     await expect(loaded('24 materials · more below')).toBeVisible();
-    // Reaching the end of the list loads the next page.
-    await rows.last().scrollIntoViewIfNeeded();
-    // Scroll with the pointer over the list, as a finger or mouse would, until the end is reached.
-    await rows.last().hover();
+    // Reaching the end of the list loads the next page. Scroll with the pointer over the list, as
+    // a finger or mouse would, until the end is reached. Point at the first row: the list renders
+    // rows in batches and may swap out whichever row is last at that moment (WebKit, 17 Oct).
+    await rows.first().hover();
     await expect(async () => {
       await page.mouse.wheel(0, 2000);
       await expect(loaded('25 materials')).toBeVisible({ timeout: 1000 });
