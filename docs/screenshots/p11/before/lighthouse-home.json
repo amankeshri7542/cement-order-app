@@ -4,30 +4,60 @@
     "accessibility": 100,
     "bestPractices": 93,
     "fcpMs": 756,
-    "lcpMs": 2462,
-    "tbtMs": 28,
+    "lcpMs": 2465,
+    "tbtMs": 29,
     "cls": 0.141,
     "speedIndexMs": 5975,
     "transferKiB": 369,
     "lighthouse": "12.8.2",
     "failedA11y": [
-      "label-content-name-mismatch"
+      {
+        "id": "label-content-name-mismatch",
+        "nodes": [
+          "<a class=\"brand\" aria-label=\"Shiv Cement Store — home\" href=\"/\">"
+        ]
+      }
+    ],
+    "layoutShifts": [
+      {
+        "score": 0.141,
+        "node": "<main id=\"main\" class=\"site-main\">"
+      },
+      {
+        "score": 0.003,
+        "node": "<p class=\"rate-note\">"
+      }
     ]
   },
   "runs": [
     {
-      "performance": 78,
+      "performance": 87,
       "accessibility": 100,
       "bestPractices": 93,
-      "fcpMs": 762,
-      "lcpMs": 3722,
+      "fcpMs": 758,
+      "lcpMs": 2472,
       "tbtMs": 38,
       "cls": 0.141,
-      "speedIndexMs": 6506,
+      "speedIndexMs": 5991,
       "transferKiB": 369,
       "lighthouse": "12.8.2",
       "failedA11y": [
-        "label-content-name-mismatch"
+        {
+          "id": "label-content-name-mismatch",
+          "nodes": [
+            "<a class=\"brand\" aria-label=\"Shiv Cement Store — home\" href=\"/\">"
+          ]
+        }
+      ],
+      "layoutShifts": [
+        {
+          "score": 0.141,
+          "node": "<main id=\"main\" class=\"site-main\">"
+        },
+        {
+          "score": 0.003,
+          "node": "<p class=\"rate-note\">"
+        }
       ]
     },
     {
@@ -35,29 +65,59 @@
       "accessibility": 100,
       "bestPractices": 93,
       "fcpMs": 756,
-      "lcpMs": 2462,
-      "tbtMs": 28,
+      "lcpMs": 2465,
+      "tbtMs": 29,
       "cls": 0.141,
       "speedIndexMs": 5975,
       "transferKiB": 369,
       "lighthouse": "12.8.2",
       "failedA11y": [
-        "label-content-name-mismatch"
+        {
+          "id": "label-content-name-mismatch",
+          "nodes": [
+            "<a class=\"brand\" aria-label=\"Shiv Cement Store — home\" href=\"/\">"
+          ]
+        }
+      ],
+      "layoutShifts": [
+        {
+          "score": 0.141,
+          "node": "<main id=\"main\" class=\"site-main\">"
+        },
+        {
+          "score": 0.003,
+          "node": "<p class=\"rate-note\">"
+        }
       ]
     },
     {
       "performance": 87,
       "accessibility": 100,
       "bestPractices": 93,
-      "fcpMs": 756,
-      "lcpMs": 2462,
-      "tbtMs": 27,
+      "fcpMs": 757,
+      "lcpMs": 2466,
+      "tbtMs": 30,
       "cls": 0.141,
-      "speedIndexMs": 5981,
+      "speedIndexMs": 5977,
       "transferKiB": 369,
       "lighthouse": "12.8.2",
       "failedA11y": [
-        "label-content-name-mismatch"
+        {
+          "id": "label-content-name-mismatch",
+          "nodes": [
+            "<a class=\"brand\" aria-label=\"Shiv Cement Store — home\" href=\"/\">"
+          ]
+        }
+      ],
+      "layoutShifts": [
+        {
+          "score": 0.141,
+          "node": "<main id=\"main\" class=\"site-main\">"
+        },
+        {
+          "score": 0.003,
+          "node": "<p class=\"rate-note\">"
+        }
       ]
     }
   ]

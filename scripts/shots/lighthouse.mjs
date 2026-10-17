@@ -132,6 +132,56 @@ try {
   children.push(site);
   await waitFor('http://localhost:3031/');
 
+  // Optional: LH_PROBE=1 lists layout-shift sources in a throttled Chrome instead of Lighthouse.
+  if (process.env.LH_PROBE) {
+    const { chromium } = await import('@playwright/test');
+    const browser = await chromium.launch({ channel: 'chrome' });
+    const ctx = await browser.newContext({
+      viewport: { width: 412, height: 823 },
+      deviceScaleFactor: 1.75,
+      isMobile: true,
+      hasTouch: true,
+      userAgent:
+        'Mozilla/5.0 (Linux; Android 11; moto g power (2022)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Mobile Safari/537.36',
+      ignoreHTTPSErrors: true,
+    });
+    const page = await ctx.newPage();
+    const cdp = await ctx.newCDPSession(page);
+    await cdp.send('Network.emulateNetworkConditions', {
+      offline: false,
+      latency: 150,
+      downloadThroughput: (1.6 * 1024 * 1024) / 8,
+      uploadThroughput: (750 * 1024) / 8,
+    });
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+    await page.addInitScript(() => {
+      window.shifts = [];
+      new PerformanceObserver((list) => {
+        for (const e of list.getEntries())
+          window.shifts.push({
+            at: Math.round(e.startTime),
+            value: e.value.toFixed(3),
+            sources: e.sources.slice(0, 3).map((x) => ({
+              node: x.node?.outerHTML?.slice(0, 70) || x.node?.nodeName,
+              from: `${Math.round(x.previousRect.y)}h${Math.round(x.previousRect.height)}`,
+              to: `${Math.round(x.currentRect.y)}h${Math.round(x.currentRect.height)}`,
+            })),
+          });
+      }).observe({ type: 'layout-shift', buffered: true });
+    });
+    page.on(
+      'console',
+      (m) => m.type() === 'error' && console.log('console:', m.text().slice(0, 160)),
+    );
+    await page.goto('http://localhost:3031/');
+    await page.waitForTimeout(8000);
+    if (process.env.LH_PROBE_SHOT) await page.screenshot({ path: process.env.LH_PROBE_SHOT });
+    console.log(JSON.stringify(await page.evaluate(() => window.shifts)));
+    await browser.close();
+    proxy.close();
+    process.exit(0);
+  }
+
   // 4. Lighthouse, mobile defaults, a few runs; the median run is kept.
   const results = [];
   for (let i = 0; i < runs; i++) {
@@ -176,7 +226,13 @@ try {
       layoutShifts: (report.audits['layout-shifts']?.details?.items || []).map((item) => ({
         score: Number(item.score?.toFixed?.(3) ?? item.score),
         node: item.node?.snippet,
+        causes: (item.subItems?.items || []).map(
+          (sub) => sub.extra?.value || sub.cause || JSON.stringify(sub).slice(0, 120),
+        ),
       })),
+      shiftCulprits: (report.audits['layout-shift-elements']?.details?.items || [])
+        .slice(0, 5)
+        .map((item) => item.node?.snippet),
     });
   }
   results.sort((a, b) => a.performance - b.performance);

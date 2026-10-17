@@ -1,5 +1,6 @@
 {
   "/ @390": {
+    "lowContrast": [],
     "height": 7375,
     "h1": 1,
     "unnamed": [],
@@ -23,6 +24,7 @@
     ]
   },
   "/products @390": {
+    "lowContrast": [],
     "height": 4418,
     "h1": 1,
     "unnamed": [],
@@ -30,6 +32,7 @@
     "placeholderText": []
   },
   "/cart @390": {
+    "lowContrast": [],
     "height": 1509,
     "h1": 1,
     "unnamed": [],
@@ -37,6 +40,7 @@
     "placeholderText": []
   },
   "/account @390": {
+    "lowContrast": [],
     "height": 1504,
     "h1": 1,
     "unnamed": [],
@@ -44,6 +48,7 @@
     "placeholderText": []
   },
   "/ @1440": {
+    "lowContrast": [],
     "height": 4517,
     "h1": 1,
     "unnamed": [],
@@ -67,6 +72,7 @@
     ]
   },
   "/products @1440": {
+    "lowContrast": [],
     "height": 2312,
     "h1": 1,
     "unnamed": [],
@@ -74,6 +80,7 @@
     "placeholderText": []
   },
   "/cart @1440": {
+    "lowContrast": [],
     "height": 1052,
     "h1": 1,
     "unnamed": [],
@@ -81,8 +88,41 @@
     "placeholderText": []
   },
   "/account @1440": {
+    "lowContrast": [],
     "height": 1052,
     "h1": 1,
+    "unnamed": [],
+    "small": [],
+    "placeholderText": []
+  },
+  "app home en @390": {
+    "lowContrast": [],
+    "height": 800,
+    "h1": 2,
+    "unnamed": [],
+    "small": [],
+    "placeholderText": []
+  },
+  "app materials en @390": {
+    "lowContrast": [],
+    "height": 800,
+    "h1": 0,
+    "unnamed": [],
+    "small": [],
+    "placeholderText": []
+  },
+  "app home hi @390": {
+    "lowContrast": [],
+    "height": 800,
+    "h1": 2,
+    "unnamed": [],
+    "small": [],
+    "placeholderText": []
+  },
+  "app materials hi @390": {
+    "lowContrast": [],
+    "height": 800,
+    "h1": 0,
     "unnamed": [],
     "small": [],
     "placeholderText": []
