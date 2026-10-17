@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Page } from '@playwright/test';
-import { test, expect } from './fixtures';
+import { test, expect, verifyAndSkipName } from './fixtures';
 
 // Website order history: the same track, cancel and reorder the app offers (journeys.spec.ts).
 const site = 'http://localhost:3004';
@@ -20,7 +20,9 @@ async function login(page: Page, phone: string) {
     .getByRole('main')
     .getByLabel('Six-digit code')
     .fill((await response.json()).devCode);
-  await page.getByRole('button', { name: 'Verify and continue', exact: true }).click();
+  await verifyAndSkipName(page, () =>
+    page.getByRole('button', { name: 'Verify and continue', exact: true }).click(),
+  );
   await expect(page).toHaveURL(`${site}/orders`);
 }
 

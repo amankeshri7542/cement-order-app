@@ -2,7 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import type { APIRequestContext, Page } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import { productSchema } from '@shiv/shared';
-import { test, expect } from './fixtures';
+import { test, expect, verifyAndSkipName } from './fixtures';
 
 const site = 'http://localhost:3004';
 const api = 'http://localhost:4010/api/v1';
@@ -78,7 +78,9 @@ async function login(page: Page, phone: string, next = '/cart') {
     .getByRole('main')
     .getByLabel('Six-digit code')
     .fill((await response.json()).devCode);
-  await page.getByRole('button', { name: 'Verify and continue', exact: true }).click();
+  await verifyAndSkipName(page, () =>
+    page.getByRole('button', { name: 'Verify and continue', exact: true }).click(),
+  );
   await expect(page).toHaveURL(`${site}${next}`);
 }
 async function seedAddress(page: Page, phone: string) {

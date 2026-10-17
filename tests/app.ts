@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { expect } from './fixtures';
+import { expect, verifyAndSkipName } from './fixtures';
 
 // How the browser journeys drive the customer app (Expo web build on :8082). Keeping the app's
 // labels in one place means a design change touches these helpers, not every journey.
@@ -15,7 +15,9 @@ export async function verifyCode(page: Page, phone: string) {
   await page.getByRole('button', { name: 'Get verification code', exact: true }).click();
   const code = (await (await requested).json()).devCode;
   await page.getByRole('textbox', { name: 'Verification code', exact: true }).fill(code);
-  await page.getByRole('button', { name: 'Verify & continue', exact: true }).click();
+  await verifyAndSkipName(page, () =>
+    page.getByRole('button', { name: 'Verify & continue', exact: true }).click(),
+  );
   await expect(page.getByRole('dialog')).toBeHidden();
   await expect(page.getByRole('button', { name: 'Verify & continue', exact: true })).toBeHidden();
 }

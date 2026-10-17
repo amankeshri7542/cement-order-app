@@ -481,7 +481,7 @@ test('storefront checks supported and unsupported delivery pincodes read-only', 
   await page.getByRole('main').getByLabel('Delivery pincode').fill('999999');
   await page.getByRole('button', { name: 'Check pincode' }).click();
   await expect(
-    page.getByRole('main').getByText('Delivery is not listed for this pincode.', { exact: true }),
+    page.getByRole('main').getByText('999999 is not on the delivery list yet.', { exact: true }),
   ).toBeVisible();
 });
 
@@ -549,7 +549,7 @@ test('storefront delivery rechecks owner zone changes and rejects an older delay
     await expect(result).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Checking…', exact: true })).toBeDisabled();
     await updateZone(false, 34500);
-    await expect(result).toContainText('Delivery is not listed for this pincode.');
+    await expect(result).toContainText('is not on the delivery list yet.');
     const oldResponse = page.waitForResponse(
       (response) => response.headers()['x-test-delayed'] === 'zone-revision',
     );
@@ -561,7 +561,7 @@ test('storefront delivery rechecks owner zone changes and rejects an older delay
           requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
         ),
     );
-    await expect(result).toContainText('Delivery is not listed for this pincode.');
+    await expect(result).toContainText('is not on the delivery list yet.');
     await expect(result).not.toContainText('₹234.00');
     await expect(page.getByRole('main').getByLabel('Delivery pincode')).toHaveValue('880021');
   } finally {
@@ -604,7 +604,7 @@ test('storefront delivery input edits invalidate pending responses and prevent o
     const result = page.locator('#delivery .delivery-result');
     await expect(result).toHaveCount(0);
     await page.getByRole('button', { name: 'Check pincode', exact: true }).click();
-    await expect(result).toContainText('Delivery is not listed for this pincode.');
+    await expect(result).toContainText('is not on the delivery list yet.');
     const oldResponse = page.waitForResponse(
       (response) => response.headers()['x-test-delayed'] === 'input-edit',
     );
@@ -617,7 +617,7 @@ test('storefront delivery input edits invalidate pending responses and prevent o
         ),
     );
     await expect(page.getByRole('main').getByLabel('Delivery pincode')).toHaveValue('999999');
-    await expect(result).toContainText('Delivery is not listed for this pincode.');
+    await expect(result).toContainText('is not on the delivery list yet.');
     await expect(result).not.toContainText('Test delivery');
     expect(checked).toEqual(['800020', '999999']);
     await page.getByRole('main').getByLabel('Delivery pincode').fill('800099');

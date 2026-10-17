@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import type { APIRequestContext, Page } from '@playwright/test';
-import { test, expect } from './fixtures';
+import { test, expect, verifyAndSkipName } from './fixtures';
 
 // Website account parity with the Android app: profile, signed-in devices, account deletion
 // and sharing an order on WhatsApp. Each test signs in with its own 98888400xx number.
@@ -63,7 +63,9 @@ async function login(page: Page, phone: string) {
   const response = await otp;
   expect(response.status(), await response.text()).toBe(201);
   await main.getByLabel('Six-digit code').fill((await response.json()).devCode);
-  await page.getByRole('button', { name: 'Verify and continue', exact: true }).click();
+  await verifyAndSkipName(page, () =>
+    page.getByRole('button', { name: 'Verify and continue', exact: true }).click(),
+  );
   await expect(page).toHaveURL(`${site}/orders`);
 }
 /** A second sign-in for the same number, as another phone would make it (bearer tokens). */
@@ -321,5 +323,9 @@ test('signing out removes private drafts from this browser but keeps recovery re
     ],
     id,
   );
-  expect(left.sort()).toEqual([...recovery].sort());
+  // Besides recovery records only the "name already asked" hint stays (no private data), so a
+  // returning customer is not asked for a name again.
+  expect(left.filter((key) => key !== `shiv_name_asked_${id}`).sort()).toEqual(
+    [...recovery].sort(),
+  );
 });

@@ -200,4 +200,26 @@ export const customerFeatures: readonly CustomerFeature[] = [
       'tests/catalogue-hindi.spec.ts › a Hindi name saved on the desk reaches Hindi readers; English is unchanged',
     ],
   },
+  {
+    id: 'first-run',
+    en: 'First order guide, remembered pincode, name asked once',
+    hi: 'पहले ऑर्डर की राह, याद रहा पिनकोड, नाम एक बार',
+    app: [
+      'tests/first-run.spec.ts › app first run: language, pincode, basket, sign-in with name, order, what happens next',
+    ],
+    web: [
+      'tests/first-run.spec.ts › website first run: language, pincode, basket, sign-in with name, order, what happens next',
+    ],
+  },
+  {
+    id: 'next-steps',
+    en: 'What happens next after an order',
+    hi: 'ऑर्डर के बाद आगे क्या होगा',
+    app: [
+      'tests/first-run.spec.ts › app first run: language, pincode, basket, sign-in with name, order, what happens next',
+    ],
+    web: [
+      'tests/first-run.spec.ts › website first run: language, pincode, basket, sign-in with name, order, what happens next',
+    ],
+  },
 ];

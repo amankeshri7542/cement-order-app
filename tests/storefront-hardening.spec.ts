@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import type { Page } from '@playwright/test';
-import { test, expect } from './fixtures';
+import { test, expect, verifyAndSkipName } from './fixtures';
 
 // Audit F14/F36 regressions: checkout review survival, guest taps, compare, dates and layout.
 const site = 'http://localhost:3004';
@@ -71,7 +71,9 @@ async function login(page: Page, phone: string, next = '/cart') {
     .getByRole('main')
     .getByLabel('Six-digit code')
     .fill((await response.json()).devCode);
-  await page.getByRole('button', { name: 'Verify and continue', exact: true }).click();
+  await verifyAndSkipName(page, () =>
+    page.getByRole('button', { name: 'Verify and continue', exact: true }).click(),
+  );
   await expect(page).toHaveURL(`${site}${next}`);
 }
 async function seedAddress(page: Page, phone: string) {

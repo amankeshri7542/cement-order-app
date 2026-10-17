@@ -54,6 +54,33 @@ export async function skipLanguageChooser(context: BrowserContext) {
   });
 }
 
+/**
+ * Presses the verify button. A customer account without a name is then asked for one, once per
+ * browser (Phase 11); this skips that question so a journey continues where it was going. The
+ * answer from /auth/otp/verify decides, so the step is never guessed from timing.
+ */
+export async function verifyAndSkipName(page: Page, verify: () => Promise<unknown>) {
+  const verified = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/auth/otp/verify') && response.request().method() === 'POST',
+  );
+  await verify();
+  const response = await verified;
+  const user = response.ok()
+    ? ((await response.json().catch(() => null))?.user as
+        { id: string; name: string; role: string } | undefined)
+    : undefined;
+  if (!user || user.role === 'ADMIN' || user.name.trim()) return;
+  const asked = await page.evaluate((id) => {
+    try {
+      return localStorage.getItem(`shiv_name_asked_${id}`);
+    } catch {
+      return null;
+    }
+  }, user.id);
+  if (!asked) await page.getByRole('button', { name: /^(Skip for now|अभी छोड़ें)$/ }).click();
+}
+
 export const test = base.extend<{ authBudget: void; browserEvidence: void; appLanguage: void }>({
   appLanguage: [
     async ({ context }, use) => {

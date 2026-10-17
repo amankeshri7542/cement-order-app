@@ -43,5 +43,5 @@ tags: [order]
 - inputText: '800001'
 - hideKeyboard
 - extendedWaitUntil:
-    visible: Delivery available.*
+    visible: Delivery to 800001.*
     timeout: 15000
