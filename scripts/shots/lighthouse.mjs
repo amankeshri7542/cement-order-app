@@ -1,3 +1,4 @@
+/* global window, PerformanceObserver */
 // Mobile Lighthouse for the website's production build, with real catalogue data.
 //
 //   node scripts/shots/lighthouse.mjs <output.json> [runs=3]
