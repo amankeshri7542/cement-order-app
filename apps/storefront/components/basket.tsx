@@ -5,6 +5,7 @@ import { useCommerce, Quantity } from './commerce';
 import { ProductImage } from './product';
 import { price } from '../lib/catalog';
 import { useLanguage } from './language';
+import { Delivery } from './delivery';
 import { ApiError, publicGet, productResponse } from '../lib/api';
 import { productName, unitLabel, type Product } from '@shiv/shared';
 
@@ -133,8 +134,8 @@ export function BasketPage() {
           <aside className="order-summary">
             <p>
               {t(
-                'Delivery is calculated after you choose an address. Stock is reserved only when an order is confirmed.',
-                'पता चुनने के बाद डिलीवरी की गणना होती है। ऑर्डर पक्का होने पर ही स्टॉक आरक्षित होता है।',
+                'The delivery fee is added at checkout for your address. Stock is reserved only when an order is confirmed.',
+                'चेकआउट में आपके पते का डिलीवरी शुल्क जुड़ता है। ऑर्डर पक्का होने पर ही स्टॉक आरक्षित होता है।',
               )}
             </p>
             {/* A link cannot be disabled, so a basket that is still saving shows a button. */}
@@ -164,6 +165,7 @@ export function BasketPage() {
               {t('Refresh shared basket', 'साझा टोकरी अपडेट करें')}
             </button>
           </aside>
+          <Delivery variant="basket" />
         </div>
       ) : (
         <section className="empty-state empty-basket">

@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import type { Order, Page } from '@shiv/shared';
 import { useCommerce, saved, persist } from './commerce';
 import { AccountRequired } from './account';
@@ -10,6 +10,7 @@ import { mergePage } from '../lib/paging';
 import { dayLabel, price } from '../lib/catalog';
 import { orderShareText, whatsappShareUrl } from '../lib/share';
 import { useLanguage } from './language';
+import { NextSteps } from './first-run';
 import { historyNote, orderStatusText } from '@shiv/shared';
 
 export function Status({ status }: { status: string }) {
@@ -31,6 +32,8 @@ function Orders({ orderId }: { orderId?: string }) {
   const c = useCommerce();
   const { t, language } = useLanguage();
   const router = useRouter();
+  // Set by checkout on the first visit after placing the order.
+  const placed = useSearchParams().get('confirmed') === '1';
   const id = c.user!.id;
   const [orders, setOrders] = useState<Order[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -158,9 +161,11 @@ function Orders({ orderId }: { orderId?: string }) {
     <div className="commerce-page">
       <div className="page-heading">
         <h1>
-          {orderId
-            ? t('Your order, in progress.', 'आपका ऑर्डर, हर कदम पर।')
-            : t('Every order, in one place.', 'हर ऑर्डर, एक जगह।')}
+          {orderId && placed
+            ? t('Thank you. Your order is placed.', 'धन्यवाद। आपका ऑर्डर हो गया।')
+            : orderId
+              ? t('Your order, in progress.', 'आपका ऑर्डर, हर कदम पर।')
+              : t('Every order, in one place.', 'हर ऑर्डर, एक जगह।')}
         </h1>
         <p>
           {t(
@@ -174,7 +179,13 @@ function Orders({ orderId }: { orderId?: string }) {
       </div>
       {!orders.length && loaded && (
         <div className="empty-state">
-          <h2>{t('Your first project starts here.', 'आपका पहला काम यहाँ शुरू होता है।')}</h2>
+          <h2>{t('No orders yet.', 'अभी कोई ऑर्डर नहीं।')}</h2>
+          <p>
+            {t(
+              'Your orders and every step of their delivery will show here, on the website and in the app.',
+              'आपके ऑर्डर और उनकी डिलीवरी का हर कदम यहाँ दिखेगा, वेबसाइट पर भी और ऐप में भी।',
+            )}
+          </p>
           <Link className="button" href="/products">
             {t('Shop materials', 'सामग्री खरीदें')}
           </Link>
@@ -195,6 +206,7 @@ function Orders({ orderId }: { orderId?: string }) {
             </div>
             <Status status={order.status} />
           </div>
+          {orderId && <NextSteps order={order} placed={placed} />}
           <div className="order-record-grid">
             <div>
               <ul className="review-items">
