@@ -28,6 +28,22 @@ export const transitions: Record<OrderStatus, readonly OrderStatus[]> = {
 export const phoneSchema = z
   .string()
   .regex(/^\+91[6-9]\d{9}$/, 'Enter a valid Indian mobile number');
+/**
+ * The ten-digit part of an Indian mobile as typed, pasted or autofilled: "+91 98765 43210",
+ * "098765-43210" and "(0091) 98765 43210" all become "9876543210". A prefix is dropped only
+ * once a digit follows, so typing "+91" by hand is not erased mid-entry.
+ */
+export function localPhone(value: string) {
+  return value
+    .replace(/[\s().-]/g, '')
+    .replace(/^(?:\+91|0091)(?=\d)/, '')
+    .replace(/^91(?=[6-9]\d{9}$)/, '')
+    .replace(/^0(?=[6-9])/, '');
+}
+/** For digits-only phone fields with a fixed +91 label: never keeps the first ten of twelve. */
+export function phoneDigits(value: string) {
+  return localPhone(value).replace(/\D/g, '').slice(0, 10);
+}
 const text = (max = 200) => z.string().trim().min(1).max(max);
 const paise = z.number().int().min(0).max(100_000_000);
 const id = z.string().min(1).max(100);

@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import test from 'node:test';
 import {
+  phoneDigits,
   clientConfigSchema,
   historyNote,
   shortDayLabel,
@@ -141,5 +144,24 @@ test('order history notes hide status codes and show server notes in Hindi', () 
   assert.equal(
     historyNote('Customer asked for evening delivery', 'hi'),
     'Customer asked for evening delivery',
+  );
+});
+
+test('phone fields keep the right ten digits from pasted and autofilled numbers', () => {
+  for (const value of ['919876543210', '+91 98765 43210', '0091 98765 43210', '098765-43210'])
+    assert.equal(phoneDigits(value), '9876543210', value);
+  // A ten-digit number that starts with 91 is a real number, not a prefix.
+  assert.equal(phoneDigits('9198765432'), '9198765432');
+  assert.equal(phoneDigits('+9'), '9');
+  // The app and the desk used to keep the first ten of twelve digits ("9198765432").
+  const root = resolve(import.meta.dirname, '../../..');
+  for (const file of ['apps/mobile/src/account.tsx', 'apps/admin/app/page.tsx']) {
+    const text = readFileSync(resolve(root, file), 'utf8');
+    assert.match(text, /setPhone\(phoneDigits\(/, file);
+    assert.doesNotMatch(text, /setPhone\([^)]*replace\(\/\\D\/g, ''\)\.slice\(0, 10\)/, file);
+  }
+  assert.doesNotMatch(
+    readFileSync(resolve(root, 'apps/mobile/src/account.tsx'), 'utf8'),
+    /maxLength=\{10\}/,
   );
 });

@@ -35,6 +35,7 @@ import {
   User,
   dateLabel,
   money,
+  phoneDigits,
 } from '@shiv/shared';
 import { API_URL, ApiError, api } from '../lib/api';
 import { LanguageProvider, useLanguage, useWords } from '../lib/i18n';
@@ -1279,7 +1280,7 @@ function Login({ onLogin, forbidden }: { onLogin: (u: User) => void; forbidden: 
                   autoComplete="tel-national"
                   value={phone}
                   disabled={sent}
-                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                  onChange={(e) => setPhone(phoneDigits(e.target.value))}
                   required
                   pattern="[6-9][0-9]{9}"
                   aria-label={t('Staff mobile number', 'स्टाफ़ का मोबाइल नंबर')}

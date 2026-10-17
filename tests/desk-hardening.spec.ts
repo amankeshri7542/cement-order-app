@@ -232,3 +232,15 @@ test('a malformed reply shows the recovery screen and Try again restores the des
   await page.getByRole('button', { name: 'Try again' }).dispatchEvent('click');
   await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
 });
+
+test('a pasted +91 or 91 number keeps the right ten digits on the desk sign-in', async ({
+  page,
+}) => {
+  await page.goto(desk);
+  const field = page.getByRole('textbox', { name: 'Staff mobile number' });
+  // Before the fix, "919297513751" became "9192975137", a different valid mobile.
+  for (const pasted of [`91${phone}`, '+91 92975 13751', '092975-13751']) {
+    await field.fill(pasted);
+    await expect(field).toHaveValue(phone);
+  }
+});

@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   addressSchema,
   momentLabel,
+  phoneDigits,
   radius,
   space,
   textSize,
@@ -118,11 +119,12 @@ export function Login() {
             <Field
               label={`${t('Mobile number', 'मोबाइल नंबर')} (+91)`}
               value={phone}
-              onChangeText={(v) => setPhone(v.replace(/\D/g, '').slice(0, 10))}
+              onChangeText={(v) => setPhone(phoneDigits(v))}
               keyboardType="phone-pad"
               autoComplete="tel"
               textContentType="telephoneNumber"
-              maxLength={10}
+              // Room for a pasted "+91 98765 43210"; phoneDigits keeps the ten digits.
+              maxLength={18}
               editable={!sent && !busy}
               placeholder={t('10-digit mobile number', '10 अंकों का मोबाइल नंबर')}
               returnKeyType="send"
