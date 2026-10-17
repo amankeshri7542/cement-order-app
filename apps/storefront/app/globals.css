@@ -491,7 +491,9 @@ textarea {
   padding: 32px 0 0;
 }
 .hero h1 {
-  font-size: var(--t-display);
+  /* Never wider than the screen allows: with large phone text the rem-based size would
+     otherwise put one word per line. At normal text sizes the token wins. */
+  font-size: min(var(--t-display), 15vw);
 }
 .hero h1 > span {
   display: block;
@@ -2478,9 +2480,10 @@ a.rate-row:hover .rate-name strong {
     flex: 1 1 13rem;
     gap: 10px;
   }
+  /* In rem, so the stamp grows with large phone text instead of clipping its letters. */
   .brand .brand-stamp {
-    width: 44px;
-    height: 44px;
+    width: 2.75rem;
+    height: 2.75rem;
     font-size: 1.55rem;
   }
   .brand-name strong {
