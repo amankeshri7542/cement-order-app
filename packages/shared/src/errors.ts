@@ -167,6 +167,33 @@ export const customerErrorCodes = [
 ] as const satisfies readonly ErrorCode[];
 export type CustomerErrorCode = (typeof customerErrorCodes)[number];
 
+// Replies to "place order" that prove no order was created, so the app and website may forget the
+// pending request. The API checks these inside the order transaction before it writes anything.
+// Every other failure (network, 5xx, CONFLICT, IDEMPOTENCY_CONFLICT) keeps the request so the
+// customer can check the result instead of ordering twice.
+export const checkoutRefusalCodes = [
+  'PRICE_CHANGED',
+  'OUT_OF_STOCK',
+  'REVIEW_EXPIRED',
+  'CART_CHANGED',
+  'PAYMENTS_UNAVAILABLE',
+  'INVALID_DELIVERY_DATE',
+  'EMPTY_CART',
+  'INVALID_ADDRESS',
+  'NOT_SERVICEABLE',
+  'DELIVERY_MINIMUM',
+  'INVALID_QUANTITY',
+  'ORDER_TOO_LARGE',
+  // Booking limits and the owner's pause switch (apps/api/src/abuse.ts).
+  'DEMAND_REVIEW_REQUIRED',
+  'DEMAND_PAUSED',
+  'RESOURCE_LIMIT',
+] as const satisfies readonly CustomerErrorCode[];
+
+export function isCheckoutRefusal(code: string | undefined) {
+  return (checkoutRefusalCodes as readonly string[]).includes(code ?? '');
+}
+
 export const customerErrors: Record<CustomerErrorCode, Bilingual> = {
   NETWORK_ERROR: [
     'The response could not be confirmed. Check your connection and retry.',

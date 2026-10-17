@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import type { CheckoutReview, Order } from '@shiv/shared';
-import { deliveryDateOptions, placeOrderSchema } from '@shiv/shared';
+import { deliveryDateOptions, isCheckoutRefusal, placeOrderSchema } from '@shiv/shared';
 import { useCommerce, saved, persist } from './commerce';
 import { AccountRequired, AddressBook } from './account';
 import { customerApi, CustomerError } from '../lib/customer-api';
@@ -12,22 +12,6 @@ import { useLanguage } from './language';
 import { useLiveRefresh } from './live';
 
 type Pending = { reviewId: string; idempotencyKey: string };
-const rejected = new Set([
-  'PRICE_CHANGED',
-  'OUT_OF_STOCK',
-  'REVIEW_EXPIRED',
-  'CART_CHANGED',
-  'PAYMENTS_UNAVAILABLE',
-  'INVALID_DELIVERY_DATE',
-  'EMPTY_CART',
-  'INVALID_ADDRESS',
-  'DELIVERY_CHANGED',
-  'DELIVERY_UNAVAILABLE',
-  'MINIMUM_ORDER',
-  'NOT_SERVICEABLE',
-  'DELIVERY_MINIMUM',
-  'INVALID_QUANTITY',
-]);
 export function CheckoutPage() {
   return (
     <AccountRequired>
@@ -139,7 +123,7 @@ function Checkout() {
       router.replace(`/orders/${encodeURIComponent(order.id)}?confirmed=1`);
     } catch (e) {
       if (!current()) return;
-      if (e instanceof CustomerError && rejected.has(e.code)) {
+      if (e instanceof CustomerError && isCheckoutRefusal(e.code)) {
         persist(`shiv_pending_order_${id}`, null);
         setPending(null);
         invalidate();

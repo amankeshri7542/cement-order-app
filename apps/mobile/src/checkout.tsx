@@ -3,6 +3,7 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import {
   dayLabel,
   deliveryDateOptions,
+  isCheckoutRefusal,
   shortDayLabel,
   weekdayLabel,
   money,
@@ -479,18 +480,7 @@ export function Checkout() {
         }
       }
     } catch (e) {
-      if (
-        e instanceof ApiError &&
-        [
-          'PRICE_CHANGED',
-          'OUT_OF_STOCK',
-          'REVIEW_EXPIRED',
-          'CART_CHANGED',
-          'PAYMENTS_UNAVAILABLE',
-          'INVALID_DELIVERY_DATE',
-          'EMPTY_CART',
-        ].includes(e.code)
-      ) {
+      if (e instanceof ApiError && isCheckoutRefusal(e.code)) {
         await savePendingCheckout(null).catch(() => {});
         setReview(null);
         setAccepted(false);
