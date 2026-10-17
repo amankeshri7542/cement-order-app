@@ -1,4 +1,4 @@
-/* global window, PerformanceObserver */
+/* global window, document, PerformanceObserver */
 // Mobile Lighthouse for the website's production build, with real catalogue data.
 //
 //   node scripts/shots/lighthouse.mjs <output.json> [runs=3]
@@ -6,7 +6,7 @@
 // Run scripts/shots/prepare.mjs demo first. A production build refuses a plain-http API, so this
 // serves the test API (NODE_ENV=test, the demo database) through a throwaway self-signed HTTPS
 // proxy on localhost:4443 and builds the website against it (dist dir .next-lighthouse). Lighthouse
-// runs with its default mobile emulation and simulated slow 4G; Chrome is told to accept only this
+// pins the 12.x line and runs with its default mobile emulation and simulated slow 4G; Chrome is told to accept only this
 // temporary certificate's errors. Nothing here is deployed or added to package.json (npx).
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
@@ -109,7 +109,7 @@ try {
       upstream.on('error', () => res.writeHead(502).end());
       req.pipe(upstream);
     },
-  ).listen(4443, '127.0.0.1');
+  ).listen(4443, '::');
   await waitFor('https://localhost:4443/api/v1/health', true);
 
   // 3. The production website, built against the HTTPS API.
@@ -183,26 +183,50 @@ try {
     process.exit(0);
   }
 
+  // What a customer sees in this production build: no review notes or placeholder slots.
+  const { chromium } = await import('@playwright/test');
+  const viewer = await chromium.launch({ channel: 'chrome' });
+  const viewPage = await (await viewer.newContext({ ignoreHTTPSErrors: true })).newPage();
+  await viewPage.goto('http://localhost:3031/');
+  await viewPage
+    .locator('.rate-row:not(.rate-row-placeholder), .rate-empty')
+    .first()
+    .waitFor({ timeout: 30000 })
+    .catch(() => {});
+  await viewPage.waitForTimeout(1500);
+  const production = await viewPage.evaluate(() => ({
+    reviewNotes: document.querySelectorAll('.review-note').length,
+    placeholderText: /goes here|आएगी|Review note/i.test(document.body.innerText),
+    pageHeight: document.documentElement.scrollHeight,
+  }));
+  await viewer.close();
+
   // 4. Lighthouse, mobile defaults, a few runs; the median run is kept.
   const results = [];
   for (let i = 0; i < runs; i++) {
     const file = join(temp, `run-${i}.json`);
-    const run = spawnSync(
-      'npx',
-      [
-        '--yes',
-        'lighthouse@12',
-        'http://localhost:3031/',
-        '--quiet',
-        '--output=json',
-        `--output-path=${file}`,
-        '--only-categories=performance,accessibility,best-practices',
-        '--chrome-flags=--headless=new --ignore-certificate-errors',
-      ],
-      { stdio: 'ignore' },
-    );
-    if (run.status !== 0) throw new Error('Lighthouse failed');
+    // Asynchronous on purpose: the HTTPS proxy runs in this process and must keep answering.
+    const status = await new Promise((done) => {
+      const child = spawn(
+        'npx',
+        [
+          '--yes',
+          'lighthouse@12',
+          'http://localhost:3031/',
+          '--quiet',
+          '--output=json',
+          `--output-path=${file}`,
+          '--only-categories=performance,accessibility,best-practices',
+          '--chrome-flags=--headless=new --ignore-certificate-errors',
+        ],
+        { stdio: 'ignore' },
+      );
+      child.on('exit', done);
+    });
+    if (status !== 0) throw new Error('Lighthouse failed');
     const report = JSON.parse(readFileSync(file, 'utf8'));
+    // LH_KEEP=<file> keeps the last full report (filmstrip, trace-derived audits) for review.
+    if (process.env.LH_KEEP) writeFileSync(process.env.LH_KEEP, JSON.stringify(report));
     const audit = (id) => report.audits[id]?.numericValue;
     results.push({
       performance: Math.round(report.categories.performance.score * 100),
@@ -238,7 +262,8 @@ try {
   }
   results.sort((a, b) => a.performance - b.performance);
   const median = results[Math.floor(results.length / 2)];
-  writeFileSync(output, JSON.stringify({ median, runs: results }, null, 2));
+  writeFileSync(output, JSON.stringify({ median, production, runs: results }, null, 2));
+  console.log(JSON.stringify(production));
   console.log(JSON.stringify(median));
   proxy.close();
 } finally {

@@ -19,7 +19,7 @@ the desk still look unfinished. Ranked P0 (blocks a first order or shows somethi
   `/account` at 390 and 1440 px; app home and Materials in both languages.
 - **Lighthouse 12.8.2**: production website build, mobile defaults (simulated slow 4G, 4× CPU),
   median of 3 runs, home page with the demo catalogue → `before/lighthouse-home.json`
-  (`scripts/shots/lighthouse.mjs`).
+  (`scripts/shots/lighthouse.mjs`). Lab numbers on this Mac, not field data from real phones.
 - **Production builds**: `apps/storefront/lib/review.ts:3-4`. `ReviewNote` boxes show only when
   `NEXT_PUBLIC_CONTENT_REVIEW=on` or outside production. The dev screenshots show them; a
   production build does not. The app's TEST mark shows only when `appEnv !== 'production'`
@@ -27,18 +27,27 @@ the desk still look unfinished. Ranked P0 (blocks a first order or shows somethi
 
 ## Baseline numbers (before any Phase 11 change)
 
-| Check                              | Result                                                                        |
-| ---------------------------------- | ----------------------------------------------------------------------------- |
-| Lighthouse performance / a11y / BP | 87 / 100 / 93                                                                 |
-| LCP · FCP · TBT · Speed Index      | 2.46 s · 0.76 s · 29 ms · 5.98 s                                              |
-| CLS                                | **0.141** (over the 0.1 "good" line), attributed to `<main>`                  |
-| Transfer (home)                    | 369 KiB                                                                       |
-| Tap targets < 44 px                | 0 on the website pages above; 0 in the app screens above                      |
-| Unnamed controls                   | 0                                                                             |
-| Text under WCAG AA contrast        | 0 found (method: computed colours; text over images or gradients not covered) |
-| `h1` per page                      | 1 on every website page                                                       |
-| Home page height                   | **7,375 px at 390 px** (≈ 9 phone screens), 4,517 px at 1440 px               |
-| Lighthouse failed a11y audit       | `label-content-name-mismatch` on the header brand link                        |
+> **Correction (same day).** The first Lighthouse baseline in this file (performance 87, CLS
+> 0.141) was measured while the API was unreachable from Lighthouse's Chrome. The script ran
+> Lighthouse synchronously, which froze its own HTTPS proxy, so every API call timed out and
+> the page showed its outage warning. The 0.141 shift was that warning appearing. The script is
+> fixed (`scripts/shots/lighthouse.mjs`, asynchronous run, dual-stack proxy) and the numbers
+> below are re-measured on the pre-Phase-11 website code (commit `b45dab0`) with the API
+> answering.
+
+| Check                              | Result                                                                 |
+| ---------------------------------- | ---------------------------------------------------------------------- |
+| Lighthouse performance / a11y / BP | 86 / 100 / 93                                                          |
+| LCP · FCP · TBT · Speed Index      | **4.16 s** · 0.76 s · 51 ms · 0.76 s                                   |
+| LCP element                        | the headline "every rate in plain sight."; 3.7 s of it is render delay |
+| CLS                                | 0.001                                                                  |
+| Transfer (home)                    | 418 KiB                                                                |
+| Tap targets < 44 px                | 0 on the website pages above; 0 in the app screens above               |
+| Unnamed controls                   | 0                                                                      |
+| Text under WCAG AA contrast        | 0 found (computed colours; text over images or gradients not covered)  |
+| `h1` per page                      | 1 on every website page                                                |
+| Home page height                   | **7,375 px at 390 px** (≈ 9 phone screens), 4,517 px at 1440 px        |
+| Lighthouse failed a11y audit       | `label-content-name-mismatch` on the header brand link                 |
 
 ## P0: fix before anyone outside the family uses it
 
@@ -113,13 +122,13 @@ on the website the new-address form starts with an empty "Recipient name" and ph
 address lands on checkout with its radio button unticked, and "Review current order" is greyed
 out with no explanation. Screenshot: `before/storefront/checkout-390-en.jpg`.
 
-### P1-6 · Cumulative layout shift 0.141 on the mobile home page
+### P1-6 · Slow Largest Contentful Paint on the mobile home page (4.16 s)
 
-Lighthouse attributes it to `<main id="main">` and lists no cause. I could **not** reproduce it
-with the browser's layout-shift API in a throttled Chrome at Lighthouse's device settings
-(412×823, 1.75×, Android UA): the largest shift there was 0.001 (the rate-board stamp moving
-11 px). It needs a performance-trace review. Phase 11 changes to the hero and home order may
-move it; the AFTER run reports what happened.
+Lighthouse names the headline span "every rate in plain sight." as the LCP element, with 3.7 s
+of render delay. The headline fades in from transparent (`rise` keyframes,
+`apps/storefront/app/globals.css:496-499`), and a transparent paint does not count, so LCP
+waits for the animation. (An earlier "CLS 0.141" finding here was a measurement error; see the
+correction above. Real CLS is 0.001.)
 
 ### P1-7 · Large text: the website header breaks up at 200 %
 
@@ -166,4 +175,4 @@ follow the same rule (not changed in this phase).
 1. P0-1, P0-2, P0-3 (placeholder, what happens next, owner checklist).
 2. P1-3, P1-4, P1-5 (remember the pincode, ask the name once, pick the address).
 3. P1-1, P1-2 (shorter home, no hero gap), then P1-7 (large-text header) and P2-1 to P2-4.
-4. P1-6 re-measured after the home changes; P1-8 and P2-5 are left for Aman to decide.
+4. P1-6 (headline animation), then P1-8 and P2-5 are left for Aman to decide.
