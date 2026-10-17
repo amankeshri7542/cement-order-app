@@ -34,6 +34,7 @@ import { api } from './api';
 import { useStore } from './store';
 import { awards } from './trust';
 import { useReorder } from './orders';
+import { FirstOrderCard } from './first-run';
 import {
   Bone,
   Button,
@@ -251,9 +252,13 @@ type DeliveryResult = {
     freeDeliveryAbovePaise: number | null;
   };
 };
-export function DeliveryCheck() {
-  const { t, say } = useStore();
-  const [pincode, setPincode] = useState('');
+/**
+ * The pincode check on Home and in the basket. The last checked pincode is remembered on this
+ * phone, checked again on return, and used to start a new address.
+ */
+export function DeliveryCheck({ inBasket = false, site }: { inBasket?: boolean; site?: string }) {
+  const { t, say, pincode: saved, rememberPincode, navigate } = useStore();
+  const [pincode, setPincode] = useState(saved);
   const [result, setResult] = useState<DeliveryResult | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -275,19 +280,34 @@ export function DeliveryCheck() {
     setResult(null);
     try {
       const response = await api<DeliveryResult>(`/delivery/${value}`);
-      if (current === request.current) setResult(response);
+      if (current !== request.current) return;
+      setResult(response);
+      rememberPincode(value);
     } catch (e) {
       if (current === request.current) setError(say(e));
     } finally {
       if (current === request.current) setBusy(false);
     }
   }
+  // The chosen delivery address wins; otherwise a pincode remembered from an earlier visit (read
+  // from storage after launch). Either is checked again whenever it changes.
+  const target = site || saved;
+  const checkedTarget = useRef('');
+  useEffect(() => {
+    if (!target || checkedTarget.current === target) return;
+    checkedTarget.current = target;
+    setPincode(target);
+    void check(target);
+  }, [target]);
+  const zone = result?.serviceable ? result.zone : null;
   return (
     <View style={[s.card, { gap: space.md }]}>
       <View style={s.row}>
         <Icon name="location-outline" color={C.ink} />
         <Text style={[s.h3, { flex: 1 }]}>
-          {t('Delivery to your site', 'आपकी साइट पर डिलीवरी')}
+          {inBasket
+            ? t('Delivery to your site', 'आपकी साइट पर डिलीवरी')
+            : t('Check delivery for your site', 'अपनी साइट पर डिलीवरी जाँचें')}
         </Text>
       </View>
       <View style={[s.row, { gap: space.sm, flexWrap: 'wrap' }]}>
@@ -316,25 +336,41 @@ export function DeliveryCheck() {
         </Button>
       </View>
       {error ? <Notice error>{error}</Notice> : null}
-      {result &&
-        (result.serviceable && result.zone ? (
-          <Notice tone="good">
+      {result && zone ? (
+        <Notice tone="good">
+          {t(`Delivery to ${pincode} · ${zone.name}`, `${pincode} पर डिलीवरी · ${zone.name}`)}
+          {'\n'}
+          {t(
+            `Delivery fee ${money(zone.deliveryFeePaise)} · minimum order ${money(zone.minimumOrderPaise)}`,
+            `डिलीवरी शुल्क ${money(zone.deliveryFeePaise)} · न्यूनतम ऑर्डर ${money(zone.minimumOrderPaise)}`,
+          )}
+          {zone.freeDeliveryAbovePaise !== null
+            ? t(
+                ` · free above ${money(zone.freeDeliveryAbovePaise)}`,
+                ` · ${money(zone.freeDeliveryAbovePaise)} से ऊपर मुफ़्त`,
+              )
+            : ''}
+          {zone.estimate ? `\n${t('Delivery time', 'डिलीवरी का समय')}: ${zone.estimate}` : ''}
+          {zone.terms ? `\n${t('Delivery terms', 'डिलीवरी शर्तें')}: ${zone.terms}` : ''}
+        </Notice>
+      ) : null}
+      {result && !zone ? (
+        <View style={{ gap: space.sm }}>
+          <Notice tone="warn">
             {t(
-              `Delivery available · ${result.zone.name}\n${result.zone.estimate}\nDelivery ${money(result.zone.deliveryFeePaise)} · minimum order ${money(result.zone.minimumOrderPaise)}${result.zone.freeDeliveryAbovePaise !== null ? ` · free above ${money(result.zone.freeDeliveryAbovePaise)}` : ''}`,
-              `डिलीवरी उपलब्ध · ${result.zone.name}\n${result.zone.estimate}\nडिलीवरी ${money(result.zone.deliveryFeePaise)} · न्यूनतम ऑर्डर ${money(result.zone.minimumOrderPaise)}${result.zone.freeDeliveryAbovePaise !== null ? ` · ${money(result.zone.freeDeliveryAbovePaise)} से ऊपर मुफ़्त` : ''}`,
-            )}
-            {result.zone.terms
-              ? `\n${t('Delivery terms', 'डिलीवरी शर्तें')}: ${result.zone.terms}`
-              : ''}
-          </Notice>
-        ) : (
-          <Notice>
-            {t(
-              'This pincode is not on our delivery list yet. Call or WhatsApp the store to discuss your site.',
-              'यह पिनकोड अभी हमारी डिलीवरी सूची में नहीं है। अपनी साइट के बारे में दुकान को फ़ोन या WhatsApp करें।',
+              `${pincode} is not on the shop's delivery list yet. Check that it is the pincode of your site. For another area, send a bulk quote: the shop replies with freight if it can deliver there.`,
+              `${pincode} अभी दुकान की डिलीवरी सूची में नहीं है। जाँचें कि यह आपकी साइट का पिनकोड है। दूसरे इलाक़े के लिए थोक भाव माँगें: दुकान वहाँ पहुँचा सके तो भाड़े के साथ जवाब देगी।`,
             )}
           </Notice>
-        ))}
+          <Button
+            kind="quiet"
+            icon="document-text-outline"
+            onPress={() => navigate({ screen: 'QuoteRequest' })}
+          >
+            {t('Ask for a bulk quote', 'थोक भाव माँगें')}
+          </Button>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -540,8 +576,14 @@ export function Home() {
     [t('Ask Shiv Sahayak', 'शिव सहायक से पूछें'), () => navigate({ screen: 'Assistant' })],
     [t('Compare', 'तुलना करें'), () => navigate({ screen: 'Compare' })],
   ];
+  const firstName = user?.name.trim().split(/\s+/)[0];
   return (
     <Screen onRefresh={() => void refreshCurrent()} refreshing={refreshing}>
+      {firstName ? (
+        <Text style={[s.h3, { marginBottom: -space.sm }]} maxFontSizeMultiplier={headingScale}>
+          {t(`Namaste, ${firstName}`, `नमस्ते, ${firstName}`)}
+        </Text>
+      ) : null}
       {user && <LatestOrder />}
       <RateBoard />
       <View style={cs.links}>
@@ -556,6 +598,7 @@ export function Home() {
           </Pressable>
         ))}
       </View>
+      <FirstOrderCard />
       <DeliveryCheck />
       <View style={[s.paper, { gap: space.md }]}>
         <View style={[s.row, { alignItems: 'flex-start' }]}>

@@ -30,6 +30,7 @@ import { makeKey, readSaved, useStore, writeSaved } from './store';
 import { OrderStatusTag } from './catalog';
 import { Button, C, Empty, headingScale, Icon, Notice, s, Screen } from './ui';
 import { payOnline } from './payment';
+import { NextSteps } from './first-run';
 
 export async function confirm(
   text: string,
@@ -381,8 +382,6 @@ export function OrderDetail() {
         )}
       </Screen>
     );
-  const steps = ['CONFIRMED', 'PREPARING', 'OUT_FOR_DELIVERY', 'DELIVERED'];
-  const current = steps.indexOf(order.status);
   const needsAttention = [
     'PENDING_PAYMENT',
     'CANCELLED',
@@ -491,41 +490,7 @@ export function OrderDetail() {
           {order.number} · {t('placed', 'दिया')} {momentLabel(order.createdAt, language)}
         </Text>
       </View>
-      {current >= 0 && (
-        <View style={[s.card, { gap: 0 }]}>
-          {steps.map((step, i) => (
-            <View key={step} style={[s.row, { paddingVertical: space.sm }]}>
-              <View
-                style={{
-                  height: 30,
-                  width: 30,
-                  borderRadius: 15,
-                  backgroundColor: i <= current ? C.ok : C.tab1,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <Icon
-                  name={i <= current ? 'checkmark' : 'ellipse-outline'}
-                  size={16}
-                  color={i <= current ? C.surface : C.muted}
-                />
-              </View>
-              <Text
-                style={[
-                  s.body,
-                  {
-                    color: i <= current ? C.ink : C.muted,
-                    fontWeight: i === current ? '800' : '400',
-                  },
-                ]}
-              >
-                {orderStatusText(step, language)}
-              </Text>
-            </View>
-          ))}
-        </View>
-      )}
+      <NextSteps order={order} />
       {order.work?.acknowledgedAt && (
         <Notice tone="good">
           {t('The store has seen your order', 'दुकान ने आपका ऑर्डर देख लिया है')}
