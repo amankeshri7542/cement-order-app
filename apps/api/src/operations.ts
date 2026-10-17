@@ -6,12 +6,11 @@ import {
   deletionSchema,
   deliveryZoneSchema,
   inventorySchema,
-  totals,
 } from '@shiv/shared';
 import { Db } from './db';
 import { Admin, AuthRequest, Contract, Input, Public, fail } from './http';
 import { Events } from './catalog';
-import { moveStock } from './inventory';
+import { moveStock, orderTotals } from './inventory';
 import { paginate } from './pagination';
 
 const evidenceId = z.string().regex(/^[A-Za-z0-9_:-]{1,200}$/);
@@ -125,6 +124,8 @@ export class OperationsController {
   ) {
     if (body.kind !== 'MANUAL_ADJUSTMENT' && body.quantity < 1)
       fail('INVALID_QUANTITY', 'Enter a positive quantity.');
+    if (body.kind !== 'WALK_IN_SALE' && (body.unitPricePaise || body.channel || body.counterParty))
+      fail('INVALID_INPUT', 'Price, payment and buyer apply only to counter sales.');
     const quantity = ['WALK_IN_SALE', 'DAMAGE'].includes(body.kind)
       ? -body.quantity
       : body.quantity;
@@ -135,25 +136,50 @@ export class OperationsController {
               where: { idempotencyKey: body.idempotencyKey },
             })
           : null;
+      const { unitPricePaise, channel, counterParty, ...stock } = body;
       const movement = await moveStock(tx, {
-        ...body,
+        ...stock,
         quantity,
         productId: id,
         actorId: req.user.id,
       });
+      if (movement.kind === 'WALK_IN_SALE' && priorSale) {
+        // A replay must repeat the sale it names. An old stock-only sale has no money record,
+        // and a replay without a price keeps the original even if the list price moved since.
+        const money = await tx.financialMovement.findUnique({
+          where: { inventoryMovementId: movement.id },
+        });
+        if (
+          money &&
+          ((unitPricePaise &&
+            money.amountPaise !==
+              orderTotals([{ pricePaise: unitPricePaise, quantity: -movement.quantity }], 0, null)
+                .totalPaise) ||
+            money.channel !== (channel || '') ||
+            money.counterParty !== (counterParty || ''))
+        )
+          fail(
+            'IDEMPOTENCY_CONFLICT',
+            'This counter sale was already recorded with a different price, payment or buyer. Refresh to see the recorded sale.',
+            409,
+          );
+      }
       // An old stock-only sale has no known original price; replay must not invent one.
       if (movement.kind === 'WALK_IN_SALE' && !priorSale) {
         const product = await tx.product.findUniqueOrThrow({ where: { id } });
+        // The counter price can be negotiated; the list price is used when none is given.
         await tx.financialMovement.upsert({
           where: { inventoryMovementId: movement.id },
           create: {
             inventoryMovementId: movement.id,
             kind: 'COUNTER_SALE',
-            amountPaise: totals(
-              [{ pricePaise: product.pricePaise, quantity: -movement.quantity }],
+            amountPaise: orderTotals(
+              [{ pricePaise: unitPricePaise || product.pricePaise, quantity: -movement.quantity }],
               0,
               null,
             ).totalPaise,
+            channel: channel || '',
+            counterParty: counterParty || '',
             actorId: req.user.id,
             occurredAt: movement.createdAt,
           },
@@ -297,6 +323,8 @@ export class OperationsController {
                 in: [req.user.id, ...orders.map((o) => o.id), ...quotes.map((q) => q.id)],
               },
             },
+            // Staff entries about this customer, e.g. a demand override and its free-text reason.
+            { details: { path: ['userId'], equals: req.user.id } },
           ],
         },
         select: { id: true, details: true },
@@ -311,6 +339,23 @@ export class OperationsController {
       await tx.address.deleteMany({ where });
       await tx.cartItem.deleteMany({ where });
       await tx.notification.deleteMany({ where });
+      await tx.pushSubscription.deleteMany({ where });
+      await tx.outboundMessage.deleteMany({ where });
+      // Owner WhatsApp copies about this customer's orders and quotes carry their area.
+      const work = await tx.ownerWork.findMany({
+        where: {
+          OR: [
+            { orderId: { in: orders.map((o) => o.id) } },
+            { quoteId: { in: quotes.map((q) => q.id) } },
+          ],
+        },
+        select: { id: true },
+      });
+      if (work.length)
+        await tx.outboundMessage.updateMany({
+          where: { OR: work.map((w) => ({ dedupeKey: { startsWith: `wa:owner:${w.id}:` } })) },
+          data: { params: [] },
+        });
       await tx.checkoutReview.updateMany({ where, data: { snapshot: { deleted: true } } });
       await tx.deliveryAttempt.updateMany({ where: { order: where }, data: { note: '' } });
       await tx.order.updateMany({
@@ -358,6 +403,17 @@ export class OperationsController {
           decisionNote: '',
         },
       });
+      // Open requests and offers cannot be delivered to a deleted account: close them.
+      const closed = await tx.quote.updateMany({
+        where: { ...where, status: { in: ['REQUESTED', 'SENT', 'ACCEPTED'] }, order: null },
+        data: {
+          status: 'REJECTED',
+          decisionSource: 'CUSTOMER',
+          decisionActorId: req.user.id,
+          decisionAt: new Date(),
+          decisionNote: 'Closed: customer account deleted.',
+        },
+      });
       await tx.otpChallenge.deleteMany({ where: { phone: req.user.phone } });
       await tx.user.update({
         where: { id: req.user.id },
@@ -374,7 +430,10 @@ export class OperationsController {
           actorId: req.user.id,
           event: 'ACCOUNT_DELETED',
           entityId: req.user.id,
-          details: { retained: 'De-identified order/payment and audit records' },
+          details: {
+            retained: 'De-identified order/payment and audit records',
+            closedQuotes: closed.count,
+          },
         },
       });
     });

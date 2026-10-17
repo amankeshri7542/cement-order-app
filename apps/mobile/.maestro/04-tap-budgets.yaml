@@ -1,0 +1,44 @@
+# Runs after 03-guest-order (same signed-in customer, saved address). Counts taps for the
+# plan's budgets: product → COD order ≤ 4, track latest order 1, reorder into basket 1.
+appId: in.shivcement.store
+tags: [order]
+---
+- launchApp
+- extendedWaitUntil:
+    visible: Your latest order
+    timeout: 15000
+# Track latest order: 1 tap.
+- tapOn: Track
+- extendedWaitUntil:
+    visible: Confirmed
+    timeout: 10000
+- assertVisible: Order again
+- tapOn:
+    text: Home
+    index: 0
+# Reorder: 1 tap puts the last order's materials in the basket.
+- tapOn: Order again
+- extendedWaitUntil:
+    visible: Your basket
+    timeout: 10000
+- tapOn: Remove UltraTech Super
+- tapOn:
+    text: Materials
+    index: 0
+- tapOn: Search materials
+- inputText: UltraTech
+- hideKeyboard
+- extendedWaitUntil:
+    visible: View UltraTech Super
+    timeout: 10000
+# Product → COD order in 4 taps: Add, Basket, Review order, Place order.
+- tapOn: Add to basket # 1
+- tapOn: Basket.* # 2
+- tapOn: Review order # 3
+- extendedWaitUntil:
+    visible: Place order.*
+    timeout: 15000
+- tapOn: Place order.* # 4
+- extendedWaitUntil:
+    visible: Confirmed
+    timeout: 15000

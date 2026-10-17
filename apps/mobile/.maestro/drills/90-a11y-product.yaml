@@ -1,0 +1,17 @@
+# Opens the product screen for scripts/android-a11y-audit.mjs (48dp targets, spoken names).
+appId: in.shivcement.store
+---
+- launchApp
+- extendedWaitUntil:
+    visible: Current rates
+    timeout: 30000
+- tapOn:
+    text: Materials
+    index: 0
+- tapOn: Search materials
+- inputText: UltraTech
+- hideKeyboard
+- tapOn: View UltraTech Super
+- extendedWaitUntil:
+    visible: Add to basket
+    timeout: 30000

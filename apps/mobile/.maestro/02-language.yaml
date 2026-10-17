@@ -1,0 +1,21 @@
+# Smoke: Hindi first-launch choice, kept after a restart, switchable in one tap.
+appId: in.shivcement.store
+tags: [smoke]
+---
+- launchApp:
+    clearState: true
+- tapOn: हिंदी चुनें
+- extendedWaitUntil:
+    visible: मौजूदा भाव
+    timeout: 15000
+- assertVisible: सामग्री
+- assertVisible: टोकरी
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible: मौजूदा भाव
+    timeout: 15000
+- tapOn: भाषा अंग्रेज़ी में बदलें
+- extendedWaitUntil:
+    visible: Current rates
+    timeout: 5000

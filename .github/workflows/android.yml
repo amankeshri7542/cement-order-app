@@ -1,0 +1,98 @@
+name: Android app journeys
+# Builds the release APK (local QA variant) and runs the Maestro journeys on an Android 10
+# emulator against a seeded API on the runner's loopback. Mock sign-in codes never leave it.
+on:
+  pull_request:
+    paths:
+      - 'apps/mobile/**'
+      - 'packages/shared/**'
+      - 'apps/api/src/**'
+      - 'apps/api/prisma/**'
+      - '.github/workflows/android.yml'
+      - 'package.json'
+      - 'package-lock.json'
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  maestro:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: shiv
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: shiv_cement
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U shiv"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      CI: '1'
+      MAESTRO_CLI_NO_ANALYTICS: '1'
+      MAESTRO_CLI_ANALYSIS_NOTIFICATION_DISABLED: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - run: npm ci
+      - name: Seeded local API (mock sign-in, loopback only)
+        run: |
+          printf '%s\n' \
+            'NODE_ENV=development' 'PORT=4000' \
+            'DATABASE_URL=postgresql://shiv:ci-only-password@127.0.0.1:5432/shiv_cement' \
+            'OTP_PROVIDER=mock' 'OTP_HASH_SECRET=ci-only-secret-with-at-least-thirty-two-characters' \
+            > apps/api/.env
+          npm run db:generate && npm run build -w @shiv/shared && npm run db:migrate && npm run db:seed
+          (cd apps/api && nohup npx tsx --env-file=.env src/main.ts > ../../api.log 2>&1 &)
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:4000/api/v1/health && break; sleep 2; done
+      - name: Build the release APK (emulator architecture only)
+        working-directory: apps/mobile
+        env:
+          APP_VARIANT: local
+          EXPO_PUBLIC_API_URL: http://localhost:4000/api/v1
+        run: |
+          npx expo prebuild --platform android --no-install
+          cd android && ./gradlew assembleRelease -PreactNativeArchitectures=x86_64 --no-daemon
+      - name: Install Maestro
+        run: |
+          curl -Ls "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+      - name: Maestro journeys on Android 10
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 29
+          arch: x86_64
+          target: google_apis
+          profile: pixel_4
+          disable-animations: true
+          script: |
+            adb install -r apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+            adb reverse tcp:4000 tcp:4000
+            maestro test --format junit --output maestro-report.xml apps/mobile/.maestro/
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-journeys
+          path: |
+            maestro-report.xml
+            api.log
+            ~/.maestro/tests/
+          include-hidden-files: true

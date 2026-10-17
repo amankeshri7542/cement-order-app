@@ -1,137 +1,100 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Linking, Platform, Pressable, Share, Text, View } from 'react-native';
-import { CartLine, Order, Page, money, statusLabel } from '@shiv/shared';
-import { api, message } from './api';
+import {
+  Alert,
+  AppState,
+  FlatList,
+  Linking,
+  Platform,
+  Pressable,
+  RefreshControl,
+  Share,
+  Text,
+  View,
+} from 'react-native';
+import {
+  dateLabel,
+  dayLabel,
+  historyNote,
+  momentLabel,
+  money,
+  orderStatusText,
+  paymentStatusText,
+  space,
+  type CartLine,
+  type Language,
+  type Order,
+  type Page,
+} from '@shiv/shared';
+import { api } from './api';
 import { makeKey, readSaved, useStore, writeSaved } from './store';
-import { Button, C, Empty, Icon, Notice, Tag, s } from './ui';
+import { OrderStatusTag } from './catalog';
+import { Button, C, Empty, headingScale, Icon, Notice, s, Screen } from './ui';
 import { payOnline } from './payment';
-export async function confirm(message: string) {
-  if (Platform.OS === 'web') return window.confirm(message);
+
+export async function confirm(
+  text: string,
+  language: Language,
+  yes = language === 'hi' ? 'हाँ' : 'Confirm',
+  no = language === 'hi' ? 'नहीं' : 'Keep order',
+) {
+  if (Platform.OS === 'web') return window.confirm(text);
   return new Promise<boolean>((resolve) =>
     Alert.alert(
-      'Please confirm',
-      message,
+      language === 'hi' ? 'कृपया पक्का करें' : 'Please confirm',
+      text,
       [
-        { text: 'Keep order', style: 'cancel', onPress: () => resolve(false) },
-        { text: 'Confirm', style: 'destructive', onPress: () => resolve(true) },
+        { text: no, style: 'cancel', onPress: () => resolve(false) },
+        { text: yes, style: 'destructive', onPress: () => resolve(true) },
       ],
       { cancelable: true, onDismiss: () => resolve(false) },
     ),
   );
 }
-export function Orders() {
-  const { t, navigate, registerRefresh, rememberOrder } = useStore();
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [cursor, setCursor] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const request = useRef(0);
-  const load = useCallback(async (after?: string) => {
-    const current = ++request.current;
-    setLoading(true);
-    try {
-      const page = await api<Page<Order>>(
-        `/orders?limit=24${after ? '&cursor=' + encodeURIComponent(after) : ''}`,
-      );
-      if (current !== request.current) return;
-      setOrders((old) =>
-        after
-          ? [...new Map([...old, ...page.items].map((order) => [order.id, order])).values()]
-          : page.items,
-      );
-      setCursor(page.nextCursor);
-      setError('');
-    } catch (e) {
-      if (current === request.current) setError(message(e));
-    } finally {
-      if (current === request.current) setLoading(false);
-    }
-  }, []);
+
+/** Polls only while the app is on screen; the phone's data and battery are not spent in the background. */
+function useForegroundInterval(callback: () => void, ms: number | null) {
+  const saved = useRef(callback);
+  saved.current = callback;
   useEffect(() => {
-    void load();
-    const timer = setInterval(() => void load(), 30000);
-    const online = () => void load();
-    if (Platform.OS === 'web') window.addEventListener('online', online);
-    return () => {
-      request.current++;
-      clearInterval(timer);
-      if (Platform.OS === 'web') window.removeEventListener('online', online);
+    if (!ms) return;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const start = () => {
+      if (!timer) timer = setInterval(() => saved.current(), ms);
     };
-  }, [load]);
-  useEffect(() => registerRefresh(() => load()), [load, registerRefresh]);
-  return (
-    <View style={s.stack}>
-      <View style={s.between}>
-        <Text style={s.title}>{t('orders')}</Text>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Refresh orders"
-          onPress={() => void load()}
-          style={{ padding: 12 }}
-        >
-          <Icon name="refresh-outline" />
-        </Pressable>
-      </View>
-      {Boolean(error) && <Notice error>{error}</Notice>}
-      {loading && <Text style={s.body}>{t('loading')}</Text>}
-      {!loading && !error && !orders.length && (
-        <Empty
-          icon="receipt-outline"
-          title={t('emptyOrders')}
-          body="Your order history and delivery updates will be here."
-          action={t('browse')}
-          onAction={() => navigate({ screen: 'Products' })}
-        />
-      )}
-      {orders.map((o) => (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`Open ${o.number}`}
-          key={o.id}
-          onPress={() => {
-            rememberOrder(o);
-            navigate({ screen: 'Order', id: o.id });
-          }}
-          style={[s.card, s.stack]}
-        >
-          <View style={s.between}>
-            <Text style={{ color: C.ink, fontWeight: '700', fontSize: 15 }}>{o.number}</Text>
-            <Tag tone={o.status === 'DELIVERED' ? 'green' : 'yellow'}>{statusLabel(o.status)}</Tag>
-          </View>
-          <Text style={s.body}>{o.items.map((i) => `${i.name} × ${i.quantity}`).join('\n')}</Text>
-          <View style={s.divider} />
-          <View style={s.between}>
-            <Text style={s.body}>Delivery {o.deliveryDate}</Text>
-            <Text style={[s.price, { fontSize: 20 }]}>{money(o.totalPaise)}</Text>
-            <Icon name="arrow-forward" size={19} />
-          </View>
-        </Pressable>
-      ))}
-      {cursor && (
-        <Button loading={loading} onPress={() => void load(cursor)}>
-          Load more orders
-        </Button>
-      )}
-    </View>
-  );
+    const stop = () => {
+      if (timer) clearInterval(timer);
+      timer = null;
+    };
+    if (AppState.currentState === 'active' || Platform.OS === 'web') start();
+    const sub = AppState.addEventListener('change', (state) =>
+      state === 'active' ? start() : stop(),
+    );
+    return () => {
+      stop();
+      sub.remove();
+    };
+  }, [ms]);
 }
-export function OrderDetail() {
-  const { route, t, navigate, mutateCart, setToast, user, ordersById, registerRefresh, settings } =
-    useStore();
-  const [order, setOrder] = useState<Order | null>(() => ordersById[route.id || ''] || null);
-  const [error, setError] = useState('');
+
+/**
+ * "Order again": adds a past order's materials to the basket. The request key is saved first,
+ * so a lost reply can be checked again without adding the materials twice.
+ */
+export function useReorder(order: Order | null) {
+  const { user, mutateCart, navigate, setToast, say, t } = useStore();
+  const [key, setKey] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [reorderKey, setReorderKey] = useState<string | null>(null);
-  const [reorderReady, setReorderReady] = useState(false);
-  const [reorderError, setReorderError] = useState('');
-  const reordering = useRef(false);
-  const reorderStorageKey = user && route.id ? `shiv_reorder_${user.id}_${route.id}` : '';
+  const [error, setError] = useState('');
+  const running = useRef(false);
+  const storageKey = user && order ? `shiv_reorder_${user.id}_${order.id}` : '';
   useEffect(() => {
     let active = true;
-    setReorderReady(false);
-    setReorderKey(null);
-    if (!reorderStorageKey) return;
-    void readSaved<string>(reorderStorageKey)
+    setReady(false);
+    setKey(null);
+    setError('');
+    if (!storageKey) return;
+    void readSaved<string>(storageKey)
       .then((saved) => {
         if (!active) return;
         if (
@@ -139,103 +102,284 @@ export function OrderDetail() {
           (typeof saved !== 'string' ||
             !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(saved))
         )
-          throw new Error(
-            'The saved reorder request could not be read. Contact the store before ordering again.',
-          );
-        setReorderKey(saved);
-        setReorderReady(true);
+          throw new Error('unreadable');
+        setKey(saved);
+        setReady(true);
       })
-      .catch((error) => {
+      .catch(() => {
         if (active)
-          setReorderError(`Could not restore your last reorder request. ${message(error)}`);
+          setError(
+            t(
+              'Could not restore your last reorder request. Contact the store before ordering again.',
+              'आपका पिछला दोबारा-ऑर्डर अनुरोध नहीं मिल सका। फिर से मँगाने से पहले दुकान से बात करें।',
+            ),
+          );
       });
     return () => {
       active = false;
     };
-  }, [reorderStorageKey]);
-  const request = useRef(0);
-  const load = useCallback(async () => {
-    const current = ++request.current;
-    try {
-      const updated = await api<Order>(`/orders/${route.id}`);
-      if (current !== request.current) return;
-      setOrder(updated);
-      setError('');
-    } catch (e) {
-      if (current === request.current) setError(message(e));
-    }
-  }, [route.id]);
-  useEffect(() => {
-    void load();
-    const timer = setInterval(() => void load(), 15000);
-    const online = () => void load();
-    if (Platform.OS === 'web') window.addEventListener('online', online);
-    return () => {
-      request.current++;
-      clearInterval(timer);
-      if (Platform.OS === 'web') window.removeEventListener('online', online);
-    };
-  }, [load]);
-  useEffect(() => registerRefresh(load), [load, registerRefresh]);
-  async function reorder() {
-    if (!order || !user || !reorderReady || reordering.current) return;
-    reordering.current = true;
+  }, [storageKey]);
+  async function run() {
+    if (!order || !user || !ready || running.current) return;
+    running.current = true;
     const ownerId = user.id;
-    const key = reorderKey || makeKey();
-    setReorderKey(key);
-    setReorderError('');
+    const requestKey = key || makeKey();
+    setKey(requestKey);
+    setError('');
     setBusy(true);
     try {
       let cleanupFailed = false;
-      let returnedNotices: string[] = [];
+      let notices: string[] = [];
       const applied = await mutateCart(ownerId, async (isCurrent) => {
-        await writeSaved(reorderStorageKey, key);
+        await writeSaved(storageKey, requestKey);
         if (!isCurrent()) return [];
         const result = await api<{ notices: string[]; cart: CartLine[] }>(
           `/orders/${order.id}/reorder`,
           'POST',
-          { idempotencyKey: key },
+          { idempotencyKey: requestKey },
         );
         if (!isCurrent()) return [];
-        returnedNotices = result.notices;
-        await writeSaved(reorderStorageKey, null).catch(() => {
+        notices = result.notices;
+        await writeSaved(storageKey, null).catch(() => {
           cleanupFailed = true;
         });
         return result.cart;
       });
       if (!applied) return;
-      setReorderKey(null);
-      const notices = [
-        ...returnedNotices,
+      setKey(null);
+      const all = [
+        ...notices,
         ...(cleanupFailed
           ? [
-              'Cart updated. If this saved request appears again, checking it will not add the materials twice.',
+              t(
+                'Basket updated. If this request appears again, checking it will not add the materials twice.',
+                'टोकरी अपडेट हो गई। यह अनुरोध फिर दिखे तो जाँचने से सामग्री दोबारा नहीं जुड़ेगी।',
+              ),
             ]
           : []),
       ];
-      if (notices.length) setToast(notices.join('\n'));
+      if (all.length) setToast(all.join('\n'));
       navigate({ screen: 'Cart' });
     } catch (e) {
-      setReorderError(
-        `The reorder result is not confirmed. Check this same request before ordering again. ${message(e)}`,
+      setError(
+        t(
+          `The reorder result is not confirmed. Check this same request before ordering again. ${say(e)}`,
+          `दोबारा-ऑर्डर का परिणाम पक्का नहीं है। फिर से मँगाने से पहले यही अनुरोध जाँचें। ${say(e)}`,
+        ),
       );
     } finally {
-      reordering.current = false;
+      running.current = false;
       setBusy(false);
     }
   }
+  return { run, busy, ready, pending: Boolean(key), error };
+}
+
+export function Orders() {
+  const { t, language, navigate, registerRefresh, rememberOrder, say, user } = useStore();
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
+  const request = useRef(0);
+  const load = useCallback(
+    async (after?: string) => {
+      const current = ++request.current;
+      if (!after) setLoading((old) => old && !orders.length);
+      try {
+        const page = await api<Page<Order>>(
+          `/orders?limit=24${after ? '&cursor=' + encodeURIComponent(after) : ''}`,
+        );
+        if (current !== request.current) return;
+        setOrders((old) =>
+          after
+            ? [...new Map([...old, ...page.items].map((order) => [order.id, order])).values()]
+            : page.items,
+        );
+        setCursor(page.nextCursor);
+        setError('');
+      } catch (e) {
+        if (current === request.current) setError(say(e));
+      } finally {
+        if (current === request.current) setLoading(false);
+      }
+    },
+    [say],
+  );
+  useEffect(() => {
+    if (!user) return;
+    void load();
+    const online = () => void load();
+    if (Platform.OS === 'web') window.addEventListener('online', online);
+    return () => {
+      request.current++;
+      if (Platform.OS === 'web') window.removeEventListener('online', online);
+    };
+  }, [load, user?.id]);
+  useEffect(() => registerRefresh(() => load()), [load, registerRefresh]);
+  if (!user)
+    return (
+      <Screen>
+        <Empty
+          icon="receipt-outline"
+          title={t('Your orders appear here', 'आपके ऑर्डर यहाँ दिखेंगे')}
+          body={t(
+            'Sign in with your mobile number to see and track orders.',
+            'ऑर्डर देखने और ट्रैक करने के लिए मोबाइल नंबर से साइन इन करें।',
+          )}
+          action={t('Sign in', 'साइन इन')}
+          onAction={() => navigate({ screen: 'Orders' })}
+        />
+      </Screen>
+    );
+  return (
+    <FlatList
+      data={orders}
+      keyExtractor={(order) => order.id}
+      contentContainerStyle={{
+        padding: space.lg,
+        gap: space.md,
+        maxWidth: 720,
+        width: '100%',
+        alignSelf: 'center',
+      }}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          colors={[C.accent]}
+          onRefresh={() => {
+            setRefreshing(true);
+            void load().finally(() => setRefreshing(false));
+          }}
+        />
+      }
+      ListHeaderComponent={
+        <View style={{ gap: space.md }}>
+          <View style={s.between}>
+            <Text style={s.h1} maxFontSizeMultiplier={headingScale} accessibilityRole="header">
+              {t('Orders', 'ऑर्डर')}
+            </Text>
+            <Button
+              kind="quiet"
+              icon="document-text-outline"
+              onPress={() => navigate({ screen: 'Quotes' })}
+            >
+              {t('Bulk quotes', 'थोक भाव')}
+            </Button>
+          </View>
+          {Boolean(error) && (
+            <View style={{ gap: space.sm }}>
+              <Notice error>{error}</Notice>
+              <Button secondary onPress={() => void load()}>
+                {t('Try again', 'फिर कोशिश करें')}
+              </Button>
+            </View>
+          )}
+          {loading && <Text style={s.body}>{t('Loading…', 'लोड हो रहा है…')}</Text>}
+        </View>
+      }
+      ListEmptyComponent={
+        !loading && !error ? (
+          <Empty
+            icon="receipt-outline"
+            title={t('No orders yet', 'अभी कोई ऑर्डर नहीं')}
+            body={t(
+              'Your orders and delivery updates will appear here.',
+              'आपके ऑर्डर और डिलीवरी की जानकारी यहाँ दिखेगी।',
+            )}
+            action={t('Browse materials', 'सामग्री देखें')}
+            onAction={() => navigate({ screen: 'Products' })}
+          />
+        ) : null
+      }
+      renderItem={({ item: o }) => (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${t('Open', 'खोलें')} ${o.number}, ${orderStatusText(o.status, language)}`}
+          onPress={() => {
+            rememberOrder(o);
+            navigate({ screen: 'Order', id: o.id });
+          }}
+          style={({ pressed }) => [s.card, { gap: space.sm }, pressed && { opacity: 0.8 }]}
+        >
+          <View style={s.between}>
+            <Text style={[s.h3, { fontVariant: ['tabular-nums'] }]}>{o.number}</Text>
+            <OrderStatusTag status={o.status} language={language} />
+          </View>
+          <Text style={s.small} numberOfLines={2}>
+            {o.items.map((i) => `${i.name} × ${i.quantity}`).join(', ')}
+          </Text>
+          <View style={s.between}>
+            <Text style={s.small}>
+              {t('Delivery', 'डिलीवरी')} {dayLabel(o.deliveryDate, language)}
+            </Text>
+            <Text style={s.price}>{money(o.totalPaise)}</Text>
+          </View>
+        </Pressable>
+      )}
+      ListFooterComponent={
+        cursor ? (
+          <Button secondary loading={loading} onPress={() => void load(cursor)}>
+            {t('Load more orders', 'और ऑर्डर दिखाएँ')}
+          </Button>
+        ) : null
+      }
+    />
+  );
+}
+
+const moving = [
+  'PENDING_PAYMENT',
+  'CONFIRMED',
+  'PREPARING',
+  'OUT_FOR_DELIVERY',
+  'DELIVERY_EXCEPTION',
+];
+
+export function OrderDetail() {
+  const { route, t, language, setToast, user, ordersById, registerRefresh, settings, say } =
+    useStore();
+  const [order, setOrder] = useState<Order | null>(() => ordersById[route.id || ''] || null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const reorder = useReorder(order);
+  const request = useRef(0);
+  const load = useCallback(async () => {
+    const current = ++request.current;
+    try {
+      const updated = await api<Order>(`/orders/${encodeURIComponent(route.id || '')}`);
+      if (current !== request.current) return;
+      setOrder(updated);
+      setError('');
+    } catch (e) {
+      if (current === request.current) setError(say(e));
+    }
+  }, [route.id, say]);
+  useEffect(() => {
+    void load();
+    const online = () => void load();
+    if (Platform.OS === 'web') window.addEventListener('online', online);
+    return () => {
+      request.current++;
+      if (Platform.OS === 'web') window.removeEventListener('online', online);
+    };
+  }, [load]);
+  // Live status only while the order is still moving; delivered and cancelled orders stay quiet.
+  useForegroundInterval(() => void load(), order && moving.includes(order.status) ? 60000 : null);
+  useEffect(() => registerRefresh(load), [load, registerRefresh]);
   if (!order)
     return (
-      <View style={s.stack}>
+      <Screen>
         {error ? (
           <>
             <Notice error>{error}</Notice>
-            <Button onPress={() => void load()}>{t('retry')}</Button>
+            <Button onPress={() => void load()}>{t('Try again', 'फिर कोशिश करें')}</Button>
           </>
         ) : (
-          <Text style={s.body}>{t('loading')}</Text>
+          <Text style={s.body}>{t('Loading…', 'लोड हो रहा है…')}</Text>
         )}
-      </View>
+      </Screen>
     );
   const steps = ['CONFIRMED', 'PREPARING', 'OUT_FOR_DELIVERY', 'DELIVERED'];
   const current = steps.indexOf(order.status);
@@ -245,38 +389,85 @@ export function OrderDetail() {
     'REFUND_PENDING',
     'DELIVERY_EXCEPTION',
   ].includes(order.status);
-  const title =
-    order.status === 'PENDING_PAYMENT'
-      ? 'Awaiting payment'
-      : order.status === 'CANCELLED'
-        ? 'Order cancelled'
-        : order.status === 'REFUND_PENDING'
-          ? 'Refund being arranged'
-          : order.status === 'REFUNDED'
-            ? 'Refund completed'
-            : order.status === 'DELIVERY_EXCEPTION'
-              ? 'Delivery needs attention'
-              : order.status === 'DELIVERED'
-                ? 'Materials delivered'
-                : t('received');
   const lastAttempt = order.deliveryAttempts?.at(-1);
   const reasons: Record<string, string> = {
-    UNAVAILABLE: 'Customer unavailable',
-    REFUSED: 'Delivery refused',
-    INACCESSIBLE: 'Site could not be reached',
+    UNAVAILABLE: t('Nobody was available at the site', 'साइट पर कोई मौजूद नहीं था'),
+    REFUSED: t('Delivery was refused', 'डिलीवरी लेने से मना किया गया'),
+    INACCESSIBLE: t('The site could not be reached', 'साइट तक नहीं पहुँच सके'),
   };
+  const phone = settings?.phone.replace(/\D/g, '');
+  const cod = order.payment.method === 'COD';
+  async function cancel() {
+    if (
+      !(await confirm(
+        t(
+          'Cancel this order? Its reserved stock will be released.',
+          'यह ऑर्डर रद्द करें? इसके लिए रखा स्टॉक छोड़ दिया जाएगा।',
+        ),
+        language,
+        t('Cancel order', 'ऑर्डर रद्द करें'),
+        t('Keep order', 'ऑर्डर रखें'),
+      ))
+    )
+      return;
+    setBusy(true);
+    try {
+      await api(`/orders/${order!.id}/cancel`, 'POST');
+      await load();
+    } catch (e) {
+      setError(say(e));
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
-    <View style={s.stack}>
+    <Screen
+      footer={
+        <View style={[s.row, { gap: space.sm }]}>
+          <Button
+            icon="repeat"
+            style={{ flex: 1 }}
+            loading={reorder.busy}
+            disabled={!reorder.ready}
+            onPress={() => void reorder.run()}
+          >
+            {reorder.pending
+              ? t('Check reorder result', 'दोबारा-ऑर्डर जाँचें')
+              : t('Order again', 'फिर से मँगाएँ')}
+          </Button>
+          {phone ? (
+            <Button
+              secondary
+              icon="logo-whatsapp"
+              style={{ flex: 1 }}
+              onPress={() =>
+                void Linking.openURL(
+                  `https://wa.me/${phone}?text=${encodeURIComponent(
+                    t(
+                      `Please help with my Shiv Cement Store order ${order.number}.`,
+                      `कृपया मेरे शिव सीमेंट स्टोर ऑर्डर ${order.number} में मदद करें।`,
+                    ),
+                  )}`,
+                ).catch(() => setToast(t('Could not open WhatsApp.', 'WhatsApp नहीं खुल सका।')))
+              }
+            >
+              {t('Help', 'मदद')}
+            </Button>
+          ) : null}
+        </View>
+      }
+    >
       {Boolean(error) && (
-        <Notice error>{error} Your last confirmed order details are shown below.</Notice>
+        <Notice error>
+          {error} {t('Your last confirmed details are shown.', 'पिछली पक्की जानकारी दिख रही है।')}
+        </Notice>
       )}
-      <View style={{ alignItems: 'center', paddingVertical: 18, gap: 10 }}>
+      <View style={{ alignItems: 'center', gap: space.sm, paddingVertical: space.md }}>
         <View
           style={{
-            width: 62,
-            height: 62,
-            borderRadius: 31,
-            backgroundColor: needsAttention ? '#fcf1cf' : '#e8f3ed',
+            width: 64,
+            height: 64,
+            backgroundColor: needsAttention ? C.dangerSoft : C.okSoft,
             alignItems: 'center',
             justifyContent: 'center',
           }}
@@ -285,36 +476,76 @@ export function OrderDetail() {
             name={
               order.status === 'CANCELLED' ? 'close' : needsAttention ? 'time-outline' : 'checkmark'
             }
-            size={31}
-            color={needsAttention ? C.navy : C.green}
+            size={32}
+            color={needsAttention ? C.danger : C.ok}
           />
         </View>
-        <Text style={s.title}>{title}</Text>
-        <Text style={s.body}>{order.number}</Text>
-        <Tag tone={needsAttention ? 'yellow' : 'green'}>{statusLabel(order.status)}</Tag>
+        <Text
+          style={[s.h1, { textAlign: 'center' }]}
+          maxFontSizeMultiplier={headingScale}
+          accessibilityRole="header"
+        >
+          {orderStatusText(order.status, language)}
+        </Text>
+        <Text style={s.body}>
+          {order.number} · {t('placed', 'दिया')} {momentLabel(order.createdAt, language)}
+        </Text>
       </View>
-      {order.work?.acknowledgedAt && (
-        <Text style={s.body}>
-          The store has acknowledged your order
-          {order.work.assignedTo?.name ? ` · ${order.work.assignedTo.name}` : ''}.
-        </Text>
+      {current >= 0 && (
+        <View style={[s.card, { gap: 0 }]}>
+          {steps.map((step, i) => (
+            <View key={step} style={[s.row, { paddingVertical: space.sm }]}>
+              <View
+                style={{
+                  height: 30,
+                  width: 30,
+                  borderRadius: 15,
+                  backgroundColor: i <= current ? C.ok : C.tab1,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Icon
+                  name={i <= current ? 'checkmark' : 'ellipse-outline'}
+                  size={16}
+                  color={i <= current ? C.surface : C.muted}
+                />
+              </View>
+              <Text
+                style={[
+                  s.body,
+                  {
+                    color: i <= current ? C.ink : C.muted,
+                    fontWeight: i === current ? '800' : '400',
+                  },
+                ]}
+              >
+                {orderStatusText(step, language)}
+              </Text>
+            </View>
+          ))}
+        </View>
       )}
-      {order.work?.technicalOwner?.name && needsAttention && (
-        <Text style={s.body}>
-          Payment checks are assigned to {order.work.technicalOwner.name}. Contact the store with
-          your order number.
-        </Text>
+      {order.work?.acknowledgedAt && (
+        <Notice tone="good">
+          {t('The store has seen your order', 'दुकान ने आपका ऑर्डर देख लिया है')}
+          {order.work.assignedTo?.name ? ` · ${order.work.assignedTo.name}` : ''}
+        </Notice>
       )}
       {order.status === 'PENDING_PAYMENT' && (
         <>
           <Notice>
-            Payment is being checked. Stock reservations can expire; refresh this order before
-            paying again. Payment is confirmed only after verification by the store’s server.
+            {t(
+              'Payment is being checked. Refresh this order before paying again; payment is confirmed only by the store’s server.',
+              'भुगतान जाँचा जा रहा है। दोबारा भुगतान से पहले यह ऑर्डर रीफ़्रेश करें; भुगतान दुकान का सर्वर ही पक्का करता है।',
+            )}
           </Notice>
           {order.payment.initializationStartedAt && !order.payment.razorpayOrderId && (
             <Notice>
-              Payment setup needs store verification. Do not make another payment. Contact the store
-              with this order number.
+              {t(
+                'Payment setup needs the store to check it. Do not pay again; contact the store with this order number.',
+                'भुगतान की जाँच दुकान करेगी। दोबारा भुगतान न करें; इस ऑर्डर नंबर के साथ दुकान से बात करें।',
+              )}
             </Notice>
           )}
           <Button
@@ -329,233 +560,157 @@ export function OrderDetail() {
                 setToast(r.message);
                 await load();
               } catch (e) {
-                setError(message(e));
+                setError(say(e));
               } finally {
                 setBusy(false);
               }
             }}
           >
-            {t('pay')} · {money(order.totalPaise)}
+            {t('Pay online', 'ऑनलाइन भुगतान')} · {money(order.totalPaise)}
           </Button>
         </>
       )}
       {order.status === 'REFUND_PENDING' && (
         <Notice>
-          Your order is cancelled and a refund is required. The store will arrange the refund;
-          contact them for an update.
+          {t(
+            'This order is cancelled and a refund is due. The store will arrange it; contact them for an update.',
+            'यह ऑर्डर रद्द है और पैसा लौटाना है। दुकान इसकी व्यवस्था करेगी; जानकारी के लिए उनसे बात करें।',
+          )}
         </Notice>
       )}
       {order.status === 'REFUNDED' && (
-        <Notice>Your payment has been refunded. This order will not be delivered.</Notice>
+        <Notice>
+          {t(
+            'Your payment has been refunded. This order will not be delivered.',
+            'आपका भुगतान लौटा दिया गया है। यह ऑर्डर डिलीवर नहीं होगा।',
+          )}
+        </Notice>
       )}
       {order.status === 'CANCELLED' && (
         <Notice>
-          This order is cancelled and will not be delivered.
-          {order.payment.status === 'PENDING' ? ' No payment has been recorded.' : ''}
+          {t(
+            'This order is cancelled and will not be delivered.',
+            'यह ऑर्डर रद्द है और डिलीवर नहीं होगा।',
+          )}
         </Notice>
       )}
       {order.status === 'DELIVERY_EXCEPTION' && (
-        <Notice>
-          {lastAttempt?.reason
-            ? reasons[lastAttempt.reason] || 'Delivery could not be completed'
-            : 'Delivery could not be completed'}
-          . Contact the store to arrange another attempt or return the materials. The delivery is
-          not complete; payment status is shown below.
+        <Notice error>
+          {(lastAttempt?.reason && reasons[lastAttempt.reason]) ||
+            t('Delivery could not be completed', 'डिलीवरी पूरी नहीं हो सकी')}
+          {'. '}
+          {t(
+            'Contact the store to arrange another attempt or a return.',
+            'दोबारा डिलीवरी या वापसी के लिए दुकान से बात करें।',
+          )}
         </Notice>
       )}
       {lastAttempt?.action === 'RETRY' && order.status !== 'DELIVERED' && (
         <Notice>
-          Another delivery attempt is arranged for {lastAttempt.retryDate || order.deliveryDate}.
+          {t('Another delivery is arranged for', 'अगली डिलीवरी की तारीख:')}{' '}
+          {dayLabel(lastAttempt.retryDate || order.deliveryDate, language)}
         </Notice>
       )}
       {lastAttempt?.action === 'RETURN' && (
         <Notice>
-          The store confirmed the physical return of the materials. Only stock accepted as sellable
-          was returned to availability.
+          {t(
+            'The store confirmed the return of the materials.',
+            'दुकान ने सामग्री की वापसी पक्की की।',
+          )}
         </Notice>
       )}
-      {Boolean(order.deliveryAttempts?.length) && (
-        <View style={[s.card, s.stack]}>
-          <Text style={s.h2}>Delivery updates</Text>
-          {order.deliveryAttempts?.map((attempt) => (
-            <View key={attempt.id} style={s.stack}>
-              <Text style={s.body}>
-                {attempt.action === 'REPORT'
-                  ? reasons[attempt.reason || ''] || 'Delivery issue reported'
-                  : attempt.action === 'RETRY'
-                    ? `Retry scheduled · ${attempt.retryDate}`
-                    : 'Physical return confirmed'}
-                {attempt.note ? `\n${attempt.note}` : ''}
-              </Text>
-              <Text style={s.specification}>
-                {new Date(attempt.createdAt).toLocaleString('en-IN')}
-              </Text>
-            </View>
-          ))}
-        </View>
-      )}
-      {settings && (
-        <View style={s.row}>
-          <Button
-            secondary
-            icon="call-outline"
-            onPress={() =>
-              void Linking.openURL(`tel:${settings.phone}`).catch(() =>
-                setToast('Could not open the phone app.'),
-              )
-            }
-            style={{ flex: 1 }}
-          >
-            Call store
-          </Button>
-          <Button
-            secondary
-            icon="logo-whatsapp"
-            onPress={() =>
-              void Linking.openURL(
-                `https://wa.me/${settings.phone.replace(/\D/g, '')}?text=${encodeURIComponent(`Please help with my Shiv Cement Store order ${order.number}.`)}`,
-              ).catch(() => setToast('Could not open WhatsApp.'))
-            }
-            style={{ flex: 1 }}
-          >
-            WhatsApp
-          </Button>
-        </View>
-      )}
-      {current >= 0 && (
-        <View style={[s.card, { gap: 0 }]}>
-          {steps.map((step, i) => (
-            <View key={step} style={[s.row, { paddingVertical: 13 }]}>
-              <View
-                style={{
-                  height: 28,
-                  width: 28,
-                  borderRadius: 14,
-                  backgroundColor: i <= current ? C.green : '#e9eef2',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <Icon
-                  name={i <= current ? 'checkmark' : 'ellipse-outline'}
-                  size={15}
-                  color={i <= current ? '#fff' : '#9aaab6'}
-                />
-              </View>
-              <Text
-                style={{
-                  fontSize: 13,
-                  color: i <= current ? C.ink : '#8d9ca7',
-                  fontWeight: i === current ? '700' : '400',
-                }}
-              >
-                {statusLabel(step)}
-              </Text>
-              {i === current && (
-                <Text style={{ marginLeft: 'auto', fontSize: 10, color: C.green }}>CURRENT</Text>
-              )}
-            </View>
-          ))}
-        </View>
-      )}
-      <View style={[s.card, s.stack]}>
-        <Text style={s.h2}>{t('details')}</Text>
+      {/* The order's parchi: paper, ruled lines, square corners. */}
+      <View style={[s.paper, { gap: space.sm }]}>
+        <Text style={s.h3}>{t('Materials', 'सामग्री')}</Text>
         {order.items.map((i) => (
-          <View key={i.productId} style={s.between}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ color: C.ink, fontWeight: '600', fontSize: 13 }}>{i.name}</Text>
-              <Text style={[s.body, { fontSize: 11 }]}>
+          <View key={i.productId} style={[s.between, s.ruled, { paddingBottom: space.sm }]}>
+            <View style={{ flex: 1, minWidth: 160 }}>
+              <Text style={[s.body, { color: C.ink, fontWeight: '700' }]}>{i.name}</Text>
+              <Text style={s.small}>
                 {i.quantity} × {money(i.pricePaise)} / {i.unit}
               </Text>
             </View>
-            <Text style={{ color: C.ink, fontWeight: '600' }}>{money(i.lineTotalPaise)}</Text>
+            <Text
+              style={[s.body, { color: C.ink, fontWeight: '700', fontVariant: ['tabular-nums'] }]}
+            >
+              {money(i.lineTotalPaise)}
+            </Text>
           </View>
         ))}
-        <View style={s.divider} />
-        <View style={s.between}>
-          <Text style={s.body}>{t('delivery')}</Text>
+        <View style={[s.between, s.ruled, { paddingBottom: space.sm }]}>
+          <Text style={s.body}>{t('Delivery', 'डिलीवरी')}</Text>
           <Text style={s.body}>{money(order.deliveryFeePaise)}</Text>
         </View>
         <View style={s.between}>
-          <Text style={s.h2}>{t('total')}</Text>
-          <Text style={s.price}>{money(order.totalPaise)}</Text>
+          <Text style={s.h3}>{t('Total', 'कुल')}</Text>
+          <Text style={s.priceBig} maxFontSizeMultiplier={1.5}>
+            {money(order.totalPaise)}
+          </Text>
         </View>
-        <Text style={s.body}>
-          Payment: {order.payment.method === 'COD' ? 'Cash on delivery' : 'Online'} ·{' '}
-          {statusLabel(order.payment.status)}
+        <Text style={s.small}>
+          {cod ? t('Cash on delivery', 'डिलीवरी पर भुगतान') : t('Online', 'ऑनलाइन')} ·{' '}
+          {paymentStatusText(order.payment.status, language)}
         </Text>
       </View>
-      <View style={s.card}>
-        <Text style={{ color: C.ink, fontWeight: '700', marginBottom: 8 }}>
-          {t('address')} · {order.deliveryDate}
+      <View style={[s.card, { gap: space.xs }]}>
+        <Text style={s.h3}>
+          {t('Delivery', 'डिलीवरी')} · {dateLabel(`${order.deliveryDate}T12:00:00+05:30`, language)}
         </Text>
         <Text style={s.body}>
           {order.address.name}
           {'\n'}
           {order.address.line1}, {order.address.area}
           {'\n'}
-          {order.address.city}, Bihar {order.address.pincode}
+          {order.address.city}, {order.address.pincode}
           {'\n'}
           {order.address.phone}
           {order.notes ? `\n${order.notes}` : ''}
         </Text>
       </View>
-      {reorderKey && (
+      {reorder.pending && (
         <Notice>
-          Your previous reorder may already have updated the cart. Checking this same request will
-          not add the materials twice.
+          {t(
+            'Your previous reorder may already have updated the basket. Checking this same request will not add the materials twice.',
+            'आपका पिछला दोबारा-ऑर्डर शायद टोकरी में जुड़ चुका है। यही अनुरोध जाँचने से सामग्री दोबारा नहीं जुड़ेगी।',
+          )}
         </Notice>
       )}
-      {Boolean(reorderError) && <Notice error>{reorderError}</Notice>}
-      <Button loading={busy} disabled={!reorderReady} onPress={() => void reorder()} icon="repeat">
-        {reorderKey ? 'Check reorder result' : t('reorder')}
-      </Button>
+      {reorder.error ? <Notice error>{reorder.error}</Notice> : null}
       <Button
         secondary
+        icon="share-social-outline"
         onPress={() => {
           void Share.share({
-            message: `Shiv Cement Store — Order summary (not a GST invoice)\n${order.number}\n${order.items.map((i) => `${i.name}: ${i.quantity} × ${money(i.pricePaise)} = ${money(i.lineTotalPaise)}`).join('\n')}\nDelivery: ${money(order.deliveryFeePaise)}\nTotal: ${money(order.totalPaise)}\nPayment: ${statusLabel(order.payment.status)}`,
-          }).catch((e) => setError(message(e)));
+            message: `${t('Shiv Cement Store — order summary (not a GST invoice)', 'शिव सीमेंट स्टोर — ऑर्डर सारांश (GST बिल नहीं)')}\n${order.number}\n${order.items
+              .map(
+                (i) =>
+                  `${i.name}: ${i.quantity} × ${money(i.pricePaise)} = ${money(i.lineTotalPaise)}`,
+              )
+              .join(
+                '\n',
+              )}\n${t('Delivery', 'डिलीवरी')}: ${money(order.deliveryFeePaise)}\n${t('Total', 'कुल')}: ${money(order.totalPaise)}`,
+          }).catch((e) => setError(say(e)));
         }}
-        icon="share-outline"
       >
-        Share order summary
+        {t('Share order summary', 'ऑर्डर सारांश भेजें')}
       </Button>
       {['PENDING_PAYMENT', 'CONFIRMED'].includes(order.status) && (
-        <Button
-          secondary
-          loading={busy}
-          onPress={async () => {
-            if (!(await confirm('Cancel this order? Its reserved stock will be released.'))) return;
-            setBusy(true);
-            try {
-              await api(`/orders/${order.id}/cancel`, 'POST');
-              await load();
-            } catch (e) {
-              setError(message(e));
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          Cancel order
+        <Button kind="quiet" loading={busy} onPress={() => void cancel()}>
+          {t('Cancel order', 'ऑर्डर रद्द करें')}
         </Button>
       )}
-      <Text style={s.h2}>Order history</Text>
+      <Text style={s.h3}>{t('Order history', 'ऑर्डर का इतिहास')}</Text>
       {order.history.map((h) => (
-        <View
-          key={h.id}
-          style={{ borderLeftWidth: 2, borderLeftColor: '#cbd8e2', paddingLeft: 15, gap: 5 }}
-        >
-          <Text style={{ color: C.ink, fontWeight: '600', fontSize: 13 }}>
-            {statusLabel(h.status)}
+        <View key={h.id} style={{ backgroundColor: C.surface, padding: space.md, gap: 2 }}>
+          <Text style={[s.body, { color: C.ink, fontWeight: '700' }]}>
+            {orderStatusText(h.status, language)}
           </Text>
-          <Text style={s.body}>{h.note}</Text>
-          <Text style={[s.body, { fontSize: 10 }]}>
-            {new Date(h.createdAt).toLocaleString('en-IN')}
-          </Text>
+          {historyNote(h.note, language) ? (
+            <Text style={s.small}>{historyNote(h.note, language)}</Text>
+          ) : null}
+          <Text style={s.small}>{momentLabel(h.createdAt, language)}</Text>
         </View>
       ))}
-    </View>
+    </Screen>
   );
 }

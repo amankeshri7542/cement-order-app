@@ -1,5 +1,6 @@
 import { type Page, type Response } from '@playwright/test';
-import { test, expect, observePage } from './fixtures';
+import { test, expect, observePage, skipLanguageChooser } from './fixtures';
+import { appLogin, fillAddress, openBasket, openMaterial } from './app';
 import { PrismaClient } from '@prisma/client';
 import { mkdir } from 'node:fs/promises';
 import type { Order, Quote } from '@shiv/shared';
@@ -71,13 +72,28 @@ test('SSE outage: polling finds new work and competing owners keep one durable a
   browser,
 }) => {
   test.setTimeout(120000);
-  const fatherContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
-  const uncleContext = await browser.newContext({ viewport: { width: 360, height: 800 } });
+  // This transport-fault test needs routed requests; the alert worker is tested separately.
+  const fatherContext = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    serviceWorkers: 'block',
+  });
+  await skipLanguageChooser(fatherContext);
+  const uncleContext = await browser.newContext({
+    viewport: { width: 360, height: 800 },
+    serviceWorkers: 'block',
+  });
+  await skipLanguageChooser(uncleContext);
   const father = await fatherContext.newPage();
   const uncle = await uncleContext.newPage();
   try {
     // Transport fault injection only: polling, orders and acknowledgment use the real API.
     await father.route('**/admin/events', (route) => route.abort('connectionfailed'));
+    // WebKit's own retry can bypass the route after the first abort, so count every stream
+    // that opens from here on instead of waiting for one after the route is lifted.
+    let liveStreams = 0;
+    father.on('response', (r) => {
+      if (r.url().endsWith('/admin/events') && r.status() === 200) liveStreams++;
+    });
     await uncle.route('**/admin/events', (route) => route.abort('connectionfailed'));
     await ownerLogin(father, 34);
     await ownerLogin(uncle, 35);
@@ -89,15 +105,30 @@ test('SSE outage: polling finds new work and competing owners keep one durable a
     // No owner reload, navigation, focus or manual refresh after order submission.
     await openOrder(father, order);
     await openOrder(uncle, order);
+    // Hold both real requests until both clicks arrive: polling can otherwise remove
+    // the second owner's button before WebKit finishes its click.
+    let release = () => {};
+    let arrivals = 0;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    for (const owner of [father, uncle])
+      await owner.route(`**/orders/${order.id}/acknowledge`, async (route) => {
+        if (route.request().method() !== 'POST') return route.continue();
+        if (++arrivals === 2) release();
+        await gate;
+        await route.continue();
+      });
     const responses = [father, uncle].map((owner) =>
       owner.waitForResponse((r) => r.url().endsWith(`/orders/${order.id}/acknowledge`)),
     );
-    await Promise.all(
-      [father, uncle].map((owner) =>
-        owner.getByRole('button', { name: 'ज़िम्मेदारी लें / Acknowledge', exact: true }).click(),
-      ),
-    );
+    for (const owner of [father, uncle])
+      await owner
+        .getByRole('dialog')
+        .getByRole('button', { name: 'Acknowledge', exact: true })
+        .click();
     for (const response of await Promise.all(responses)) expect(response.status()).toBe(201);
+    expect(arrivals).toBe(2);
     const work = await db.ownerWork.findUniqueOrThrow({
       where: { orderId: order.id },
       include: { assignedTo: true },
@@ -114,18 +145,16 @@ test('SSE outage: polling finds new work and competing owners keep one durable a
     await expect(
       father.getByRole('dialog').locator('strong').filter({ hasText: work.assignedTo!.name }),
     ).toBeVisible();
-    await expect(
-      father.getByRole('dialog').getByRole('link', { name: /फ़ोन \/ Call/ }),
-    ).toHaveAttribute('href', /^tel:\+91/);
+    await expect(father.getByRole('dialog').getByRole('link', { name: /^Call/ })).toHaveAttribute(
+      'href',
+      /^tel:\+91/,
+    );
     await expect(
       father.getByRole('dialog').getByRole('link', { name: /WhatsApp/ }),
     ).toHaveAttribute('href', /^https:\/\/wa\.me\/91/);
     // Restore the real SSE transport and require automatic reconnection without a reload.
     await father.unroute('**/admin/events');
-    const reopened = father.waitForResponse(
-      (r) => r.url().endsWith('/admin/events') && r.status() === 200,
-    );
-    await reopened;
+    await expect.poll(() => liveStreams, { timeout: 30000 }).toBeGreaterThan(0);
     await father.screenshot({
       path: test.info().outputPath('polling-assignment-reconnected.png'),
       fullPage: true,
@@ -142,20 +171,21 @@ test('collected COD cancellation records one cash refund and restores stock once
 }) => {
   test.setTimeout(120000);
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  await skipLanguageChooser(context);
   const owner = await context.newPage();
   try {
     await ownerLogin(owner, 36);
     await customerLogin(page, 36);
     const { order } = await submitOrder(page, products[4]!, 5);
     await openOrder(owner, order);
-    await owner.getByRole('button', { name: /Record cash payment received/ }).click();
-    await expect(owner.getByRole('dialog').getByText('Captured', { exact: true })).toBeVisible();
+    await owner.getByRole('button', { name: 'Cash received', exact: true }).click();
+    await expect(owner.getByRole('dialog').getByText('Paid', { exact: true })).toBeVisible();
     await owner.getByRole('button', { name: 'Cancel order', exact: true }).click();
-    await expect(owner.getByRole('button', { name: /Record cash refund returned/ })).toBeVisible();
+    await expect(owner.getByRole('button', { name: 'Cash refund returned' })).toBeVisible();
     const refunded = owner.waitForResponse((r) =>
       r.url().endsWith(`/orders/${order.id}/cash-refunded`),
     );
-    await owner.getByRole('button', { name: /Record cash refund returned/ }).click();
+    await owner.getByRole('button', { name: 'Cash refund returned' }).click();
     await replay(owner, await refunded);
     const payment = await db.payment.findUniqueOrThrow({ where: { orderId: order.id } });
     expect(payment.status).toBe('REFUNDED');
@@ -202,29 +232,14 @@ test('collected COD cancellation records one cash refund and restores stock once
 
 async function customerLogin(page: Page, suffix: number) {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('http://localhost:8082');
-  await page.getByRole('tab', { name: 'Account' }).click();
-  await page.getByRole('button', { name: 'Sign in', exact: true }).last().click();
-  await page.getByRole('textbox', { name: 'Mobile number (+91)' }).fill(`98888888${suffix}`);
-  const sent = page.waitForResponse(
-    (response) => response.url().endsWith('/auth/otp/request') && response.status() === 201,
-  );
-  await page.getByRole('button', { name: 'Get verification code' }).click();
-  await page
-    .getByRole('textbox', { name: 'Verification code', exact: true })
-    .fill((await (await sent).json()).devCode);
-  await page.getByRole('button', { name: 'Verify & continue' }).click();
-  await expect(page.getByRole('dialog')).toBeHidden();
-  await expect(page.getByRole('button', { name: 'Sign out', exact: true })).toBeVisible();
+  await appLogin(page, `98888888${suffix}`);
   await page.getByRole('button', { name: 'Saved addresses', exact: true }).click();
-  for (const [name, value] of [
-    ['Recipient name', `Family review customer ${suffix}`],
-    ['Building, plot or street', 'Plot 50'],
-    ['Area / locality', 'Kankarbagh'],
-    ['Pincode', '800027'],
-  ])
-    await page.getByRole('textbox', { name, exact: true }).fill(value!);
-  await page.getByRole('button', { name: 'Save address', exact: true }).click();
+  await fillAddress(page, {
+    name: `Family review customer ${suffix}`,
+    line1: 'Plot 50',
+    area: 'Kankarbagh',
+    pincode: '800027',
+  });
   await expect(page.getByText('Address saved', { exact: true })).toBeVisible();
 }
 async function ownerLogin(page: Page, suffix: number) {
@@ -239,33 +254,26 @@ async function ownerLogin(page: Page, suffix: number) {
     .getByRole('textbox', { name: 'Verification code', exact: true })
     .fill((await (await sent).json()).devCode);
   await page.getByRole('button', { name: 'Open store desk' }).click();
-  await expect(page.getByRole('heading', { name: 'आज / Today', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
   page.on('dialog', (dialog) => dialog.accept());
 }
 async function submitOrder(page: Page, product: (typeof products)[number], quantity: number) {
-  await page.getByRole('tab', { name: 'Products' }).click();
-  await page
-    .getByRole('textbox', { name: 'Search cement, steel, sand…', exact: true })
-    .fill(product.name);
-  await page.getByRole('button', { name: `View ${product.name}`, exact: true }).click();
+  await openMaterial(page, product.name);
   await page.getByRole('textbox', { name: 'Quantity', exact: true }).fill(String(quantity));
-  await page.getByRole('button', { name: /Add.*to cart/ }).click();
-  await page.getByRole('button', { name: /^Your cart,.*1 products?$/ }).click();
-  await page.getByRole('button', { name: 'Continue to checkout', exact: true }).click();
-  await page.getByRole('button', { name: 'Review your order', exact: true }).click();
+  await page.getByRole('button', { name: 'Add to basket', exact: true }).click();
+  await openBasket(page);
+  await page.getByRole('button', { name: 'Review order', exact: true }).click();
   const total = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(
     quantity * 390 + 500,
   );
   await expect(page.getByText(total, { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Place order', exact: true })).toBeDisabled();
-  await page.getByRole('checkbox').check();
   const created = page.waitForResponse(
     (response) => response.url() === `${api}/orders` && response.request().method() === 'POST',
   );
-  await page.getByRole('button', { name: 'Place order', exact: true }).click();
+  await page.getByRole('button', { name: `Place order · ${total}`, exact: true }).click();
   const response = await created;
   expect(response.status()).toBe(201);
-  await expect(page.getByText('Order received.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Confirmed', exact: true })).toBeVisible();
   return { order: (await response.json()) as Order, response };
 }
 async function replay(page: Page, response: Response) {
@@ -288,15 +296,28 @@ async function openOrder(owner: Page, order: Order) {
     .click();
   await expect(owner.getByRole('dialog')).toBeVisible();
 }
+/** Saves a documentation screenshot of the desk in Hindi, its default language, then returns to English. */
+async function hindiScreenshot(owner: Page, path: string) {
+  // An open order or quote dialog is modal, so the top-bar switch is pressed directly.
+  const press = (name: string) =>
+    owner
+      .locator('.topbar-actions button', { hasText: name })
+      .evaluate((button) => (button as HTMLButtonElement).click());
+  await press('हिन्दी');
+  await expect(owner.locator('html')).toHaveAttribute('lang', 'hi');
+  await owner.screenshot({ path, fullPage: true });
+  await press('English');
+  await expect(owner.locator('html')).toHaveAttribute('lang', 'en');
+}
 async function acknowledgeAndDispatch(owner: Page) {
   const dialog = owner.getByRole('dialog');
-  await dialog.getByRole('button', { name: 'ज़िम्मेदारी लें / Acknowledge', exact: true }).click();
-  await expect(
-    dialog.getByRole('button', { name: 'ज़िम्मेदारी लें / Acknowledge', exact: true }),
-  ).toHaveCount(0);
-  await dialog.getByRole('button', { name: 'Mark preparing', exact: true }).click();
-  await dialog.getByRole('button', { name: 'Mark out for delivery', exact: true }).click();
-  await expect(dialog.getByRole('button', { name: 'Mark delivered', exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Acknowledge', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'Acknowledge', exact: true })).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Start preparing', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Dispatch', exact: true }).click();
+  // Cash is still due, so delivery completes together with the money.
+  await expect(dialog.getByRole('button', { name: 'Cash received · delivered' })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Complete delivery' })).toHaveCount(0);
 }
 
 // Separate customers, owners, products and delivery coverage avoid coupling to older journeys.
@@ -306,17 +327,20 @@ test('phone COD: automatic owner queue, acknowledgment, actual collection, deliv
 }) => {
   test.setTimeout(120000);
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  await skipLanguageChooser(context);
   const owner = await context.newPage();
   const errors: string[] = [];
   owner.on('pageerror', (error) => errors.push(error.message));
   page.on('pageerror', (error) => errors.push(error.message));
   try {
     await ownerLogin(owner, 31);
-    await owner.getByRole('button', { name: 'Switch owner language' }).click();
+    await owner.getByRole('button', { name: 'हिन्दी में देखें' }).click();
     await owner.reload();
+    // The chosen language survives a reload.
+    await expect(owner.getByRole('heading', { name: 'आज', exact: true })).toBeVisible();
+    await owner.getByRole('button', { name: 'Switch to English' }).click();
     await expect(owner.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
-    await owner.getByRole('button', { name: 'Switch owner language' }).click();
-    await owner.getByRole('button', { name: /^नया काम \/ New work/ }).click();
+    await owner.getByRole('button', { name: /^New work/ }).click();
     await customerLogin(page, 31);
     const { order, response } = await submitOrder(page, products[0]!, 50);
     expect(order.totalPaise).toBe(2000000);
@@ -337,9 +361,8 @@ test('phone COD: automatic owner queue, acknowledgment, actual collection, deliv
       (r) =>
         r.url().endsWith(`/orders/${order.id}/cod-received`) && r.request().method() === 'POST',
     );
-    await owner.getByRole('button', { name: /Record cash payment received/ }).click();
+    await owner.getByRole('button', { name: 'Cash received · delivered' }).click();
     await replay(owner, await collected);
-    await owner.getByRole('button', { name: 'Mark delivered', exact: true }).click();
     await expect
       .poll(async () => (await db.order.findUniqueOrThrow({ where: { id: order.id } })).status)
       .toBe('DELIVERED');
@@ -351,7 +374,7 @@ test('phone COD: automatic owner queue, acknowledgment, actual collection, deliv
     expect((await db.product.findUniqueOrThrow({ where: { id: products[0]!.id } })).stock).toBe(
       450,
     );
-    await owner.screenshot({ path: 'docs/screenshots/owner-cod-hindi-phone.png', fullPage: true });
+    await hindiScreenshot(owner, 'docs/screenshots/owner-cod-hindi-phone.png');
     await owner.goBack();
     await expect(owner.getByRole('dialog')).toHaveCount(0);
     expect(
@@ -369,24 +392,23 @@ test('phone refused delivery: retry and physical return without fake collection,
 }) => {
   test.setTimeout(120000);
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  await skipLanguageChooser(context);
   const owner = await context.newPage();
   try {
     await ownerLogin(owner, 32);
-    await owner.getByRole('button', { name: /^नया काम \/ New work/ }).click();
+    await owner.getByRole('button', { name: /^New work/ }).click();
     await customerLogin(page, 32);
     const { order } = await submitOrder(page, products[1]!, 10);
     await openOrder(owner, order);
     await acknowledgeAndDispatch(owner);
     const dialog = owner.getByRole('dialog');
     async function refuse(note: string) {
-      await dialog.getByText('डिलीवरी में समस्या / Delivery problem', { exact: true }).click();
-      await dialog.getByLabel(/कारण \/ Reason/).selectOption('REFUSED');
-      await dialog.getByLabel('क्या हुआ / What happened', { exact: true }).fill(note);
-      await dialog
-        .getByRole('button', { name: 'समस्या दर्ज करें / Record exception', exact: true })
-        .click();
+      await dialog.getByText('Delivery problem', { exact: true }).click();
+      await dialog.getByLabel('Reason').selectOption('REFUSED');
+      await dialog.getByLabel('What happened', { exact: true }).fill(note);
+      await dialog.getByRole('button', { name: 'Record problem', exact: true }).click();
       await expect(
-        dialog.getByRole('button', { name: 'फिर भेजें / Schedule retry', exact: true }),
+        dialog.getByRole('button', { name: 'Schedule retry', exact: true }),
       ).toBeVisible();
       expect((await db.product.findUniqueOrThrow({ where: { id: products[1]!.id } })).stock).toBe(
         490,
@@ -396,29 +418,25 @@ test('phone refused delivery: retry and physical return without fake collection,
       );
     }
     await refuse('Customer refused today; requested another delivery attempt.');
-    await dialog.getByLabel('दोबारा भेजने की तारीख / Retry date', { exact: true }).fill(tomorrow());
+    await dialog.getByLabel('Retry date', { exact: true }).fill(tomorrow());
     await dialog
-      .getByLabel('ग्राहक से तय बात / Retry arrangement', { exact: true })
+      .getByLabel('Arrangement with the customer', { exact: true })
       .fill('Customer confirmed tomorrow by phone.');
-    await dialog.getByRole('button', { name: 'फिर भेजें / Schedule retry', exact: true }).click();
-    await expect(dialog.getByRole('button', { name: 'Mark delivered', exact: true })).toBeVisible();
+    await dialog.getByRole('button', { name: 'Schedule retry', exact: true }).click();
+    await expect(dialog.getByRole('button', { name: 'Cash received · delivered' })).toBeVisible();
     await refuse('Second visit refused; vehicle returned all ten bags.');
+    await dialog.getByText('Confirm physical return', { exact: true }).click();
+    await dialog.getByLabel('Sellable returned', { exact: true }).fill('8');
+    await dialog.getByLabel('Damaged returned', { exact: true }).fill('2');
     await dialog
-      .getByText('दुकान में माल वापस मिला / Confirm physical return', { exact: true })
-      .click();
-    await dialog.getByLabel('सही माल / Sellable returned', { exact: true }).fill('8');
-    await dialog.getByLabel('खराब माल / Damaged returned', { exact: true }).fill('2');
-    await dialog
-      .getByLabel('वापसी का विवरण / Return evidence', { exact: true })
+      .getByLabel('Return details', { exact: true })
       .fill('Owner counted eight dry bags and two water-damaged bags at the shop.');
     const returned = owner.waitForResponse(
       (r) =>
         r.url().endsWith(`/orders/${order.id}/delivery`) &&
         r.request().postDataJSON()?.action === 'RETURN',
     );
-    await dialog
-      .getByRole('button', { name: 'वापसी की पुष्टि / Confirm returned stock', exact: true })
-      .click();
+    await dialog.getByRole('button', { name: 'Confirm returned stock', exact: true }).click();
     await replay(owner, await returned);
     await expect
       .poll(async () => (await db.order.findUniqueOrThrow({ where: { id: order.id } })).status)
@@ -430,10 +448,7 @@ test('phone refused delivery: retry and physical return without fake collection,
     expect(payment.status).toBe('PENDING');
     expect(await db.financialMovement.count({ where: { paymentId: payment.id } })).toBe(0);
     expect(await db.deliveryAttempt.count({ where: { orderId: order.id } })).toBe(4);
-    await owner.screenshot({
-      path: 'docs/screenshots/owner-return-hindi-phone.png',
-      fullPage: true,
-    });
+    await hindiScreenshot(owner, 'docs/screenshots/owner-return-hindi-phone.png');
   } finally {
     await context.close();
   }
@@ -445,15 +460,20 @@ test('wholesale UI: freight confirmation, renewed consent and one order at the n
 }) => {
   test.setTimeout(120000);
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  await skipLanguageChooser(context);
   const owner = await context.newPage();
   try {
     await ownerLogin(owner, 33);
-    await owner.getByRole('button', { name: /थोक अनुरोध \/ New quotations/ }).click();
+    await owner.getByRole('button', { name: /^New quotations/ }).click();
     await customerLogin(page, 33);
     await page.getByRole('tab', { name: 'Home' }).click();
-    await page.getByRole('button', { name: 'Bulk quotation', exact: true }).click();
-    await page.getByRole('textbox', { name: /^Find.*material$/ }).fill(products[2]!.name);
-    await page.getByRole('button', { name: products[2]!.name, exact: true }).click();
+    await page.getByRole('button', { name: 'Bulk quote', exact: true }).click();
+    await page
+      .getByRole('textbox', { name: 'Find a material to add', exact: true })
+      .fill(products[2]!.name);
+    await page
+      .getByRole('button', { name: `Add to quote: ${products[2]!.name}`, exact: true })
+      .click();
     const requested = page.waitForResponse(
       (r) => r.url() === `${api}/quotes` && r.request().method() === 'POST',
     );
@@ -464,9 +484,7 @@ test('wholesale UI: freight confirmation, renewed consent and one order at the n
       .locator('.owner-order-cards')
       .getByRole('button', { name: `Open quote ${quote.number}`, exact: true })
       .click();
-    await owner
-      .getByRole('button', { name: 'ज़िम्मेदारी लें / Acknowledge quotation', exact: true })
-      .click();
+    await owner.getByRole('button', { name: 'Acknowledge quotation', exact: true }).click();
     await owner
       .locator('.owner-order-cards')
       .getByRole('button', { name: `Open quote ${quote.number}`, exact: true })
@@ -477,7 +495,11 @@ test('wholesale UI: freight confirmation, renewed consent and one order at the n
     await owner.getByRole('button', { name: 'Send quotation', exact: true }).click();
     await expect(owner.getByRole('dialog')).toHaveCount(0);
     await page.getByRole('button', { name: 'Refresh current screen', exact: true }).click();
-    await page.getByRole('button', { name: 'Accept quote · ₹38,750.00', exact: true }).click();
+    const consent = page.getByRole('checkbox', { name: /I reviewed this revision/ });
+    await consent.check();
+    await page
+      .getByRole('button', { name: 'Accept this revision · ₹38,750.00', exact: true })
+      .click();
     await expect
       .poll(async () => (await db.quote.findUniqueOrThrow({ where: { id: quote.id } })).status)
       .toBe('ACCEPTED');
@@ -487,7 +509,7 @@ test('wholesale UI: freight confirmation, renewed consent and one order at the n
       .getByRole('button', { name: `Open quote ${quote.number}`, exact: true })
       .click();
     await owner
-      .getByRole('button', { name: 'बात बदली है / Revise terms for fresh consent', exact: true })
+      .getByRole('button', { name: 'Revise terms for fresh consent', exact: true })
       .click();
     await owner.getByLabel(/Family Bulk Cement.*price per unit/).fill('381');
     await owner.getByLabel('Delivery charge (₹)', { exact: true }).fill('760');
@@ -497,7 +519,15 @@ test('wholesale UI: freight confirmation, renewed consent and one order at the n
       .toBe('SENT');
     expect(await db.order.count({ where: { quoteId: quote.id } })).toBe(0);
     await page.getByRole('button', { name: 'Refresh current screen', exact: true }).click();
-    await page.getByRole('button', { name: 'Accept quote · ₹38,860.00', exact: true }).click();
+    // A revised offer needs fresh consent: the earlier tick does not carry over.
+    await expect(consent).not.toBeChecked();
+    const accept = page.getByRole('button', {
+      name: 'Accept this revision · ₹38,860.00',
+      exact: true,
+    });
+    await expect(accept).toBeDisabled();
+    await consent.check();
+    await accept.click();
     await expect
       .poll(async () => (await db.quote.findUniqueOrThrow({ where: { id: quote.id } })).status)
       .toBe('ACCEPTED');
@@ -509,9 +539,7 @@ test('wholesale UI: freight confirmation, renewed consent and one order at the n
     const converted = owner.waitForResponse(
       (r) => r.url().endsWith(`/quotes/${quote.id}/convert`) && r.request().method() === 'POST',
     );
-    await owner
-      .getByRole('button', { name: 'ऑर्डर बनाएँ / Create supply order', exact: true })
-      .click();
+    await owner.getByRole('button', { name: 'Create supply order', exact: true }).click();
     const response = await converted;
     expect(response.status()).toBe(201);
     const order = (await response.json()) as Order;
@@ -533,10 +561,7 @@ test('wholesale UI: freight confirmation, renewed consent and one order at the n
     expect((await db.product.findUniqueOrThrow({ where: { id: products[2]!.id } })).stock).toBe(
       400,
     );
-    await owner.screenshot({
-      path: 'docs/screenshots/owner-quote-hindi-phone.png',
-      fullPage: true,
-    });
+    await hindiScreenshot(owner, 'docs/screenshots/owner-quote-hindi-phone.png');
   } finally {
     await context.close();
   }

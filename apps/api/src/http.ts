@@ -57,6 +57,28 @@ class SchemaPipe implements PipeTransform {
 export const Input = (schema: z.ZodType) => Body(new SchemaPipe(schema));
 export const Contract = (schema: z.ZodType) =>
   ApiBody({ schema: z.toJSONSchema(schema, { target: 'openapi-3.0' }) as SchemaObject });
+/** Safe log fields for an unexpected error: its type, Prisma code and model, and stack frames as
+ * file:line. Never the message, which can carry a phone number, address or query values. */
+export function errorCause(error: unknown) {
+  const cause: Record<string, unknown> = {
+    errorType: error instanceof Error ? error.constructor.name : 'Unknown',
+  };
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    cause.prismaCode = error.code;
+    const model = (error.meta as { modelName?: unknown } | undefined)?.modelName;
+    if (typeof model === 'string') cause.prismaModel = model;
+  }
+  const frames = (error instanceof Error ? error.stack || '' : '')
+    .split('\n')
+    .filter((line) => line.trimStart().startsWith('at '))
+    .map((line) => /\(?(?:file:\/\/)?([^\s()]+):(\d+):\d+\)?$/.exec(line.trim()))
+    .filter((match) => match !== null)
+    .map(([, file, row]) => `${file!.replace(`${process.cwd()}/`, '')}:${row}`)
+    .slice(0, 6);
+  if (frames.length) cause.stack = frames;
+  return cause;
+}
+
 @Catch()
 export class Errors implements ExceptionFilter {
   catch(error: unknown, host: ArgumentsHost) {
@@ -95,7 +117,9 @@ export class Errors implements ExceptionFilter {
           event: 'REQUEST_FAILED',
           requestId: req.requestId,
           status,
-          errorType: error instanceof Error ? error.constructor.name : 'Unknown',
+          code: body.code,
+          route: `${req.method} ${(req.route as { path?: string } | undefined)?.path || 'unmatched'}`,
+          ...errorCause(error),
           timestamp: new Date().toISOString(),
         }),
       );

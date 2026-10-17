@@ -1,4 +1,4 @@
-import { budget } from './abuse';
+import { budget, budgetUsed } from './abuse';
 import { createHmac, randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 import type { Prisma, Session, User } from '@prisma/client';
 import { Db } from './db';
@@ -51,6 +51,52 @@ export async function assertSession(
     fail('UNAUTHORIZED', 'Verify your staff passphrase to continue.', 401);
 }
 
+/**
+ * Store-wide daily OTP budget. Callers charge it only after the per-IP limit (limitOtp) and the
+ * per-phone checks pass, so one client's rejected requests cannot switch sign-in off for everyone.
+ */
+export async function otpBudget(tx: Prisma.TransactionClient, action: 'send' | 'verify') {
+  const c = getConfig();
+  await budget(
+    tx,
+    `otp:${action}:global`,
+    'store',
+    action === 'send' ? c.OTP_SENDS_PER_DAY : c.OTP_CHECKS_PER_DAY,
+    86400000,
+  );
+}
+
+// Wrong staff passphrases per account and network address per hour. After that, that address
+// cannot start staff sign-in for the account, even with the right passphrase, until the hour
+// ends; existing staff sessions are unaffected. Keyed by address as well, so someone who only
+// knows an owner's number cannot lock the owner out from elsewhere. Every guess also needs a live
+// SMS challenge (5 checks per code, 5 codes an hour per phone), which bounds guessing overall.
+export const staffPassphraseFailures = 10;
+const passphraseScope = 'staff:passphrase';
+const staffSubject = (userId: string, ip: string) =>
+  `${userId}:${createHmac('sha256', getConfig().OTP_HASH_SECRET).update(`staff-ip:${ip}`).digest('hex').slice(0, 32)}`;
+export async function assertStaffAttempts(db: Db, userId: string, ip: string) {
+  if ((await budgetUsed(db, passphraseScope, staffSubject(userId, ip))) >= staffPassphraseFailures)
+    fail('RATE_LIMITED', 'Too many sign-in attempts. Please try again later.', 429);
+}
+export async function recordStaffFailure(db: Db, userId: string, ip: string) {
+  const subject = staffSubject(userId, ip);
+  await db.atomic(async (tx) => {
+    await budget(tx, passphraseScope, subject, staffPassphraseFailures);
+    if ((await budgetUsed(tx, passphraseScope, subject)) < staffPassphraseFailures) return;
+    console.warn(JSON.stringify({ event: 'STAFF_PASSPHRASE_LOCKED', userId }));
+    await tx.auditLog.create({
+      data: {
+        actorId: 'system',
+        event: 'STAFF_PASSPHRASE_LOCKED',
+        entityId: userId,
+        details: { failures: staffPassphraseFailures, durationMs: 3600000 },
+      },
+    });
+  });
+}
+
+/** Per-IP OTP limits. The store-wide budget is charged separately (otpBudget). */
 export async function limitOtp(db: Db, ip: string, action: 'send' | 'verify') {
   const c = getConfig();
   if (c.OTP_PAUSED)
@@ -76,13 +122,6 @@ export async function limitOtp(db: Db, ip: string, action: 'send' | 'verify') {
       where: { key: { in: expired.map((row) => row.key) }, expiresAt: { lte: now } },
     });
   const allowed = await db.atomic(async (tx) => {
-    await budget(
-      tx,
-      `otp:${action}:global`,
-      'store',
-      action === 'send' ? c.OTP_SENDS_PER_DAY : c.OTP_CHECKS_PER_DAY,
-      86400000,
-    );
     let allowed = true;
     for (const [duration, limit] of budgets) {
       const key = `${action}:${duration}:${ipHash}`;

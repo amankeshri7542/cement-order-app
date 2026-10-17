@@ -1,0 +1,39 @@
+# Google Play screenshots (docs/play-store/LISTING.md). Run against staging with the real
+# catalogue and a signed-in demo customer, once per language:
+#   maestro test -e LANGUAGE=hi .maestro/screenshots/store.yaml
+#   maestro test -e LANGUAGE=en .maestro/screenshots/store.yaml
+# Not part of the smoke run (config.yaml only picks up top-level flows).
+appId: in.shivcement.store
+---
+- launchApp
+- runFlow:
+    when:
+      true: ${LANGUAGE == 'hi'}
+    commands:
+      - tapOn:
+          text: Switch language to Hindi
+          optional: true
+- runFlow:
+    when:
+      true: ${LANGUAGE == 'en'}
+    commands:
+      - tapOn:
+          text: भाषा अंग्रेज़ी में बदलें
+          optional: true
+- takeScreenshot: store-${LANGUAGE}-1-rates
+- tapOn:
+    text: ${LANGUAGE == 'hi' ? 'सामग्री' : 'Materials'}
+    index: 0
+- takeScreenshot: store-${LANGUAGE}-2-materials
+- tapOn:
+    text: ${LANGUAGE == 'hi' ? 'देखें .*' : 'View .*'}
+    index: 0
+- takeScreenshot: store-${LANGUAGE}-3-product
+- tapOn:
+    text: ${LANGUAGE == 'hi' ? 'टोकरी.*' : 'Basket.*'}
+    index: 0
+- takeScreenshot: store-${LANGUAGE}-4-basket
+- tapOn:
+    text: ${LANGUAGE == 'hi' ? 'ऑर्डर' : 'Orders'}
+    index: 0
+- takeScreenshot: store-${LANGUAGE}-5-orders

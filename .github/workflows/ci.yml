@@ -3,6 +3,8 @@ on:
   pull_request:
   push:
     branches: [main]
+permissions:
+  contents: read
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -35,15 +37,33 @@ jobs:
           cp apps/api/.env.example apps/api/.env
           printf 'TEST_DATABASE_URL=%s\n' "$TEST_DATABASE_URL" > apps/api/.env.test
       - run: npm run db:generate && npm run build -w @shiv/shared && npm run db:migrate
+      - name: Prisma schema matches the migrations (no drift)
+        run: |
+          psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -q -c 'CREATE DATABASE shiv_cement_shadow_test'
+          npm exec -w @shiv/api -- prisma migrate diff --exit-code \
+            --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma \
+            --shadow-database-url postgresql://shiv:ci-only-password@localhost:5432/shiv_cement_shadow_test
       - run: npm run lint && npm run typecheck --workspaces --if-present
-      - run: npm test && npm run test:integration -w @shiv/api && npm run test:workflows && npm run test:bootstrap
+      - run: npm test && npm test -w @shiv/shared && npm test -w @shiv/mobile && npm run test:local && npm test -w @shiv/storefront && npm run test:integration -w @shiv/api && npm run test:workflows && npm run test:bootstrap
       - run: npx playwright install --with-deps chrome webkit
       - run: npm run test:e2e -- --config=playwright.qa.config.ts --project=chrome
       - run: npm run test:e2e -- --config=playwright.qa.config.ts --project=webkit
+      - name: Backup and restore rehearsal on a disposable copy
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends postgresql-client-16
+          PG_BIN=/usr/lib/postgresql/16/bin npm run test:restore
       - run: npm run build --workspaces --if-present
+      - name: Verify isolated production headers and storefront bundle
+        run: node scripts/check-production-headers.mjs --self-test && node scripts/check-production-headers.mjs
       - run: npm run security:scan
-      - run: npm audit --omit=dev --workspace @shiv/api --workspace @shiv/shared
+      - run: npm audit --omit=dev --workspace @shiv/api --workspace @shiv/shared --workspace @shiv/storefront
+      # Reported, not yet blocking: the owner desk and the Expo app have known advisories to triage.
+      - name: Owner desk and app dependency audit (non-blocking)
+        continue-on-error: true
+        run: npm audit --omit=dev --workspace @shiv/admin --workspace @shiv/mobile
       - run: docker build -t shiv-cement-api:ci .
+      - name: Container starts with a restricted role, drains on SIGTERM and refuses a superuser
+        run: bash scripts/ci-container-smoke.sh
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -51,3 +71,5 @@ jobs:
           path: |
             test-results/
             playwright-report/
+            .local/security-hardening/
+          include-hidden-files: true

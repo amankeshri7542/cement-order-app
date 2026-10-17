@@ -1,4 +1,10 @@
-import { test as base, expect, type Page, type TestInfo } from '@playwright/test';
+import {
+  test as base,
+  expect,
+  type BrowserContext,
+  type Page,
+  type TestInfo,
+} from '@playwright/test';
 import { PrismaClient } from '@prisma/client';
 
 // Each browser journey represents independent people. Preserve production limits
@@ -30,7 +36,32 @@ export function observePage(page: Page, info: TestInfo) {
   return events;
 }
 
-export const test = base.extend<{ authBudget: void; browserEvidence: void }>({
+/**
+ * The app asks for a language on first launch and the owner desk opens in Hindi. Journeys run
+ * both in English unless a test chooses otherwise, so they start past the chooser. Apply to extra contexts with `skipLanguageChooser`.
+ */
+export async function skipLanguageChooser(context: BrowserContext) {
+  await context.addInitScript(() => {
+    try {
+      if (location.port === '8082' && !localStorage.getItem('shiv_language'))
+        localStorage.setItem('shiv_language', '"en"');
+      // The owner desk opens in Hindi; journeys drive it in English unless a test picks Hindi.
+      if (location.port === '3001' && !localStorage.getItem('shiv-owner-language'))
+        localStorage.setItem('shiv-owner-language', 'en');
+    } catch {
+      /* Storage blocked: the chooser appears instead. */
+    }
+  });
+}
+
+export const test = base.extend<{ authBudget: void; browserEvidence: void; appLanguage: void }>({
+  appLanguage: [
+    async ({ context }, use) => {
+      await skipLanguageChooser(context);
+      await use();
+    },
+    { auto: true },
+  ],
   browserEvidence: [
     async ({ page, browser }, use, info) => {
       await info.attach('browser-environment', {

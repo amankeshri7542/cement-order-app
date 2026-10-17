@@ -1,9 +1,9 @@
-node_modules
+**/node_modules
 .git
 **/.env
 **/.env.*
 !**/.env.example
-.local
+**/.local
 **/.next*
 **/.expo
 **/dist

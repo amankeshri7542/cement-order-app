@@ -95,3 +95,32 @@ Use separate staging resources and secrets. Give the release job migration/exten
 Before staging, assign a backup/incident operator. Proposed family-staging target: encrypted daily backups, 7-day retention, RPO 24 hours, RTO 4 hours; the family must approve and the provider must demonstrate them. For real backup: use PostgreSQL 16 tools, a restricted `PGSERVICE`/0600 `PGPASSFILE` (not credentials in argv), `pg_dump --format=custom --no-owner --no-privileges --file=STAGING.dump`, encrypt immediately to the approved backup destination, and test restoration into a new isolated database with providers disabled. Verify row counts, stock/financial invariants, migration version and a test login. Never overwrite the live database to rehearse.
 
 Incident sequence: technical operator pauses the affected feature or stops public ingress; preserve redacted logs/audit/backup evidence; revoke affected sessions and provider keys; rotate staff passphrases as appropriate; reconcile orders, stock and provider receipts with owners; restore only to a separate database; verify before switching traffic. Never auto-refund, cancel paid/dispatched work or replay provider operations to fix an uncertain outcome. For SMS/OCR cost abuse, use provider-side emergency disable too. Resume only after root-cause and invariant checks. No real messages or payment operations were used to test this sequence.
+
+## Staging readiness review (11 October 2026)
+
+See [V4_STAGING_READINESS.md](V4_STAGING_READINESS.md) for the full risk register.
+
+- Mock OTP now also refuses requests that arrive through a tunnel or reverse proxy (tunnel and
+  proxy headers such as `X-Forwarded-Proto`, `X-Forwarded-Host`, `Forwarded`, `Cf-*`) or that
+  name a non-loopback `Host` (DNS rebinding), and refuses to start with `TRUST_PROXY_HOPS > 0`.
+  A local proxy that adds no headers and rewrites `Host` remains undetectable: never put a proxy
+  or tunnel in front of a mock-OTP stack.
+- Production refuses placeholder OTP hash secrets (`REPLACE`, `example`, `placeholder`,
+  `change-me`, `development`).
+- Startup failures and request logs are redacted: connection-string credentials and
+  `key=value` secrets are removed; request logs carry only route patterns, status and duration.
+- Graceful shutdown drains HTTP before the database disconnects; open event streams end cleanly.
+- Next.js apps exit at startup when a production build points at a non-HTTPS origin.
+
+## Wave 1 hardening (Oct 2026)
+
+What changed for whoever runs the servers. Setting names are the ones in `apps/api/src/config.ts`.
+
+| Change                            | What the operator needs to know                                                                                                                                                                                                                                                                                                                         |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NODE_ENV` is required            | The API no longer defaults it. A deploy without `NODE_ENV` (`development`, `test` or `production`) fails at startup instead of running as development. Set `production` on staging and production.                                                                                                                                                      |
+| Staff passphrase lockout          | 10 wrong passphrases for one staff account from one network address lock that account's sign-in from that address for an hour, even with the right passphrase. Other addresses and already signed-in desks keep working, so a stranger who knows an owner's number cannot lock the owner out. Each lock writes a `STAFF_PASSPHRASE_LOCKED` audit event. |
+| Upload gate                       | `POST /admin/uploads` and Rate Studio uploads check for a live staff session before reading any of the body (anonymous: 401, customer: 403). Bodies are capped at 5 MB. Photo uploads are limited to 30 per staff member an hour and 200 a day store-wide, two at a time. `UPLOADS_PAUSED=true` stops them.                                             |
+| Refresh grace and reuse detection | After a refresh, the previous refresh token keeps working for 5 minutes, so a reply lost on a weak network does not sign the person out. The same token presented after that window means someone else holds a copy: the API ends that session for both holders and writes `REFRESH_TOKEN_REUSED`. The person signs in again with a new code.           |
+| Least-privilege grants            | `scripts/runtime-grants.sql` is the single source of the runtime role's grants. It now revokes the broad `DELETE` older grants gave and allows it only on the short list of tables the API deletes from. Re-run it on every existing database after this release ([STAGING_RUNBOOK.md](STAGING_RUNBOOK.md) section 5).                                  |
+| Live-update stream caps           | Public live-update streams (`GET /events`) are capped per client address (`EVENT_STREAMS_PER_IP`, default 20) and in total (`EVENT_STREAMS_TOTAL`, default 2000). Extra streams get 429; pages then refresh when focused instead. Raise the totals only if real traffic needs it.                                                                       |

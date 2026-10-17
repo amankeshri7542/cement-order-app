@@ -10,7 +10,7 @@ Publication revalidates batch and product versions inside the existing Serializa
 
 Rate-card snapshots use approved database values, store contact, exact units/specifications and publication date. SVG and PNG rendering are deterministic, use no generative image model, and split long lists into readable pages. A failed rendering request cannot change published prices. Staff explicitly download/share; no third-party posting automation.
 
-Visual direction: a materials-counter worksheet, graphite #252C2B, off-white #F7F6F1, concrete #E7E6E1, sand #D9C9A8, amber #E9AD32, safety green #386451. Existing condensed display headings, readable body text and monospaced monetary/specification labels. Source and proposed-price comparison are the signature, with quiet controls and clear financial confirmation. Desktop source/review split becomes mobile cards.
+Visual direction (Direction A, since 17 October 2026): the card uses the shared theme tokens in `packages/shared/src/theme.ts`: steel ink #1C2227, slip paper #F6F5F1, cement ground #E3E1DB, and sindoor #B3361F only for the शिव stamp, the Counter's signboard rule and the contact line. Teko 600 sets the shop name, heading, item names and prices; a monospaced face keeps labels, specifications and phone numbers easy to check. Source and proposed-price comparison are the signature, with quiet controls and clear financial confirmation. Desktop source/review split becomes mobile cards.
 
 ## Research, 3 October 2026
 
@@ -48,7 +48,7 @@ Edits reset the affected row's approval. Refreshing a stale baseline requires a 
 
 ## Cards and sharing
 
-Counter and Bulletin templates support WhatsApp Status (1080 × 1920), Square Social (1080 × 1080) and portrait rate sheets (1240 × 1754). SVG preserves exact integer-paise prices, names, specification, units, store contact and publication date in Asia/Kolkata. Sharp rasterizes SVG into PNG. Overflow creates readable additional pages instead of reducing prices to tiny text. Docker includes DejaVu and Noto fonts; renderer fonts can differ on a developer machine.
+Counter and Bulletin templates support WhatsApp Status (1080 × 1920), Square Social (1080 × 1080) and portrait rate sheets (1240 × 1754). SVG preserves exact integer-paise prices, names, specification, units, store contact and publication date in Asia/Kolkata. Sharp rasterizes SVG into PNG. Overflow creates readable additional pages instead of reducing prices to tiny text. Docker includes DejaVu and Noto fonts. Teko comes from the `@expo-google-fonts/teko` package: `apps/api/src/rate-studio/fonts.ts` gives the process a fontconfig file that adds Teko's folder to the machine's own fonts (and makes macOS use fontconfig too), so a developer machine and the Docker image draw the same display face. The monospaced face can still differ on macOS, which has no DejaVu Sans Mono.
 
 Only approved snapshots supply financial fields. Safe marketing fields are heading, delivery message, contact label and optional copy, with explicit human confirmation. No automatic copy claims or AI image generation. Card creation rejects prices or commercial terms changed since publication; make a fresh reviewed batch. Previously saved cards remain historical records and can become outdated. Staff download each page or explicitly invoke the native browser share sheet where supported; sharing falls back to download. There is no automated WhatsApp posting.
 

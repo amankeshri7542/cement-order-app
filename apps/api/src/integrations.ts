@@ -16,11 +16,12 @@ import { getMessaging } from 'firebase-admin/messaging';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { deviceSchema } from '@shiv/shared';
-import { Admin, AuthRequest, Contract, Input, fail } from './http';
+import { Admin, AuthRequest, Contract, Input, errorCause, fail } from './http';
 import { getConfig } from './config';
 import { Db } from './db';
 import { OrdersService } from './orders';
 import { OwnerWorkService } from './owner-work';
+import { AlertsService } from './alerts';
 
 @Injectable()
 export class Maintenance implements OnModuleInit, OnModuleDestroy {
@@ -30,6 +31,7 @@ export class Maintenance implements OnModuleInit, OnModuleDestroy {
     @Inject(Db) private db: Db,
     @Inject(OrdersService) private orders: OrdersService,
     @Inject(OwnerWorkService) private ownerWork: OwnerWorkService,
+    @Inject(AlertsService) private alerts: AlertsService,
   ) {}
   onModuleInit() {
     if (getConfig().NODE_ENV === 'test') return;
@@ -60,68 +62,118 @@ export class Maintenance implements OnModuleInit, OnModuleDestroy {
     if (this.busy) return;
     this.busy = true;
     try {
-      const expired = await this.db.authRateLimit.findMany({
-        where: { expiresAt: { lt: new Date() } },
-        select: { key: true },
-        take: 200,
-      });
-      if (expired.length)
-        await this.db.authRateLimit.deleteMany({
-          where: { key: { in: expired.map((row) => row.key) }, expiresAt: { lt: new Date() } },
-        });
-      await this.db.demandOverride.deleteMany({
-        where: { expiresAt: { lt: new Date(Date.now() - 30 * 86400000) } },
-      });
-      await this.ownerWork.dispatch();
-      await this.orders.expireReservations();
-      await this.db.quote.updateMany({
-        where: { status: 'SENT', validUntil: { lt: new Date() } },
-        data: { status: 'EXPIRED' },
-      });
-      await this.db.session.deleteMany({ where: { refreshExpiresAt: { lt: new Date() } } });
-      await this.db.checkoutReview.deleteMany({
-        where: { expiresAt: { lt: new Date(Date.now() - 86400000) }, order: null },
-      });
-      if (getApps().length) {
-        const pending = await this.db.notification.findMany({
-          where: { sentAt: null, attempts: { lt: 5 } },
-          take: 20,
-          include: { user: { include: { devices: true } } },
-        });
-        for (const note of pending) {
-          await this.db.notification.update({
-            where: { id: note.id },
-            data: { attempts: { increment: 1 } },
-          });
-          const tokens = note.user.devices.map((d) => d.token);
-          if (tokens.length) {
-            const result = await getMessaging().sendEachForMulticast({
-              tokens,
-              notification: { title: note.title, body: note.body },
-              data: { notificationId: note.id, ...(note.orderId ? { orderId: note.orderId } : {}) },
-            });
-            for (let i = 0; i < result.responses.length; i++)
-              if (
-                [
-                  'messaging/registration-token-not-registered',
-                  'messaging/invalid-registration-token',
-                ].includes(result.responses[i]?.error?.code || '')
-              )
-                await this.db.device.deleteMany({ where: { token: tokens[i] } });
-            if (result.failureCount) continue;
-          }
-          await this.db.notification.update({
-            where: { id: note.id },
-            data: { sentAt: new Date() },
-          });
+      // Each step stands alone: one failing step (or a missing grant) must not stop the rest.
+      for (const [step, task] of this.steps()) {
+        try {
+          await task();
+        } catch (error) {
+          console.error(
+            JSON.stringify({
+              event: 'MAINTENANCE_FAILED',
+              step,
+              ...errorCause(error),
+              timestamp: new Date().toISOString(),
+            }),
+          );
         }
       }
-    } catch {
-      console.error(
-        JSON.stringify({ event: 'MAINTENANCE_FAILED', timestamp: new Date().toISOString() }),
-      );
     } finally {
       this.busy = false;
+    }
+  }
+  private steps(): [string, () => Promise<unknown>][] {
+    return [
+      [
+        'authRateLimits',
+        async () => {
+          const expired = await this.db.authRateLimit.findMany({
+            where: { expiresAt: { lt: new Date() } },
+            select: { key: true },
+            take: 200,
+          });
+          if (expired.length)
+            await this.db.authRateLimit.deleteMany({
+              where: { key: { in: expired.map((row) => row.key) }, expiresAt: { lt: new Date() } },
+            });
+        },
+      ],
+      [
+        'demandOverrides',
+        () =>
+          this.db.demandOverride.deleteMany({
+            where: { expiresAt: { lt: new Date(Date.now() - 30 * 86400000) } },
+          }),
+      ],
+      ['ownerWork', () => this.ownerWork.dispatch()],
+      ['alerts', () => this.alerts.deliver()],
+      ['reservations', () => this.orders.expireReservations()],
+      [
+        'quotes',
+        () =>
+          this.db.quote.updateMany({
+            where: { status: 'SENT', validUntil: { lt: new Date() } },
+            data: { status: 'EXPIRED' },
+          }),
+      ],
+      [
+        'sessions',
+        () => this.db.session.deleteMany({ where: { refreshExpiresAt: { lt: new Date() } } }),
+      ],
+      [
+        'checkoutReviews',
+        () =>
+          this.db.checkoutReview.deleteMany({
+            where: { expiresAt: { lt: new Date(Date.now() - 86400000) }, order: null },
+          }),
+      ],
+      ['devicePush', () => this.devicePush()],
+    ];
+  }
+  private async devicePush() {
+    if (!getApps().length) return;
+    const pending = await this.db.notification.findMany({
+      where: { sentAt: null, attempts: { lt: 5 } },
+      take: 20,
+      include: { user: { include: { devices: true } } },
+    });
+    for (const note of pending) {
+      await this.db.notification.update({
+        where: { id: note.id },
+        data: { attempts: { increment: 1 } },
+      });
+      const tokens = note.user.devices.map((d) => d.token);
+      if (tokens.length) {
+        const result = await getMessaging().sendEachForMulticast({
+          tokens,
+          notification: { title: note.title, body: note.body },
+          data: { notificationId: note.id, ...(note.orderId ? { orderId: note.orderId } : {}) },
+        });
+        for (let i = 0; i < result.responses.length; i++) {
+          const code = result.responses[i]?.error?.code || '';
+          if (
+            [
+              'messaging/registration-token-not-registered',
+              'messaging/invalid-registration-token',
+            ].includes(code)
+          )
+            await this.db.device.deleteMany({ where: { token: tokens[i] } });
+          else if (code)
+            console.error(
+              JSON.stringify({
+                event: 'DEVICE_PUSH_FAILED',
+                code,
+                timestamp: new Date().toISOString(),
+              }),
+            );
+        }
+        // Retry only when no device received it: a retry goes to every device again, so a
+        // partial failure would repeat the alert on the phones that already showed it.
+        if (!result.successCount) continue;
+      }
+      await this.db.notification.update({
+        where: { id: note.id },
+        data: { sentAt: new Date() },
+      });
     }
   }
 }

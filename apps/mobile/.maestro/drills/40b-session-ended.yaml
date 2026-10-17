@@ -1,0 +1,11 @@
+# The next request after the server ended the session explains it and signs out cleanly.
+appId: in.shivcement.store
+---
+- tapOn: Bulk quotes
+- extendedWaitUntil:
+    visible: Your session ended.*
+    timeout: 30000
+- tapOn:
+    text: Account
+    index: 0
+- assertVisible: Sign in

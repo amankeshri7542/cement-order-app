@@ -1,0 +1,32 @@
+# Compare two materials and ask Shiv Sahayak a question.
+appId: in.shivcement.store
+tags: [smoke]
+---
+- launchApp
+- extendedWaitUntil:
+    visible: Current rates
+    timeout: 15000
+- scrollUntilVisible:
+    element: Compare
+- tapOn: Compare
+- tapOn:
+    text: 'Add to comparison: .*'
+    index: 0
+- scrollUntilVisible:
+    element: 'Add to comparison: .*'
+- tapOn:
+    text: 'Add to comparison: .*'
+    index: 0
+- scrollUntilVisible:
+    element: Compare
+    direction: UP
+- assertVisible: 'Remove from comparison: .*'
+- tapOn: Back
+- scrollUntilVisible:
+    element: Ask Shiv Sahayak
+- tapOn: Ask Shiv Sahayak
+- tapOn: Which cement is best for plaster?
+- extendedWaitUntil:
+    notVisible: Thinking…
+    timeout: 30000
+- assertNotVisible: .*Cannot reach.*
