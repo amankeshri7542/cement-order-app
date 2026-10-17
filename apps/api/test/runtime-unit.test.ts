@@ -1,9 +1,26 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { directLoopback } from '../src/auth';
 import { requestId, safeMessage } from '../src/lifecycle';
+import { reference } from '../src/orders';
 
 const request = (remoteAddress: string, headers: Record<string, string>) =>
   ({ socket: { remoteAddress }, headers }) as unknown as Parameters<typeof directLoopback>[0];
+
+describe('order and quote numbers', () => {
+  const zone = process.env.TZ;
+  afterEach(() => {
+    vi.useRealTimers();
+    process.env.TZ = zone;
+  });
+  it('take the year in Patna, even on a server clock in UTC just after midnight IST', () => {
+    process.env.TZ = 'UTC';
+    // 00:30 IST on 1 January 2027 is still 31 December 2026 in UTC.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-12-31T19:00:00Z'));
+    expect(reference('SC')).toMatch(/^SC-2027-[0-9A-F]{8}$/);
+    expect(reference('QT')).toMatch(/^QT-2027-/);
+  });
+});
 
 describe('mock sign-in stays on this computer', () => {
   it('accepts direct loopback requests addressed to a loopback host', () => {
