@@ -7,7 +7,7 @@
     "build": "next build --webpack",
     "start": "next start --port 3003",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test lib/catalog.test.ts lib/account.test.ts"
+    "test": "node --import tsx --test lib/catalog.test.ts lib/account.test.ts lib/paging.test.ts"
   },
   "dependencies": {
     "@shiv/shared": "1.0.0",

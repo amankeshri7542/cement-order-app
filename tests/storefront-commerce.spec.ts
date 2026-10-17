@@ -476,6 +476,78 @@ test('multi-material quotation recovers persisted reference, reviews revisions a
   await expect(page.getByRole('heading', { name: order.number })).toBeVisible();
 });
 
+test('quote review ticks and older quotation pages survive focus refreshes and the 20 s poll', async ({
+  page,
+  request,
+}) => {
+  await login(page, '9888810041', '/quotes');
+  const addressId = await seedAddress(page, '9888810041');
+  const admin = await token(request);
+  const numbers: string[] = [];
+  for (const productId of [first, second]) {
+    const created = await page.request.post(`${api}/quotes`, {
+      headers: { Origin: site },
+      data: {
+        idempotencyKey: crypto.randomUUID(),
+        items: [{ productId, quantity: 10 }],
+        addressId,
+        deliveryDate: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
+      },
+    });
+    expect(created.ok(), await created.text()).toBe(true);
+    const quote = await created.json();
+    numbers.push(quote.number);
+    const sent = await request.post(`${api}/admin/quotes/${quote.id}/offer`, {
+      headers: admin,
+      data: {
+        expectedRevision: 0,
+        items: [{ productId, unitPricePaise: 30000 }],
+        deliveryFeePaise: 0,
+        validUntil: new Date(Date.now() + 86400000).toISOString(),
+        note: 'Test offer.',
+        deliveryConfirmed: true,
+      },
+    });
+    expect(sent.ok(), await sent.text()).toBe(true);
+  }
+  // Serve one quotation per first page, so the older one arrives through "Load older quotations".
+  const firstPage = await page.request.get(`${api}/quotes?limit=1`, { headers: { Origin: site } });
+  expect(firstPage.ok()).toBe(true);
+  const { nextCursor } = await firstPage.json();
+  expect(nextCursor).toBeTruthy();
+  await page.route(/\/quotes\?limit=24$/, async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    await route.fulfill({ response, json: { items: body.items.slice(0, 1), nextCursor } });
+  });
+  await page.clock.install();
+  await page.goto(`${site}/quotes`);
+  const record = (number: string) =>
+    page.locator('article.order-record').filter({
+      has: page.getByRole('heading', { name: number, exact: true }),
+    });
+  const [older, newer] = numbers;
+  await expect(record(newer)).toBeVisible();
+  await page.getByRole('button', { name: 'Load older quotations', exact: true }).click();
+  await expect(record(older)).toBeVisible();
+  await record(newer).getByRole('checkbox').check();
+  await record(older).getByRole('checkbox').check();
+  const refreshed = () =>
+    page.waitForResponse((r) => /\/quotes\?limit=24$/.test(r.url()) && r.status() === 200);
+  let refresh = refreshed();
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await refresh;
+  refresh = refreshed();
+  await page.clock.fastForward(20000);
+  await refresh;
+  for (const number of [newer, older]) {
+    await expect(record(number).getByRole('checkbox')).toBeChecked();
+    await expect(
+      record(number).getByRole('button', { name: 'Accept this revision', exact: true }),
+    ).toBeEnabled();
+  }
+});
+
 test('assistant answers with current public catalogue, preserves navigation, cancels and retries without private tools', async ({
   page,
   request,
