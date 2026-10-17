@@ -1296,41 +1296,6 @@ a.rate-row:hover .rate-name strong {
   user-select: all;
 }
 
-/* ---------- Home: before you buy, as index cards ---------- */
-.buying-guide {
-  display: grid;
-  gap: 20px;
-  padding: 72px 0 0;
-}
-.buying-guide h2 {
-  font-size: var(--t-head);
-}
-.guide-notes {
-  display: grid;
-  max-width: 56rem;
-}
-.guide-notes > div {
-  display: grid;
-  justify-items: start;
-  gap: 10px;
-  margin-top: -6px;
-  padding: 28px 20px 20px;
-  background: var(--tab-1);
-  clip-path: polygon(0 10px, 10px 0, 46% 0, 50% 10px, 100% 10px, 100% 100%, 0 100%);
-}
-.guide-notes > div:first-child {
-  margin-top: 0;
-}
-.guide-notes > div:nth-child(2) {
-  background: var(--tab-2);
-}
-.guide-notes > div:nth-child(3) {
-  background: var(--tab-3);
-}
-.guide-notes p {
-  max-width: 44rem;
-}
-
 /* ---------- Footer: sindoor ---------- */
 .site-footer {
   margin-top: 72px;
@@ -2499,9 +2464,11 @@ a.rate-row:hover .rate-name strong {
     gap: 6px 10px;
     padding-block: 10px 4px;
   }
+  /* The basis grows with the text size: with large phone text the name takes its own row
+     instead of breaking into one word per line. */
   .brand {
     order: 1;
-    flex: 1 1 0;
+    flex: 1 1 13rem;
     gap: 10px;
   }
   .brand .brand-stamp {
@@ -2684,6 +2651,253 @@ a.rate-row:hover .rate-name strong {
   }
   .order-record .action-row .button {
     width: 100%;
+  }
+}
+
+/* ---------- First run (Phase 11): pincode beside the rates, first order, name, next steps ---- */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+/* The pincode coupon inside the hero: one column, the tear line on top. */
+.delivery-hero {
+  margin-top: 4px;
+}
+.delivery-hero .delivery-heading,
+.delivery-hero .delivery-check {
+  padding: 20px 20px 22px;
+}
+.delivery-hero .delivery-heading h2 {
+  font-size: var(--t-title);
+  margin-bottom: 4px;
+}
+/* In the basket: the same coupon across the whole layout, under the slip and the summary. */
+.delivery-basket {
+  grid-column: 1 / -1;
+  margin-top: 8px;
+}
+.delivery-basket .delivery-heading h2 {
+  font-size: var(--t-title);
+  margin-bottom: 4px;
+}
+.delivery-result .text-link {
+  color: var(--on-ink);
+  justify-self: start;
+}
+.field-hint {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: var(--t-small);
+}
+.field-problem {
+  color: var(--danger);
+  font-weight: 600;
+}
+.empty-state.compact {
+  margin: 0 0 12px;
+  padding: 20px 20px 22px;
+}
+
+/* "Your first order in 3 steps": a paper slip with three numbered steps. */
+.first-order {
+  position: relative;
+  display: grid;
+  gap: 16px;
+  margin-top: 40px;
+  padding: 22px 20px 24px;
+  background: var(--paper);
+  border-top: 4px solid var(--ink);
+}
+.first-order-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.first-order h2 {
+  font-size: var(--t-title);
+  line-height: 1.05;
+  padding-top: 6px;
+}
+.first-order-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--touch);
+  height: var(--touch);
+  margin: -6px -8px 0 0;
+  border: 0;
+  border-radius: var(--r);
+  background: none;
+  color: var(--muted);
+  font-size: 1.8rem;
+  line-height: 1;
+}
+.first-order-close:hover {
+  background: var(--surface);
+  color: var(--ink);
+}
+.first-order ol {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+.first-order li {
+  display: grid;
+  grid-template-columns: 2.2rem minmax(0, 1fr);
+  column-gap: 10px;
+  counter-increment: step;
+}
+.first-order li::before {
+  content: counter(step);
+  grid-row: span 2;
+  color: var(--accent);
+  font: 600 2.4rem/0.9 var(--display);
+}
+.first-order li strong {
+  font-weight: 700;
+}
+.first-order li span {
+  color: var(--muted);
+}
+.first-order-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 20px;
+}
+
+/* The one-time name question after the first sign-in. */
+.name-step {
+  display: grid;
+  gap: 12px;
+  max-width: 34rem;
+  padding: 26px 22px;
+  background: var(--paper);
+}
+.name-step h2 {
+  font-size: var(--t-title);
+}
+.name-step label {
+  font-weight: 650;
+  margin-top: 4px;
+}
+.name-step .action-row {
+  margin-top: 6px;
+}
+
+/* What happens next: the order's real steps, with the current one marked in sindoor. */
+.next-steps {
+  margin: 4px 0 22px;
+  padding: 20px 20px 22px;
+  background: var(--surface);
+}
+.next-steps h2 {
+  font-size: var(--t-title);
+  margin-bottom: 10px;
+}
+.next-steps-placed {
+  margin-bottom: 10px;
+  color: var(--ok);
+  font-weight: 700;
+}
+.next-steps ol {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.next-steps li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr);
+  gap: 12px;
+  padding: 8px 0 12px;
+}
+/* The thread joining the steps. */
+.next-steps li:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  left: calc(1rem - 1px);
+  top: calc(8px + 2rem);
+  bottom: -8px;
+  width: 2px;
+  background: var(--rule);
+}
+.step-mark {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: var(--tab-1);
+  color: var(--ink-2);
+  font-weight: 800;
+}
+.step-done .step-mark {
+  background: var(--ok);
+  color: var(--surface);
+}
+.step-current .step-mark {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.step-todo strong {
+  color: var(--muted);
+}
+.next-steps li p {
+  margin-top: 2px;
+  color: var(--muted);
+}
+.step-current p {
+  color: var(--ink);
+}
+
+/* Shop story without an approved photograph: the words take the whole row. */
+.shop-story.no-photo > div {
+  max-width: 44rem;
+}
+
+@media (min-width: 900px) {
+  /* Column 1: the copy, then the pincode check; column 2: the rate board beside both. */
+  /* Extra height from the taller rate board goes below the pincode check, not between rows. */
+  .hero {
+    grid-template-rows: auto auto 1fr;
+  }
+  .hero .rate-board {
+    grid-row: 2 / span 2;
+  }
+  .delivery-hero {
+    grid-column: 1;
+    grid-row: 3;
+    grid-template-columns: minmax(0, 1fr);
+    margin-top: 0;
+  }
+  .delivery-hero .delivery-heading,
+  .delivery-hero .delivery-check {
+    padding: 22px 26px 24px;
+  }
+  .delivery-hero .delivery-check {
+    border-left: 0;
+    border-top: 5px dotted var(--ground);
+  }
+  .first-order {
+    margin-top: 56px;
+    padding: 26px 32px 28px;
+  }
+  .first-order ol {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 24px;
+  }
+  .shop-story.no-photo {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
