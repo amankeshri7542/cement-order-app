@@ -8,6 +8,8 @@ export default ts.config(
       '**/.next/**',
       '**/.next-e2e/**',
       '**/.next-security/**',
+      '**/.next-shots/**',
+      '**/.next-lighthouse/**',
       '**/.expo/**',
       '**/next-env.d.ts',
       'apps/mobile/android/**',

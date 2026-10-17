@@ -235,6 +235,12 @@ test('customer app (Expo web)', async ({ browser }) => {
       await page.goto(app);
       await expect(page.getByRole('tab').first()).toBeVisible({ timeout: 120000 });
       await shot(page, 'app', `home-${lang}`);
+      // The app scrolls inside its own view: two more screens of Home.
+      for (const step of [1, 2]) {
+        await page.mouse.move(195, 420);
+        await page.mouse.wheel(0, 640);
+        await shot(page, 'app', `home-${lang}-scroll-${step}`);
+      }
     });
     await attempt(`app materials ${lang}`, async () => {
       await page.getByRole('tab', { name: words.materials, exact: true }).click();
