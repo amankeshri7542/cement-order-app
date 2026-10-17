@@ -199,6 +199,25 @@ button switches to English.
 | 10  | Desk               | भाव और स्टॉक: change a price                              | Website and app show the new price without reload                      |
 | 11  | Website or app     | Share the order on WhatsApp                               | Correct summary opens in WhatsApp; nothing sent by itself              |
 
+### First run (Phase 11), five minutes
+
+Use a private window (website) or clear the app's storage, so nothing is remembered.
+
+1. **Home** shows "Your first order in 3 steps" (**पहला ऑर्डर, 3 आसान कदम**). The × hides it for
+   good on this device; it also disappears once the customer has any order.
+2. **Pincode**: type 800099 (practice) in the pincode check. It shows "Delivery to 800099", the
+   fee and the minimum. Reload or reopen: it is still there and checked again. The basket shows
+   the same delivery line. A pincode that is not served offers a bulk quote instead.
+3. **Sign in with a new number**: "What should we call you?" (**आपका नाम क्या है?**) appears
+   once. Save a name or press **Skip for now**. The new-address form starts with that name and
+   the pincode.
+4. **Place a COD order**: the order page says what happens next: order received, **the shop
+   calls you** (now), prepared, on the way, delivered. No Call/WhatsApp buttons until the family
+   approves the shop's number (C2).
+5. **Owner desk on a new store** (no delivery areas or materials): Today shows "Set up your
+   store" (**दुकान तैयार करें**) with four rows. Each button opens the right screen; each row ticks
+   itself when the job is done; the card disappears at 4/4.
+
 ## 6. Demo kit
 
 The demo kit loads a sample catalogue (realistic materials, Hindi names and units, practice

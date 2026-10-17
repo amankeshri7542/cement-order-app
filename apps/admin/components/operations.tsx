@@ -331,7 +331,7 @@ export function DeliveryZones() {
   }, [load]);
   const zone = editing === 'new' ? null : editing;
   return (
-    <section className="panel operations-panel">
+    <section className="panel operations-panel" id="delivery-zones" tabIndex={-1}>
       <div className="section-title">
         <div>
           <h2>{t('Delivery areas', 'डिलीवरी क्षेत्र')}</h2>

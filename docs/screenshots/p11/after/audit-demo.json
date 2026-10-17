@@ -1,0 +1,130 @@
+{
+  "/ @390": {
+    "lowContrast": [],
+    "height": 6895,
+    "h1": 1,
+    "unnamed": [],
+    "small": [],
+    "placeholderText": [
+      "The shop's own photograph goes here"
+    ],
+    "focus": [
+      "a: शिव Shiv Cement Store Patna · cement, st",
+      "a: Materials",
+      "a: Bulk quotes",
+      "a: Sign in",
+      "a: Basket 0",
+      "button: ✳ Ask Shiv Assistant",
+      "button: हिन्दी ⇄",
+      "a: Shop materials →",
+      "a: Request bulk quote",
+      "a: Cement Sample PPC Cement ₹395.00 / bag",
+      "a: Steel Sample TMT Bar 8 mm ₹64.00 / kg",
+      "a: Bricks & blocks Sample Fly Ash Bricks ₹8"
+    ]
+  },
+  "/products @390": {
+    "lowContrast": [],
+    "height": 4418,
+    "h1": 1,
+    "unnamed": [],
+    "small": [],
+    "placeholderText": []
+  },
+  "/cart @390": {
+    "lowContrast": [],
+    "height": 1509,
+    "h1": 1,
+    "unnamed": [],
+    "small": [],
+    "placeholderText": []
+  },
+  "/account @390": {
+    "lowContrast": [],
+    "height": 1504,
+    "h1": 1,
+    "unnamed": [],
+    "small": [],
+    "placeholderText": []
+  },
+  "/ @1440": {
+    "lowContrast": [],
+    "height": 3965,
+    "h1": 1,
+    "unnamed": [],
+    "small": [],
+    "placeholderText": [
+      "The shop's own photograph goes here"
+    ],
+    "focus": [
+      "a: शिव Shiv Cement Store Patna · cement, st",
+      "a: Home",
+      "a: Materials",
+      "a: Bulk quotes",
+      "a: Sign in",
+      "a: Basket 0",
+      "button: ✳ Ask Shiv Assistant",
+      "button: हिन्दी ⇄",
+      "a: Shop materials →",
+      "a: Request bulk quote",
+      "a: Cement Sample PPC Cement ₹395.00 / bag",
+      "a: Steel Sample TMT Bar 8 mm ₹64.00 / kg"
+    ]
+  },
+  "/products @1440": {
+    "lowContrast": [],
+    "height": 2312,
+    "h1": 1,
+    "unnamed": [],
+    "small": [],
+    "placeholderText": []
+  },
+  "/cart @1440": {
+    "lowContrast": [],
+    "height": 1052,
+    "h1": 1,
+    "unnamed": [],
+    "small": [],
+    "placeholderText": []
+  },
+  "/account @1440": {
+    "lowContrast": [],
+    "height": 1052,
+    "h1": 1,
+    "unnamed": [],
+    "small": [],
+    "placeholderText": []
+  },
+  "app home en @390": {
+    "lowContrast": [],
+    "height": 800,
+    "h1": 3,
+    "unnamed": [],
+    "small": [],
+    "placeholderText": []
+  },
+  "app materials en @390": {
+    "lowContrast": [],
+    "height": 800,
+    "h1": 0,
+    "unnamed": [],
+    "small": [],
+    "placeholderText": []
+  },
+  "app home hi @390": {
+    "lowContrast": [],
+    "height": 800,
+    "h1": 3,
+    "unnamed": [],
+    "small": [],
+    "placeholderText": []
+  },
+  "app materials hi @390": {
+    "lowContrast": [],
+    "height": 800,
+    "h1": 0,
+    "unnamed": [],
+    "small": [],
+    "placeholderText": []
+  }
+}

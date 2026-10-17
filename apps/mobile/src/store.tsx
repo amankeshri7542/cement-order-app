@@ -11,7 +11,9 @@ import { AppState, Platform } from 'react-native';
 import EventSource from 'react-native-sse';
 import * as SecureStore from 'expo-secure-store';
 import {
+  firstRunKeys,
   guestIntentSchema,
+  isPincode,
   istToday,
   productName,
   quantityProblem,
@@ -204,6 +206,12 @@ function useStoreValue() {
   const mergeRef = useRef<MergeDraft | null>(null);
   const merging = useRef(false);
   const [latestOrder, setLatestOrder] = useState<Order | null>(null);
+  // Whether this account's orders were read at least once: the first-order card waits for it,
+  // so a regular customer never sees a beginner's card flash on a slow connection.
+  const [ordersKnown, setOrdersKnown] = useState(false);
+  // The last pincode checked on this phone, and whether the first-order card was closed.
+  const [pincode, setPincodeState] = useState('');
+  const [firstOrderTipHidden, setFirstOrderTipHidden] = useState(true);
   const [compare, setCompare] = useState<Product[]>([]);
   function setCart(next: CartLine[]) {
     cartRef.current = next;
@@ -285,6 +293,7 @@ function useStoreValue() {
       setAddresses([]);
       setOrdersById({});
       setLatestOrder(null);
+      setOrdersKnown(false);
       mergeRef.current = null;
       setMergeDraftState(null);
       drafts.current = { checkout: newCheckout(), quote: newQuote(), pending: null };
@@ -476,7 +485,10 @@ function useStoreValue() {
       // The home screen's "latest order" card; optional, so failures stay quiet.
       api<Page<Order>>('/orders?limit=1')
         .then((page) => {
-          if (current === accountRequest.current) setLatestOrder(page.items[0] || null);
+          if (current === accountRequest.current) {
+            setLatestOrder(page.items[0] || null);
+            setOrdersKnown(true);
+          }
         })
         .catch(() => {}),
     ]);
@@ -571,6 +583,14 @@ function useStoreValue() {
         } else setLanguageStatus('unset');
       })
       .catch(() => setLanguageStatus('unset'));
+    void readSaved<string>(firstRunKeys.pincode)
+      .then((saved) => {
+        if (isPincode(saved)) setPincodeState(saved);
+      })
+      .catch(() => {});
+    void readSaved<boolean>(firstRunKeys.firstOrderTip)
+      .then((hidden) => setFirstOrderTipHidden(hidden === true))
+      .catch(() => setFirstOrderTipHidden(false));
     void readSaved<SavedIntent>(guestKey)
       .then((saved) => {
         const intent = unpackIntent(saved);
@@ -842,12 +862,27 @@ function useStoreValue() {
     const id = userRef.current?.id;
     setUser(null);
     await storageTail.current.catch(() => {});
+    setPincodeState('');
     if (id)
       await Promise.all([
         writeSaved(`shiv_draft_${id}`, null),
         writeSaved(mergeKey(id), null),
+        writeSaved(firstRunKeys.pincode, null),
+        writeSaved(firstRunKeys.nameAsked(id), null),
       ]).catch(() => {});
   }
+  /** Remembers a checked pincode on this phone (null forgets it). */
+  const rememberPincode = useCallback((value: string | null) => {
+    const next = value && isPincode(value) ? value : '';
+    setPincodeState(next);
+    void writeSaved(firstRunKeys.pincode, next || null).catch(() => {});
+  }, []);
+  function hideFirstOrderTip() {
+    setFirstOrderTipHidden(true);
+    void writeSaved(firstRunKeys.firstOrderTip, true).catch(() => {});
+  }
+  const showFirstOrderTip =
+    !firstOrderTipHidden && user?.role !== 'ADMIN' && (!user || (ordersKnown && !latestOrder));
   function toggleCompare(product: Product) {
     setCompare((old) =>
       old.some((item) => item.id === product.id)
@@ -897,6 +932,10 @@ function useStoreValue() {
     mergeGuest,
     discardMerge,
     latestOrder,
+    pincode,
+    rememberPincode,
+    showFirstOrderTip,
+    hideFirstOrderTip,
     addresses,
     setAddresses,
     error,

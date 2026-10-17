@@ -4,7 +4,12 @@ Phase 5 preparation and the provider/family handoff are in
 [P5_STAGING_SETUP.md](P5_STAGING_SETUP.md). Preparation and Git push do not pass hosted,
 real-SMS, signed-build, closed-test or physical-device gates; those remain pending.
 
-**Updated 18 October 2026 (Phase 10, `codex/p10-launch-prep`).** Gate rows below reflect that
+**Updated 18 October 2026 (Phase 11, `codex/p11-first-run`).** Phase 11 adds rows B12 and O6
+(first run) with local automated evidence only; see [P11_FIRST_RUN.md](P11_FIRST_RUN.md). No
+gate changed status: G1 still needs a green CI run on the PR head, and nothing ran on a real
+phone.
+
+**Earlier update, 18 October 2026 (Phase 10, `codex/p10-launch-prep`).** Gate rows below reflect that
 branch. The local results and open findings are in [P10_LAUNCH_PREP.md](P10_LAUNCH_PREP.md);
 the ordered owner steps are in [OPERATOR_CHECKLIST.md](OPERATOR_CHECKLIST.md). Rows B and O
 still cite the tests that existed on 11 October; wave 1–2 added more (P6, P7 reports).
@@ -50,10 +55,12 @@ staff phone with passphrase, a second browser profile.
 | B9  | Order history and quotations                      | Open Orders, open a quote with an offer                                    | Status timeline; offer terms; accept only current revision     | `customer places a COD order, tracks it, reorders…`, `multi-material quotation recovers… converts once` ✅                                                                         | ⏳                 |
 | B10 | Assistant text, cancel, provider failure          | Ask a question, cancel, retry; simulate failure                            | Answers from catalogue/FAQ; cancel stops; failure labelled     | `assistant answers with current public catalogue… cancels and retries without private tools` ✅                                                                                    | ⏳                 |
 | B11 | Voice unavailable/denied                          | Tap voice in a browser without speech or deny mic                          | Clear message; typed chat works                                | `voice is explicit, editable before sending, handles denied/unsupported…` (simulated) ✅                                                                                           | ⏳ real microphone |
+| B12 | First run (Phase 11)                              | Fresh install: language, pincode, basket, sign in, name, checkout          | Pincode remembered; name asked once; "What happens next" shown | `tests/first-run.spec.ts` › `app first run…`, `website first run…` (Chrome + WebKit, 18 Oct) ✅                                                                                    | ⏳ on a phone      |
 | O1  | Owner reviews incoming orders and quotes          | Owner desk → Today                                                         | New COD order appears within 15 s                              | `phone COD: automatic owner queue…`, `SSE outage: polling finds new work…` ✅                                                                                                      | ⏳                 |
 | O2  | Permitted order transitions                       | Acknowledge → prepare → dispatch → collect → deliver; try refused delivery | Only allowed transitions; stock restored once on cancel/return | `phone COD…`, `phone refused delivery…`, `collected COD cancellation…` ✅                                                                                                          | ⏳                 |
 | O3  | Quote conversion                                  | Offer, customer accepts, convert                                           | One order at the accepted revision                             | `wholesale UI: freight confirmation, renewed consent and one order…` ✅                                                                                                            | ⏳                 |
 | O4  | Customer cannot reach other records or owner desk | Customer token on another's order/quote; customer opens owner desk         | 404/403; owner desk refused                                    | API integration (cross-account), `admin UI denies a customer account…`, `invalid and expired OTPs reject login and a customer cannot open the owner desk` ✅                       | ⏳                 |
+| O6  | New store setup checklist (Phase 11)              | Owner desk → Today on a store with no areas, materials, settings or alerts | Four rows tick from real data; card hides when all done        | `tests/first-run.spec.ts` › `owner first run…` (Chrome + WebKit, 18 Oct) ✅                                                                                                        | ⏳                 |
 | O5  | Loading, empty, error, recovery states            | Throttle network; empty catalogue/search                                   | Clear states, retry works, no fabricated data                  | `storefront loading, network failure and retry…`, `storefront distinguishes out-of-stock, missing products and empty search`, `a failed sign-in check explains guest browsing…` ✅ | ⏳                 |
 
 ## C. Device and accessibility (physical devices required)
@@ -110,8 +117,9 @@ screen; nothing is exposed on Wi-Fi). Then run the journeys on that phone:
 
 ## D. Automated results for this branch
 
-Current (18 October 2026, `codex/p10-launch-prep`): see
-[P10_LAUNCH_PREP.md](P10_LAUNCH_PREP.md#proof) for exact commands and counts. Older counts are in
+Current (18 October 2026, `codex/p11-first-run`): see
+[P11_FIRST_RUN.md](P11_FIRST_RUN.md#proof) for exact commands and counts. Phase 10:
+[P10_LAUNCH_PREP.md](P10_LAUNCH_PREP.md#proof). Older counts are in
 [V4_STAGING_READINESS.md](V4_STAGING_READINESS.md#automated-checks).
 
 ## E. Sign-off

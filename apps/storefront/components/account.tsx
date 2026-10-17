@@ -8,6 +8,7 @@ import { customerApi, CustomerError, errorText, localPhone } from '../lib/custom
 import { deviceLabel } from '../lib/devices';
 import { useCommerce } from './commerce';
 import { useLanguage } from './language';
+import { NameStep, needsName, useSavedPincode } from './first-run';
 
 export function AccountRequired({
   children,
@@ -86,6 +87,8 @@ export function AccountPage() {
   const [sent, setSent] = useState(false);
   const [devCode, setDevCode] = useState('');
   const [busy, setBusy] = useState(false);
+  // A new account without a name is asked for one once, before going on.
+  const [naming, setNaming] = useState<User | null>(null);
   const request = useRef(0);
   const account = useRef(c.user?.id);
   account.current = c.user?.id;
@@ -120,10 +123,8 @@ export function AccountPage() {
         await c.signedIn(result.user);
         if (request.current !== current || (account.current && account.current !== result.user.id))
           return;
-        const next = params.get('next');
-        router.push(
-          next && ['/cart', '/checkout', '/quotes', '/orders'].includes(next) ? next : '/cart',
-        );
+        if (needsName(result.user)) setNaming(result.user);
+        else carryOn();
       }
     } catch (e) {
       if (request.current === current && account.current === target) c.showError(e);
@@ -131,12 +132,26 @@ export function AccountPage() {
       if (request.current === current) setBusy(false);
     }
   }
+  function carryOn() {
+    const next = params.get('next');
+    router.push(
+      next && ['/cart', '/checkout', '/quotes', '/orders'].includes(next) ? next : '/cart',
+    );
+  }
   return (
     <div className="account-page">
       <div className="page-heading">
         <h1>{t('Your next project, together.', 'आपका अगला काम, साथ मिलकर।')}</h1>
       </div>
-      {c.user ? (
+      {naming && c.user?.id === naming.id ? (
+        <NameStep
+          user={naming}
+          done={() => {
+            setNaming(null);
+            carryOn();
+          }}
+        />
+      ) : c.user ? (
         <>
           <section className="account-summary">
             <h2>{c.user.name || t('Welcome back', 'फिर स्वागत है')}</h2>
@@ -615,8 +630,13 @@ export function AddressBook({
 }) {
   const c = useCommerce();
   const { t } = useLanguage();
+  const [pincode] = useSavedPincode();
   const [addresses, setAddresses] = useState<Address[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [form, setForm] = useState<AddressInput | null>(null);
+  // Read when the list arrives: checkout restores a saved choice before or after that.
+  const chosen = useRef(selected);
+  chosen.current = selected;
   const [editing, setEditing] = useState('');
   const [busy, setBusy] = useState(false);
   const id = c.user?.id;
@@ -633,10 +653,16 @@ export function AddressBook({
   useEffect(() => {
     let active = true;
     setAddresses([]);
+    setLoaded(false);
     if (id)
       void customerApi<Address[]>('/me/addresses', 'GET', undefined, id)
         .then((items) => {
-          if (active) setAddresses(items);
+          if (!active) return;
+          setAddresses(items);
+          setLoaded(true);
+          // Checkout picks a saved address by itself when none is chosen yet.
+          if (onSelect && items[0] && !items.some((item) => item.id === chosen.current))
+            onSelect(items[0].id);
         })
         .catch((error) => {
           if (active) c.showError(error);
@@ -645,6 +671,24 @@ export function AddressBook({
       active = false;
     };
   }, [id, c.showError]);
+  // A new address starts from what is known: the customer's name and number, the checked pincode.
+  const startNew = useCallback(() => {
+    setEditing('');
+    setForm({
+      ...blank,
+      name: c.user?.name || '',
+      phone: c.user?.phone.replace(/^\+91/, '') || '',
+      pincode,
+    });
+  }, [c.user, pincode]);
+  // In checkout, a customer with no saved address goes straight to the form.
+  const opened = useRef(false);
+  useEffect(() => {
+    if (onSelect && loaded && !addresses.length && !form && !opened.current) {
+      opened.current = true;
+      startNew();
+    }
+  }, [onSelect, loaded, addresses.length, form, startNew]);
   async function save() {
     if (!form || !id) return;
     setBusy(true);
@@ -709,23 +753,22 @@ export function AddressBook({
     <section className="address-book">
       <div className="section-heading">
         <h2>{t('Delivery addresses', 'डिलीवरी के पते')}</h2>
-        <button
-          className="text-link"
-          onClick={() => {
-            setForm(blank);
-            setEditing('');
-          }}
-        >
+        <button className="text-link" onClick={startNew}>
           {t('Add address +', 'पता जोड़ें +')}
         </button>
       </div>
-      {!addresses.length && !form && (
-        <p>
-          {t(
-            'Add your site or home address to continue.',
-            'आगे बढ़ने के लिए घर या काम की जगह का पता जोड़ें।',
-          )}
-        </p>
+      {loaded && !addresses.length && !form && (
+        <div className="empty-state compact">
+          <p>
+            {t(
+              'No saved address yet. Add your site or home address once; it is ready for every order.',
+              'अभी कोई पता सहेजा नहीं है। घर या साइट का पता एक बार जोड़ें; हर ऑर्डर में काम आएगा।',
+            )}
+          </p>
+          <button className="button secondary" onClick={startNew}>
+            {t('Add your first address', 'पहला पता जोड़ें')}
+          </button>
+        </div>
       )}
       <div className="address-list">
         {addresses.map((address) => (

@@ -49,6 +49,7 @@ import { Settings } from '../components/settings';
 import { MoneyReport } from '../components/money';
 import { StaffAlerts, soundOn } from '../components/staff';
 import { AuditHistory, CounterSale, DeliveryZones, StaffSessions } from '../components/operations';
+import { SetupChecklist, type SetupTarget } from '../components/setup';
 
 type Tab =
   | 'More'
@@ -575,6 +576,26 @@ function StoreDesk({ recoverSession }: { recoverSession: () => void }) {
   const go = (value: Tab, queue: string) => {
     if (leaveEdits(value)) navigate(value, queue);
   };
+  // The setup checklist opens the screen for each job, scrolled to the right panel.
+  const openSetup = (target: SetupTarget) => {
+    const [screen, anchor] = {
+      zones: ['Finance & settings', 'delivery-zones'],
+      products: ['Products', ''],
+      store: ['Finance & settings', 'store-details'],
+      alerts: ['Staff & alerts', ''],
+    }[target] as [Tab, string];
+    if (!leaveEdits(screen)) return;
+    navigate(screen);
+    // The panel mounts once the screen renders; look for it for up to two seconds.
+    const reveal = (tries: number) => {
+      const element = anchor ? document.getElementById(anchor) : null;
+      if (element) {
+        element.scrollIntoView({ block: 'start' });
+        element.focus({ preventScroll: true });
+      } else if (anchor && tries > 0) window.setTimeout(() => reveal(tries - 1), 100);
+    };
+    reveal(20);
+  };
   const openOrder = (id: string) => {
     if (rateDirty && !discardRates()) return;
     if (quoteDirty && !discardQuote()) return;
@@ -751,6 +772,7 @@ function StoreDesk({ recoverSession }: { recoverSession: () => void }) {
             </div>
           ) : tab === 'Overview' && dashboard ? (
             <>
+              <SetupChecklist settingsVersion={settings?.version ?? null} open={openSetup} />
               <section className="owner-queue-tabs" aria-label={t("Today's work", 'आज का काम')}>
                 <button className="primary" onClick={() => navigate('Orders', 'new')}>
                   {t('New work', 'नया काम')} · {dashboard.newWork}

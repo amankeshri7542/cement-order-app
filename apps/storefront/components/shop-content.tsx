@@ -63,13 +63,14 @@ export function ShopContent() {
   const cover = shop?.gallery.find((item) => approvedSrc(item.image));
   return (
     <>
-      <section className="shop-story" id="our-shop">
-        {/* Honest imagery: the family's own photograph, or a labelled slot until one is approved. */}
+      <section className={`shop-story${cover || contentReview ? '' : ' no-photo'}`} id="our-shop">
+        {/* Honest imagery: the family's own photograph. Until one is approved, production shows
+            nothing; review builds show a labelled slot so the family sees what is missing. */}
         {cover ? (
           <figure className="photo-slot photo-slot-filled">
             <ApprovedImage src={cover.image} alt={cover.alt} />
           </figure>
-        ) : (
+        ) : !contentReview ? null : (
           <div className="photo-slot">
             <div>
               <strong>

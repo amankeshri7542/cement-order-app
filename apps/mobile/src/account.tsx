@@ -16,6 +16,7 @@ import * as Notifications from 'expo-notifications';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   addressSchema,
+  firstRunKeys,
   momentLabel,
   phoneDigits,
   radius,
@@ -26,7 +27,7 @@ import {
   type User,
 } from '@shiv/shared';
 import { api, clearLocalSession, saveSession } from './api';
-import { useStore } from './store';
+import { readSaved, useStore, writeSaved } from './store';
 import {
   Button,
   C,
@@ -44,14 +45,53 @@ import {
 } from './ui';
 import { confirm } from './orders';
 
+/** True when this account has no name and was never asked for one on this phone. */
+async function needsName(user: User) {
+  if (user.role === 'ADMIN' || user.name.trim()) return false;
+  return (await readSaved<boolean>(firstRunKeys.nameAsked(user.id)).catch(() => null)) !== true;
+}
+
 export function Login() {
-  const { loginVisible, setLoginVisible, completeLogin, t, say } = useStore();
+  const { loginVisible, setLoginVisible, completeLogin, t, say, language } = useStore();
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [sent, setSent] = useState(false);
   const [devCode, setDevCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // After the code: a new account is asked for a name once (one field, skippable).
+  const [naming, setNaming] = useState<User | null>(null);
+  const [name, setName] = useState('');
+  // A sign-in finished elsewhere (a restored session closes the sheet) drops the question.
+  useEffect(() => {
+    if (!loginVisible) {
+      setNaming(null);
+      setName('');
+    }
+  }, [loginVisible]);
+  async function finishNaming(user: User, save: boolean) {
+    setBusy(true);
+    setError('');
+    try {
+      const value = name.trim();
+      let next = user;
+      if (save) {
+        if (!value || value.length > 100) {
+          setError(t('Enter your name, up to 100 letters.', 'अपना नाम लिखें, 100 अक्षरों तक।'));
+          return;
+        }
+        next = await api<User>('/me', 'PATCH', { name: value, language });
+      }
+      await writeSaved(firstRunKeys.nameAsked(user.id), true).catch(() => {});
+      setNaming(null);
+      setName('');
+      await completeLogin(next);
+    } catch (e) {
+      setError(say(e));
+    } finally {
+      setBusy(false);
+    }
+  }
   async function submit() {
     setBusy(true);
     setError('');
@@ -72,7 +112,8 @@ export function Login() {
         setSent(false);
         setCode('');
         setDevCode('');
-        await completeLogin(user);
+        if (await needsName(user)) setNaming(user);
+        else await completeLogin(user);
       }
     } catch (e) {
       setError(say(e));
@@ -85,7 +126,7 @@ export function Login() {
       visible={loginVisible}
       transparent
       animationType="slide"
-      onRequestClose={() => setLoginVisible(false)}
+      onRequestClose={() => (naming ? void finishNaming(naming, false) : setLoginVisible(false))}
     >
       {/* A modal has its own window, so Android's resize-for-keyboard does not reach it. */}
       <KeyboardAvoidingView behavior="padding" style={ac.overlay}>
@@ -94,97 +135,148 @@ export function Login() {
             keyboardShouldPersistTaps="handled"
             contentContainerStyle={{ padding: space.xl, gap: space.lg }}
           >
-            <View style={s.between}>
-              <Stamp size={44} />
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={t('Close', 'बंद करें')}
-                onPress={() => setLoginVisible(false)}
-                style={{ padding: space.md }}
-              >
-                <Icon name="close" />
-              </Pressable>
-            </View>
-            <View style={{ gap: space.xs }}>
-              <Text style={s.h1} maxFontSizeMultiplier={headingScale}>
-                {t('Sign in with your mobile', 'मोबाइल नंबर से साइन इन')}
-              </Text>
-              <Text style={s.body}>
-                {t(
-                  'We send a 6-digit code by SMS. No password needed.',
-                  'हम SMS से 6 अंकों का कोड भेजेंगे। पासवर्ड की ज़रूरत नहीं।',
+            {naming ? (
+              <>
+                <Stamp size={44} />
+                <View style={{ gap: space.xs }}>
+                  <Text
+                    style={s.h1}
+                    maxFontSizeMultiplier={headingScale}
+                    accessibilityRole="header"
+                  >
+                    {t('What should we call you?', 'आपका नाम क्या है?')}
+                  </Text>
+                  <Text style={s.body}>
+                    {t(
+                      'We use it to greet you and as the person receiving on new addresses. You can change it later in Account.',
+                      'इससे हम आपको नाम से बुलाएँगे और नए पते पर सामान लेने वाले का नाम भरेंगे। बाद में खाते में बदल सकते हैं।',
+                    )}
+                  </Text>
+                </View>
+                <Field
+                  label={t('Your name', 'आपका नाम')}
+                  value={name}
+                  onChangeText={setName}
+                  autoComplete="name"
+                  textContentType="name"
+                  maxLength={100}
+                  editable={!busy}
+                  returnKeyType="done"
+                  onSubmitEditing={() => void finishNaming(naming, true)}
+                  autoFocus
+                />
+                {Boolean(error) && <Notice error>{error}</Notice>}
+                <Button
+                  loading={busy}
+                  disabled={!name.trim()}
+                  icon="checkmark"
+                  onPress={() => void finishNaming(naming, true)}
+                >
+                  {t('Save and continue', 'सहेजें और आगे बढ़ें')}
+                </Button>
+                <Button
+                  kind="quiet"
+                  disabled={busy}
+                  onPress={() => void finishNaming(naming, false)}
+                >
+                  {t('Skip for now', 'अभी छोड़ें')}
+                </Button>
+              </>
+            ) : (
+              <>
+                <View style={s.between}>
+                  <Stamp size={44} />
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={t('Close', 'बंद करें')}
+                    onPress={() => setLoginVisible(false)}
+                    style={{ padding: space.md }}
+                  >
+                    <Icon name="close" />
+                  </Pressable>
+                </View>
+                <View style={{ gap: space.xs }}>
+                  <Text style={s.h1} maxFontSizeMultiplier={headingScale}>
+                    {t('Sign in with your mobile', 'मोबाइल नंबर से साइन इन')}
+                  </Text>
+                  <Text style={s.body}>
+                    {t(
+                      'We send a 6-digit code by SMS. No password needed.',
+                      'हम SMS से 6 अंकों का कोड भेजेंगे। पासवर्ड की ज़रूरत नहीं।',
+                    )}
+                  </Text>
+                </View>
+                <Field
+                  label={`${t('Mobile number', 'मोबाइल नंबर')} (+91)`}
+                  value={phone}
+                  onChangeText={(v) => setPhone(phoneDigits(v))}
+                  keyboardType="phone-pad"
+                  autoComplete="tel"
+                  textContentType="telephoneNumber"
+                  // Room for a pasted "+91 98765 43210"; phoneDigits keeps the ten digits.
+                  maxLength={18}
+                  editable={!sent && !busy}
+                  placeholder={t('10-digit mobile number', '10 अंकों का मोबाइल नंबर')}
+                  returnKeyType="send"
+                  onSubmitEditing={() => {
+                    if (!sent && phone.length === 10 && !busy) void submit();
+                  }}
+                  autoFocus
+                />
+                {sent && (
+                  <Field
+                    label={t('Verification code', 'सत्यापन कोड')}
+                    value={code}
+                    onChangeText={(v) => setCode(v.replace(/\D/g, '').slice(0, 6))}
+                    keyboardType="number-pad"
+                    autoComplete="one-time-code"
+                    textContentType="oneTimeCode"
+                    maxLength={6}
+                    placeholder={t('6-digit code', '6 अंकों का कोड')}
+                    returnKeyType="done"
+                    onSubmitEditing={() => {
+                      if (code.length === 6 && !busy) void submit();
+                    }}
+                    autoFocus
+                  />
                 )}
-              </Text>
-            </View>
-            <Field
-              label={`${t('Mobile number', 'मोबाइल नंबर')} (+91)`}
-              value={phone}
-              onChangeText={(v) => setPhone(phoneDigits(v))}
-              keyboardType="phone-pad"
-              autoComplete="tel"
-              textContentType="telephoneNumber"
-              // Room for a pasted "+91 98765 43210"; phoneDigits keeps the ten digits.
-              maxLength={18}
-              editable={!sent && !busy}
-              placeholder={t('10-digit mobile number', '10 अंकों का मोबाइल नंबर')}
-              returnKeyType="send"
-              onSubmitEditing={() => {
-                if (!sent && phone.length === 10 && !busy) void submit();
-              }}
-              autoFocus
-            />
-            {sent && (
-              <Field
-                label={t('Verification code', 'सत्यापन कोड')}
-                value={code}
-                onChangeText={(v) => setCode(v.replace(/\D/g, '').slice(0, 6))}
-                keyboardType="number-pad"
-                autoComplete="one-time-code"
-                textContentType="oneTimeCode"
-                maxLength={6}
-                placeholder={t('6-digit code', '6 अंकों का कोड')}
-                returnKeyType="done"
-                onSubmitEditing={() => {
-                  if (code.length === 6 && !busy) void submit();
-                }}
-                autoFocus
-              />
+                {Boolean(devCode) && (
+                  <Notice>
+                    Local development code: {devCode}
+                    {'\n'}No SMS was sent. Test mode is disabled in production.
+                  </Notice>
+                )}
+                {Boolean(error) && <Notice error>{error}</Notice>}
+                <Button
+                  loading={busy}
+                  disabled={sent ? code.length !== 6 : phone.length !== 10}
+                  onPress={() => void submit()}
+                  icon="arrow-forward"
+                >
+                  {sent
+                    ? t('Verify & continue', 'कोड पक्का करें')
+                    : t('Get verification code', 'कोड भेजें')}
+                </Button>
+                {sent && (
+                  <Button
+                    kind="quiet"
+                    onPress={() => {
+                      setSent(false);
+                      setCode('');
+                      setDevCode('');
+                    }}
+                  >
+                    {t('Change number or send a new code', 'नंबर बदलें या नया कोड भेजें')}
+                  </Button>
+                )}
+                <Text style={[s.small, { textAlign: 'center' }]}>
+                  {t(
+                    'Your number is used only for sign-in and order updates.',
+                    'आपका नंबर सिर्फ़ साइन इन और ऑर्डर की जानकारी के लिए है।',
+                  )}
+                </Text>
+              </>
             )}
-            {Boolean(devCode) && (
-              <Notice>
-                Local development code: {devCode}
-                {'\n'}No SMS was sent. Test mode is disabled in production.
-              </Notice>
-            )}
-            {Boolean(error) && <Notice error>{error}</Notice>}
-            <Button
-              loading={busy}
-              disabled={sent ? code.length !== 6 : phone.length !== 10}
-              onPress={() => void submit()}
-              icon="arrow-forward"
-            >
-              {sent
-                ? t('Verify & continue', 'कोड पक्का करें')
-                : t('Get verification code', 'कोड भेजें')}
-            </Button>
-            {sent && (
-              <Button
-                kind="quiet"
-                onPress={() => {
-                  setSent(false);
-                  setCode('');
-                  setDevCode('');
-                }}
-              >
-                {t('Change number or send a new code', 'नंबर बदलें या नया कोड भेजें')}
-              </Button>
-            )}
-            <Text style={[s.small, { textAlign: 'center' }]}>
-              {t(
-                'Your number is used only for sign-in and order updates.',
-                'आपका नंबर सिर्फ़ साइन इन और ऑर्डर की जानकारी के लिए है।',
-              )}
-            </Text>
           </ScrollView>
         </SafeAreaView>
       </KeyboardAvoidingView>
@@ -537,6 +629,7 @@ export function Addresses() {
     refreshAccount,
     say,
     language,
+    pincode,
   } = useStore();
   // route.id: an address to edit, or 'new' to open straight onto an empty form.
   const creating = route.id === 'new';
@@ -555,7 +648,8 @@ export function Addresses() {
       line1: address?.line1 || '',
       area: address?.area || '',
       city: address?.city || 'Patna',
-      pincode: address?.pincode || '',
+      // A new address starts from the pincode the customer already checked.
+      pincode: address?.pincode || (address ? '' : pincode),
       landmark: address?.landmark || '',
     };
   }

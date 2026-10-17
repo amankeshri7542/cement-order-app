@@ -1,14 +1,21 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import type { z } from 'zod';
 import { deliveryResponse, publicGet } from '../lib/api';
 import { price } from '../lib/catalog';
 import { useLanguage } from './language';
 import { useLiveRefresh } from './live';
+import { useSavedPincode } from './first-run';
 
-export function Delivery() {
+/**
+ * The pincode check: a full section on the home page, a compact one in the basket. The last
+ * checked pincode is remembered on this device and checked again on the next visit.
+ */
+export function Delivery({ variant = 'home' }: { variant?: 'home' | 'hero' | 'basket' }) {
   const { t } = useLanguage();
+  const [saved, remember] = useSavedPincode();
   const [pincode, setPincode] = useState('');
   const [result, setResult] = useState<z.infer<typeof deliveryResponse> | null>(null);
   const [busy, setBusy] = useState(false);
@@ -39,24 +46,50 @@ export function Delivery() {
     setBusy(true);
     try {
       const data = await publicGet(`/delivery/${value}`, deliveryResponse);
-      if (request.current === current) setResult(data);
+      if (request.current === current) {
+        setResult(data);
+        remember(value);
+      }
     } catch {
       if (request.current === current) setError('network');
     } finally {
       if (request.current === current) setBusy(false);
     }
   }
+  // A remembered pincode is filled in and checked once the page can run scripts.
+  const checkedSaved = useRef('');
+  useEffect(() => {
+    if (!ready || !saved || checkedSaved.current === saved || checkedPincode.current) return;
+    checkedSaved.current = saved;
+    setPincode(saved);
+    void check(saved);
+    // check reads only refs and setters; a new saved pincode is what should trigger it.
+  }, [ready, saved]);
+  const basket = variant === 'basket';
   return (
-    <section className="delivery-section" id="delivery" aria-labelledby="delivery-title">
+    <section
+      className={`delivery-section delivery-${variant}`}
+      id={basket ? 'basket-delivery' : 'delivery'}
+      aria-labelledby="delivery-title"
+    >
       {/* The delivery coupon: an ink slip with a dotted tear line between its two halves. */}
       <div className="delivery-heading">
         <div>
-          <h2 id="delivery-title">{t('Start with your pincode.', 'अपने पिनकोड से शुरू करें।')}</h2>
+          <h2 id="delivery-title">
+            {basket
+              ? t('Delivery to your site', 'आपकी साइट पर डिलीवरी')
+              : t('Start with your pincode.', 'अपने पिनकोड से शुरू करें।')}
+          </h2>
           <p>
-            {t(
-              'Check the listed delivery area, charges and minimum order for your site.',
-              'अपने काम की जगह पर डिलीवरी क्षेत्र, शुल्क और न्यूनतम ऑर्डर जाँचें।',
-            )}
+            {basket
+              ? t(
+                  'See the fee and minimum order for your site before checkout.',
+                  'चेकआउट से पहले अपनी साइट का डिलीवरी शुल्क और न्यूनतम ऑर्डर देखें।',
+                )
+              : t(
+                  'Check the listed delivery area, charges and minimum order for your site.',
+                  'अपने काम की जगह पर डिलीवरी क्षेत्र, शुल्क और न्यूनतम ऑर्डर जाँचें।',
+                )}
           </p>
         </div>
       </div>
@@ -109,10 +142,14 @@ export function Delivery() {
             {result.serviceable && result.zone ? (
               <>
                 <strong>
-                  {t('Delivery listed for this pincode', 'इस पिनकोड पर डिलीवरी दर्ज है')}
+                  {t(
+                    `Delivery to ${checkedPincode.current}`,
+                    `${checkedPincode.current} पर डिलीवरी`,
+                  )}
                 </strong>
                 <p>
-                  {result.zone.name} · {result.zone.estimate}
+                  {result.zone.name}
+                  {result.zone.estimate ? ` · ${result.zone.estimate}` : ''}
                 </p>
                 {result.zone.terms ? (
                   <p>
@@ -133,8 +170,8 @@ export function Delivery() {
                 </p>
                 <small>
                   {t(
-                    'This is a delivery check, not a booking. Confirm timing and charges with the store before purchase.',
-                    'यह डिलीवरी की जाँच है, बुकिंग नहीं। खरीदारी से पहले दुकान से समय और शुल्क की पुष्टि करें।',
+                    'This is a delivery check, not a booking. Checkout shows the current terms again before you confirm.',
+                    'यह डिलीवरी की जाँच है, बुकिंग नहीं। पुष्टि से पहले चेकआउट में मौजूदा शर्तें फिर दिखती हैं।',
                   )}
                 </small>
               </>
@@ -142,16 +179,19 @@ export function Delivery() {
               <>
                 <strong>
                   {t(
-                    'Delivery is not listed for this pincode.',
-                    'इस पिनकोड पर डिलीवरी दर्ज नहीं है।',
+                    `${checkedPincode.current} is not on the delivery list yet.`,
+                    `${checkedPincode.current} अभी डिलीवरी सूची में नहीं है।`,
                   )}
                 </strong>
                 <p>
                   {t(
-                    'Please confirm delivery arrangements with the store before planning your purchase.',
-                    'खरीदारी की तैयारी से पहले दुकान से डिलीवरी की व्यवस्था की पुष्टि करें।',
+                    'Check that it is the pincode of your site. For another area, send a bulk quote: the shop replies with freight if it can deliver there.',
+                    'जाँचें कि यह आपकी साइट का पिनकोड है। दूसरे इलाक़े के लिए थोक भाव माँगें: दुकान वहाँ पहुँचा सके तो भाड़े के साथ जवाब देगी।',
                   )}
                 </p>
+                <Link className="text-link" href="/quotes">
+                  {t('Ask for a bulk quote', 'थोक भाव माँगें')} <span aria-hidden="true">→</span>
+                </Link>
               </>
             )}
           </div>

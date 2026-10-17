@@ -4,6 +4,8 @@ node_modules/
 !.env.example
 .next/
 .next-e2e/
+.next-shots/
+.next-lighthouse/
 .playwright-cli/
 dist/
 .expo/

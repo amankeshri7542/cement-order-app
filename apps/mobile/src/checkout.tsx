@@ -31,7 +31,7 @@ import {
   Screen,
   TornEdge,
 } from './ui';
-import { MaterialArt, Quantity } from './catalog';
+import { DeliveryCheck, MaterialArt, Quantity } from './catalog';
 import { payOnline } from './payment';
 
 function MergeNotice() {
@@ -372,6 +372,16 @@ export function Cart() {
         </View>
       )}
       {Boolean(error) && <Notice error>{error}</Notice>}
+      {basket.length > 0 && (
+        <DeliveryCheck
+          inBasket
+          site={
+            user
+              ? (addresses.find((a) => a.id === checkoutDraft.addressId) || addresses[0])?.pincode
+              : undefined
+          }
+        />
+      )}
       {user ? (
         <DeliveryDetails />
       ) : (

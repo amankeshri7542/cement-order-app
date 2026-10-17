@@ -7,6 +7,7 @@ import { Delivery } from './delivery';
 import { ShopContent } from './shop-content';
 import { brandsResponse, publicGet } from '../lib/api';
 import { RateBoard } from './rate-board';
+import { FirstOrderCard } from './first-run';
 
 export function Home() {
   const { t } = useLanguage();
@@ -44,40 +45,24 @@ export function Home() {
               {t('Request bulk quote', 'थोक भाव माँगें')}
             </Link>
           </div>
-          <a className="hero-delivery" href="#delivery">
-            {t('Check delivery for your pincode', 'अपने पिनकोड पर डिलीवरी जाँचें')}{' '}
-            <span aria-hidden="true">↓</span>
-          </a>
         </div>
         <RateBoard />
+        {/* Beside the rate board on a wide screen; right after it on a phone. */}
+        <Delivery variant="hero" />
       </section>
+      <FirstOrderCard />
+      <Catalogue preview />
       <section className="buying-routes" aria-labelledby="routes-title">
         <h2 id="routes-title">{t('Two ways to buy.', 'खरीदने के दो तरीके।')}</h2>
         {/* The home counter is a parchi slip; the site counter answers on the shop letterhead. */}
         <div className="route route-retail">
-          <div className="route-head">
-            <div>
-              <h3>{t('For your home', 'घर के काम के लिए')}</h3>
-              <p>{t('A few bags to a few hundred.', 'कुछ बोरी से कुछ सौ तक।')}</p>
-            </div>
-          </div>
-          <ul>
-            <li>
-              {t(
-                'Add materials to your basket at the listed price.',
-                'सूची के भाव पर सामग्री टोकरी में डालें।',
-              )}
-            </li>
-            <li>
-              {t(
-                'Checkout shows the current total, delivery fee and date before you confirm.',
-                'पुष्टि से पहले चेकआउट में मौजूदा कुल, डिलीवरी शुल्क और तारीख दिखती है।',
-              )}
-            </li>
-            <li>
-              {t('Pay cash when the material arrives.', 'सामग्री पहुँचने पर नकद भुगतान करें।')}
-            </li>
-          </ul>
+          <h3>{t('For your home', 'घर के काम के लिए')}</h3>
+          <p>
+            {t(
+              'A few bags to a few hundred: add them to your basket at the listed price and pay cash when they arrive.',
+              'कुछ बोरी से कुछ सौ तक: सूची के भाव पर टोकरी में डालें और सामान पहुँचने पर नकद दें।',
+            )}
+          </p>
           <Link className="button" href="/products">
             {t('Shop materials', 'सामग्री खरीदें')} <span aria-hidden="true">→</span>
           </Link>
@@ -87,39 +72,19 @@ export function Home() {
             <span className="brand-stamp" aria-hidden="true">
               शिव
             </span>
-            <div>
-              <h3>{t('For your site', 'साइट के काम के लिए')}</h3>
-              <p>
-                {t('Several materials, truck-sized quantities.', 'कई सामग्री, ट्रक भर मात्रा।')}
-              </p>
-            </div>
+            <h3>{t('For your site', 'साइट के काम के लिए')}</h3>
           </div>
-          <ul>
-            <li>
-              {t(
-                'Put every material on one list, even beyond current stock.',
-                'सारी सामग्री एक सूची में रखें, मौजूदा स्टॉक से ज़्यादा भी।',
-              )}
-            </li>
-            <li>
-              {t(
-                'The shop replies with item prices, freight and an expiry date.',
-                'दुकान हर सामग्री का भाव, भाड़ा और समय-सीमा भेजती है।',
-              )}
-            </li>
-            <li>
-              {t(
-                'Accept the offer you reviewed; the shop then confirms it as an order.',
-                'जाँचा हुआ प्रस्ताव स्वीकार करें; फिर दुकान उसे पक्का ऑर्डर बनाती है।',
-              )}
-            </li>
-          </ul>
+          <p>
+            {t(
+              'Truck-sized quantities: send one list and the shop replies with item prices, freight and an expiry date.',
+              'ट्रक भर मात्रा: एक सूची भेजें, दुकान हर सामग्री का भाव, भाड़ा और समय-सीमा लिखकर भेजेगी।',
+            )}
+          </p>
           <Link className="button secondary" href="/quotes">
             {t('Request bulk quote', 'थोक भाव माँगें')} <span aria-hidden="true">→</span>
           </Link>
         </div>
       </section>
-      <Catalogue preview />
       {brands.length > 0 && (
         <section
           className="brands-section"
@@ -141,37 +106,7 @@ export function Home() {
           </p>
         </section>
       )}
-      <Delivery />
       <ShopContent />
-      <section className="buying-guide" aria-labelledby="guide-title">
-        <h2 id="guide-title">{t('Before you buy', 'खरीदने से पहले')}</h2>
-        <div className="guide-notes">
-          <div>
-            <h3>{t('Compare the same unit', 'एक जैसी इकाई की तुलना करें')}</h3>
-            <p>
-              {t(
-                'A bag, a kilogram, a thousand bricks and 100 cu ft of sand are different units. Compare the same grade and pack, and check each material’s minimum and quantity step.',
-                'बोरी, किलो, हज़ार ईंट और 100 घन फुट बालू अलग इकाइयाँ हैं। समान ग्रेड और पैक की तुलना करें, और हर सामग्री की न्यूनतम मात्रा व बढ़ोतरी देखें।',
-              )}
-            </p>
-            <Link className="text-link" href="/compare">
-              {t('Compare materials', 'सामग्री की तुलना करें')} <span aria-hidden="true">→</span>
-            </Link>
-          </div>
-          <div>
-            <h3>{t('Save the full site address', 'साइट का पूरा पता सहेजें')}</h3>
-            <p>
-              {t(
-                'Delivery fee, minimum order and timing depend on the pincode. Checkout shows the current terms again before you confirm.',
-                'डिलीवरी शुल्क, न्यूनतम ऑर्डर और समय पिनकोड पर निर्भर हैं। पुष्टि से पहले चेकआउट में मौजूदा शर्तें फिर दिखती हैं।',
-              )}
-            </p>
-            <Link className="text-link" href="/account">
-              {t('Manage addresses', 'पते सँभालें')} <span aria-hidden="true">→</span>
-            </Link>
-          </div>
-        </div>
-      </section>
     </>
   );
 }

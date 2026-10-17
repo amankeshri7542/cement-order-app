@@ -1424,6 +1424,69 @@ dialog legend {
   }
 }
 
+/* New-store setup checklist on Today: four jobs, each ticking itself from the live records. */
+.setup-checklist {
+  margin-bottom: 20px;
+  background: var(--paper);
+  border-top: 4px solid var(--accent);
+}
+.setup-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+.setup-head h2 {
+  font: 600 2rem / 1.05 var(--display);
+  margin-bottom: 6px;
+}
+.setup-count {
+  flex: none;
+  font: 600 2.6rem/1 var(--display);
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+.setup-steps {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.setup-steps li {
+  display: grid;
+  grid-template-columns: 2.25rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 14px 0;
+  border-top: 1px solid var(--rule);
+}
+.setup-steps li > div {
+  display: grid;
+  gap: 2px;
+}
+.setup-steps li p {
+  color: var(--muted);
+  line-height: 1.45;
+}
+.setup-mark {
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  background: var(--tab-1);
+  font-weight: 800;
+}
+.setup-steps li.done .setup-mark {
+  background: var(--ok);
+  color: var(--paper);
+}
+.setup-steps li.done strong {
+  color: var(--muted);
+  font-weight: 600;
+}
+
 @media (max-width: 1200px) {
   .sidebar {
     width: 220px;
@@ -1610,6 +1673,13 @@ dialog legend {
   }
 }
 @media (max-width: 560px) {
+  .setup-steps li {
+    grid-template-columns: 2.25rem minmax(0, 1fr);
+  }
+  .setup-steps li > button {
+    grid-column: 2;
+    justify-self: start;
+  }
   .stats-grid,
   .skeleton-grid {
     grid-template-columns: minmax(0, 1fr);

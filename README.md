@@ -1,7 +1,8 @@
 # Shiv Cement Store
 
-**Status (17 October 2026):** code complete through Phase 9; nothing is deployed, no money has
-been spent and online payments are off. The next steps need the owner's accounts and approval:
+**Status (18 October 2026):** code complete through Phase 11 (first-run guidance for new
+customers and a new store's owner desk; branch `codex/p11-first-run`, not merged); nothing is
+deployed, no money has been spent and online payments are off. The next steps need the owner's accounts and approval:
 the [operator checklist](docs/OPERATOR_CHECKLIST.md) lists them in order, and the
 [release checklist](docs/RELEASE_CHECKLIST.md) records which gates have passed.
 
@@ -12,7 +13,8 @@ Phase reports: [P1 app foundations](docs/P1_APP_FOUNDATIONS.md) ·
 [P7 website parity, Hindi catalogue, demo kit](docs/P7_PARITY_HINDI_DEMO.md) ·
 [P8 Direction A redesign](docs/P8_DIRECTION_A_REDESIGN.md) ·
 [P9 Teko and rate cards](docs/P9_TEKO_RATE_CARDS.md) ·
-[P10 launch prep](docs/P10_LAUNCH_PREP.md). Hosting: [staging runbook](docs/STAGING_RUNBOOK.md)
+[P10 launch prep](docs/P10_LAUNCH_PREP.md) ·
+[P11 first run and polish](docs/P11_FIRST_RUN.md) ([UX audit](docs/P11_UX_AUDIT.md)). Hosting: [staging runbook](docs/STAGING_RUNBOOK.md)
 and `render.yaml` (deploys from `main`, manual deploys only).
 
 Planning your first release? See the [launch plan for 50–100 customers](docs/LAUNCH_PLAN.md).
@@ -125,7 +127,7 @@ npm run build
 npm run security:scan
 ```
 
-Browser tests start separate API/admin/storefront/customer servers on 4010/3001/3004/8082. CI runs Chrome and WebKit (`npx playwright install chrome webkit` if needed). The latest local counts are in [P10_LAUNCH_PREP.md](docs/P10_LAUNCH_PREP.md). Unit and integration tests cover server pricing, transaction races, OTP/session security, authorization, webhook replay, refunds and quote revisions. Browser tests cover ordering, admin management, quotations, localization, mobile sizing and network recovery. See [pilot implementation report](docs/PILOT_IMPLEMENTATION.md) for actual verification results and limits.
+Browser tests start separate API/admin/storefront/customer servers on 4010/3001/3004/8082. CI runs Chrome and WebKit (`npx playwright install chrome webkit` if needed). The latest local counts are in [P11_FIRST_RUN.md](docs/P11_FIRST_RUN.md#proof). Review screenshots and a production Lighthouse run: `scripts/shots/` (see that report). Unit and integration tests cover server pricing, transaction races, OTP/session security, authorization, webhook replay, refunds and quote revisions. Browser tests cover ordering, admin management, quotations, localization, mobile sizing and network recovery. See [pilot implementation report](docs/PILOT_IMPLEMENTATION.md) for actual verification results and limits.
 
 ## Native app
 

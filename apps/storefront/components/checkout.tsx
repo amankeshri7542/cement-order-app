@@ -200,12 +200,21 @@ function Checkout() {
             <button
               className="button"
               disabled={!loaded || !addressId || busy || c.busy || c.mergePending}
+              aria-describedby={loaded && !addressId ? 'review-needs-address' : undefined}
               onClick={() => void getReview()}
             >
               {busy
                 ? t('Checking current terms…', 'मौजूदा शर्तें जाँच रहे हैं…')
                 : t('Review current order', 'मौजूदा ऑर्डर जाँचें')}
             </button>
+            {loaded && !addressId ? (
+              <p id="review-needs-address" className="field-hint">
+                {t(
+                  'Choose or add a delivery address first.',
+                  'पहले डिलीवरी का पता चुनें या जोड़ें।',
+                )}
+              </p>
+            ) : null}
           </div>
           {/* A fresh review is printed as the challan: the parchi's lines, address, totals and the
               cash-on-delivery stamp, on paper, before the customer confirms. */}

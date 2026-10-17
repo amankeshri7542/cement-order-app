@@ -17,7 +17,7 @@ export function Header() {
       </a>
       <header className="site-header">
         <div className="header-inner">
-          <Link className="brand" href="/" prefetch={false} aria-label="Shiv Cement Store — home">
+          <Link className="brand" href="/" prefetch={false}>
             <span className="brand-stamp" aria-hidden="true">
               शिव
             </span>

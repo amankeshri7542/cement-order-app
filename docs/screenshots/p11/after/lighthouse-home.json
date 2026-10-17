@@ -1,0 +1,93 @@
+{
+  "median": {
+    "performance": 98,
+    "accessibility": 100,
+    "bestPractices": 93,
+    "fcpMs": 756,
+    "lcpMs": 2461,
+    "tbtMs": 26,
+    "cls": 0.001,
+    "speedIndexMs": 756,
+    "transferKiB": 418,
+    "lighthouse": "12.8.2",
+    "failedA11y": [],
+    "layoutShifts": [
+      {
+        "score": 0.001,
+        "node": "<p class=\"rate-checked\">",
+        "causes": []
+      }
+    ],
+    "shiftCulprits": []
+  },
+  "production": {
+    "reviewNotes": 0,
+    "placeholderText": false,
+    "pageHeight": 3552
+  },
+  "runs": [
+    {
+      "performance": 98,
+      "accessibility": 100,
+      "bestPractices": 93,
+      "fcpMs": 755,
+      "lcpMs": 2467,
+      "tbtMs": 33,
+      "cls": 0.001,
+      "speedIndexMs": 755,
+      "transferKiB": 418,
+      "lighthouse": "12.8.2",
+      "failedA11y": [],
+      "layoutShifts": [
+        {
+          "score": 0.001,
+          "node": "<p class=\"rate-checked\">",
+          "causes": []
+        }
+      ],
+      "shiftCulprits": []
+    },
+    {
+      "performance": 98,
+      "accessibility": 100,
+      "bestPractices": 93,
+      "fcpMs": 756,
+      "lcpMs": 2461,
+      "tbtMs": 26,
+      "cls": 0.001,
+      "speedIndexMs": 756,
+      "transferKiB": 418,
+      "lighthouse": "12.8.2",
+      "failedA11y": [],
+      "layoutShifts": [
+        {
+          "score": 0.001,
+          "node": "<p class=\"rate-checked\">",
+          "causes": []
+        }
+      ],
+      "shiftCulprits": []
+    },
+    {
+      "performance": 98,
+      "accessibility": 100,
+      "bestPractices": 93,
+      "fcpMs": 756,
+      "lcpMs": 2461,
+      "tbtMs": 26,
+      "cls": 0.001,
+      "speedIndexMs": 756,
+      "transferKiB": 419,
+      "lighthouse": "12.8.2",
+      "failedA11y": [],
+      "layoutShifts": [
+        {
+          "score": 0.001,
+          "node": "<p class=\"rate-checked\">",
+          "causes": []
+        }
+      ],
+      "shiftCulprits": []
+    }
+  ]
+}
