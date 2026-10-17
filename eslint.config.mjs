@@ -13,6 +13,7 @@ export default ts.config(
       'apps/mobile/android/**',
       'apps/mobile/ios/**',
       '.local/**',
+      '.claude/**',
       '.playwright-cli/**',
       'playwright-report/**',
       'test-results/**',
