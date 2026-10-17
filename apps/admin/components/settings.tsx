@@ -75,7 +75,7 @@ export function Settings({
             </button>
           </p>
         )}
-        <section className="panel padded">
+        <section className="panel padded" id="store-details" tabIndex={-1}>
           <h2>
             <Phone size={21} />
             {t('Store details', 'दुकान की जानकारी')}
