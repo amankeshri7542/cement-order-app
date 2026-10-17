@@ -1,5 +1,6 @@
 # Preparation only. Importing this Blueprint creates paid resources; obtain approval first.
-# Replace/confirm the branch and region before import. No push triggers a deployment.
+# Deploys from main: merge the launch-prep PR first. autoDeployTrigger is off, so a push
+# never deploys; confirm the region before import.
 databases:
   - name: shiv-staging-db
     region: singapore
@@ -15,7 +16,7 @@ services:
     runtime: docker
     region: singapore
     plan: starter
-    branch: codex/p5-staging-setup
+    branch: main
     autoDeployTrigger: off
     numInstances: 1
     dockerfilePath: ./Dockerfile
@@ -63,7 +64,7 @@ services:
     runtime: node
     region: singapore
     plan: starter
-    branch: codex/p5-staging-setup
+    branch: main
     autoDeployTrigger: off
     numInstances: 1
     buildCommand: npm ci --include=dev --workspace @shiv/admin --workspace @shiv/shared --include-workspace-root && npm run build -w @shiv/shared && npm run build -w @shiv/admin
@@ -84,7 +85,7 @@ services:
     runtime: node
     region: singapore
     plan: starter
-    branch: codex/p5-staging-setup
+    branch: main
     autoDeployTrigger: off
     numInstances: 1
     buildCommand: npm ci --include=dev --workspace @shiv/storefront --workspace @shiv/shared --include-workspace-root && npm run build -w @shiv/shared && npm run build -w @shiv/storefront

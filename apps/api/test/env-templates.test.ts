@@ -75,6 +75,18 @@ describe('environment templates', () => {
     expect(() => getConfig()).toThrow(/unique OTP hash secret/);
   });
 
+  it('render.yaml deploys main and sets only API variables the template documents', () => {
+    const blueprint = readFileSync('../../render.yaml', 'utf8');
+    const branches = [...blueprint.matchAll(/^\s+branch:\s*(\S+)/gm)].map((m) => m[1]);
+    expect(branches).toEqual(['main', 'main', 'main']);
+    const api = blueprint.split(/^\s+- type: web/m)[1]!;
+    const keys = [...api.matchAll(/^\s+- key:\s*([A-Z0-9_]+)/gm)].map((m) => m[1]!);
+    const staging = parse('staging.env.example').documented;
+    const known = new Set([...Object.keys(configSchema.shape), 'RELEASE_SHA']);
+    expect(keys.filter((key) => !known.has(key))).toEqual([]);
+    expect(keys.filter((key) => !staging.has(key))).toEqual([]);
+  });
+
   it('production refuses mock OTP and plain-HTTP origins', async () => {
     const { values } = parse('staging.env.example');
     for (const [key, value] of Object.entries({
