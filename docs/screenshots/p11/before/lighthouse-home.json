@@ -1,0 +1,64 @@
+{
+  "median": {
+    "performance": 87,
+    "accessibility": 100,
+    "bestPractices": 93,
+    "fcpMs": 756,
+    "lcpMs": 2462,
+    "tbtMs": 28,
+    "cls": 0.141,
+    "speedIndexMs": 5975,
+    "transferKiB": 369,
+    "lighthouse": "12.8.2",
+    "failedA11y": [
+      "label-content-name-mismatch"
+    ]
+  },
+  "runs": [
+    {
+      "performance": 78,
+      "accessibility": 100,
+      "bestPractices": 93,
+      "fcpMs": 762,
+      "lcpMs": 3722,
+      "tbtMs": 38,
+      "cls": 0.141,
+      "speedIndexMs": 6506,
+      "transferKiB": 369,
+      "lighthouse": "12.8.2",
+      "failedA11y": [
+        "label-content-name-mismatch"
+      ]
+    },
+    {
+      "performance": 87,
+      "accessibility": 100,
+      "bestPractices": 93,
+      "fcpMs": 756,
+      "lcpMs": 2462,
+      "tbtMs": 28,
+      "cls": 0.141,
+      "speedIndexMs": 5975,
+      "transferKiB": 369,
+      "lighthouse": "12.8.2",
+      "failedA11y": [
+        "label-content-name-mismatch"
+      ]
+    },
+    {
+      "performance": 87,
+      "accessibility": 100,
+      "bestPractices": 93,
+      "fcpMs": 756,
+      "lcpMs": 2462,
+      "tbtMs": 27,
+      "cls": 0.141,
+      "speedIndexMs": 5981,
+      "transferKiB": 369,
+      "lighthouse": "12.8.2",
+      "failedA11y": [
+        "label-content-name-mismatch"
+      ]
+    }
+  ]
+}
