@@ -3,6 +3,10 @@
 > **Status update (16 October 2026):** PR #1 (`codex/pilot-readiness` → `main`) was merged on
 > 13 October 2026. Where this page says "existing draft", it describes the state on 9 October.
 > Test counts below are from that date and have since been superseded.
+>
+> **Status update (18 October 2026):** the current branch is `codex/p10-launch-prep` (Phases 6–10).
+> Current test counts, gate status and open findings are in
+> [P10_LAUNCH_PREP.md](P10_LAUNCH_PREP.md) and [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md).
 
 This is a source-review release on `codex/pilot-readiness`, not approval for public staging or shop operation. Online payments remain disabled. Nothing in this release authorizes deployment, live data migration or customer messages. The proposed next product is described separately in [V2_INTEGRATION_ROADMAP.md](V2_INTEGRATION_ROADMAP.md).
 

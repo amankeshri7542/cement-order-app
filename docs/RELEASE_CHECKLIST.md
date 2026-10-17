@@ -4,6 +4,11 @@ Phase 5 preparation and the provider/family handoff are in
 [P5_STAGING_SETUP.md](P5_STAGING_SETUP.md). Preparation and Git push do not pass hosted,
 real-SMS, signed-build, closed-test or physical-device gates; those remain pending.
 
+**Updated 18 October 2026 (Phase 10, `codex/p10-launch-prep`).** Gate rows below reflect that
+branch. The local results and open findings are in [P10_LAUNCH_PREP.md](P10_LAUNCH_PREP.md);
+the ordered owner steps are in [OPERATOR_CHECKLIST.md](OPERATOR_CHECKLIST.md). Rows B and O
+still cite the tests that existed on 11 October; wave 1–2 added more (P6, P7 reports).
+
 Prepared 11 October 2026 (Phase 4). Use this for every staging release and, later, for the
 production decision. A row passes only with the evidence named. **Automated** means a test in
 this repository ran against a disposable database; it is not proof on a real phone, real
@@ -14,17 +19,17 @@ Status key: ✅ passed (with evidence) · ⏳ pending · ⛔ blocked by an exter
 
 ## A. Release gates
 
-| #   | Gate                                                                                                                                                                                                                   | Owner                      | Status             | Evidence / next action                                                                              |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ------------------ | --------------------------------------------------------------------------------------------------- |
-| G1  | Exact commit passed GitHub Actions `verify` (lint, types, unit, integration, workflows, Chrome + WebKit journeys, restore rehearsal, builds, CSP/nonce checker, credential scan, audit, Docker build, container smoke) | Developer                  | ⏳ for this branch | PR checks for the exact head SHA                                                                    |
-| G2  | Hosting, database plan, domain/DNS chosen and approved                                                                                                                                                                 | Owner                      | ⛔                 | [STAGING_RUNBOOK.md §3](STAGING_RUNBOOK.md#3-hosting-options-decision-required-approval)            |
-| G3  | Twilio Verify for India configured with approved test numbers                                                                                                                                                          | Owner + technical operator | ⛔                 | No credentials exist; mock OTP is refused in production                                             |
-| G4  | Staging database with separate migration and runtime roles; backup taken and restore rehearsed on the provider                                                                                                         | Technical operator         | ⏳                 | Local rehearsal passed (§D); provider rehearsal pending                                             |
-| G5  | Family content decisions C1–C3, C8–C10                                                                                                                                                                                 | Family                     | ⏳                 | [FAMILY_CONTENT_CHECKLIST.md](FAMILY_CONTENT_CHECKLIST.md#decisions-needed-from-the-family-now)     |
-| G6  | Physical-device acceptance (§C)                                                                                                                                                                                        | Family + developer         | ⏳                 | No device or remote-device service was available to the developer                                   |
-| G7  | Online payments remain disabled; Razorpay variables unset                                                                                                                                                              | Developer                  | ✅                 | `StoreSettings.onlinePaymentsEnabled=false` in dev data; staging template leaves `RAZORPAY_*` unset |
-| G8  | Live assistant provider                                                                                                                                                                                                | Owner                      | ⛔ (not required)  | `ASSISTANT_PROVIDER=fallback` serves approved FAQ/catalogue answers                                 |
-| G9  | Production go/no-go                                                                                                                                                                                                    | Owner                      | ⛔                 | Not before G1–G6 pass on staging                                                                    |
+| #   | Gate                                                                                                                                                                                                                   | Owner                      | Status            | Evidence / next action                                                                                                                   |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| G1  | Exact commit passed GitHub Actions `verify` (lint, types, unit, integration, workflows, Chrome + WebKit journeys, restore rehearsal, builds, CSP/nonce checker, credential scan, audit, Docker build, container smoke) | Developer                  | ⏳ for p10 head   | `beefb65` (p9) passed Verify run 38957327500 and Android run 38957327569 ✅. The p10 PR head needs its own green run                     |
+| G2  | Hosting, database plan, domain/DNS chosen and approved                                                                                                                                                                 | Owner                      | ⛔                | Owner: domain, Render billing and plan approval. `render.yaml` now deploys from `main` (import only after the p10 PR is merged)          |
+| G3  | Twilio Verify for India configured with approved test numbers                                                                                                                                                          | Owner + technical operator | ⛔                | No credentials exist; mock OTP is refused in production                                                                                  |
+| G4  | Staging database with separate migration and runtime roles; backup taken and restore rehearsed on the provider                                                                                                         | Technical operator         | ⏳                | Restore rehearsal passed in CI at `beefb65`; not runnable on this Mac in Phase 10 (see P10). Provider rehearsal pending                  |
+| G5  | Family content decisions C1–C3, C8–C10                                                                                                                                                                                 | Family                     | ⏳                | [FAMILY_CONTENT_CHECKLIST.md](FAMILY_CONTENT_CHECKLIST.md#decisions-needed-from-the-family-now)                                          |
+| G6  | Physical-device acceptance (§C)                                                                                                                                                                                        | Family + developer         | ⏳                | No device or remote-device service was available to the developer                                                                        |
+| G7  | Online payments remain disabled; Razorpay variables unset                                                                                                                                                              | Developer                  | ✅                | `StoreSettings.onlinePaymentsEnabled=false` in dev data; staging template and `render.yaml` leave `RAZORPAY_*` unset (re-checked 18 Oct) |
+| G8  | Live assistant provider                                                                                                                                                                                                | Owner                      | ⛔ (not required) | `ASSISTANT_PROVIDER=fallback` serves approved FAQ/catalogue answers                                                                      |
+| G9  | Production go/no-go                                                                                                                                                                                                    | Owner                      | ⛔                | Not before G1–G6 pass on staging                                                                                                         |
 
 ## B. Customer and owner acceptance
 
@@ -105,8 +110,9 @@ screen; nothing is exposed on Wi-Fi). Then run the journeys on that phone:
 
 ## D. Automated results for this branch
 
-See [V4_STAGING_READINESS.md](V4_STAGING_READINESS.md#automated-checks) for exact commands and
-counts.
+Current (18 October 2026, `codex/p10-launch-prep`): see
+[P10_LAUNCH_PREP.md](P10_LAUNCH_PREP.md#proof) for exact commands and counts. Older counts are in
+[V4_STAGING_READINESS.md](V4_STAGING_READINESS.md#automated-checks).
 
 ## E. Sign-off
 
