@@ -729,7 +729,7 @@ test('owner price publication reaches storefront and existing customer app', asy
       .fill((await (await otp).json()).devCode);
     await owner.getByRole('button', { name: 'Open store desk' }).click();
     await expect(owner.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
-    await owner.getByRole('button', { name: /Prices & stock$/ }).click();
+    await owner.goto('http://localhost:3001/more?view=products');
     await owner.getByRole('textbox', { name: 'Search products' }).fill('TEST V2 Material 00');
     await owner.getByRole('button', { name: 'Edit TEST V2 Material 00' }).click();
     await owner.getByLabel('Selling price (₹)').fill('137.45');

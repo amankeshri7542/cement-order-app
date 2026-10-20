@@ -7,7 +7,7 @@ const querySchema = z.object({
 });
 const cursorSchema = z.strictObject({
   scope: z.string(),
-  value: z.union([z.string().max(250), z.number().int().min(0)]),
+  value: z.union([z.string().max(250), z.number().int().min(-2_000_000_000)]),
   id: z.string().min(1).max(100),
 });
 export function paginate(
@@ -33,6 +33,7 @@ export function paginate(
     if (
       (field === 'createdAt' && !Number.isFinite((value as Date).getTime())) ||
       (field === 'pricePaise' && typeof value !== 'number') ||
+      (field === 'khataBalancePaise' && typeof value !== 'number') ||
       (field === 'name' && typeof value !== 'string')
     )
       fail('INVALID_CURSOR', 'Refresh this list to continue.');

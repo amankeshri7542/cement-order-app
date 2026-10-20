@@ -1,9 +1,12 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Order, Quote, User, dayLabel, deliveryDateOptions, istToday, money } from '@shiv/shared';
 import { ArrowUpRight } from 'lucide-react';
+import { Sheet } from '@shiv/design';
 import { api } from '../lib/api';
 import { useWords } from '../lib/i18n';
+import { useOwner, useUnsavedGuard } from '../lib/owner';
 import { Badge, Empty, Field, Modal } from './ui';
 export function Quotes({
   quotes,
@@ -17,8 +20,10 @@ export function Quotes({
   onDirtyChange: (value: boolean) => void;
 }) {
   const { t, age, language } = useWords();
+  const { confirm } = useOwner();
   const [selected, setSelected] = useState<Quote | null>(null);
   const [dirty, setDirty] = useState(false);
+  useUnsavedGuard(dirty);
   useEffect(() => {
     onDirtyChange(dirty);
   }, [dirty, onDirtyChange]);
@@ -28,17 +33,18 @@ export function Quotes({
   useEffect(() => {
     if (!dirty && liveQuote && liveQuote !== selected) setSelected(liveQuote);
   }, [dirty, liveQuote, selected]);
-  useEffect(() => {
-    if (!dirty) return;
-    const warn = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = '';
-    };
-    window.addEventListener('beforeunload', warn);
-    return () => window.removeEventListener('beforeunload', warn);
-  }, [dirty]);
-  const close = () => {
-    if (dirty && !window.confirm(t('Discard unsaved quotation edits?', 'बिना भेजे बदलाव हटाएँ?')))
+  const close = async () => {
+    if (
+      dirty &&
+      !(await confirm({
+        title: t('Discard unsaved quotation edits?', 'बिना भेजे बदलाव हटाएँ?'),
+        body: t(
+          'Your unsent quotation changes will be discarded.',
+          'भाव के बिना भेजे बदलाव हट जाएँगे।',
+        ),
+        confirmLabel: t('Discard unsaved edits', 'बिना सहेजे बदलाव हटाएँ'),
+      }))
+    )
       return;
     setSelected(null);
     setDirty(false);
@@ -200,7 +206,12 @@ function QuoteEditor({
   onDirty: () => void;
   changed: boolean;
 }) {
+  const router = useRouter();
   const { t, error: say, language } = useWords();
+  const { confirm } = useOwner();
+  const [decision, setDecision] = useState<'ACCEPTED' | 'REJECTED' | null>(null);
+  const [decisionNote, setDecisionNote] = useState('');
+  const [decisionError, setDecisionError] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [revising, setRevising] = useState(false);
@@ -226,12 +237,14 @@ function QuoteEditor({
         0,
       ) + Math.round(Number(f.get('delivery')) * 100);
     if (
-      !window.confirm(
-        t(
+      !(await confirm({
+        title: t('Send quotation', 'भाव भेजें'),
+        body: t(
           `Send this quote for ${money(total)} to the customer?`,
           `${money(total)} का यह भाव ग्राहक को भेजें?`,
         ),
-      )
+        confirmLabel: t('Send quotation', 'भाव भेजें'),
+      }))
     )
       return;
     saving.current = true;
@@ -267,12 +280,14 @@ function QuoteEditor({
   async function convert() {
     if (saving.current) return;
     if (
-      !window.confirm(
-        t(
+      !(await confirm({
+        title: t('Create supply order', 'ऑर्डर बनाएँ'),
+        body: t(
           `Create a cash-on-delivery order for ${money(quote.totalPaise || 0)} at the agreed terms${datePassed ? `, delivering ${dayLabel(newDate, 'en')}` : ''}?`,
           `तय शर्तों पर ${money(quote.totalPaise || 0)} का डिलीवरी पर भुगतान वाला ऑर्डर बनाएँ${datePassed ? `, डिलीवरी ${dayLabel(newDate, 'hi')}` : ''}?`,
         ),
-      )
+        confirmLabel: t('Create supply order', 'ऑर्डर बनाएँ'),
+      }))
     )
       return;
     saving.current = true;
@@ -284,7 +299,7 @@ function QuoteEditor({
         ...(datePassed ? { deliveryDate: newDate } : {}),
       });
       await save(t(`Order ${order.number} created`, `ऑर्डर ${order.number} बन गया`));
-      window.location.hash = `orders?order=${encodeURIComponent(order.id)}`;
+      router.push(`/orders/${encodeURIComponent(order.id)}`);
     } catch (e) {
       setError(say(e));
     } finally {
@@ -292,338 +307,415 @@ function QuoteEditor({
       setBusy(false);
     }
   }
+  async function recordDecision(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!decision || saving.current) return;
+    const note = decisionNote.trim();
+    if (!note) {
+      setDecisionError(
+        t(
+          'Record who confirmed, how, and when (required):',
+          'किसने, कैसे और कब पक्का किया लिखें (ज़रूरी):',
+        ),
+      );
+      return;
+    }
+    saving.current = true;
+    setBusy(true);
+    setDecisionError('');
+    try {
+      await api(`/admin/quotes/${quote.id}/respond`, 'POST', {
+        revision: quote.revision,
+        status: decision,
+        note,
+      });
+      await save(
+        decision === 'ACCEPTED'
+          ? t('Customer acceptance recorded', 'ग्राहक की मंज़ूरी दर्ज हुई')
+          : t('Quote closed', 'भाव बंद हुआ'),
+      );
+    } catch (error) {
+      setDecisionError(say(error));
+    } finally {
+      saving.current = false;
+      setBusy(false);
+    }
+  }
   return (
-    <Modal title={quote.number} close={close}>
-      <form className="form-stack" onSubmit={submit} onChange={onDirty}>
-        {changed && (
-          <p className="warning">
-            {t(
-              'This quote changed elsewhere. Your edits are kept; sending checks the revision. Close and reopen to see the latest terms.',
-              'यह भाव कहीं और बदला है। आपके बदलाव सुरक्षित हैं; भेजते समय संस्करण जाँचा जाएगा। नई शर्तें देखने के लिए बंद करके फिर खोलें।',
-            )}
-          </p>
-        )}
-        <Badge value={quote.status} />
-        {quote.work && (
-          <section className="detail-block">
-            <p>
-              {t('Assigned', 'ज़िम्मेदारी')}:{' '}
-              <strong>{quote.work.assignedTo?.name || t('Nobody yet', 'अभी किसी की नहीं')}</strong>
-            </p>
-            {!quote.work.acknowledgedAt && (
-              <button
-                type="button"
-                className="primary wide"
-                disabled={busy}
-                onClick={async () => {
-                  if (saving.current) return;
-                  saving.current = true;
-                  setBusy(true);
-                  setError('');
-                  try {
-                    await api(`/admin/quotes/${quote.id}/acknowledge`, 'POST', {});
-                    await save(t('Quotation acknowledged', 'ज़िम्मेदारी ली'));
-                  } catch (e) {
-                    setError(say(e));
-                  } finally {
-                    saving.current = false;
-                    setBusy(false);
-                  }
-                }}
-              >
-                {t('Acknowledge quotation', 'ज़िम्मेदारी लें')}
-              </button>
-            )}
-            {quote.work.lastError && (
-              <AlertRetry workId={quote.work.id} attempts={quote.work.attempts} done={save} />
-            )}
-            <Field label={t('Assign owner', 'ज़िम्मेदारी बदलें')}>
-              <select
-                defaultValue=""
-                disabled={busy}
-                onChange={async (e) => {
-                  if (!e.target.value || saving.current) return;
-                  saving.current = true;
-                  setBusy(true);
-                  try {
-                    await api(`/admin/work/${quote.work!.id}/assign`, 'POST', {
-                      ownerId: e.target.value,
-                    });
-                    await save(t('Quotation assigned', 'ज़िम्मेदारी बदली'));
-                  } catch (e) {
-                    setError(say(e));
-                  } finally {
-                    saving.current = false;
-                    setBusy(false);
-                  }
-                }}
-              >
-                <option value="">{t('Choose owner', 'मालिक चुनें')}</option>
-                {owners.map((owner) => (
-                  <option key={owner.id} value={owner.id}>
-                    {owner.name || owner.phone}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          </section>
-        )}
-        {quote.order && (
-          <p className="notice">
-            {t('Supply order', 'सप्लाई ऑर्डर')}:{' '}
-            <a href={`#orders?order=${encodeURIComponent(quote.order.id)}`}>{quote.order.number}</a>
-          </p>
-        )}
-        {quote.status === 'ACCEPTED' && !quote.order && !revising && (
-          <section className="form-stack">
-            <p className="notice">
+    <>
+      <Modal title={quote.number} close={close}>
+        <form className="form-stack" onSubmit={submit} onChange={onDirty}>
+          {changed && (
+            <p className="warning">
               {t(
-                'The customer accepted this revision. Create one cash-on-delivery order at these agreed prices and freight; stock is checked again.',
-                'ग्राहक ने यह भाव मंज़ूर किया है। इन्हीं तय भाव और भाड़े पर डिलीवरी पर भुगतान वाला एक ऑर्डर बनाएँ; स्टॉक फिर जाँचा जाएगा।',
+                'This quote changed elsewhere. Your edits are kept; sending checks the revision. Close and reopen to see the latest terms.',
+                'यह भाव कहीं और बदला है। आपके बदलाव सुरक्षित हैं; भेजते समय संस्करण जाँचा जाएगा। नई शर्तें देखने के लिए बंद करके फिर खोलें।',
               )}
             </p>
-            {datePassed && (
-              <Field
-                label={t(
-                  'New delivery day (agreed day has passed)',
-                  'नई डिलीवरी तारीख़ (तय दिन बीत गया)',
-                )}
-              >
-                <select value={newDate} onChange={(e) => setNewDate(e.target.value)}>
-                  {dateOptions.map((day) => (
-                    <option key={day} value={day}>
-                      {dayLabel(day, language)}
+          )}
+          <Badge value={quote.status} />
+          {quote.work && (
+            <section className="detail-block">
+              <p>
+                {t('Assigned', 'ज़िम्मेदारी')}:{' '}
+                <strong>
+                  {quote.work.assignedTo?.name || t('Nobody yet', 'अभी किसी की नहीं')}
+                </strong>
+              </p>
+              {!quote.work.acknowledgedAt && (
+                <button
+                  type="button"
+                  className="primary wide"
+                  disabled={busy}
+                  onClick={async () => {
+                    if (saving.current) return;
+                    saving.current = true;
+                    setBusy(true);
+                    setError('');
+                    try {
+                      await api(`/admin/quotes/${quote.id}/acknowledge`, 'POST', {});
+                      await save(t('Quotation acknowledged', 'ज़िम्मेदारी ली'));
+                    } catch (e) {
+                      setError(say(e));
+                    } finally {
+                      saving.current = false;
+                      setBusy(false);
+                    }
+                  }}
+                >
+                  {t('Acknowledge quotation', 'ज़िम्मेदारी लें')}
+                </button>
+              )}
+              {quote.work.lastError && (
+                <AlertRetry workId={quote.work.id} attempts={quote.work.attempts} done={save} />
+              )}
+              <Field label={t('Assign owner', 'ज़िम्मेदारी बदलें')}>
+                <select
+                  defaultValue=""
+                  disabled={busy}
+                  onChange={async (e) => {
+                    if (!e.target.value || saving.current) return;
+                    saving.current = true;
+                    setBusy(true);
+                    try {
+                      await api(`/admin/work/${quote.work!.id}/assign`, 'POST', {
+                        ownerId: e.target.value,
+                      });
+                      await save(t('Quotation assigned', 'ज़िम्मेदारी बदली'));
+                    } catch (e) {
+                      setError(say(e));
+                    } finally {
+                      saving.current = false;
+                      setBusy(false);
+                    }
+                  }}
+                >
+                  <option value="">{t('Choose owner', 'मालिक चुनें')}</option>
+                  {owners.map((owner) => (
+                    <option key={owner.id} value={owner.id}>
+                      {owner.name || owner.phone}
                     </option>
                   ))}
                 </select>
               </Field>
-            )}
-            <button
-              type="button"
-              className="primary wide"
-              disabled={busy}
-              onClick={() => void convert()}
+            </section>
+          )}
+          {quote.order && (
+            <p className="notice">
+              {t('Supply order', 'सप्लाई ऑर्डर')}:{' '}
+              <a href={`#orders?order=${encodeURIComponent(quote.order.id)}`}>
+                {quote.order.number}
+              </a>
+            </p>
+          )}
+          {quote.status === 'ACCEPTED' && !quote.order && !revising && (
+            <section className="form-stack">
+              <p className="notice">
+                {t(
+                  'The customer accepted this revision. Create one cash-on-delivery order at these agreed prices and freight; stock is checked again.',
+                  'ग्राहक ने यह भाव मंज़ूर किया है। इन्हीं तय भाव और भाड़े पर डिलीवरी पर भुगतान वाला एक ऑर्डर बनाएँ; स्टॉक फिर जाँचा जाएगा।',
+                )}
+              </p>
+              {datePassed && (
+                <Field
+                  label={t(
+                    'New delivery day (agreed day has passed)',
+                    'नई डिलीवरी तारीख़ (तय दिन बीत गया)',
+                  )}
+                >
+                  <select value={newDate} onChange={(e) => setNewDate(e.target.value)}>
+                    {dateOptions.map((day) => (
+                      <option key={day} value={day}>
+                        {dayLabel(day, language)}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              )}
+              <button
+                type="button"
+                className="primary wide"
+                disabled={busy}
+                onClick={() => void convert()}
+              >
+                {t('Create supply order', 'ऑर्डर बनाएँ')}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy}
+                onClick={() => {
+                  onDirty();
+                  setRevising(true);
+                }}
+              >
+                {t('Revise terms for fresh consent', 'बात बदली है, नई मंज़ूरी लें')}
+              </button>
+            </section>
+          )}
+          {revising && (
+            <p className="warning">
+              {t(
+                'Changing the date, prices or freight needs the customer’s fresh acceptance before an order is created.',
+                'तारीख, भाव या भाड़ा बदलने पर ऑर्डर से पहले ग्राहक की नई मंज़ूरी ज़रूरी है।',
+              )}
+            </p>
+          )}
+          {quote.decisionSource && (
+            <p>
+              {t('Decision', 'फ़ैसला')}:{' '}
+              {quote.decisionSource === 'CUSTOMER'
+                ? t('Customer in the app', 'ग्राहक ने ऐप में')
+                : t('Recorded by the store', 'दुकान ने दर्ज किया')}{' '}
+              · {quote.decisionNote}
+            </p>
+          )}
+          {quote.status === 'SENT' && !quote.order && (
+            <div className="button-row">
+              {(['ACCEPTED', 'REJECTED'] as const).map((status) => (
+                <button
+                  type="button"
+                  key={status}
+                  className="secondary"
+                  disabled={busy}
+                  onClick={async () => {
+                    if (
+                      !(await confirm({
+                        title:
+                          status === 'ACCEPTED'
+                            ? t(
+                                'Record the customer’s acceptance of this quote?',
+                                'ग्राहक की मंज़ूरी दर्ज करें?',
+                              )
+                            : t('Close quote as rejected?', 'यह भाव अस्वीकार मानकर बंद करें?'),
+                        body: t(
+                          'Record only the customer’s confirmed decision.',
+                          'ग्राहक का पक्का किया फ़ैसला ही दर्ज करें।',
+                        ),
+                        confirmLabel: t('Continue', 'आगे बढ़ें'),
+                      }))
+                    )
+                      return;
+                    setDecisionError('');
+                    setDecision(status);
+                  }}
+                >
+                  {status === 'ACCEPTED'
+                    ? t('Record customer acceptance', 'ग्राहक की मंज़ूरी दर्ज करें')
+                    : t('Close quote', 'भाव बंद करें')}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="detail-block">
+            <strong>{quote.company || quote.address.name}</strong>
+            <p>
+              {quote.address.line1}, {quote.address.area}, {quote.address.city}
+              <br />
+              {t('Delivery requested', 'चाही डिलीवरी')}: {dayLabel(quote.deliveryDate, language)}
+              {quote.address.landmark && (
+                <>
+                  <br />
+                  {t('Landmark', 'पहचान')}: {quote.address.landmark}
+                </>
+              )}
+            </p>
+            <p>{quote.notes}</p>
+            {quote.gstin && <small>GSTIN: {quote.gstin}</small>}
+            <div className="owner-actions">
+              <a href={`tel:${quote.address.phone}`}>
+                {t('Call', 'फ़ोन')} {quote.address.phone}
+              </a>
+              <a
+                href={`https://wa.me/${quote.address.phone.replace(/\D/g, '')}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                WhatsApp
+              </a>
+            </div>
+          </div>
+          {quote.items.map((i) => (
+            <Field
+              key={i.productId}
+              label={`${i.name} · ${i.quantity} × ${i.unit}${i.packSize ? ` (${i.packSize})` : ''} · ${t('price per unit (₹)', 'इकाई का भाव (₹)')}`}
             >
-              {t('Create supply order', 'ऑर्डर बनाएँ')}
+              <input
+                name={i.productId}
+                type="number"
+                required
+                min="0.01"
+                step="0.01"
+                defaultValue={i.unitPricePaise === null ? '' : i.unitPricePaise / 100}
+                disabled={locked || busy}
+              />
+            </Field>
+          ))}
+          <Field label={t('Agreed delivery date', 'डिलीवरी की तारीख')}>
+            <input
+              type="date"
+              name="deliveryDate"
+              required
+              defaultValue={quote.deliveryDate}
+              disabled={locked || busy}
+            />
+          </Field>
+          <div className="form-grid">
+            <Field label={t('Delivery charge (₹)', 'भाड़ा (₹)')}>
+              <input
+                name="delivery"
+                type="number"
+                min="0"
+                step="0.01"
+                required
+                defaultValue={quote.deliveryFeePaise / 100}
+                disabled={locked || busy}
+              />
+            </Field>
+            <Field label={t('Valid until', 'कब तक मान्य')}>
+              <input
+                type="datetime-local"
+                name="expiry"
+                required
+                disabled={locked || busy}
+                defaultValue={localExpiry}
+              />
+            </Field>
+          </div>
+          <Field label={t('Delivery terms', 'डिलीवरी की शर्तें')}>
+            <textarea
+              name="deliveryTerms"
+              defaultValue={quote.deliveryTerms || ''}
+              maxLength={500}
+              placeholder={t(
+                'Unloading, floors, vehicle, number of trips…',
+                'उतराई, मंज़िल, गाड़ी, कितने चक्कर…',
+              )}
+              disabled={locked || busy}
+            />
+          </Field>
+          <Field label={t('Note to customer', 'ग्राहक के लिए संदेश')}>
+            <textarea
+              name="note"
+              defaultValue={quote.adminNote}
+              maxLength={1500}
+              disabled={locked || busy}
+            />
+          </Field>
+          <label className="field">
+            <span>
+              <input
+                type="checkbox"
+                name="deliveryConfirmed"
+                required
+                defaultChecked={quote.deliveryConfirmed}
+                disabled={locked || busy}
+              />{' '}
+              {t(
+                'I checked the site, route, vehicle availability and agreed freight.',
+                'मैंने स्थान, रास्ता, गाड़ी और भाड़ा जाँच लिया है।',
+              )}
+            </span>
+          </label>
+          {error && (
+            <p className="error" role="alert">
+              {error}
+            </p>
+          )}
+          {!locked ? (
+            <button disabled={busy} className="primary wide">
+              {busy
+                ? t('Sending…', 'भेजा जा रहा है…')
+                : quote.revision
+                  ? t('Send revised quote', 'बदला हुआ भाव भेजें')
+                  : t('Send quotation', 'भाव भेजें')}
+            </button>
+          ) : (
+            <p className="notice">
+              {quote.order
+                ? t('This quotation has one linked supply order.', 'इस भाव का ऑर्डर बन चुका है।')
+                : t(
+                    'Accepted terms are kept; revised terms need fresh consent.',
+                    'मंज़ूर शर्तें सुरक्षित हैं; बदली शर्तों पर नई मंज़ूरी चाहिए।',
+                  )}
+            </p>
+          )}
+        </form>
+      </Modal>
+      {decision && (
+        <Sheet
+          title={
+            decision === 'ACCEPTED'
+              ? t('Record customer acceptance', 'ग्राहक की मंज़ूरी दर्ज करें')
+              : t('Close quote', 'भाव बंद करें')
+          }
+          closeLabel={t('Keep reviewing', 'जाँच जारी रखें')}
+          onClose={() => {
+            if (!busy) setDecision(null);
+          }}
+        >
+          <form className="form-stack" onSubmit={recordDecision}>
+            <Field
+              label={t(
+                'Record who confirmed, how, and when (required):',
+                'किसने, कैसे और कब पक्का किया लिखें (ज़रूरी):',
+              )}
+            >
+              <textarea
+                required
+                autoFocus
+                maxLength={500}
+                value={decisionNote}
+                disabled={busy}
+                onChange={(event) => {
+                  setDecisionNote(event.target.value);
+                  setDecisionError('');
+                  onDirty();
+                }}
+              />
+            </Field>
+            {decisionError && (
+              <p className="error" role="alert">
+                {decisionError}
+              </p>
+            )}
+            <button className="primary wide" disabled={busy}>
+              {decision === 'ACCEPTED'
+                ? t('Record customer acceptance', 'ग्राहक की मंज़ूरी दर्ज करें')
+                : t('Close quote', 'भाव बंद करें')}
             </button>
             <button
               type="button"
               className="secondary"
               disabled={busy}
-              onClick={() => {
-                onDirty();
-                setRevising(true);
-              }}
+              onClick={() => setDecision(null)}
             >
-              {t('Revise terms for fresh consent', 'बात बदली है, नई मंज़ूरी लें')}
+              {t('Keep reviewing', 'जाँच जारी रखें')}
             </button>
-          </section>
-        )}
-        {revising && (
-          <p className="warning">
-            {t(
-              'Changing the date, prices or freight needs the customer’s fresh acceptance before an order is created.',
-              'तारीख, भाव या भाड़ा बदलने पर ऑर्डर से पहले ग्राहक की नई मंज़ूरी ज़रूरी है।',
-            )}
-          </p>
-        )}
-        {quote.decisionSource && (
-          <p>
-            {t('Decision', 'फ़ैसला')}:{' '}
-            {quote.decisionSource === 'CUSTOMER'
-              ? t('Customer in the app', 'ग्राहक ने ऐप में')
-              : t('Recorded by the store', 'दुकान ने दर्ज किया')}{' '}
-            · {quote.decisionNote}
-          </p>
-        )}
-        {quote.status === 'SENT' && !quote.order && (
-          <div className="button-row">
-            {(['ACCEPTED', 'REJECTED'] as const).map((status) => (
-              <button
-                type="button"
-                key={status}
-                className="secondary"
-                disabled={busy}
-                onClick={async () => {
-                  if (
-                    !window.confirm(
-                      status === 'ACCEPTED'
-                        ? t(
-                            'Record the customer’s acceptance of this quote?',
-                            'ग्राहक की मंज़ूरी दर्ज करें?',
-                          )
-                        : t('Close this quote as rejected?', 'यह भाव अस्वीकार मानकर बंद करें?'),
-                    )
-                  )
-                    return;
-                  const note = window.prompt(
-                    t(
-                      'Record who confirmed, how, and when (required):',
-                      'किसने, कैसे और कब पक्का किया लिखें (ज़रूरी):',
-                    ),
-                  );
-                  if (!note?.trim()) return;
-                  setBusy(true);
-                  try {
-                    await api(`/admin/quotes/${quote.id}/respond`, 'POST', {
-                      revision: quote.revision,
-                      status,
-                      note,
-                    });
-                    await save(
-                      status === 'ACCEPTED'
-                        ? t('Customer acceptance recorded', 'ग्राहक की मंज़ूरी दर्ज हुई')
-                        : t('Quote closed', 'भाव बंद हुआ'),
-                    );
-                  } catch (e) {
-                    setError(say(e));
-                  } finally {
-                    setBusy(false);
-                  }
-                }}
-              >
-                {status === 'ACCEPTED'
-                  ? t('Record customer acceptance', 'ग्राहक की मंज़ूरी दर्ज करें')
-                  : t('Close quote', 'भाव बंद करें')}
-              </button>
-            ))}
-          </div>
-        )}
-        <div className="detail-block">
-          <strong>{quote.company || quote.address.name}</strong>
-          <p>
-            {quote.address.line1}, {quote.address.area}, {quote.address.city}
-            <br />
-            {t('Delivery requested', 'चाही डिलीवरी')}: {dayLabel(quote.deliveryDate, language)}
-            {quote.address.landmark && (
-              <>
-                <br />
-                {t('Landmark', 'पहचान')}: {quote.address.landmark}
-              </>
-            )}
-          </p>
-          <p>{quote.notes}</p>
-          {quote.gstin && <small>GSTIN: {quote.gstin}</small>}
-          <div className="owner-actions">
-            <a href={`tel:${quote.address.phone}`}>
-              {t('Call', 'फ़ोन')} {quote.address.phone}
-            </a>
-            <a
-              href={`https://wa.me/${quote.address.phone.replace(/\D/g, '')}`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              WhatsApp
-            </a>
-          </div>
-        </div>
-        {quote.items.map((i) => (
-          <Field
-            key={i.productId}
-            label={`${i.name} · ${i.quantity} × ${i.unit}${i.packSize ? ` (${i.packSize})` : ''} · ${t('price per unit (₹)', 'इकाई का भाव (₹)')}`}
-          >
-            <input
-              name={i.productId}
-              type="number"
-              required
-              min="0.01"
-              step="0.01"
-              defaultValue={i.unitPricePaise === null ? '' : i.unitPricePaise / 100}
-              disabled={locked || busy}
-            />
-          </Field>
-        ))}
-        <Field label={t('Agreed delivery date', 'डिलीवरी की तारीख')}>
-          <input
-            type="date"
-            name="deliveryDate"
-            required
-            defaultValue={quote.deliveryDate}
-            disabled={locked || busy}
-          />
-        </Field>
-        <div className="form-grid">
-          <Field label={t('Delivery charge (₹)', 'भाड़ा (₹)')}>
-            <input
-              name="delivery"
-              type="number"
-              min="0"
-              step="0.01"
-              required
-              defaultValue={quote.deliveryFeePaise / 100}
-              disabled={locked || busy}
-            />
-          </Field>
-          <Field label={t('Valid until', 'कब तक मान्य')}>
-            <input
-              type="datetime-local"
-              name="expiry"
-              required
-              disabled={locked || busy}
-              defaultValue={localExpiry}
-            />
-          </Field>
-        </div>
-        <Field label={t('Delivery terms', 'डिलीवरी की शर्तें')}>
-          <textarea
-            name="deliveryTerms"
-            defaultValue={quote.deliveryTerms || ''}
-            maxLength={500}
-            placeholder={t(
-              'Unloading, floors, vehicle, number of trips…',
-              'उतराई, मंज़िल, गाड़ी, कितने चक्कर…',
-            )}
-            disabled={locked || busy}
-          />
-        </Field>
-        <Field label={t('Note to customer', 'ग्राहक के लिए संदेश')}>
-          <textarea
-            name="note"
-            defaultValue={quote.adminNote}
-            maxLength={1500}
-            disabled={locked || busy}
-          />
-        </Field>
-        <label className="field">
-          <span>
-            <input
-              type="checkbox"
-              name="deliveryConfirmed"
-              required
-              defaultChecked={quote.deliveryConfirmed}
-              disabled={locked || busy}
-            />{' '}
-            {t(
-              'I checked the site, route, vehicle availability and agreed freight.',
-              'मैंने स्थान, रास्ता, गाड़ी और भाड़ा जाँच लिया है।',
-            )}
-          </span>
-        </label>
-        {error && (
-          <p className="error" role="alert">
-            {error}
-          </p>
-        )}
-        {!locked ? (
-          <button disabled={busy} className="primary wide">
-            {busy
-              ? t('Sending…', 'भेजा जा रहा है…')
-              : quote.revision
-                ? t('Send revised quote', 'बदला हुआ भाव भेजें')
-                : t('Send quotation', 'भाव भेजें')}
-          </button>
-        ) : (
-          <p className="notice">
-            {quote.order
-              ? t('This quotation has one linked supply order.', 'इस भाव का ऑर्डर बन चुका है।')
-              : t(
-                  'Accepted terms are kept; revised terms need fresh consent.',
-                  'मंज़ूर शर्तें सुरक्षित हैं; बदली शर्तों पर नई मंज़ूरी चाहिए।',
-                )}
-          </p>
-        )}
-      </form>
-    </Modal>
+          </form>
+        </Sheet>
+      )}
+    </>
   );
 }
 

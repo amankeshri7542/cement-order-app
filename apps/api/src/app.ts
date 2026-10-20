@@ -26,6 +26,9 @@ import { IntegrationsController, Maintenance } from './integrations';
 import { Lifecycle, requestId } from './lifecycle';
 import { AlertsController, AlertsService } from './alerts';
 import { ReportsController } from './reports';
+import { KhataController, KhataService } from './khata';
+import { PhoneOrdersController, PhoneOrdersService } from './phone-orders';
+import { CurrentRatesController } from './current-rates';
 
 @Controller('health')
 class HealthController {
@@ -80,6 +83,9 @@ class HealthController {
     RateStudioController,
     AlertsController,
     ReportsController,
+    KhataController,
+    PhoneOrdersController,
+    CurrentRatesController,
   ],
   providers: [
     AssistantService,
@@ -93,6 +99,8 @@ class HealthController {
     Events,
     OrdersService,
     PaymentsService,
+    KhataService,
+    PhoneOrdersService,
     Maintenance,
     AlertsService,
     Lifecycle,

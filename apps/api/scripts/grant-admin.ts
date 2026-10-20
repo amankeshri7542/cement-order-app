@@ -6,11 +6,11 @@ const db = new PrismaClient();
 async function main() {
   try {
     const password = process.env.ADMIN_BOOTSTRAP_PASSWORD;
-    if (!password)
+    if (!password && process.env.STAFF_PASSPHRASE_REQUIRED === 'true')
       throw new Error(
         'Set ADMIN_BOOTSTRAP_PASSWORD securely in the environment (12–200 characters). It will not be logged.',
       );
-    const passwordHash = await hashPassword(password);
+    const passwordHash = password ? await hashPassword(password) : undefined;
     await db.$transaction(async (tx) => {
       await tx.storeSettings.upsert({
         where: { id: 'store' },
@@ -27,11 +27,12 @@ async function main() {
         create: { phone, role: 'ADMIN', name: process.argv[3] || 'Store owner' },
         update: { role: 'ADMIN', ...(process.argv[3] ? { name: process.argv[3] } : {}) },
       });
-      await tx.adminCredential.upsert({
-        where: { userId: user.id },
-        create: { userId: user.id, passwordHash },
-        update: { passwordHash },
-      });
+      if (passwordHash)
+        await tx.adminCredential.upsert({
+          where: { userId: user.id },
+          create: { userId: user.id, passwordHash },
+          update: { passwordHash },
+        });
       await tx.session.deleteMany({ where: { userId: user.id } });
       await tx.auditLog.create({
         data: { actorId: 'bootstrap-cli', event: 'ADMIN_GRANTED', entityId: user.id, details: {} },

@@ -4,13 +4,13 @@ import { LanguageProvider, useLanguage } from '../lib/i18n';
 
 // The desk's last line of defence: one malformed reply must not leave staff with a blank page.
 // The page's language provider is inside the failed page, so this screen brings its own.
-export default function ErrorPage({ error, retry }: { error: Error; retry: () => void }) {
+export default function ErrorPage({ error, reset }: { error: Error; reset: () => void }) {
   useEffect(() => {
     console.error(error);
   }, [error]);
   return (
     <LanguageProvider>
-      <Recovery retry={retry} />
+      <Recovery retry={reset} />
     </LanguageProvider>
   );
 }

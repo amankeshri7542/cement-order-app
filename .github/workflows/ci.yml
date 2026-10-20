@@ -44,7 +44,7 @@ jobs:
             --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma \
             --shadow-database-url postgresql://shiv:ci-only-password@localhost:5432/shiv_cement_shadow_test
       - run: npm run lint && npm run typecheck --workspaces --if-present
-      - run: npm test && npm test -w @shiv/shared && npm test -w @shiv/mobile && npm run test:local && npm test -w @shiv/storefront && npm run test:integration -w @shiv/api && npm run test:workflows && npm run test:bootstrap
+      - run: npm test && npm test -w @shiv/admin && npm run i18n:check && npm test -w @shiv/shared && npm test -w @shiv/mobile && npm run test:local && npm test -w @shiv/storefront && npm run test:integration -w @shiv/api && npm run test:workflows && npm run test:bootstrap
       - run: npx playwright install --with-deps chrome webkit
       - run: npm run test:e2e -- --config=playwright.qa.config.ts --project=chrome
       - run: npm run test:e2e -- --config=playwright.qa.config.ts --project=webkit

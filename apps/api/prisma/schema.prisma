@@ -35,6 +35,23 @@ enum PaymentStatus {
 enum PaymentMethod {
   COD
   ONLINE
+  CREDIT
+}
+
+enum OrderSource {
+  APP
+  WEB
+  PHONE
+  WALK_IN
+  QUOTE
+}
+
+enum LedgerKind {
+  SALE_ON_CREDIT
+  PAYMENT_RECEIVED
+  OPENING_BALANCE
+  ADJUSTMENT
+  REVERSAL
 }
 
 enum QuoteStatus {
@@ -46,21 +63,31 @@ enum QuoteStatus {
 }
 
 model User {
+  creditAllowed     Boolean               @default(false)
+  creditLimitPaise  Int?
+  khataBalancePaise Int                   @default(0)
+  area              String                @default("")
+  tags              String[]              @default([])
+  lastOrderAt       DateTime?
+  notesCount        Int                   @default(0)
+  ledgerEntries     CustomerLedgerEntry[]
+  customerNotes     CustomerNote[]
+  customerContacts  CustomerContact[]
   demandOverrides   DemandOverride[]
-  contractorStatus  String             @default("NONE")
+  contractorStatus  String                @default("NONE")
   deletedAt         DateTime?
   adminCredential   AdminCredential?
-  id                String             @id @default(cuid())
-  phone             String             @unique
-  name              String             @default("")
-  role              Role               @default(CUSTOMER)
-  language          String             @default("en")
-  staffTitle        String             @default("")
-  whatsappAlerts    Boolean            @default(false)
+  id                String                @id @default(cuid())
+  phone             String                @unique
+  name              String                @default("")
+  role              Role                  @default(CUSTOMER)
+  language          String                @default("en")
+  staffTitle        String                @default("")
+  whatsappAlerts    Boolean               @default(false)
   pushSubscriptions PushSubscription[]
   outboundMessages  OutboundMessage[]
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
   sessions          Session[]
   addresses         Address[]
   cart              CartItem[]
@@ -69,8 +96,8 @@ model User {
   quotes            Quote[]
   notifications     Notification[]
   devices           Device[]
-  assignedWork      OwnerWork[]        @relation("WorkOwner")
-  technicalWork     OwnerWork[]        @relation("TechnicalOwner")
+  assignedWork      OwnerWork[]           @relation("WorkOwner")
+  technicalWork     OwnerWork[]           @relation("TechnicalOwner")
 
   @@index([createdAt, id])
 }
@@ -221,17 +248,21 @@ model CheckoutReview {
 }
 
 model Order {
-  quoteId          String?              @unique
-  quote            Quote?               @relation(fields: [quoteId], references: [id])
+  source           OrderSource           @default(APP)
+  createdById      String?
+  requestHash      String?
+  ledgerEntries    CustomerLedgerEntry[]
+  quoteId          String?               @unique
+  quote            Quote?                @relation(fields: [quoteId], references: [id])
   quoteRevision    Int?
   work             OwnerWork?
   deliveryAttempts DeliveryAttempt[]
-  id               String               @id @default(cuid())
-  number           String               @unique
+  id               String                @id @default(cuid())
+  number           String                @unique
   userId           String
-  user             User                 @relation(fields: [userId], references: [id])
-  reviewId         String               @unique
-  review           CheckoutReview       @relation(fields: [reviewId], references: [id])
+  user             User                  @relation(fields: [userId], references: [id])
+  reviewId         String?               @unique
+  review           CheckoutReview?       @relation(fields: [reviewId], references: [id], onDelete: Restrict)
   idempotencyKey   String
   status           OrderStatus
   address          Json
@@ -241,8 +272,8 @@ model Order {
   deliveryFeePaise Int
   totalPaise       Int
   reservedUntil    DateTime?
-  createdAt        DateTime             @default(now())
-  updatedAt        DateTime             @updatedAt
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
   items            OrderItem[]
   history          OrderStatusHistory[]
   payment          Payment?
@@ -440,19 +471,68 @@ model DeliveryAttempt {
 }
 
 model FinancialMovement {
-  id                  String   @id @default(cuid())
+  ledgerEntry         CustomerLedgerEntry?
+  id                  String               @id @default(cuid())
   paymentId           String?
-  payment             Payment? @relation(fields: [paymentId], references: [id])
-  inventoryMovementId String?  @unique
+  payment             Payment?             @relation(fields: [paymentId], references: [id])
+  inventoryMovementId String?              @unique
   kind                String
   amountPaise         Int
   actorId             String
-  occurredAt          DateTime @default(now())
-  channel             String   @default("")
-  counterParty        String   @default("")
+  occurredAt          DateTime             @default(now())
+  channel             String               @default("")
+  counterParty        String               @default("")
 
   @@unique([paymentId, kind])
   @@index([occurredAt, kind])
+}
+
+model CustomerLedgerEntry {
+  id                  String               @id @default(cuid())
+  customerId          String
+  customer            User                 @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  kind                LedgerKind
+  amountPaise         Int
+  balanceAfterPaise   Int
+  orderId             String?              @unique
+  order               Order?               @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  financialMovementId String?              @unique
+  financialMovement   FinancialMovement?   @relation(fields: [financialMovementId], references: [id], onDelete: Restrict)
+  reversesId          String?              @unique
+  reverses            CustomerLedgerEntry? @relation("LedgerReversal", fields: [reversesId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  reversal            CustomerLedgerEntry? @relation("LedgerReversal")
+  note                String               @default("")
+  actorId             String
+  occurredAt          DateTime
+  createdAt           DateTime             @default(now())
+  idempotencyKey      String?
+  requestHash         String?
+
+  @@unique([customerId, idempotencyKey])
+  @@index([customerId, createdAt, id])
+}
+
+model CustomerNote {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   User     @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  actorId    String
+  body       String
+  createdAt  DateTime @default(now())
+
+  @@index([customerId, createdAt, id])
+}
+
+model CustomerContact {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   User     @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  actorId    String
+  channel    String
+  purpose    String
+  createdAt  DateTime @default(now())
+
+  @@index([customerId, createdAt, id])
 }
 
 model Device {

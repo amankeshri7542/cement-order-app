@@ -9,6 +9,12 @@ export const configSchema = z.object({
   DATABASE_URL: z.string().min(1),
   CORS_ORIGINS: z.string().default('http://localhost:3000,http://localhost:8081'),
   OTP_PROVIDER: z.enum(['mock', 'twilio']).default('mock'),
+  CREDIT_OVERRIDE_PHONE: z.union([z.literal(''), z.string().regex(/^\+91[6-9]\d{9}$/)]).default(''),
+  STAFF_PASSPHRASE_REQUIRED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+  OWNER_SESSION_DAYS: z.coerce.number().int().min(1).max(90).default(30),
   OTP_HASH_SECRET: z.string().min(32),
   TWILIO_ACCOUNT_SID: z.string().optional(),
   TWILIO_AUTH_TOKEN: z.string().optional(),

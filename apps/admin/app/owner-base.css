@@ -1,0 +1,36 @@
+html {
+  font-size: 100%;
+  color-scheme: light;
+}
+body {
+  margin: 0;
+  background: var(--shiv-paper);
+  color: var(--shiv-ink);
+  font: var(--shiv-body)/1.65 var(--shiv-font-body);
+}
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+button,
+a {
+  touch-action: manipulation;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

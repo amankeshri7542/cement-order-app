@@ -11,11 +11,11 @@ self.addEventListener('push', (event) => {
   } catch {
     data = { body: event.data ? event.data.text() : '' };
   }
-  const url = typeof data.url === 'string' && data.url.startsWith('/') ? data.url : '/#today';
+  const url = typeof data.url === 'string' && data.url.startsWith('/') ? data.url : '/today';
   event.waitUntil(
     (async () => {
       await self.registration.showNotification(data.title || 'शिव सीमेंट स्टोर', {
-        body: data.body || 'नया काम आया है। / New work is waiting.',
+        body: data.body || 'नया काम आया है।',
         icon: '/icon-192.png',
         badge: '/badge-96.png',
         tag: data.tag || 'shiv-owner-work',
@@ -32,7 +32,7 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const url = new URL(event.notification.data?.url || '/#today', self.location.origin).href;
+  const url = new URL(event.notification.data?.url || '/today', self.location.origin).href;
   event.waitUntil(
     (async () => {
       const open = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });

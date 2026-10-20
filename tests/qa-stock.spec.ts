@@ -41,10 +41,7 @@ async function login(page: Page) {
   await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
 }
 async function products(page: Page) {
-  await page
-    .getByRole('navigation', { name: 'Main navigation', exact: true })
-    .getByRole('button', { name: 'Prices & stock', exact: true })
-    .click();
+  await page.goto('http://localhost:3001/more?view=products');
   await page.getByRole('textbox', { name: 'Search products', exact: true }).fill(name);
   await page.getByRole('button', { name: `Edit ${name}`, exact: true }).click();
 }

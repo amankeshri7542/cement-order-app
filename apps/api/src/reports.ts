@@ -28,10 +28,15 @@ export class ReportsController {
     const start = new Date(`${from}T00:00:00+05:30`);
     const end = new Date(new Date(`${to}T00:00:00+05:30`).getTime() + 86400000);
     const range = { gte: start, lt: end };
-    const [orders, movements, pending, quotes] = await Promise.all([
+    const [orders, movements, pending, quotes, creditSales] = await Promise.all([
       this.db.order.findMany({
         where: { createdAt: range },
-        select: { createdAt: true, totalPaise: true, status: true },
+        select: {
+          createdAt: true,
+          totalPaise: true,
+          status: true,
+          user: { select: { id: true, name: true, phone: true } },
+        },
       }),
       this.db.financialMovement.findMany({
         where: { occurredAt: range },
@@ -49,7 +54,32 @@ export class ReportsController {
         _sum: { amountPaise: true },
       }),
       this.db.quote.groupBy({ by: ['status'], where: { createdAt: range }, _count: true }),
+      this.db.customerLedgerEntry.aggregate({
+        where: {
+          occurredAt: range,
+          OR: [
+            { kind: 'SALE_ON_CREDIT' },
+            { kind: 'REVERSAL', reverses: { kind: 'SALE_ON_CREDIT' } },
+          ],
+        },
+        _sum: { amountPaise: true },
+      }),
     ]);
+    const creditPaymentsPaise = movements.reduce(
+      (total, movement) =>
+        total +
+        (movement.kind === 'KHATA_PAYMENT'
+          ? movement.amountPaise
+          : movement.kind === 'KHATA_PAYMENT_REVERSAL'
+            ? -movement.amountPaise
+            : 0),
+      0,
+    );
+    // Khata receipts and reversals contribute to the same cash report.
+    for (const movement of movements) {
+      if (movement.kind === 'KHATA_PAYMENT') movement.kind = 'COLLECTION';
+      if (movement.kind === 'KHATA_PAYMENT_REVERSAL') movement.kind = 'REFUND';
+    }
     const sum = (kind: string, channel?: string) =>
       movements
         .filter((m) => m.kind === kind && (channel === undefined || m.channel === channel))
@@ -72,9 +102,23 @@ export class ReportsController {
       const date = day(new Date(t + 6 * 3600000));
       days.set(date, { date, orders: 0, collectedPaise: 0, counterPaise: 0, refundsPaise: 0 });
     }
+    const customers = new Map<string, MoneyReport['topCustomers'][number]>();
     for (const order of orders) {
       const row = days.get(day(order.createdAt));
       if (row) row.orders++;
+      if (
+        !['CANCELLED', 'REFUNDED', 'REFUND_PENDING'].includes(order.status) &&
+        order.user.phone !== 'walk-in:store'
+      ) {
+        const customer = customers.get(order.user.id) || {
+          ...order.user,
+          totalPaise: 0,
+          orders: 0,
+        };
+        customer.totalPaise += order.totalPaise;
+        customer.orders++;
+        customers.set(customer.id, customer);
+      }
     }
     for (const m of movements) {
       const row = days.get(day(m.occurredAt));
@@ -101,6 +145,11 @@ export class ReportsController {
       collections,
       counter,
       refundsPaise,
+      creditSalesPaise: creditSales._sum.amountPaise ?? 0,
+      creditPaymentsPaise,
+      topCustomers: [...customers.values()]
+        .sort((a, b) => b.totalPaise - a.totalPaise || a.id.localeCompare(b.id))
+        .slice(0, 10),
       netPaise: sum('COLLECTION') + sum('COUNTER_SALE') - refundsPaise,
       pendingCash: { orders: pending._count, amountPaise: pending._sum.amountPaise || 0 },
       quotes: {
@@ -119,8 +168,12 @@ export class ReportsController {
   }
 
   /** The same report as a spreadsheet (UTF-8 with BOM so Excel shows Hindi and ₹ correctly). */
-  @Get('money.csv') async csv(@Query() query: Record<string, string>, @Res() res: Response) {
+  @Get(['money.csv', 'export']) async csv(
+    @Query() query: Record<string, string>,
+    @Res() res: Response,
+  ) {
     const r = await this.money(query);
+    const customerText = (value: string) => (/^\s*[=+\-@]/.test(value) ? `'${value}` : value);
     const lines = [
       [
         'तारीख / Date',
@@ -146,6 +199,8 @@ export class ReportsController {
       ['काउंटर UPI / Counter UPI', rupees(r.counter.upiPaise)],
       ['वापसी / Refunds', rupees(r.refundsPaise)],
       ['शुद्ध वसूली / Net collected', rupees(r.netPaise)],
+      ['उधार दिया (₹)', rupees(r.creditSalesPaise)],
+      ['उधार वापस मिला (₹)', rupees(r.creditPaymentsPaise)],
       [
         'बाकी नकद / Cash still to collect',
         rupees(r.pendingCash.amountPaise),
@@ -153,6 +208,14 @@ export class ReportsController {
       ],
       ['थोक भाव स्वीकार / Quotes accepted', String(r.quotes.accepted)],
       ['थोक भाव अस्वीकार / Quotes rejected', String(r.quotes.rejected)],
+      [],
+      ['टॉप ग्राहक', 'मोबाइल', 'बिक्री (₹)', 'ऑर्डर'],
+      ...r.topCustomers.map((customer) => [
+        customerText(customer.name),
+        customerText(customer.phone),
+        rupees(customer.totalPaise),
+        String(customer.orders),
+      ]),
     ];
     const cell = (value: string) =>
       /[",\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;

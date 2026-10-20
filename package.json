@@ -24,7 +24,7 @@
     "test": "npm run test -w @shiv/api",
     "test:integration": "npm run test:integration -w @shiv/api",
     "test:e2e": "playwright test",
-    "build": "npm run build -w @shiv/shared && npm run build -w @shiv/api && npm run build -w @shiv/admin && npm run build -w @shiv/mobile && npm run build -w @shiv/storefront",
+    "build": "npm run build -w @shiv/i18n && npm run build -w @shiv/shared && npm run build -w @shiv/design && npm run build -w @shiv/api && npm run build -w @shiv/admin && npm run build -w @shiv/mobile && npm run build -w @shiv/storefront",
     "local:setup": "node scripts/local.mjs setup",
     "local:start": "node scripts/local.mjs start",
     "local:stop": "node scripts/local.mjs stop",
@@ -40,7 +40,8 @@
     "staging:smoke": "node scripts/staging-smoke.mjs",
     "android:baseline": "node scripts/android-baseline.mjs",
     "demo": "node scripts/demo.mjs",
-    "demo:preflight": "node scripts/demo-preflight.mjs"
+    "demo:preflight": "node scripts/demo-preflight.mjs",
+    "i18n:check": "npm test -w @shiv/i18n"
   },
   "overrides": {
     "@prisma/config": {
@@ -58,6 +59,7 @@
     }
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
     "@eslint/js": "^9.39.0",
     "@playwright/test": "^1.58.0",
     "@types/node": "^22.19.0",

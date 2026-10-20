@@ -1,26 +1,26 @@
 import type { Page } from '@playwright/test';
-import { test, expect } from './fixtures';
+import { test, expect, isCancelledFetch } from './fixtures';
 import sharp from 'sharp';
+import { en } from '@shiv/i18n';
 
 async function login(page: Page, phone: string) {
   await page.addInitScript(() => localStorage.setItem('shiv-owner-language', 'en'));
-  await page.goto('http://localhost:3001');
-  await page.getByLabel('Staff mobile number').fill(phone);
+  await page.goto('http://localhost:3001/today');
+  await page.getByLabel(en['owner.loginPhone']).fill(phone);
   const otp = page.waitForResponse(
     (r) => r.url().endsWith('/auth/otp/request') && r.status() === 201,
   );
-  await page.getByRole('button', { name: 'Get verification code' }).click();
+  await page.getByRole('button', { name: en['owner.sendCode'] }).click();
+  await page.getByLabel(en['owner.code'], { exact: true }).fill((await (await otp).json()).devCode);
+  await page.getByRole('button', { name: en['owner.signIn'] }).click();
+  await expect(page.getByRole('heading', { name: en['owner.today'], exact: true })).toBeVisible();
   await page
-    .getByLabel('Verification code', { exact: true })
-    .fill((await (await otp).json()).devCode);
-  await page.getByRole('button', { name: 'Open store desk' }).click();
-  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
-  if (await page.getByRole('button', { name: 'Open menu', exact: true }).isVisible())
-    await page.getByRole('button', { name: 'Open menu', exact: true }).click();
-  await page.getByRole('button', { name: 'More', exact: true }).last().click();
-  await page.getByRole('button', { name: /Rate Studio$/ }).click();
+    .getByRole('navigation', { name: en['owner.desk'], exact: true })
+    .getByRole('link', { name: en['owner.more'], exact: true })
+    .click();
+  await page.getByRole('link', { name: en['owner.rateStudio'], exact: true }).click();
+  await expect(page).toHaveURL(/\/more\?view=rates$/);
 }
-
 async function create(page: Page, action: string, title: string) {
   await page.getByRole('button', { name: new RegExp(action) }).click();
   await page.getByLabel('Price sheet title').fill(title);
@@ -68,7 +68,9 @@ test('scanned sheet requires low-confidence review, publishes and produces exact
   page,
 }) => {
   const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('pageerror', (e) => {
+    if (!isCancelledFetch(e.message)) errors.push(e.message);
+  });
   await page.setViewportSize({ width: 1440, height: 1050 });
   await login(page, '9297513710');
   await create(page, 'Scan a rate sheet', 'Browser scanned rates');
@@ -112,19 +114,12 @@ test('phone staff can recover failed AI with a manual reviewed sheet and protect
   await page.getByRole('button', { name: 'Choose products', exact: true }).click();
   await choose(page);
   await page.getByLabel('New price row 1').fill('490');
-  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
-  page.once('dialog', (dialog) => dialog.dismiss());
-  await page
-    .getByRole('navigation', { name: 'Main navigation', exact: true })
-    .getByRole('button', { name: 'Prices & stock', exact: true })
-    .click();
-  await expect(page.getByLabel('New price row 1')).toHaveValue('490');
-  const sidebar = await page.locator('.sidebar').boundingBox();
-  // Use the exposed scrim's middle; WebKit drops clicks at the viewport's right edge.
-  await page.getByRole('button', { name: 'Close menu', exact: true }).click({
-    position: { x: (sidebar!.x + sidebar!.width + page.viewportSize()!.width) / 2, y: 100 },
-  });
-  await expect(page.locator('.sidebar')).not.toHaveClass(/open/);
+  await page.getByRole('link', { name: en['owner.stock'], exact: true }).click();
+  const discard = page.getByRole('dialog', { name: en['owner.unsavedTitle'], exact: true });
+  await expect(discard).toBeVisible();
+  await discard.getByRole('button', { name: en['owner.keepEditing'], exact: true }).click();
+  await expect(discard).toBeHidden();
+  await expect(page).toHaveURL(/\/more\?view=rates$/);
   await expect(page.getByLabel('New price row 1')).toHaveValue('490');
   await expect(
     page.getByLabel(/I checked.*product, unit and customer selling price/),
@@ -211,30 +206,33 @@ async function openQuotation(page: Page, validUntil?: string) {
     expect(offerResponse.ok(), await offerResponse.text()).toBe(true);
   }
   await page
-    .getByRole('navigation', { name: 'Main navigation' })
-    .getByRole('button', { name: 'More', exact: true })
+    .getByRole('navigation', { name: en['owner.desk'], exact: true })
+    .getByRole('link', { name: en['owner.more'], exact: true })
     .click();
-  await page.getByRole('button', { name: /Bulk quotes$/ }).click();
-  await page.getByRole('button', { name: 'Refresh data', exact: true }).click();
+  await page.getByRole('link', { name: en['owner.quotes'], exact: true }).click();
+  await expect(page).toHaveURL(/\/more\?view=quotes$/);
   await page.getByRole('button', { name: `Open quote ${quote.number}`, exact: true }).click();
   return quote;
 }
 
 test('Escape preserves quotation edits when discard is cancelled', async ({ page }) => {
   await openQuotation(page);
-  const dialog = page.getByRole('dialog');
+  const dialog = page.getByRole('dialog').first();
   const price = dialog.getByLabel(/UltraTech Super.*price per unit/);
   await price.fill('499');
-  page.once('dialog', (confirmation) => confirmation.dismiss());
   await page.keyboard.press('Escape');
+  const discard = page.getByRole('dialog').last();
+  await discard.getByRole('button', { name: en['owner.keepEditing'], exact: true }).click();
   await expect(dialog).toBeVisible();
   await expect(price).toHaveValue('499');
-
-  page.once('dialog', (confirmation) => confirmation.accept());
   await page.keyboard.press('Escape');
-  await expect(dialog).toHaveCount(0);
+  await page
+    .getByRole('dialog')
+    .last()
+    .getByRole('button', { name: 'Discard unsaved edits', exact: true })
+    .click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
 });
-
 test('reopening and revising a quotation preserves its agreed expiry', async ({ page }) => {
   const validUntil = new Date(
     Math.floor((Date.now() + 36 * 3600000) / 60000) * 60000,
@@ -253,8 +251,12 @@ test('reopening and revising a quotation preserves its agreed expiry', async ({ 
       response.url().endsWith(`/admin/quotes/${quote.id}/offer`) &&
       response.request().method() === 'POST',
   );
-  page.once('dialog', (confirmation) => confirmation.accept());
   await page.getByRole('button', { name: 'Send revised quote', exact: true }).click();
+  await page
+    .getByRole('dialog')
+    .last()
+    .getByRole('button', { name: 'Send quotation', exact: true })
+    .click();
   const response = await saved;
   expect(response.ok(), await response.text()).toBe(true);
   expect((await response.json()).validUntil).toBe(validUntil);
@@ -265,13 +267,18 @@ test('browser Back preserves quotation edits when discard is cancelled', async (
   await openQuotation(page);
   const price = page.getByRole('dialog').getByLabel(/UltraTech Super.*price per unit/);
   await price.fill('499');
-  page.once('dialog', (confirmation) => confirmation.dismiss());
   await page.goBack();
-  await expect(page).toHaveURL(/#quotes$/);
+  await page
+    .getByRole('dialog', { name: en['owner.unsavedTitle'], exact: true })
+    .getByRole('button', { name: en['owner.keepEditing'], exact: true })
+    .click({ timeout: 5000 });
+  await expect(page).toHaveURL(/\/more\?view=quotes$/);
   await expect(price).toHaveValue('499');
-
-  page.once('dialog', (confirmation) => confirmation.accept());
   await page.goBack();
-  await expect(page).not.toHaveURL(/#quotes$/);
+  await page
+    .getByRole('dialog', { name: en['owner.unsavedTitle'], exact: true })
+    .getByRole('button', { name: en['owner.discard'], exact: true })
+    .click();
+  await expect(page).toHaveURL(/\/more$/);
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });

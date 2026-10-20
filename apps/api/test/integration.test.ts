@@ -12,6 +12,7 @@ import { hash } from '../src/http';
 import { PaymentsService } from '../src/payments';
 import { hashPassword } from '../src/security';
 import { OrdersService } from '../src/orders';
+import { getConfig } from '../src/config';
 
 if (existsSync('.env.test')) loadEnvFile('.env.test');
 process.env.NODE_ENV = 'test';
@@ -130,6 +131,7 @@ beforeAll(async () => {
   db = app.get(Db);
 }, 30000);
 beforeEach(async () => {
+  getConfig().STAFF_PASSPHRASE_REQUIRED = false;
   await db.$executeRawUnsafe(
     'TRUNCATE TABLE "ProductAsset", "PriceUpdateBatch", "RateSource", "User", "Category", "Product", "Order", "Quote", "AuditLog", "OtpChallenge", "AuthRateLimit", "DeliveryZone", "StoreSettings" RESTART IDENTITY CASCADE',
   );
@@ -917,6 +919,7 @@ describe('Pilot operations and privacy', () => {
     expect(await db.deliveryZone.count()).toBe(1);
   });
   it('requires configured staff passphrase and invalidates sessions after credential change', async () => {
+    getConfig().STAFF_PASSPHRASE_REQUIRED = true;
     const password = 'correct-staff-passphrase';
     await db.adminCredential.create({
       data: { userId: 'admin', passwordHash: await hashPassword(password) },
@@ -1822,6 +1825,7 @@ describe('security hardening concurrency and recovery', () => {
     'closes owner streams on %s',
     async (change) => {
       const { OwnerWorkController, OwnerWorkService } = await import('../src/owner-work');
+      if (change === 'credential change') getConfig().STAFF_PASSPHRASE_REQUIRED = true;
       const session = await db.session.findFirstOrThrow({ where: { userId: 'admin' } });
       const controller = app.get(OwnerWorkController);
       const stream = Reflect.apply(controller.events, controller, [

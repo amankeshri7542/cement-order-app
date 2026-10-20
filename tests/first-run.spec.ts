@@ -2,22 +2,18 @@ import { PrismaClient } from '@prisma/client';
 import type { Browser, Page } from '@playwright/test';
 import { test, expect } from './fixtures';
 import { appUrl } from './app';
+import { hi } from '@shiv/i18n';
 
 // Phase 11 first run. A brand-new customer on the app and on the website, from a fresh install
 // (nothing stored) to "what happens next" after their first order; and a new store's owner
-// desk, whose setup checklist ticks itself from the live records and disappears when done.
+// desk, whose Hindi setup screens persist the shop's real settings.
 // Test data from tests/setup.ts: UltraTech Super ₹410/bag, pincode 800020 delivers for ₹500.
 const db = new PrismaClient({ datasourceUrl: process.env.TEST_DATABASE_URL });
 const site = 'http://localhost:3004';
 const desk = 'http://localhost:3001';
-const api = 'http://localhost:4010/api/v1';
 const freshPhone = () => `9${String(Date.now()).slice(-9)}`;
-// The desk's alert worker would fetch outside page.route; the first-run checks need every call seen.
+// First-run checks start before a service worker has been installed.
 test.use({ serviceWorkers: 'block' });
-const zonesUrl = /\/api\/v1\/admin\/delivery-zones$/;
-const inStockUrl = /\/api\/v1\/products\?availability=in&limit=1$/;
-const staffUrl = /\/api\/v1\/admin\/staff$/;
-const storeUrl = /\/api\/v1\/store$/;
 test.afterAll(() => db.$disconnect());
 
 /** A browser with nothing saved: no language, no basket, no pincode, no session. */
@@ -177,96 +173,68 @@ test('website first run: language, pincode, basket, sign-in with name, order, wh
   }
 });
 
-/** Signs a new desk owner in (no passphrase in test mode). */
+/** A new owner signs in with OTP and the default Hindi interface. */
 async function deskSignIn(page: Page, phone: string) {
-  await page.addInitScript(() => localStorage.setItem('shiv-owner-language', 'en'));
-  await page.goto(desk);
-  await page.getByRole('textbox', { name: 'Staff mobile number' }).fill(phone);
+  await page.addInitScript(() => localStorage.setItem('shiv-owner-language', 'hi'));
+  await page.goto(`${desk}/today`);
+  const mobile = page.getByRole('textbox', { name: hi['owner.loginPhone'] });
+  await expect(mobile).toHaveValue('');
+  await mobile.fill(phone);
+  await expect(page.locator('input[type=password]')).toHaveCount(0);
   const sent = page.waitForResponse(
     (r) => r.url().endsWith('/auth/otp/request') && r.status() === 201,
   );
-  await page.getByRole('button', { name: 'Get verification code' }).click();
+  await page.getByRole('button', { name: hi['owner.sendCode'] }).click();
   await page
-    .getByRole('textbox', { name: 'Verification code', exact: true })
+    .getByRole('textbox', { name: hi['owner.code'], exact: true })
     .fill((await (await sent).json()).devCode);
-  await page.getByRole('button', { name: 'Open store desk' }).click();
-  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: hi['owner.signIn'] }).click();
+  await expect(page.getByRole('heading', { name: hi['owner.today'], exact: true })).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'hi');
 }
-
-test('owner first run: the setup checklist ticks itself from real data and then hides', async ({
+test('owner first run: Hindi setup routes save store information on the server', async ({
   page,
 }) => {
   const phone = freshPhone();
   const owner = await db.user.create({
     data: { phone: `+91${phone}`, name: 'First-run owner', role: 'ADMIN' },
   });
-  try {
-    // A brand-new store: no delivery areas, no materials, untouched settings, no alerts. The
-    // shared test database already has some of these, so the empty answers are simulated first.
-    await page.route(zonesUrl, (route) => route.fulfill({ json: [] }));
-    await page.route(inStockUrl, (route) =>
-      route.fulfill({ json: { items: [], nextCursor: null } }),
-    );
-    await page.route(staffUrl, (route) =>
-      route.fulfill({ json: [{ whatsappAlerts: false, _count: { pushSubscriptions: 0 } }] }),
-    );
-    await page.route(storeUrl, async (route) => {
-      const response = await route.fetch();
-      route.fulfill({ response, json: { ...(await response.json()), version: 1 } });
-    });
-    await deskSignIn(page, phone);
-    const checklist = page.getByRole('region', { name: 'Set up your store' });
-    await expect(checklist).toBeVisible();
-    await expect(checklist.getByLabel('0 of 4 done')).toBeVisible();
-    for (const action of [
-      'Open delivery areas',
-      'Open prices & stock',
-      'Open store details',
-      'Open staff & alerts',
-    ])
-      await expect(checklist.getByRole('button', { name: action })).toBeVisible();
-    // Hindi for Papa and Chacha.
-    await page.getByRole('button', { name: 'हिन्दी में देखें' }).click();
-    await expect(page.getByRole('heading', { name: 'दुकान तैयार करें' })).toBeVisible();
-    await page.getByRole('button', { name: 'Switch to English' }).click();
-
-    // Each row opens the screen that does the job.
-    await checklist.getByRole('button', { name: 'Open delivery areas' }).click();
-    await expect(page).toHaveURL(/#settings$/);
-    await expect(page.getByRole('heading', { name: 'Delivery areas' })).toBeInViewport();
-    await page.goto(`${desk}/#today`);
-    await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
-
-    // The real records: the test store has a delivery area and an in-stock material.
-    await page.unroute(zonesUrl);
-    await page.unroute(inStockUrl);
-    await page.getByRole('button', { name: 'Refresh data' }).click();
-    await expect(checklist.getByLabel('2 of 4 done')).toBeVisible();
-
-    // The owner confirms the store details once, and one staff member gets WhatsApp alerts.
-    await page.unroute(storeUrl);
-    await page.unroute(staffUrl);
-    await page.evaluate(async (base) => {
-      const store = await (await fetch(`${base}/store`, { credentials: 'include' })).json();
-      const response = await fetch(`${base}/admin/store`, {
-        method: 'PATCH',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          expectedVersion: store.version,
-          phone: store.phone,
-          deliveryFeePaise: store.deliveryFeePaise,
-          freeDeliveryAbovePaise: store.freeDeliveryAbovePaise,
-          onlinePaymentsEnabled: store.onlinePaymentsEnabled,
-          deliveryMessage: store.deliveryMessage,
-        }),
-      });
-      if (!response.ok) throw new Error(await response.text());
-    }, api);
-    await db.user.update({ where: { id: owner.id }, data: { whatsappAlerts: true } });
-    await page.getByRole('button', { name: 'Refresh data' }).click();
-    await expect(checklist).toHaveCount(0);
-  } finally {
-    await db.user.update({ where: { id: owner.id }, data: { whatsappAlerts: false } });
-  }
+  await deskSignIn(page, phone);
+  expect(await db.adminCredential.count({ where: { userId: owner.id } })).toBe(0);
+  const navigation = page.getByRole('navigation', { name: hi['owner.desk'], exact: true });
+  await navigation.getByRole('link', { name: hi['owner.more'], exact: true }).click();
+  for (const key of ['owner.zones', 'owner.storeDetails', 'owner.staff'] as const)
+    await expect(page.getByRole('link', { name: hi[key], exact: true })).toBeVisible();
+  await page.getByRole('link', { name: hi['owner.zones'], exact: true }).click();
+  await expect(page).toHaveURL(/\/more\?view=zones$/);
+  await expect(page.getByRole('heading', { name: hi['owner.zones'], exact: true })).toBeVisible();
+  await expect(page.getByRole('article').filter({ hasText: '800020' }).first()).toBeVisible();
+  await navigation.getByRole('link', { name: hi['owner.more'], exact: true }).click();
+  await page.getByRole('link', { name: hi['owner.storeDetails'], exact: true }).click();
+  await expect(page).toHaveURL(/\/more\?view=store$/);
+  const before = await db.storeSettings.findUniqueOrThrow({ where: { id: 'store' } });
+  const information = page.getByLabel(hi['owner.deliveryMessage'], { exact: true });
+  await expect(information).toHaveValue(before.deliveryMessage);
+  const saved = page.waitForResponse(
+    (r) => r.url().endsWith('/admin/store') && r.request().method() === 'PATCH',
+  );
+  await page.getByRole('button', { name: hi['owner.save'], exact: true }).click();
+  const response = await saved;
+  expect(response.status()).toBe(200);
+  const after = await db.storeSettings.findUniqueOrThrow({ where: { id: 'store' } });
+  expect(after.version).toBe(before.version + 1);
+  expect(after).toMatchObject({
+    phone: before.phone,
+    deliveryMessage: before.deliveryMessage,
+    deliveryFeePaise: before.deliveryFeePaise,
+    freeDeliveryAbovePaise: before.freeDeliveryAbovePaise,
+    onlinePaymentsEnabled: before.onlinePaymentsEnabled,
+  });
+  await page.reload();
+  await expect(information).toHaveValue(after.deliveryMessage);
+  await expect(page.locator('html')).toHaveAttribute('lang', 'hi');
+  await navigation.getByRole('link', { name: hi['owner.more'], exact: true }).click();
+  await page.getByRole('link', { name: hi['owner.staff'], exact: true }).click();
+  await expect(page).toHaveURL(/\/more\?view=staff$/);
+  await expect(page.getByText(/^First-run owner · /)).toBeVisible();
 });

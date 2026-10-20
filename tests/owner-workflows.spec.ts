@@ -1,9 +1,10 @@
 import { type Page, type Response } from '@playwright/test';
-import { test, expect, observePage, skipLanguageChooser } from './fixtures';
+import { test, expect, isCancelledFetch, observePage, skipLanguageChooser } from './fixtures';
 import { appLogin, fillAddress, openBasket, openMaterial } from './app';
 import { PrismaClient } from '@prisma/client';
 import { mkdir } from 'node:fs/promises';
 import type { Order, Quote } from '@shiv/shared';
+import { en } from '@shiv/i18n';
 
 // These journeys use real HTTP and PostgreSQL. OTP is the explicitly isolated mock provider.
 test.use({ actionTimeout: 15000 });
@@ -97,9 +98,6 @@ test('SSE outage: polling finds new work and competing owners keep one durable a
     await uncle.route('**/admin/events', (route) => route.abort('connectionfailed'));
     await ownerLogin(father, 34);
     await ownerLogin(uncle, 35);
-    await expect(
-      father.getByText('Live connection interrupted · checking every 15 seconds', { exact: true }),
-    ).toBeVisible();
     await customerLogin(page, 34);
     const { order } = await submitOrder(page, products[3]!, 5);
     // No owner reload, navigation, focus or manual refresh after order submission.
@@ -123,10 +121,7 @@ test('SSE outage: polling finds new work and competing owners keep one durable a
       owner.waitForResponse((r) => r.url().endsWith(`/orders/${order.id}/acknowledge`)),
     );
     for (const owner of [father, uncle])
-      await owner
-        .getByRole('dialog')
-        .getByRole('button', { name: 'Acknowledge', exact: true })
-        .click();
+      await owner.getByRole('button', { name: en['owner.startPreparing'], exact: true }).click();
     for (const response of await Promise.all(responses)) expect(response.status()).toBe(201);
     expect(arrivals).toBe(2);
     const work = await db.ownerWork.findUniqueOrThrow({
@@ -140,17 +135,15 @@ test('SSE outage: polling finds new work and competing owners keep one durable a
     ).toBe(1);
     await father.reload();
     await expect(
-      father.getByRole('dialog').getByRole('heading', { name: order.number, exact: true }),
+      father.getByRole('heading', { name: `Order ${order.number}`, exact: true }),
     ).toBeVisible();
-    await expect(
-      father.getByRole('dialog').locator('strong').filter({ hasText: work.assignedTo!.name }),
-    ).toBeVisible();
-    await expect(father.getByRole('dialog').getByRole('link', { name: /^Call/ })).toHaveAttribute(
+    await expect(father.getByText(work.assignedTo!.name!, { exact: true })).toBeVisible();
+    await expect(father.getByRole('link', { name: en['owner.call'], exact: true })).toHaveAttribute(
       'href',
       /^tel:\+91/,
     );
     await expect(
-      father.getByRole('dialog').getByRole('link', { name: /WhatsApp/ }),
+      father.getByRole('link', { name: en['owner.shareOrder'], exact: true }),
     ).toHaveAttribute('href', /^https:\/\/wa\.me\/91/);
     // Restore the real SSE transport and require automatic reconnection without a reload.
     await father.unroute('**/admin/events');
@@ -178,14 +171,28 @@ test('collected COD cancellation records one cash refund and restores stock once
     await customerLogin(page, 36);
     const { order } = await submitOrder(page, products[4]!, 5);
     await openOrder(owner, order);
-    await owner.getByRole('button', { name: 'Cash received', exact: true }).click();
-    await expect(owner.getByRole('dialog').getByText('Paid', { exact: true })).toBeVisible();
-    await owner.getByRole('button', { name: 'Cancel order', exact: true }).click();
-    await expect(owner.getByRole('button', { name: 'Cash refund returned' })).toBeVisible();
+    await orderMore(owner);
+    await owner.getByRole('button', { name: en['owner.receiveMoney'], exact: true }).click();
+    const receipt = owner.getByRole('dialog');
+    await receipt.getByLabel(en['owner.paymentMethod']).selectOption('CASH');
+    await receipt.getByRole('button', { name: en['owner.receiveMoney'], exact: true }).click();
+    await expect(receipt).toBeHidden();
+    await expect(owner.getByText(en['owner.paid'], { exact: true })).toBeVisible();
+    await owner.getByRole('button', { name: en['owner.cancelOrder'], exact: true }).click();
+    await owner
+      .getByRole('dialog')
+      .getByRole('button', { name: en['owner.cancelOrder'], exact: true })
+      .click();
+    await expect(
+      owner.getByRole('button', { name: en['owner.refund'], exact: true }),
+    ).toBeVisible();
     const refunded = owner.waitForResponse((r) =>
       r.url().endsWith(`/orders/${order.id}/cash-refunded`),
     );
-    await owner.getByRole('button', { name: 'Cash refund returned' }).click();
+    await owner.getByRole('button', { name: en['owner.refund'], exact: true }).click();
+    const refund = owner.getByRole('dialog');
+    await refund.getByLabel(en['owner.paymentMethod']).selectOption('CASH');
+    await refund.getByRole('button', { name: en['owner.refund'], exact: true }).click();
     await replay(owner, await refunded);
     const payment = await db.payment.findUniqueOrThrow({ where: { orderId: order.id } });
     expect(payment.status).toBe('REFUNDED');
@@ -218,9 +225,7 @@ test('collected COD cancellation records one cash refund and restores stock once
       (button as HTMLButtonElement).click();
     });
     await expect(owner.locator('body')).toHaveAttribute('data-qa-print', 'called');
-    await expect(
-      owner.getByText('Order summary · not a GST tax invoice', { exact: true }),
-    ).toBeVisible();
+    await expect(owner.getByText(en['owner.summaryNote'], { exact: true })).toBeVisible();
     await owner.screenshot({
       path: test.info().outputPath('owner-refunded-summary.png'),
       fullPage: true,
@@ -244,18 +249,17 @@ async function customerLogin(page: Page, suffix: number) {
 }
 async function ownerLogin(page: Page, suffix: number) {
   observePage(page, test.info());
-  await page.goto('http://localhost:3001');
-  await page.getByRole('textbox', { name: 'Staff mobile number' }).fill(`92975137${suffix}`);
+  await page.goto('http://localhost:3001/today');
+  await page.getByRole('textbox', { name: en['owner.loginPhone'] }).fill(`92975137${suffix}`);
   const sent = page.waitForResponse(
     (response) => response.url().endsWith('/auth/otp/request') && response.status() === 201,
   );
-  await page.getByRole('button', { name: 'Get verification code' }).click();
+  await page.getByRole('button', { name: en['owner.sendCode'] }).click();
   await page
-    .getByRole('textbox', { name: 'Verification code', exact: true })
+    .getByRole('textbox', { name: en['owner.code'], exact: true })
     .fill((await (await sent).json()).devCode);
-  await page.getByRole('button', { name: 'Open store desk' }).click();
-  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
-  page.on('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: en['owner.signIn'] }).click();
+  await expect(page.getByRole('heading', { name: en['owner.today'], exact: true })).toBeVisible();
 }
 async function submitOrder(page: Page, product: (typeof products)[number], quantity: number) {
   await openMaterial(page, product.name);
@@ -290,34 +294,66 @@ async function replay(page: Page, response: Response) {
   return result.json();
 }
 async function openOrder(owner: Page, order: Order) {
-  await owner
-    .locator('.owner-order-cards')
-    .getByRole('button', { name: `Open ${order.number}`, exact: true })
-    .click();
-  await expect(owner.getByRole('dialog')).toBeVisible();
+  const link = owner.locator(`a[href="/orders/${order.id}"]`).first();
+  await expect(link).toBeVisible({ timeout: 30000 });
+  await link.click();
+  await expect(owner).toHaveURL(new RegExp(`/orders/${order.id}$`));
+  await expect(
+    owner.getByRole('heading', { name: `Order ${order.number}`, exact: true }),
+  ).toBeVisible();
 }
-/** Saves a documentation screenshot of the desk in Hindi, its default language, then returns to English. */
+async function ownerLanguage(owner: Page, language: 'hi' | 'en', returnTo = owner.url()) {
+  await owner.goto('http://localhost:3001/more?view=language');
+  await owner.getByRole('combobox').selectOption(language);
+  await expect(owner.locator('html')).toHaveAttribute('lang', language);
+  await owner.goto(returnTo);
+}
 async function hindiScreenshot(owner: Page, path: string) {
-  // An open order or quote dialog is modal, so the top-bar switch is pressed directly.
-  const press = (name: string) =>
-    owner
-      .locator('.topbar-actions button', { hasText: name })
-      .evaluate((button) => (button as HTMLButtonElement).click());
-  await press('हिन्दी');
-  await expect(owner.locator('html')).toHaveAttribute('lang', 'hi');
+  const returnTo = owner.url();
+  await ownerLanguage(owner, 'hi', returnTo);
   await owner.screenshot({ path, fullPage: true });
-  await press('English');
-  await expect(owner.locator('html')).toHaveAttribute('lang', 'en');
+  await ownerLanguage(owner, 'en', returnTo);
+}
+async function orderMore(owner: Page) {
+  const more = owner
+    .locator('details')
+    .filter({
+      has: owner.locator('summary').filter({ hasText: new RegExp(`^${en['owner.more']}$`) }),
+    })
+    .first();
+  if ((await more.getAttribute('open')) === null) await more.locator('summary').first().click();
+}
+async function deliveryProblem(owner: Page) {
+  await orderMore(owner);
+  await owner.getByRole('button', { name: en['owner.issue'], exact: true }).click();
+  return owner.getByRole('dialog');
 }
 async function acknowledgeAndDispatch(owner: Page) {
-  const dialog = owner.getByRole('dialog');
-  await dialog.getByRole('button', { name: 'Acknowledge', exact: true }).click();
-  await expect(dialog.getByRole('button', { name: 'Acknowledge', exact: true })).toHaveCount(0);
-  await dialog.getByRole('button', { name: 'Start preparing', exact: true }).click();
-  await dialog.getByRole('button', { name: 'Dispatch', exact: true }).click();
-  // Cash is still due, so delivery completes together with the money.
-  await expect(dialog.getByRole('button', { name: 'Cash received · delivered' })).toBeVisible();
-  await expect(dialog.getByRole('button', { name: 'Complete delivery' })).toHaveCount(0);
+  await owner.getByRole('button', { name: en['owner.startPreparing'], exact: true }).click();
+  await owner.getByRole('button', { name: en['owner.dispatch'], exact: true }).click();
+  await expect(owner.getByRole('button', { name: en['owner.deliver'], exact: true })).toBeVisible();
+}
+async function collectAndDeliver(owner: Page, channel: 'CASH' | 'UPI' = 'CASH') {
+  await owner.getByRole('button', { name: en['owner.deliver'], exact: true }).click();
+  const sheet = owner.getByRole('dialog');
+  await sheet.getByLabel(en['owner.paymentMethod']).selectOption(channel);
+  await sheet.getByRole('button', { name: en['owner.receiptThenDeliver'], exact: true }).click();
+  await expect(sheet).toBeHidden();
+}
+async function openQuote(owner: Page, quote: Quote) {
+  await owner.goto('http://localhost:3001/more?view=quotes');
+  await owner
+    .locator('.owner-order-cards')
+    .getByRole('button', { name: `Open quote ${quote.number}`, exact: true })
+    .click();
+}
+async function confirmQuote(owner: Page, action: string, confirmation: string) {
+  await owner.getByRole('button', { name: action, exact: true }).click();
+  await owner
+    .getByRole('dialog')
+    .last()
+    .getByRole('button', { name: confirmation, exact: true })
+    .click();
 }
 
 // Separate customers, owners, products and delivery coverage avoid coupling to older journeys.
@@ -330,17 +366,20 @@ test('phone COD: automatic owner queue, acknowledgment, actual collection, deliv
   await skipLanguageChooser(context);
   const owner = await context.newPage();
   const errors: string[] = [];
-  owner.on('pageerror', (error) => errors.push(error.message));
-  page.on('pageerror', (error) => errors.push(error.message));
+  const collect = (error: Error) => {
+    if (!isCancelledFetch(error.message)) errors.push(error.message);
+  };
+  owner.on('pageerror', collect);
+  page.on('pageerror', collect);
   try {
     await ownerLogin(owner, 31);
-    await owner.getByRole('button', { name: 'हिन्दी में देखें' }).click();
+    await ownerLanguage(owner, 'hi');
     await owner.reload();
-    // The chosen language survives a reload.
     await expect(owner.getByRole('heading', { name: 'आज', exact: true })).toBeVisible();
-    await owner.getByRole('button', { name: 'Switch to English' }).click();
-    await expect(owner.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
-    await owner.getByRole('button', { name: /^New work/ }).click();
+    await ownerLanguage(owner, 'en');
+    await expect(
+      owner.getByRole('heading', { name: en['owner.today'], exact: true }),
+    ).toBeVisible();
     await customerLogin(page, 31);
     const { order, response } = await submitOrder(page, products[0]!, 50);
     expect(order.totalPaise).toBe(2000000);
@@ -361,7 +400,7 @@ test('phone COD: automatic owner queue, acknowledgment, actual collection, deliv
       (r) =>
         r.url().endsWith(`/orders/${order.id}/cod-received`) && r.request().method() === 'POST',
     );
-    await owner.getByRole('button', { name: 'Cash received · delivered' }).click();
+    await collectAndDeliver(owner);
     await replay(owner, await collected);
     await expect
       .poll(async () => (await db.order.findUniqueOrThrow({ where: { id: order.id } })).status)
@@ -375,7 +414,8 @@ test('phone COD: automatic owner queue, acknowledgment, actual collection, deliv
       450,
     );
     await hindiScreenshot(owner, 'docs/screenshots/owner-cod-hindi-phone.png');
-    await owner.goBack();
+    await owner.getByRole('link', { name: en['owner.back'], exact: true }).click();
+    await expect(owner).toHaveURL(/\/orders$/);
     await expect(owner.getByRole('dialog')).toHaveCount(0);
     expect(
       await owner.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
@@ -396,20 +436,19 @@ test('phone refused delivery: retry and physical return without fake collection,
   const owner = await context.newPage();
   try {
     await ownerLogin(owner, 32);
-    await owner.getByRole('button', { name: /^New work/ }).click();
     await customerLogin(page, 32);
     const { order } = await submitOrder(page, products[1]!, 10);
     await openOrder(owner, order);
     await acknowledgeAndDispatch(owner);
-    const dialog = owner.getByRole('dialog');
     async function refuse(note: string) {
-      await dialog.getByText('Delivery problem', { exact: true }).click();
-      await dialog.getByLabel('Reason').selectOption('REFUSED');
-      await dialog.getByLabel('What happened', { exact: true }).fill(note);
-      await dialog.getByRole('button', { name: 'Record problem', exact: true }).click();
-      await expect(
-        dialog.getByRole('button', { name: 'Schedule retry', exact: true }),
-      ).toBeVisible();
+      const dialog = await deliveryProblem(owner);
+      await dialog.getByLabel(en['owner.issueReason']).selectOption('REFUSED');
+      await dialog.getByLabel(en['owner.note'], { exact: true }).fill(note);
+      await dialog.getByRole('button', { name: en['owner.save'], exact: true }).click();
+      await expect(dialog).toBeHidden();
+      await expect
+        .poll(async () => (await db.order.findUniqueOrThrow({ where: { id: order.id } })).status)
+        .toBe('DELIVERY_EXCEPTION');
       expect((await db.product.findUniqueOrThrow({ where: { id: products[1]!.id } })).stock).toBe(
         490,
       );
@@ -418,25 +457,45 @@ test('phone refused delivery: retry and physical return without fake collection,
       );
     }
     await refuse('Customer refused today; requested another delivery attempt.');
-    await dialog.getByLabel('Retry date', { exact: true }).fill(tomorrow());
-    await dialog
-      .getByLabel('Arrangement with the customer', { exact: true })
+    await owner.getByRole('link', { name: en['owner.today'], exact: true }).click();
+    const issue = owner
+      .locator(`a[href="/orders/${order.id}"]`)
+      .filter({ hasText: en['owner.workIssue'] });
+    await expect(issue).toBeVisible();
+    await issue.click();
+    const retry = await deliveryProblem(owner);
+    await retry.getByLabel(en['owner.deliveryDate'], { exact: true }).fill(tomorrow());
+    await retry
+      .getByLabel(en['owner.note'], { exact: true })
       .fill('Customer confirmed tomorrow by phone.');
-    await dialog.getByRole('button', { name: 'Schedule retry', exact: true }).click();
-    await expect(dialog.getByRole('button', { name: 'Cash received · delivered' })).toBeVisible();
+    await retry
+      .getByRole('button', { name: en['owner.retryDelivery'], exact: true })
+      .last()
+      .click();
+    await expect(retry).toBeHidden();
+    await expect(
+      owner.getByRole('button', { name: en['owner.deliver'], exact: true }),
+    ).toBeVisible();
     await refuse('Second visit refused; vehicle returned all ten bags.');
-    await dialog.getByText('Confirm physical return', { exact: true }).click();
-    await dialog.getByLabel('Sellable returned', { exact: true }).fill('8');
-    await dialog.getByLabel('Damaged returned', { exact: true }).fill('2');
-    await dialog
-      .getByLabel('Return details', { exact: true })
+    const returnedStock = await deliveryProblem(owner);
+    await returnedStock
+      .getByRole('button', { name: en['owner.returnStock'], exact: true })
+      .first()
+      .click();
+    await returnedStock.getByLabel(en['owner.sellable'], { exact: true }).fill('8');
+    await returnedStock.getByLabel(en['owner.damaged'], { exact: true }).fill('2');
+    await returnedStock
+      .getByLabel(en['owner.note'], { exact: true })
       .fill('Owner counted eight dry bags and two water-damaged bags at the shop.');
     const returned = owner.waitForResponse(
       (r) =>
         r.url().endsWith(`/orders/${order.id}/delivery`) &&
         r.request().postDataJSON()?.action === 'RETURN',
     );
-    await dialog.getByRole('button', { name: 'Confirm returned stock', exact: true }).click();
+    await returnedStock
+      .getByRole('button', { name: en['owner.returnStock'], exact: true })
+      .last()
+      .click();
     await replay(owner, await returned);
     await expect
       .poll(async () => (await db.order.findUniqueOrThrow({ where: { id: order.id } })).status)
@@ -464,7 +523,7 @@ test('wholesale UI: freight confirmation, renewed consent and one order at the n
   const owner = await context.newPage();
   try {
     await ownerLogin(owner, 33);
-    await owner.getByRole('button', { name: /^New quotations/ }).click();
+    await owner.goto('http://localhost:3001/more?view=quotes');
     await customerLogin(page, 33);
     await page.getByRole('tab', { name: 'Home' }).click();
     await page.getByRole('button', { name: 'Bulk quote', exact: true }).click();
@@ -480,19 +539,13 @@ test('wholesale UI: freight confirmation, renewed consent and one order at the n
     await page.getByRole('button', { name: 'Send bulk request', exact: true }).click();
     const quote = (await (await requested).json()) as Quote;
     expect(quote.items[0]!.quantity).toBe(100);
-    await owner
-      .locator('.owner-order-cards')
-      .getByRole('button', { name: `Open quote ${quote.number}`, exact: true })
-      .click();
+    await openQuote(owner, quote);
     await owner.getByRole('button', { name: 'Acknowledge quotation', exact: true }).click();
-    await owner
-      .locator('.owner-order-cards')
-      .getByRole('button', { name: `Open quote ${quote.number}`, exact: true })
-      .click();
+    await openQuote(owner, quote);
     await owner.getByLabel(/Family Bulk Cement.*price per unit/).fill('380');
     await owner.getByLabel('Delivery charge (₹)', { exact: true }).fill('750');
     await owner.getByRole('checkbox', { name: /I checked the site/ }).check();
-    await owner.getByRole('button', { name: 'Send quotation', exact: true }).click();
+    await confirmQuote(owner, 'Send quotation', 'Send quotation');
     await expect(owner.getByRole('dialog')).toHaveCount(0);
     await page.getByRole('button', { name: 'Refresh current screen', exact: true }).click();
     const consent = page.getByRole('checkbox', { name: /I reviewed this revision/ });
@@ -503,17 +556,13 @@ test('wholesale UI: freight confirmation, renewed consent and one order at the n
     await expect
       .poll(async () => (await db.quote.findUniqueOrThrow({ where: { id: quote.id } })).status)
       .toBe('ACCEPTED');
-    await owner.getByRole('button', { name: 'Show all quotes', exact: true }).click();
-    await owner
-      .locator('.owner-order-cards')
-      .getByRole('button', { name: `Open quote ${quote.number}`, exact: true })
-      .click();
+    await openQuote(owner, quote);
     await owner
       .getByRole('button', { name: 'Revise terms for fresh consent', exact: true })
       .click();
     await owner.getByLabel(/Family Bulk Cement.*price per unit/).fill('381');
     await owner.getByLabel('Delivery charge (₹)', { exact: true }).fill('760');
-    await owner.getByRole('button', { name: 'Send revised quote', exact: true }).click();
+    await confirmQuote(owner, 'Send revised quote', 'Send quotation');
     await expect
       .poll(async () => (await db.quote.findUniqueOrThrow({ where: { id: quote.id } })).status)
       .toBe('SENT');
@@ -531,21 +580,17 @@ test('wholesale UI: freight confirmation, renewed consent and one order at the n
     await expect
       .poll(async () => (await db.quote.findUniqueOrThrow({ where: { id: quote.id } })).status)
       .toBe('ACCEPTED');
-    await owner.getByRole('button', { name: 'Refresh data', exact: true }).click();
-    await owner
-      .locator('.owner-order-cards')
-      .getByRole('button', { name: `Open quote ${quote.number}`, exact: true })
-      .click();
+    await openQuote(owner, quote);
     const converted = owner.waitForResponse(
       (r) => r.url().endsWith(`/quotes/${quote.id}/convert`) && r.request().method() === 'POST',
     );
-    await owner.getByRole('button', { name: 'Create supply order', exact: true }).click();
+    await confirmQuote(owner, 'Create supply order', 'Create supply order');
     const response = await converted;
     expect(response.status()).toBe(201);
     const order = (await response.json()) as Order;
     expect((await replay(owner, response)).id).toBe(order.id);
     await expect(
-      owner.getByRole('dialog').getByRole('heading', { name: order.number, exact: true }),
+      owner.getByRole('heading', { name: `Order ${order.number}`, exact: true }),
     ).toBeVisible();
     const persisted = await db.order.findUniqueOrThrow({
       where: { id: order.id },

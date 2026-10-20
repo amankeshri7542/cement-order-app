@@ -117,7 +117,7 @@ export class AlertsService {
       const payload = JSON.stringify({
         title: note.title,
         body: note.body,
-        url: note.orderId ? `/#orders?order=${note.orderId}` : '/#quotes?queue=requested',
+        url: note.orderId ? `/orders/${note.orderId}` : '/more?view=quotes',
         tag: note.orderId || note.id,
       });
       for (const subscription of note.user.pushSubscriptions) {

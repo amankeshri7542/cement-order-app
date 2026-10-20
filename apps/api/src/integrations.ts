@@ -22,16 +22,20 @@ import { Db } from './db';
 import { OrdersService } from './orders';
 import { OwnerWorkService } from './owner-work';
 import { AlertsService } from './alerts';
+import { istToday } from '@shiv/shared';
+import { KhataService } from './khata';
 
 @Injectable()
 export class Maintenance implements OnModuleInit, OnModuleDestroy {
   private timer?: ReturnType<typeof setInterval>;
   private busy = false;
+  private khataCheckedDay = '';
   constructor(
     @Inject(Db) private db: Db,
     @Inject(OrdersService) private orders: OrdersService,
     @Inject(OwnerWorkService) private ownerWork: OwnerWorkService,
     @Inject(AlertsService) private alerts: AlertsService,
+    @Inject(KhataService) private khata: KhataService,
   ) {}
   onModuleInit() {
     if (getConfig().NODE_ENV === 'test') return;
@@ -107,6 +111,16 @@ export class Maintenance implements OnModuleInit, OnModuleDestroy {
       ['ownerWork', () => this.ownerWork.dispatch()],
       ['alerts', () => this.alerts.deliver()],
       ['reservations', () => this.orders.expireReservations()],
+      [
+        'khata',
+        async () => {
+          const today = istToday();
+          if (this.khataCheckedDay === today) return;
+          const result = await this.khata.checkBalances();
+          this.khataCheckedDay = today;
+          return result;
+        },
+      ],
       [
         'quotes',
         () =>

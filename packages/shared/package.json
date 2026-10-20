@@ -7,10 +7,12 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test src/*.test.ts"
+    "test": "node --import tsx --test src/*.test.ts",
+    "prebuild": "npm run build -w @shiv/i18n"
   },
   "dependencies": {
-    "zod": "^4.3.5"
+    "zod": "^4.3.5",
+    "@shiv/i18n": "1.0.0"
   },
   "react-native": "src/index.ts"
 }

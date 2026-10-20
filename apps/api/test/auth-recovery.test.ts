@@ -19,6 +19,7 @@ beforeEach(() => {
     config.configSchema.parse({
       NODE_ENV: 'test',
       OTP_PROVIDER: 'twilio',
+      STAFF_PASSPHRASE_REQUIRED: 'true',
       OTP_HASH_SECRET: 'provider-contract-test-secret-only',
       DATABASE_URL: 'postgresql://unused/unused_test',
       PORT: 4000,
@@ -30,7 +31,7 @@ beforeEach(() => {
     }),
   );
   vi.stubGlobal('fetch', fetchMock);
-  fetchMock.mockReset().mockResolvedValue(Response.json({ status: 'approved' }));
+  fetchMock.mockReset().mockImplementation(async () => Response.json({ status: 'approved' }));
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -104,23 +105,42 @@ function staffFixture() {
 }
 
 describe('Twilio staff OTP recovery (provider-contract simulation)', () => {
-  it('keeps a code usable after a wrong passphrase and consumes it only once', async () => {
+  it('checks OTP before the passphrase and needs a fresh code after provider approval', async () => {
     const { service, db, challenge } = staffFixture();
+    const approvedCodes = new Set<string>();
+    fetchMock.mockImplementation(async (_url, init) => {
+      const code = new URLSearchParams(String(init?.body)).get('Code')!;
+      if (approvedCodes.has(code)) return Response.json({ code: 20404 }, { status: 404 });
+      approvedCodes.add(code);
+      return Response.json({ status: 'approved' });
+    });
     await expect(service.verify(phone, '123456', 'wrong-staff-passphrase')).rejects.toMatchObject({
       status: 401,
-      response: { code: 'INVALID_CREDENTIALS' },
-    });
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(challenge).toMatchObject({ attempts: 1, consumed: false });
-    const result = await service.verify(phone, '123456', password);
-    expect(result.user.id).toBe('staff');
-    expect(result.accessToken).toHaveLength(43);
-    expect(JSON.stringify(result)).not.toContain(passwordHash);
-    expect(challenge).toMatchObject({ attempts: 2, consumed: true });
-    await expect(service.verify(phone, '123456', password)).rejects.toMatchObject({
       response: { code: 'INVALID_OTP' },
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(db.adminCredential.findUnique).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.invocationCallOrder[0]).toBeLessThan(
+      db.adminCredential.findUnique.mock.invocationCallOrder[0]!,
+    );
+    expect(challenge).toMatchObject({ attempts: 1, consumed: false });
+    await expect(service.verify(phone, '123456', password)).rejects.toMatchObject({
+      response: { code: 'INVALID_OTP' },
+    });
+    expect(db.adminCredential.findUnique).toHaveBeenCalledTimes(1);
+    expect(db.session.create).not.toHaveBeenCalled();
+    // A new SMS challenge replaces the generation consumed by the provider.
+    challenge.codeHash = 'replacement-generation';
+    challenge.attempts = 0;
+    const result = await service.verify(phone, '654321', password);
+    expect(result.user.id).toBe('staff');
+    expect(result.accessToken).toHaveLength(43);
+    expect(JSON.stringify(result)).not.toContain(passwordHash);
+    expect(challenge).toMatchObject({ attempts: 1, consumed: true });
+    await expect(service.verify(phone, '654321', password)).rejects.toMatchObject({
+      response: { code: 'INVALID_OTP' },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(db.session.create).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0]![0]).toBe(
       'https://verify.twilio.com/v2/Services/test-service/VerificationCheck',
@@ -133,23 +153,39 @@ describe('Twilio staff OTP recovery (provider-contract simulation)', () => {
     for (let attempt = 0; attempt < 5; attempt++)
       await expect(service.verify(phone, '123456', 'wrong-staff-passphrase')).rejects.toMatchObject(
         {
-          response: { code: 'INVALID_CREDENTIALS' },
+          response: { code: 'INVALID_OTP' },
         },
       );
     await expect(service.verify(phone, '123456', password)).rejects.toMatchObject({
       response: { code: 'INVALID_OTP' },
     });
     expect(challenge.attempts).toBe(5);
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(db.adminCredential.findUnique).toHaveBeenCalledTimes(5);
     expect(db.session.create).not.toHaveBeenCalled();
   });
 
+  it.each([password, 'wrong-staff-passphrase', undefined])(
+    'does not inspect staff credentials before OTP approval (%s)',
+    async (passphrase) => {
+      const { service, db } = staffFixture();
+      fetchMock.mockResolvedValueOnce(Response.json({ status: 'pending' }));
+      await expect(service.verify(phone, '000000', passphrase)).rejects.toMatchObject({
+        status: 401,
+        response: { code: 'INVALID_OTP' },
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(db.adminCredential.findUnique).not.toHaveBeenCalled();
+      expect(db.session.create).not.toHaveBeenCalled();
+    },
+  );
+
   // Staff get one answer for a wrong or expired code and a wrong passphrase (no passphrase oracle).
   it.each([
-    [404, { code: 20404 }, 'INVALID_CREDENTIALS', 401],
+    [404, { code: 20404 }, 'INVALID_OTP', 401],
     [503, { message: 'Temporarily unavailable' }, 'OTP_UNAVAILABLE', 503],
     [200, {}, 'OTP_UNAVAILABLE', 503],
-    [200, { status: 'pending' }, 'INVALID_CREDENTIALS', 401],
+    [200, { status: 'pending' }, 'INVALID_OTP', 401],
   ])('maps provider HTTP %s honestly', async (status, body, code, expectedStatus) => {
     const { service, db } = staffFixture();
     fetchMock.mockResolvedValueOnce(Response.json(body, { status }));
@@ -178,7 +214,7 @@ describe('Twilio staff OTP recovery (provider-contract simulation)', () => {
       return Response.json({ status: 'approved' });
     });
     await expect(service.verify(phone, '123456', password)).rejects.toMatchObject({
-      response: { code: 'INVALID_CREDENTIALS' },
+      response: { code: 'INVALID_OTP' },
     });
     expect(db.session.create).not.toHaveBeenCalled();
   });

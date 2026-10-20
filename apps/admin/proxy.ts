@@ -12,6 +12,7 @@ export function proxy(request: NextRequest) {
   const csp = `default-src 'self'; script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${dev ? " 'unsafe-eval'" : ''}; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data: ${api} ${asset}; font-src 'self' data:; connect-src 'self' ${api}${dev ? ' ws://localhost:* ws://127.0.0.1:*' : ''}; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; frame-src 'none'${dev ? '' : '; upgrade-insecure-requests'}`;
   const headers = new Headers(request.headers);
   headers.set('Content-Security-Policy', csp);
+  headers.set('x-nonce', nonce);
   const response = NextResponse.next({ request: { headers } });
   response.headers.set('Content-Security-Policy', csp);
   response.headers.set('X-Content-Type-Options', 'nosniff');

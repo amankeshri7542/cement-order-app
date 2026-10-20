@@ -1,3 +1,4 @@
+import { t } from '@shiv/i18n';
 import { Controller, Get, Inject, Injectable, Param, Post, Req, Sse } from '@nestjs/common';
 import { Subject, concatMap, interval, map, merge, takeUntil, takeWhile } from 'rxjs';
 import { assertSession } from './security';
@@ -48,10 +49,8 @@ export class OwnerWorkService {
               create: {
                 userId: owner.id,
                 dedupeKey: `owner:${work.id}:${owner.id}`,
-                title: 'New store work / नया काम',
-                body: work.orderId
-                  ? 'Open Orders to acknowledge the new order.'
-                  : 'Open Bulk quotes to review the request.',
+                title: t('owner.newWorkAlert'),
+                body: work.orderId ? t('owner.openOrderAlert') : t('owner.openQuoteAlert'),
                 orderId: work.orderId,
               },
             });

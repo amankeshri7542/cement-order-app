@@ -360,6 +360,8 @@ export class QuotesController {
           userId: quote.userId,
           quoteId: id,
           quoteRevision: quote.revision,
+          source: 'QUOTE',
+          createdById: req.user.id,
           reviewId: review.id,
           idempotencyKey: `quote:${id}:${quote.revision}`,
           status: 'CONFIRMED',
@@ -380,6 +382,7 @@ export class QuotesController {
         },
         include: orderInclude,
       });
+      await tx.user.update({ where: { id: quote.userId }, data: { lastOrderAt: order.createdAt } });
       for (const line of lines)
         await moveStock(tx, {
           productId: line.productId,

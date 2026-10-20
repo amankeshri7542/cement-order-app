@@ -1,10 +1,10 @@
 # Shiv Cement Store
 
-**Status (18 October 2026):** code complete through Phase 11 (first-run guidance for new
-customers and a new store's owner desk; branch `codex/p11-first-run`, not merged); nothing is
-deployed, no money has been spent and online payments are off. The next steps need the owner's accounts and approval:
-the [operator checklist](docs/OPERATOR_CHECKLIST.md) lists them in order, and the
-[release checklist](docs/RELEASE_CHECKLIST.md) records which gates have passed.
+Master Plan v2 (20 October 2026): [Phase 1 phone orders and khata](docs/MASTER_PLAN_PHASE1.md)
+and [Phase 2 owner dashboard](docs/MASTER_PLAN_PHASE2.md) implement the Hindi owner workflow.
+The earlier reports below use the previous roadmap numbering. Nothing is deployed and online
+payments remain off. Account setup and physical-phone acceptance remain in the
+[operator checklist](docs/OPERATOR_CHECKLIST.md) and [release checklist](docs/RELEASE_CHECKLIST.md).
 
 Phase reports: [P1 app foundations](docs/P1_APP_FOUNDATIONS.md) ·
 [P2 Android app](docs/P2_ANDROID_APP.md) · [P3 hardening](docs/P3_HARDENING.md) ·
@@ -23,7 +23,7 @@ Testing and the family demo: [testing guide](docs/TESTING_GUIDE.md) for all thre
 [manual setup](docs/MANUAL_SETUP.md) for accounts and keys, the
 [demo script](docs/DEMO_SCRIPT.md) and the Hindi [owner desk guide](docs/FAMILY_GUIDE_HI.md).
 
-An Expo Android customer app, a Next.js customer website, a Next.js owner desk, and a NestJS/PostgreSQL commerce backend for **Shiv Cement Store**, serving **Patna and Bihar**. Contact/WhatsApp initially **9297513707**, editable under **Finance & settings**.
+An Expo Android customer app, a Next.js customer website, a Next.js owner desk, and a NestJS/PostgreSQL commerce backend for **Shiv Cement Store**, serving **Patna and Bihar**. Contact/WhatsApp initially **9297513707**, editable under **More → Store details**.
 
 The backend owns prices, delivery charges, inventory and payment state. Local example inventory and mock OTP are for development. **Do not accept real payments until the production setup and provider verification below are complete.**
 
@@ -67,8 +67,7 @@ npm run db:generate
 npm run build -w @shiv/shared
 npm run db:migrate
 npm run db:seed
-# Supply ADMIN_BOOTSTRAP_PASSWORD through your shell or secret manager first.
-# Use a unique 12–200 character staff passphrase; do not put it in command history.
+# Owner access uses OTP only by default; this command grants the owner role.
 npm run admin:grant -w @shiv/api -- +919297513707
 ```
 

@@ -27,6 +27,7 @@ import {
 } from '@shiv/shared';
 import { api, API_URL, uploadFile } from '../../lib/api';
 import { useWords } from '../../lib/i18n';
+import { useOwner, useUnsavedGuard } from '../../lib/owner';
 import { Empty, Field, Modal } from '../ui';
 import { ProductEditor } from '../products';
 
@@ -138,6 +139,7 @@ export function RateStudio({
   onDirtyChange: (value: boolean) => void;
 }) {
   const { t, error: say, moment } = useWords();
+  const { confirm: confirmAction } = useOwner();
   const name = named(t);
   const [providers, setProviders] = useState<Providers | null>(null);
   const [history, setHistory] = useState<Page<RateBatch>>({ items: [], nextCursor: null });
@@ -145,15 +147,17 @@ export function RateStudio({
   const [title, setTitle] = useState('');
   const [rows, setRows] = useState<DraftRow[]>([]);
   const [dirty, setDirty] = useState(false);
+  useUnsavedGuard(dirty);
   useEffect(() => {
     onDirtyChange(dirty);
   }, [dirty, onDirtyChange]);
+  useEffect(() => () => onDirtyChange(false), [onDirtyChange]);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [create, setCreate] = useState<'MANUAL' | 'IMAGE' | 'ADJUSTMENT' | null>(null);
   const [picker, setPicker] = useState<Picker | null>(null);
   const [addingProduct, setAddingProduct] = useState(false);
-  const [confirm, setConfirm] = useState<'publish' | 'cancel' | 'leave' | null>(null);
+  const [confirm, setConfirm] = useState<'publish' | 'cancel' | null>(null);
   const [cards, setCards] = useState(false);
   const [historyOnly, setHistoryOnly] = useState(false);
   const createKey = useRef(crypto.randomUUID());
@@ -196,14 +200,6 @@ export function RateStudio({
     window.addEventListener('shiv-owner-refresh', refreshVisible);
     return () => window.removeEventListener('shiv-owner-refresh', refreshVisible);
   }, [adopt, batch, busy, dirty, loadHistory]);
-  useEffect(() => {
-    if (!dirty) return;
-    const warn = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-    };
-    window.addEventListener('beforeunload', warn);
-    return () => window.removeEventListener('beforeunload', warn);
-  }, [dirty]);
   useEffect(() => {
     if (batch?.status !== 'PROCESSING') return;
     let cancelled = false;
@@ -250,6 +246,23 @@ export function RateStudio({
       setCards(false);
       setHistoryOnly(false);
     });
+  }
+  async function safeClose() {
+    if (busy) return;
+    if (
+      dirty &&
+      !(await confirmAction({
+        title: t('Leave without saving?', 'बिना सहेजे बाहर जाएँ?'),
+        body: t(
+          'Your unsaved edits will be discarded. The last saved draft stays in price sheet history.',
+          'बिना सहेजे बदलाव हट जाएँगे। आख़िरी सहेजा ड्राफ्ट पुरानी भाव शीटों में रहेगा।',
+        ),
+        confirmLabel: t('Discard unsaved edits', 'बिना सहेजे बदलाव हटाएँ'),
+      }))
+    )
+      return;
+    setBatch(null);
+    setDirty(false);
   }
   function change(index: number, patch: Partial<DraftRow>, approval = false) {
     setRows((old) =>
@@ -336,17 +349,21 @@ export function RateStudio({
             <button
               className="secondary"
               disabled={Boolean(busy)}
-              onClick={() => {
+              onClick={async () => {
+                if (!batch) return;
                 if (
-                  !dirty ||
-                  window.confirm(
-                    t(
-                      'Discard your unsaved edits and reload the saved draft?',
-                      'बिना सहेजे बदलाव हटाकर सहेजा हुआ ड्राफ्ट फिर से खोलें?',
+                  dirty &&
+                  !(await confirmAction({
+                    title: t('Reload saved draft', 'सहेजा ड्राफ्ट फिर खोलें'),
+                    body: t(
+                      'Discard unsaved edits and reload the saved draft?',
+                      'बिना सहेजे बदलाव हटाकर सहेजा हुआ ड्राफ्ट खोलें?',
                     ),
-                  )
+                    confirmLabel: t('Reload saved draft', 'सहेजा ड्राफ्ट फिर खोलें'),
+                  }))
                 )
-                  void open(batch.id);
+                  return;
+                await open(batch.id);
               }}
             >
               <RefreshCw size={16} />
@@ -495,7 +512,7 @@ export function RateStudio({
             <button
               className="text-button"
               disabled={Boolean(busy)}
-              onClick={() => (dirty ? setConfirm('leave') : setBatch(null))}
+              onClick={() => void safeClose()}
             >
               <ArrowLeft size={16} />
               {t('All price sheets', 'सभी भाव शीटें')}
@@ -1201,9 +1218,7 @@ export function RateStudio({
           title={
             confirm === 'publish'
               ? t('Publish these prices?', 'ये भाव लागू करें?')
-              : confirm === 'cancel'
-                ? t('Cancel this price sheet?', 'यह भाव शीट रद्द करें?')
-                : t('Leave without saving?', 'बिना सहेजे बाहर जाएँ?')
+              : t('Cancel this price sheet?', 'यह भाव शीट रद्द करें?')
           }
           close={() => {
             if (!busy) setConfirm(null);
@@ -1216,15 +1231,10 @@ export function RateStudio({
                     `${included.length} customer selling prices will be checked against current product versions and published together. These must be the prices customers will pay, not supplier purchase costs. Customers must review changed checkout totals.`,
                     `ग्राहकों के ${included.length} बिक्री भाव अभी की सामग्री से मिलाकर एक साथ लागू होंगे। ये वही भाव होने चाहिए जो ग्राहक देंगे, सप्लायर का खरीद भाव नहीं। ग्राहकों को बदला हुआ कुल बिल फिर से देखना होगा।`,
                   )
-                : confirm === 'cancel'
-                  ? t(
-                      'This sheet will be closed. Published catalogue prices will not change.',
-                      'यह शीट बंद हो जाएगी। दुकान के लागू भाव नहीं बदलेंगे।',
-                    )
-                  : t(
-                      'Your unsaved edits will be discarded. The last saved draft stays in price sheet history.',
-                      'बिना सहेजे बदलाव हट जाएँगे। आख़िरी सहेजा ड्राफ्ट पुरानी भाव शीटों में रहेगा।',
-                    )}
+                : t(
+                    'This sheet will be closed. Published catalogue prices will not change.',
+                    'यह शीट बंद हो जाएगी। दुकान के लागू भाव नहीं बदलेंगे।',
+                  )}
             </p>
             {error && (
               <p className="error" role="alert">
@@ -1240,10 +1250,7 @@ export function RateStudio({
                     ? t('Publishing prices', 'भाव लागू हो रहे हैं')
                     : t('Closing draft', 'ड्राफ्ट बंद हो रहा है'),
                   async () => {
-                    if (confirm === 'leave') {
-                      setBatch(null);
-                      setDirty(false);
-                    } else if (batch) {
+                    if (batch) {
                       adopt(
                         await api<RateBatch>(`${base}/batches/${batch.id}/${confirm}`, 'POST', {
                           expectedVersion: batch.version,
@@ -1268,9 +1275,7 @@ export function RateStudio({
             >
               {confirm === 'publish'
                 ? t('Confirm & publish prices', 'पक्का करें और भाव लागू करें')
-                : confirm === 'cancel'
-                  ? t('Confirm cancellation', 'रद्द करना पक्का करें')
-                  : t('Discard unsaved edits', 'बिना सहेजे बदलाव हटाएँ')}
+                : t('Confirm cancellation', 'रद्द करना पक्का करें')}
             </button>
             <button className="secondary" disabled={Boolean(busy)} onClick={() => setConfirm(null)}>
               {t('Keep reviewing', 'जाँच जारी रखें')}

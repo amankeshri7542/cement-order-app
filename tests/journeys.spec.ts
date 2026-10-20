@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures';
-import { productSchema, type DeliveryZone } from '@shiv/shared';
+import { productSchema, type DeliveryZone, type Order } from '@shiv/shared';
+import { en } from '@shiv/i18n';
 import { appLogin, fillAddress, openBasket, openMaterial, searchMaterials, tab } from './app';
 
 test('catalogue keeps a product press intact across an unchanged search debounce', async ({
@@ -25,15 +26,19 @@ async function mobileLogin(page: Page, phone: string) {
 }
 async function adminLogin(page: Page, phone = '9297513707') {
   await page.addInitScript(() => localStorage.setItem('shiv-owner-language', 'en'));
-  await page.goto('http://localhost:3001');
-  await page.getByRole('textbox', { name: 'Staff mobile number' }).fill(phone);
+  await page.goto('http://localhost:3001/today');
+  await page.getByRole('textbox', { name: en['owner.loginPhone'] }).fill(phone);
   const response = page.waitForResponse(
     (r) => r.url().endsWith('/auth/otp/request') && r.status() === 201,
   );
-  await page.getByRole('button', { name: 'Get verification code' }).click();
+  await page.getByRole('button', { name: en['owner.sendCode'] }).click();
   const code = (await (await response).json()).devCode;
   await page.getByRole('textbox', { name: 'Verification code', exact: true }).fill(code);
-  await page.getByRole('button', { name: 'Open store desk' }).click();
+  // Navigating before the session exists cancels the verify request in WebKit. A customer number
+  // is refused after this call, so wait for the response and not for the desk to open.
+  const verified = page.waitForResponse((r) => r.url().endsWith('/auth/otp/verify'));
+  await page.getByRole('button', { name: en['owner.signIn'] }).click();
+  await verified;
 }
 test('customer places a COD order, tracks it, reorders and requests a bulk quote', async ({
   page,
@@ -84,50 +89,74 @@ test('admin changes price and finance policy, fulfils an order and replies to a 
   await page.setViewportSize({ width: 1440, height: 1000 });
   await adminLogin(page);
   await expect(page.getByRole('heading', { name: 'Today' })).toBeVisible();
-  await expect(page.getByRole('region', { name: "Today's work", exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: /^New work/ })).toBeVisible();
+  await expect(page.getByRole('region', { name: en['owner.nextWork'], exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('link', { name: en['owner.newOrderAction'], exact: true }),
+  ).toBeVisible();
   await page.screenshot({ path: 'test-results/admin-overview.png', fullPage: true });
-  await page
-    .getByRole('navigation', { name: 'Main navigation', exact: true })
-    .getByRole('button', { name: 'Prices & stock', exact: true })
-    .click();
+  await page.goto('http://localhost:3001/more?view=products');
   await page.getByRole('textbox', { name: 'Search products', exact: true }).fill('UltraTech Super');
   await page.getByRole('button', { name: 'Edit UltraTech Super' }).click();
   await page.getByLabel('Selling price (₹)').fill('425');
   await page.getByRole('button', { name: 'Save product', exact: true }).click();
   await expect(page.getByText('₹425.00', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'More', exact: true }).click();
-  await page.getByRole('button', { name: /Finance & settings$/ }).click();
-  await page.getByRole('button', { name: /Patna test/ }).click();
-  await page.getByLabel('Delivery charge (₹)', { exact: true }).fill('600');
-  await page.getByRole('button', { name: 'Save delivery zone' }).click();
-  await page.getByRole('button', { name: 'Save settings' }).click();
-  await expect(page.getByText('Store and finance settings saved')).toBeVisible();
+  await page.goto('http://localhost:3001/more?view=zones');
+  const patna = page
+    .getByRole('article')
+    .filter({ has: page.getByRole('heading', { name: /Patna test/ }) });
+  await patna.getByRole('button', { name: en['owner.edit'], exact: true }).click();
+  const zone = page.getByRole('dialog');
+  await zone.getByLabel(en['owner.deliveryFee'], { exact: true }).fill('600');
+  await zone.getByRole('button', { name: en['owner.save'], exact: true }).click();
+  await expect(zone).toBeHidden();
+  await page.goto('http://localhost:3001/more?view=store');
+  const savedSettings = page.waitForResponse(
+    (r) => r.url().endsWith('/admin/store') && r.request().method() === 'PATCH',
+  );
+  await page.getByRole('button', { name: en['owner.save'], exact: true }).click();
+  expect((await savedSettings).ok()).toBe(true);
+  await expect(page.getByRole('status').filter({ hasText: en['owner.saved'] })).toBeVisible();
+  await page.goto('http://localhost:3001/orders');
+  const searched = page.waitForResponse(
+    (response) =>
+      response.url().includes('/admin/orders?') && response.url().includes('q=9888888881'),
+  );
   await page
-    .getByRole('button', { name: /^Orders/ })
-    .first()
-    .click();
-  await page
-    .getByRole('button', { name: /^Open SC-/ })
-    .first()
-    .click();
-  page.on('dialog', (dialog) => dialog.accept());
-  await page.getByRole('button', { name: 'Start preparing' }).click();
-  await page.getByRole('button', { name: 'Dispatch', exact: true }).click();
-  // Cash is collected at the door: one step records it and completes the delivery.
-  await page.getByRole('button', { name: 'Cash received · delivered' }).click();
-  await expect(
-    page.getByRole('dialog').getByText('Delivered', { exact: true }).first(),
-  ).toBeVisible();
-  await page.getByRole('button', { name: 'Close dialog' }).click();
-  await page.getByRole('button', { name: 'More', exact: true }).click();
-  await page.getByRole('button', { name: /Bulk quotes$/ }).click();
+    .getByRole('searchbox', { name: en['owner.searchOrders'], exact: true })
+    .fill('9888888881');
+  await searched;
+  const orderLink = page
+    .locator('a[href^="/orders/"]')
+    .filter({ has: page.getByText(/SC-/) })
+    .first();
+  await expect(orderLink).toBeVisible();
+  const orderPath = await orderLink.getAttribute('href');
+  const orderId = orderPath!.split('/').at(-1)!;
+  await orderLink.click();
+  await page.getByRole('button', { name: en['owner.startPreparing'], exact: true }).click();
+  await page.getByRole('button', { name: en['owner.dispatch'], exact: true }).click();
+  await page.getByRole('button', { name: en['owner.deliver'], exact: true }).click();
+  const receipt = page.getByRole('dialog');
+  await receipt.getByLabel(en['owner.paymentMethod']).selectOption('CASH');
+  await receipt.getByRole('button', { name: en['owner.receiptThenDeliver'], exact: true }).click();
+  await expect(receipt).toBeHidden();
+  await expect(page.getByText('Delivered', { exact: true }).first()).toBeVisible();
+  const supplied = (await (
+    await page.request.get(`http://localhost:4010/api/v1/admin/orders/${orderId}`)
+  ).json()) as Order;
+  expect(supplied).toMatchObject({ status: 'DELIVERED', payment: { status: 'CAPTURED' } });
+  await page.goto('http://localhost:3001/more?view=quotes');
   const openQuote = page.getByRole('button', { name: /^Open quote/ }).first();
   const quoteNumber = (await openQuote.getAttribute('aria-label'))!.replace('Open quote ', '');
   await openQuote.click();
   await page.getByLabel(/UltraTech Super.*price per unit/).fill('400');
   await page.getByRole('checkbox', { name: /I checked the site/ }).check();
-  await page.getByRole('button', { name: 'Send quotation' }).click();
+  await page.getByRole('button', { name: 'Send quotation', exact: true }).click();
+  await page
+    .getByRole('dialog')
+    .last()
+    .getByRole('button', { name: 'Send quotation', exact: true })
+    .click();
   await expect(
     page.getByRole('row').filter({ hasText: quoteNumber }).getByText('Sent', { exact: true }),
   ).toBeVisible();
@@ -250,9 +279,7 @@ test('admin UI denies a customer account and a lost network produces a recoverab
   page,
 }) => {
   await adminLogin(page, '9888888882');
-  await expect(
-    page.getByRole('alert').filter({ hasText: 'does not have store staff access' }),
-  ).toBeVisible();
+  await expect(page.getByRole('alert').filter({ hasText: en['error.forbidden'] })).toBeVisible();
   await page.goto('http://localhost:8082');
   await page.route('**/api/v1/products*', (route) => route.abort());
   await page.reload();
@@ -267,10 +294,7 @@ test('store records stock and delivery rules; customers browse server pages on m
   page,
 }) => {
   await adminLogin(page, '9297513709');
-  await page
-    .getByRole('navigation', { name: 'Main navigation', exact: true })
-    .getByRole('button', { name: 'Prices & stock', exact: true })
-    .click();
+  await page.goto('http://localhost:3001/more?view=products');
   await page.getByRole('textbox', { name: 'Search products', exact: true }).fill('UltraTech Super');
   await page.getByRole('button', { name: 'Stock ledger UltraTech Super' }).click();
   await page.getByRole('combobox', { name: 'Movement', exact: true }).selectOption('WALK_IN_SALE');
@@ -283,20 +307,25 @@ test('store records stock and delivery rules; customers browse server pages on m
   ).toBeVisible();
   await page.screenshot({ path: 'test-results/pilot-stock-ledger.png' });
   await page.getByRole('button', { name: 'Close dialog' }).click();
-  await page.getByRole('button', { name: 'More', exact: true }).click();
-  await page.getByRole('button', { name: /Finance & settings$/ }).click();
-  await page.getByRole('button', { name: 'Add delivery zone' }).click();
-  await page.getByLabel('Zone name').fill('Outstation check');
-  await page.getByLabel('Pincodes, separated by commas').fill('801111');
-  await page.getByLabel('Delivery charge (₹)', { exact: true }).fill('900');
-  await page.getByLabel('Delivery estimate', { exact: true }).fill('2–3 days after confirmation');
-  await page.getByRole('button', { name: 'Save delivery zone' }).click();
-  await expect(page.getByRole('button', { name: /Outstation check/ })).toBeVisible();
+  await page.goto('http://localhost:3001/more?view=zones');
+  await page.getByRole('button', { name: en['owner.addZone'], exact: true }).click();
+  const area = page.getByRole('dialog');
+  await area.getByLabel(en['owner.zoneName'], { exact: true }).fill('Outstation check');
+  await area.getByLabel(en['owner.zonePincodes'], { exact: true }).fill('801111');
+  await area.getByLabel(en['owner.deliveryFee'], { exact: true }).fill('900');
+  await area
+    .getByLabel(en['owner.zoneEstimate'], { exact: true })
+    .fill('2–3 days after confirmation');
+  await area.getByRole('button', { name: en['owner.save'], exact: true }).click();
+  await expect(area).toBeHidden();
+  await expect(page.getByRole('heading', { name: 'Outstation check', exact: true })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.locator('.sidebar')).toBeHidden();
-  await page.getByRole('button', { name: 'More', exact: true }).click();
-  await page.getByRole('button', { name: /Finance & settings$/ }).click();
-  await expect(page.locator('.sidebar')).toBeHidden();
+  const nav = page.getByRole('navigation', { name: en['owner.desk'], exact: true });
+  await expect(nav).toBeVisible();
+  await nav.getByRole('link', { name: en['owner.more'], exact: true }).click();
+  await page.getByRole('link', { name: en['owner.zones'], exact: true }).click();
+  await expect(page).toHaveURL(/\/more\?view=zones$/);
+  await expect(page.locator('.sidebar')).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );

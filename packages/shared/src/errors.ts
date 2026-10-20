@@ -3,6 +3,17 @@ import { pick, type Bilingual, type Language } from './i18n';
 // Every error code the API or clients can produce. apps/api/test/error-codes.test.ts fails if
 // the API throws a code that is missing here, so new codes cannot reach customers unnoticed.
 export const errorCodes = [
+  'CREDIT_LIMIT_EXCEEDED',
+  'CREDIT_LIMIT_REQUIRED',
+  'CREDIT_NOT_ALLOWED',
+  'CREDIT_OVERRIDE_FORBIDDEN',
+  'CUSTOMER_NOT_FOUND',
+  'ENTRY_NOT_FOUND',
+  'INVALID_BUSINESS_DATE',
+  'INVALID_CREDIT_OVERRIDE',
+  'INVALID_REVERSAL',
+  'KHATA_BALANCE_REMAINING',
+  'KHATA_OVERFLOW',
   'ACCOUNT_CHANGED',
   'ACTIVE_ORDERS',
   'ADDRESS_LIMIT',
@@ -121,6 +132,7 @@ export type ErrorCode = (typeof errorCodes)[number];
 // Codes a customer can meet in the app or on the website. Each must read naturally in both
 // languages: they tell the customer what happened and what to do next.
 export const customerErrorCodes = [
+  'KHATA_BALANCE_REMAINING',
   'NETWORK_ERROR',
   'REQUEST_FAILED',
   'INTERNAL_ERROR',
@@ -196,6 +208,10 @@ export function isCheckoutRefusal(code: string | undefined) {
 }
 
 export const customerErrors: Record<CustomerErrorCode, Bilingual> = {
+  KHATA_BALANCE_REMAINING: [
+    'Settle your khata balance with the shop before deleting your account.',
+    'खाता हटाने से पहले दुकान से अपना उधार या जमा राशि का हिसाब पूरा करें।',
+  ],
   NETWORK_ERROR: [
     'The response could not be confirmed. Check your connection and retry.',
     'जवाब की पुष्टि नहीं हुई। इंटरनेट जाँचकर फिर कोशिश करें।',

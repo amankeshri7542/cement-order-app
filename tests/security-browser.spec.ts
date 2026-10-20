@@ -3,7 +3,7 @@ import { test, expect } from './fixtures';
 test('owner response CSP uses fresh nonces and blocks injected inline scripts', async ({
   page,
 }) => {
-  const response = await page.goto('http://localhost:3001');
+  const response = await page.goto('http://localhost:3001/today');
   const policy = response!.headers()['content-security-policy'];
   expect(policy).toContain("frame-ancestors 'none'");
   expect(policy).toContain("object-src 'none'");
@@ -13,7 +13,7 @@ test('owner response CSP uses fresh nonces and blocks injected inline scripts', 
   page.on('console', (message) => {
     if (/Content Security Policy|script-src/i.test(message.text())) violations.push(message.text());
   });
-  await page.route('http://localhost:3001/', async (route) => {
+  await page.route('http://localhost:3001/today', async (route) => {
     const original = await route.fetch();
     await route.fulfill({
       response: original,

@@ -53,6 +53,7 @@ test.beforeAll(async () => {
 });
 
 async function deskLogin(page: Page) {
+  await page.addInitScript(() => localStorage.setItem('shiv-owner-language', 'en'));
   await page.goto(desk);
   await page.getByRole('textbox', { name: 'Staff mobile number' }).fill('9297513707');
   const sent = page.waitForResponse((r) => r.url().endsWith('/auth/otp/request'));
@@ -68,10 +69,7 @@ test('a Hindi name saved on the desk reaches Hindi readers; English is unchanged
   page,
 }) => {
   await deskLogin(page);
-  await page
-    .getByRole('navigation', { name: 'Main navigation', exact: true })
-    .getByRole('button', { name: 'Prices & stock', exact: true })
-    .click();
+  await page.goto('http://localhost:3001/more?view=products');
   await page.getByRole('textbox', { name: 'Search products', exact: true }).fill(name);
   await page.getByRole('button', { name: `Edit ${name}`, exact: true }).click();
   const dialog = page.getByRole('dialog');

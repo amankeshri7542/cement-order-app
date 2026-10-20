@@ -1,0 +1,36 @@
+:root {
+  --shiv-paper: #f6f4ee;
+  --shiv-card: #ffffff;
+  --shiv-line: #e3e1d9;
+  --shiv-ink: #1f2322;
+  --shiv-ink2: #5b605d;
+  --shiv-ink3: #8a8f8b;
+  --shiv-brand: #e0a42b;
+  --shiv-brand-ink: #1f2322;
+  --shiv-green: #1f7a4d;
+  --shiv-red: #b23a2f;
+  --shiv-blue: #2f6db5;
+  --shiv-navy: #243331;
+  --shiv-radius-sm: 0.5rem;
+  --shiv-radius-md: 0.75rem;
+  --shiv-radius-lg: 1rem;
+  --shiv-radius-pill: 999rem;
+  --shiv-space-1: 0.25rem;
+  --shiv-space-2: 0.5rem;
+  --shiv-space-3: 0.75rem;
+  --shiv-space-4: 1rem;
+  --shiv-space-5: 1.25rem;
+  --shiv-space-6: 1.5rem;
+  --shiv-space-7: 2rem;
+  --shiv-space-8: 2.5rem;
+  --shiv-space-9: 3rem;
+  --shiv-display: 2rem;
+  --shiv-h1: 1.625rem;
+  --shiv-h2: 1.25rem;
+  --shiv-body: 1rem;
+  --shiv-small: 0.875rem;
+  --shiv-money: 1.75rem;
+  --shiv-font-display: var(--font-mukta), 'Noto Sans Devanagari', system-ui;
+  --shiv-font-body: var(--font-inter), var(--font-mukta), system-ui;
+  --shiv-font-mono: 'JetBrains Mono', monospace;
+}

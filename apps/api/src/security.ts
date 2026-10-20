@@ -25,7 +25,12 @@ export async function verifyPassword(password: string, encoded: string) {
   return timingSafeEqual(await derive(password, match[1]!), Buffer.from(match[2]!, 'hex'));
 }
 
-export const refreshLifetime = (role: string) => (role === 'ADMIN' ? 8 * 3600000 : 30 * 86400000);
+export const refreshLifetime = (role: string) =>
+  role === 'ADMIN'
+    ? getConfig().STAFF_PASSPHRASE_REQUIRED
+      ? 8 * 3600000
+      : getConfig().OWNER_SESSION_DAYS * 86400000
+    : 30 * 86400000;
 
 export async function assertSession(
   db: Pick<Prisma.TransactionClient, 'adminCredential'>,
@@ -37,6 +42,7 @@ export async function assertSession(
     if (session.adminVerifiedAt) fail('UNAUTHORIZED', 'Staff access changed. Sign in again.', 401);
     return;
   }
+  if (!getConfig().STAFF_PASSPHRASE_REQUIRED) return;
   if (session.createdAt.getTime() + refreshLifetime('ADMIN') <= Date.now())
     fail('UNAUTHORIZED', 'Your staff session expired. Sign in again.', 401);
   const credential = await db.adminCredential.findUnique({ where: { userId: session.userId } });

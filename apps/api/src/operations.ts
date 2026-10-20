@@ -307,6 +307,18 @@ export class OperationsController {
           'Complete or cancel open orders and refunds before deleting your account. Contact the store for help.',
           409,
         );
+      const customer = await tx.user.findUniqueOrThrow({ where: { id: req.user.id } });
+      if (customer.khataBalancePaise !== 0)
+        fail(
+          'KHATA_BALANCE_REMAINING',
+          'Settle the khata balance with the store before deleting the account.',
+          409,
+        );
+      await tx.customerNote.updateMany({ where: { customerId: req.user.id }, data: { body: '' } });
+      await tx.customerContact.updateMany({
+        where: { customerId: req.user.id },
+        data: { purpose: '' },
+      });
       const where = { userId: req.user.id };
       const orders = await tx.order.findMany({ where, select: { id: true } });
       const quotes = await tx.quote.findMany({ where, select: { id: true } });
@@ -422,6 +434,10 @@ export class OperationsController {
           name: 'Deleted customer',
           role: 'CUSTOMER',
           contractorStatus: 'NONE',
+          creditAllowed: false,
+          creditLimitPaise: null,
+          area: '',
+          tags: [],
           deletedAt: new Date(),
         },
       });

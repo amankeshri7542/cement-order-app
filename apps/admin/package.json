@@ -6,14 +6,18 @@
     "dev": "next dev --port 3000",
     "build": "next build --webpack",
     "start": "next start --port 3000",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test lib/api.test.ts"
   },
   "dependencies": {
+    "@shiv/design": "1.0.0",
+    "@shiv/i18n": "1.0.0",
     "@shiv/shared": "1.0.0",
+    "@tanstack/react-query": "^5.104.5",
+    "lucide-react": "^0.468.0",
     "next": "^16.2.9",
     "react": "19.2.0",
-    "react-dom": "19.2.0",
-    "lucide-react": "^0.468.0"
+    "react-dom": "19.2.0"
   },
   "devDependencies": {
     "@types/react": "~19.2.0",

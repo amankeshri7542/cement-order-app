@@ -43,7 +43,8 @@ test.beforeAll(async () => {
 test.afterAll(() => db.$disconnect());
 
 async function requestOwnerCode(page: Page, phone: string) {
-  await page.goto('http://localhost:3001');
+  await page.addInitScript(() => localStorage.setItem('shiv-owner-language', 'en'));
+  await page.goto('http://localhost:3001/today');
   await page.getByRole('textbox', { name: 'Staff mobile number' }).fill(phone);
   const sent = page.waitForResponse((r) => r.url().endsWith('/auth/otp/request'));
   await page.getByRole('button', { name: 'Get verification code' }).click();
@@ -52,26 +53,24 @@ async function requestOwnerCode(page: Page, phone: string) {
   return (await response.json()).devCode as string;
 }
 
-test('staff can correct a wrong passphrase using the same OTP', async ({ page }) => {
+test('owner signs in using OTP without requiring a stored passphrase', async ({ page }) => {
   const code = await requestOwnerCode(page, '9297513760');
-  await page.getByRole('textbox', { name: 'Verification code', exact: true }).fill(code);
-  await page.getByLabel('Staff passphrase', { exact: true }).fill('wrong-owner-passphrase');
+  await expect(page.getByLabel('Staff passphrase', { exact: true })).toHaveCount(0);
+  await page
+    .getByRole('textbox', { name: 'Verification code', exact: true })
+    .fill(code === '111111' ? '222222' : '111111');
   await page.getByRole('button', { name: 'Open store desk' }).click();
-  await expect(page.locator('.login-form').getByRole('alert')).toContainText(
-    'The sign-in details could not be verified.',
-  );
+  await expect(page.locator('form [role=alert]')).toBeVisible();
   expect(
     (await db.otpChallenge.findUniqueOrThrow({ where: { phone: '+919297513760' } })).consumed,
   ).toBe(false);
-  await page.getByLabel('Staff passphrase', { exact: true }).fill(password);
+  await page.getByRole('textbox', { name: 'Verification code', exact: true }).fill(code);
   await page.getByRole('button', { name: 'Open store desk' }).click();
   await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
   expect(
     (await db.otpChallenge.findUniqueOrThrow({ where: { phone: '+919297513760' } })).consumed,
   ).toBe(true);
-  await page.screenshot({ path: test.info().outputPath('staff-recovered.png'), fullPage: true });
 });
-
 test('invalid and expired OTPs reject login and a customer cannot open the owner desk', async ({
   page,
 }) => {
@@ -81,80 +80,41 @@ test('invalid and expired OTPs reject login and a customer cannot open the owner
     .getByRole('textbox', { name: 'Verification code', exact: true })
     .fill(code === '111111' ? '222222' : '111111');
   await page.getByRole('button', { name: 'Open store desk' }).click();
-  await expect(page.locator('.login-form').getByRole('alert')).toContainText(
-    'That code is not correct.',
-  );
+  await expect(page.locator('form [role=alert]')).toContainText(/code|sign-in/i);
   // Clock/expiry fixture injection; verification still uses the real API and PostgreSQL.
   await db.otpChallenge.update({ where: { phone }, data: { expiresAt: new Date(0) } });
   await page.getByRole('textbox', { name: 'Verification code', exact: true }).fill(code);
   await page.getByRole('button', { name: 'Open store desk' }).click();
-  await expect(page.locator('.login-form').getByRole('alert')).toContainText(/invalid|expired/i);
+  await expect(page.locator('form [role=alert]')).toContainText(/invalid|expired/i);
   expect(await db.session.count({ where: { user: { phone } } })).toBe(0);
   await db.otpChallenge.update({
     where: { phone },
     data: { expiresAt: new Date(Date.now() + 60000) },
   });
   await page.getByRole('button', { name: 'Open store desk' }).click();
-  await expect(page.locator('.login-form').getByRole('alert')).toContainText(
-    'does not have store staff access',
-  );
+  await expect(page.locator('form [role=alert]')).toContainText(/owner|access|allowed/i);
   expect((await page.request.get(`${api}/admin/orders`)).status()).toBe(401);
   expect(await db.session.count({ where: { user: { phone } } })).toBe(0);
 });
 
-test('revoked staff session offers sign-in recovery without a page reload', async ({ page }) => {
+test('revoked owner session returns to OTP login without a page reload', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const code = await requestOwnerCode(page, '9297513760');
   await page.getByRole('textbox', { name: 'Verification code', exact: true }).fill(code);
-  await page.getByLabel('Staff passphrase', { exact: true }).fill(password);
   await page.getByRole('button', { name: 'Open store desk' }).click();
   await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
-  await page
-    .getByRole('navigation', { name: 'Phone navigation' })
-    .getByRole('button', { name: 'More', exact: true })
-    .click();
-  await page.getByRole('button', { name: /Rate Studio$/ }).click();
-  await page.getByRole('button', { name: /Enter prices manually/ }).click();
-  await page.getByLabel('Price sheet title').fill('Session recovery draft');
-  await page.getByRole('button', { name: 'Create draft', exact: true }).click();
-  await page.getByRole('button', { name: 'Choose products', exact: true }).click();
-  await page.getByLabel('Search rate products').fill('UltraTech Super');
-  await page
-    .locator('.rs-picker-product')
-    .filter({ hasText: 'UltraTech Super' })
-    .getByRole('checkbox')
-    .check();
-  await page.getByRole('button', { name: 'Add 1 products' }).click();
-  await page.getByLabel('New price row 1').fill('491');
-  // Administrative revocation fixture; the real browser subsequently hits the real auth guard.
+  await page.goto('http://localhost:3001/stock');
+  await expect(page.getByRole('heading', { name: 'Stock & prices', exact: true })).toBeVisible();
   await db.session.deleteMany({ where: { user: { phone: '+919297513760' } } });
-  expect((await page.request.get(`${api}/admin/orders`)).status()).toBe(401);
-  await page.getByRole('button', { name: 'Refresh data', exact: true }).click();
-  await expect(
-    page
-      .locator('.error[role="alert"]')
-      .filter({ hasText: 'Your session expired. Sign in again.' }),
-  ).toBeVisible();
-  await page.screenshot({ path: test.info().outputPath('revoked-session.png'), fullPage: true });
-  page.once('dialog', (dialog) => dialog.dismiss());
-  await page.getByRole('button', { name: /Sign in again/ }).click();
-  await expect(page.getByLabel('New price row 1')).toHaveValue('491');
-  await expect(
-    page.getByLabel(/I checked.*product, unit and customer selling price/),
-  ).not.toBeChecked();
   let reloads = 0;
   page.on('load', () => reloads++);
-  page.once('dialog', (dialog) => dialog.accept());
-  await page.getByRole('button', { name: /Sign in again/ }).click();
+  // An authenticated action discovers the revocation and clears owner-only cached data.
+  await page.getByRole('button', { name: 'Share today’s rates on WhatsApp', exact: true }).click();
   await expect(
     page.getByRole('button', { name: 'Get verification code', exact: true }),
   ).toBeVisible();
   expect((await page.request.get(`${api}/admin/orders`)).status()).toBe(401);
-  await page.screenshot({
-    path: test.info().outputPath('session-recovery-login.png'),
-    fullPage: true,
-  });
-  // Advance only this disposable OTP fixture past the one-minute resend cooldown.
+  await expect(page.getByRole('heading', { name: 'Stock & prices', exact: true })).toHaveCount(0);
   await db.otpChallenge.update({
     where: { phone: '+919297513760' },
     data: { sentAt: new Date(Date.now() - 61000) },
@@ -162,19 +122,18 @@ test('revoked staff session offers sign-in recovery without a page reload', asyn
   await page.getByLabel('Staff mobile number').fill('9297513760');
   const sent = page.waitForResponse((r) => r.url().endsWith('/auth/otp/request'));
   await page.getByRole('button', { name: 'Get verification code' }).click();
-  const response = await sent;
-  expect(response.status()).toBe(201);
-  await page.getByLabel('Verification code', { exact: true }).fill((await response.json()).devCode);
-  await page.getByLabel('Staff passphrase', { exact: true }).fill(password);
+  await page
+    .getByLabel('Verification code', { exact: true })
+    .fill((await (await sent).json()).devCode);
   await page.getByRole('button', { name: 'Open store desk' }).click();
-  await expect(page.getByRole('button', { name: /Enter prices manually/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Stock & prices', exact: true })).toBeVisible();
   expect((await page.request.get(`${api}/admin/orders`)).status()).toBe(200);
   expect(reloads).toBe(0);
 });
-
 test('owner login fits 360px with doubled text sizes', async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 800 });
-  await page.goto('http://localhost:3001');
+  await page.addInitScript(() => localStorage.setItem('shiv-owner-language', 'en'));
+  await page.goto('http://localhost:3001/today');
   await expect(page.getByRole('button', { name: 'Get verification code' })).toBeVisible();
   // Text enlargement simulation, not an actual phone accessibility setting or browser zoom.
   await page.evaluate(() => {

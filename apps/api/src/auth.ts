@@ -1,3 +1,4 @@
+import { t } from '@shiv/i18n';
 import { leased } from './abuse';
 import {
   CanActivate,
@@ -8,6 +9,7 @@ import {
   Inject,
   Injectable,
   Param,
+  Patch,
   Post,
   Req,
   Res,
@@ -112,7 +114,12 @@ export class AuthGuard implements CanActivate {
     if (session.lastSeenAt.getTime() < Date.now() - 60000)
       await this.db.session.updateMany({
         where: { id: session.id },
-        data: { lastSeenAt: new Date() },
+        data: {
+          lastSeenAt: new Date(),
+          ...(session.user.role === 'ADMIN' && !getConfig().STAFF_PASSPHRASE_REQUIRED
+            ? { refreshExpiresAt: new Date(Date.now() + refreshLifetime('ADMIN')) }
+            : {}),
+        },
       });
     return true;
   }
@@ -155,12 +162,13 @@ export class AuthService {
     adminPassword?: string,
     failures?: { db: Db; ip: string },
   ) {
+    if (!getConfig().STAFF_PASSPHRASE_REQUIRED) return new Date();
     const credential = await db.adminCredential.findUnique({ where: { userId } });
     if (credential) {
       if (!adminPassword || !(await verifyPassword(adminPassword, credential.passwordHash))) {
         // Only guesses count towards the lockout; a missing passphrase guesses nothing.
         if (failures && adminPassword) await recordStaffFailure(failures.db, userId, failures.ip);
-        fail('INVALID_CREDENTIALS', staffRejection, 401);
+        fail('INVALID_OTP', staffRejection, 401);
       }
       return new Date();
     }
@@ -234,17 +242,6 @@ export class AuthService {
       return counted;
     });
     if (!attempt.count) fail('INVALID_OTP', 'Code expired or invalid.', 401);
-    const existing = await this.db.user.findUnique({ where: { phone } });
-    if (existing?.deletedAt) fail('UNAUTHORIZED', 'This account has been deleted.', 401);
-    // Staff (and desk) sign-in answers a wrong code exactly like a wrong passphrase, so neither
-    // can be confirmed without the other.
-    const staffForm = existing?.role === 'ADMIN' || Boolean(adminPassword);
-    // Twilio deletes an approved verification. Check the passphrase before consuming it, so staff
-    // can correct a mistyped passphrase with the same code.
-    if (existing?.role === 'ADMIN') {
-      await assertStaffAttempts(this.db, existing.id, ip);
-      await this.verifyStaff(this.db, existing.id, adminPassword, { db: this.db, ip });
-    }
     const status =
       getConfig().OTP_PROVIDER === 'mock'
         ? safeEqual(challenge.codeHash, this.otpHash(phone, code))
@@ -253,10 +250,15 @@ export class AuthService {
         : (await this.twilio('VerificationCheck', new URLSearchParams({ To: phone, Code: code })))
             .status;
     if (status !== 'approved') {
-      if (staffForm) fail('INVALID_CREDENTIALS', staffRejection, 401);
       if (status === 'expired')
         fail('INVALID_OTP', 'Code expired or already used. Request a new one.', 401);
-      fail('INVALID_OTP', 'That code is not correct.', 401);
+      fail('INVALID_OTP', staffRejection, 401);
+    }
+    const existing = await this.db.user.findUnique({ where: { phone } });
+    if (existing?.deletedAt) fail('UNAUTHORIZED', 'This account has been deleted.', 401);
+    if (existing?.role === 'ADMIN' && getConfig().STAFF_PASSPHRASE_REQUIRED) {
+      await assertStaffAttempts(this.db, existing.id, ip);
+      await this.verifyStaff(this.db, existing.id, adminPassword, { db: this.db, ip });
     }
     const accessToken = randomBytes(32).toString('base64url');
     const refreshToken = randomBytes(32).toString('base64url');
@@ -281,7 +283,20 @@ export class AuthService {
           userId: user.id,
           accessHash: hash(accessToken),
           refreshHash: hash(refreshToken),
-          label: label.slice(0, 160),
+          label:
+            user.role === 'ADMIN'
+              ? t(
+                  /iPad|Tablet/i.test(label)
+                    ? 'owner.deviceTablet'
+                    : /iPhone/i.test(label)
+                      ? 'owner.deviceIphone'
+                      : /Android/i.test(label)
+                        ? 'owner.deviceAndroid'
+                        : /Windows|Macintosh|Linux/i.test(label)
+                          ? 'owner.deviceComputer'
+                          : 'owner.deviceFallback',
+                )
+              : label.slice(0, 160),
           adminVerifiedAt,
           expiresAt: new Date(Date.now() + 1800000),
           refreshExpiresAt: new Date(Date.now() + refreshLifetime(user.role)),
@@ -341,6 +356,9 @@ export class AuthService {
               }),
           expiresAt: new Date(Date.now() + 1800000),
           lastSeenAt: new Date(),
+          ...(session.user.role === 'ADMIN' && !getConfig().STAFF_PASSPHRASE_REQUIRED
+            ? { refreshExpiresAt: new Date(Date.now() + refreshLifetime('ADMIN')) }
+            : {}),
         },
       });
       return { user: session.user, accessToken, refreshToken };
@@ -469,6 +487,25 @@ export class AuthController {
       current: session.id === req.sessionId,
       deviceCount: _count.devices,
     }));
+  }
+  @Patch('sessions/:id')
+  @Contract(z.strictObject({ label: z.string().trim().min(1).max(100) }))
+  async rename(
+    @Param('id') id: string,
+    @Input(z.strictObject({ label: z.string().trim().min(1).max(100) })) body: { label: string },
+    @Req() req: AuthRequest,
+  ) {
+    return this.db.atomic(async (tx) => {
+      const changed = await tx.session.updateMany({
+        where: { id, userId: req.user.id },
+        data: { label: body.label },
+      });
+      if (!changed.count) fail('NOT_FOUND', 'Session not found.', 404);
+      await tx.auditLog.create({
+        data: { actorId: req.user.id, event: 'SESSION_RENAMED', entityId: id, details: {} },
+      });
+      return { ok: true };
+    });
   }
   @Delete('sessions/:id') async revoke(@Param('id') id: string, @Req() req: AuthRequest) {
     const result = await this.db.session.deleteMany({ where: { id, userId: req.user.id } });

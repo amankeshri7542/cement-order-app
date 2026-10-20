@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { t as translate, isMessageKey } from '@shiv/i18n';
 
 export const roles = ['CUSTOMER', 'CONTRACTOR', 'ADMIN'] as const;
 export const orderStatuses = [
@@ -260,11 +261,13 @@ export type CheckoutReview = {
 export type Payment = {
   initializationStartedAt?: string | null;
   status: 'PENDING' | 'CAPTURED' | 'REFUND_PENDING' | 'REFUNDED';
-  method: 'COD' | 'ONLINE';
+  method: 'COD' | 'ONLINE' | 'CREDIT';
   razorpayOrderId: string | null;
   razorpayPaymentId: string | null;
 };
 export type Order = {
+  source?: OrderSource;
+  createdById?: string | null;
   quoteId?: string | null;
   quoteRevision?: number | null;
   work?: OwnerWork | null;
@@ -324,11 +327,10 @@ const inr = new Intl.NumberFormat('en-IN', {
   maximumFractionDigits: 2,
 });
 export const money = (value: number) => inr.format(value / 100);
-export const statusLabel = (value: string) =>
-  value
-    .toLowerCase()
-    .replaceAll('_', ' ')
-    .replace(/^./, (v) => v.toUpperCase());
+export const statusLabel = (value: string, language: 'hi' | 'en' = 'hi') => {
+  const key = `status.${value}`;
+  return isMessageKey(key) ? translate(key, {}, language) : value;
+};
 export function totals(
   lines: { pricePaise: number; quantity: number }[],
   deliveryFeePaise: number,
@@ -446,6 +448,9 @@ export const reportRangeSchema = z
     'Choose a range of up to one year.',
   );
 export type MoneyReport = {
+  creditSalesPaise: number;
+  creditPaymentsPaise: number;
+  topCustomers: { id: string; name: string; phone: string; totalPaise: number; orders: number }[];
   from: string;
   to: string;
   orders: { placed: number; valuePaise: number; delivered: number; cancelled: number };
@@ -526,3 +531,95 @@ export * from './theme';
 export * from './cart';
 export * from './client';
 export * from './first-run';
+
+export const orderSources = ['APP', 'WEB', 'PHONE', 'WALK_IN', 'QUOTE'] as const;
+export type OrderSource = (typeof orderSources)[number];
+export const ledgerKinds = [
+  'SALE_ON_CREDIT',
+  'PAYMENT_RECEIVED',
+  'OPENING_BALANCE',
+  'ADJUSTMENT',
+  'REVERSAL',
+] as const;
+export type LedgerKind = (typeof ledgerKinds)[number];
+
+const amount = z.number().int().min(-2_000_000_000).max(2_000_000_000);
+const note = z.string().trim().min(1).max(500);
+const occurredAt = z.union([z.iso.date(), z.iso.datetime({ offset: true })]);
+
+export const phoneOrderSchema = z
+  .strictObject({
+    customerPhone: phoneSchema.optional(),
+    customerName: z.string().trim().min(1).max(100).optional(),
+    source: z.enum(['PHONE', 'WALK_IN']).default('PHONE'),
+    items: z
+      .array(
+        z.strictObject({
+          productId: z.string().min(1).max(100),
+          quantity: z.number().int().min(1).max(10000),
+        }),
+      )
+      .min(1)
+      .max(50)
+      .refine(
+        (items) => new Set(items.map((i) => i.productId)).size === items.length,
+        'Each product must appear only once.',
+      ),
+    address: addressSchema.optional(),
+    deliveryDate: z.union([z.iso.date(), z.literal('today')]),
+    paymentMethod: z.enum(['COD', 'CREDIT']),
+    notes: z.string().trim().max(500).default(''),
+    idempotencyKey: z.string().uuid(),
+    overrideLimit: z.boolean().default(false),
+  })
+  .refine((input) => input.source === 'WALK_IN' || !!input.address, {
+    path: ['address'],
+    message: 'A delivery address is required for phone orders.',
+  })
+  .refine(
+    (input) =>
+      !!input.customerPhone || (input.source === 'WALK_IN' && input.paymentMethod === 'COD'),
+    {
+      path: ['customerPhone'],
+      message: 'A customer phone is required for delivery and credit.',
+    },
+  );
+
+export const ledgerEntrySchema = z.strictObject({
+  amountPaise: amount.refine((value) => value !== 0, 'Amount must not be zero.'),
+  occurredAt: occurredAt.optional(),
+  note,
+  idempotencyKey: z.string().uuid(),
+});
+export const khataPaymentSchema = ledgerEntrySchema.extend({
+  amountPaise: amount.refine((value) => value > 0, 'Payment must be positive.'),
+  channel: z.enum(['CASH', 'UPI']).default('CASH'),
+});
+export const ledgerReverseSchema = z.strictObject({ note, idempotencyKey: z.string().uuid() });
+export const customerUpdateSchema = z
+  .strictObject({
+    creditAllowed: z.boolean().optional(),
+    creditLimitPaise: amount.nonnegative().nullable().optional(),
+    area: z.string().trim().max(120).optional(),
+    tags: z
+      .array(z.string().trim().min(1).max(40))
+      .max(20)
+      .refine((tags) => new Set(tags).size === tags.length, 'Tags must be unique.')
+      .optional(),
+  })
+  .refine((input) => Object.keys(input).length > 0, 'Supply at least one customer field.');
+export const customerNoteSchema = z.strictObject({ body: z.string().trim().min(1).max(2000) });
+export const customerContactSchema = z.strictObject({
+  channel: z.enum(['CALL', 'WHATSAPP']),
+  purpose: z.string().trim().min(1).max(500),
+});
+
+export function khataBalance(balancePaise: number, amountPaise: number): number {
+  const next = balancePaise + amountPaise;
+  if (
+    ![balancePaise, amountPaise, next].every(Number.isSafeInteger) ||
+    Math.abs(next) > 2_000_000_000
+  )
+    throw new Error('Khata balance exceeds the supported range.');
+  return next;
+}

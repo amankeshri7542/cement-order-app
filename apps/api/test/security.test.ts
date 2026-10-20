@@ -126,3 +126,70 @@ describe('mock authentication boundary', () => {
     }
   });
 });
+
+describe('strict owner sessions', () => {
+  it('keeps the absolute eight-hour limit when passphrases are required', async () => {
+    const config = await import('../src/config');
+    const policy = config.configSchema.parse({
+      NODE_ENV: 'test',
+      DATABASE_URL: 'postgresql://unused/security_test',
+      OTP_PROVIDER: 'mock',
+      OTP_HASH_SECRET: 'strict-test-only-secret-at-least-32-characters',
+      STAFF_PASSPHRASE_REQUIRED: 'true',
+    });
+    const mocked = vi.spyOn(config, 'getConfig').mockReturnValue(policy);
+    try {
+      const { assertSession, refreshLifetime } = await import('../src/security');
+      const db = { adminCredential: { findUnique: vi.fn() } };
+      const session = {
+        userId: 'owner',
+        user: { role: 'ADMIN', deletedAt: null },
+        createdAt: new Date(Date.now() - 8 * 3600000 - 1000),
+        adminVerifiedAt: new Date(),
+        refreshExpiresAt: new Date(Date.now() + 30 * 86400000),
+      } as Parameters<typeof assertSession>[1];
+      expect(refreshLifetime('ADMIN')).toBe(8 * 3600000);
+      await expect(
+        assertSession(db as unknown as Parameters<typeof assertSession>[0], session),
+      ).rejects.toMatchObject({
+        status: 401,
+      });
+      expect(db.adminCredential.findUnique).not.toHaveBeenCalled();
+    } finally {
+      mocked.mockRestore();
+    }
+  });
+
+  it('revokes strict sessions when their staff credential changes', async () => {
+    const config = await import('../src/config');
+    const policy = config.configSchema.parse({
+      NODE_ENV: 'test',
+      DATABASE_URL: 'postgresql://unused/security_test',
+      OTP_PROVIDER: 'mock',
+      OTP_HASH_SECRET: 'strict-test-only-secret-at-least-32-characters',
+      STAFF_PASSPHRASE_REQUIRED: 'true',
+    });
+    const mocked = vi.spyOn(config, 'getConfig').mockReturnValue(policy);
+    try {
+      const { assertSession } = await import('../src/security');
+      const verifiedAt = new Date(Date.now() - 60000);
+      const db = {
+        adminCredential: { findUnique: vi.fn(async () => ({ updatedAt: new Date() })) },
+      };
+      const session = {
+        userId: 'owner',
+        user: { role: 'ADMIN', deletedAt: null },
+        createdAt: verifiedAt,
+        adminVerifiedAt: verifiedAt,
+        refreshExpiresAt: new Date(Date.now() + 3600000),
+      } as Parameters<typeof assertSession>[1];
+      await expect(
+        assertSession(db as unknown as Parameters<typeof assertSession>[0], session),
+      ).rejects.toMatchObject({
+        status: 401,
+      });
+    } finally {
+      mocked.mockRestore();
+    }
+  });
+});

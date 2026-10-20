@@ -37,6 +37,13 @@ export function observePage(page: Page, info: TestInfo) {
 }
 
 /**
+ * WebKit logs a fetch that a navigation cancels as a console error, which Playwright reports as a
+ * page error. Chromium stays quiet, so runtime-error checks skip this one message.
+ */
+export const isCancelledFetch = (message: string) =>
+  /due to access control checks\.?$/.test(message);
+
+/**
  * The app asks for a language on first launch and the owner desk opens in Hindi. Journeys run
  * both in English unless a test chooses otherwise, so they start past the chooser. Apply to extra contexts with `skipLanguageChooser`.
  */

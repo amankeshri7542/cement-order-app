@@ -8,6 +8,7 @@ import type { ArgumentsHost, INestApplication } from '@nestjs/common';
 import type { Server } from 'node:http';
 import { Prisma } from '@prisma/client';
 import { Db } from '../src/db';
+import { KhataService } from '../src/khata';
 import { Errors, fail, hash } from '../src/http';
 import { OrdersService } from '../src/orders';
 import { OwnerWorkService } from '../src/owner-work';
@@ -96,6 +97,7 @@ function worker(steps: { expireReservations?: () => Promise<unknown> } = {}) {
     } as unknown as OrdersService,
     { dispatch: async () => {} } as unknown as OwnerWorkService,
     { deliver: async () => {} } as unknown as AlertsService,
+    new KhataService(db),
   );
 }
 

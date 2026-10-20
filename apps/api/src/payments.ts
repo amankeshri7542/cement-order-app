@@ -321,6 +321,8 @@ export class PaymentsService {
         where: { orderId },
         include: { order: true, movements: true },
       });
+      if (p?.method === 'CREDIT')
+        fail('INVALID_PAYMENT_STATE', 'Record credit payments in the customer khata.', 409);
       if (!p || p.method !== 'COD')
         fail('INVALID_PAYMENT_STATE', 'This is not a cash-on-delivery order.');
       if (p.status === (refund ? 'REFUNDED' : 'CAPTURED')) {

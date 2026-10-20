@@ -35,6 +35,7 @@ import { getConfig, onlineReady } from './config';
 import { enqueueWhatsApp } from './alerts';
 import { workInclude } from './owner-work';
 import { Events } from './catalog';
+import { appendLedger } from './khata';
 
 export const orderInclude = {
   work: { include: workInclude },
@@ -347,6 +348,7 @@ export class OrdersService {
         include: customerOrderInclude,
       });
       await tx.cartItem.deleteMany({ where: { userId } });
+      await tx.user.update({ where: { id: userId }, data: { lastOrderAt: order.createdAt } });
       await tx.auditLog.create({
         data: {
           actorId: userId,
@@ -406,8 +408,22 @@ export class OrdersService {
         ['CONFIRMED', 'REFUND_PENDING', 'REFUNDED'].includes(status)
       )
         fail('INVALID_TRANSITION', 'That order status change is not allowed.', 409);
-      if (status === 'DELIVERED' && order.payment?.status !== 'CAPTURED')
+      if (
+        status === 'DELIVERED' &&
+        order.payment?.method !== 'CREDIT' &&
+        order.payment?.status !== 'CAPTURED'
+      )
         fail('PAYMENT_PENDING', 'Record payment received before completing delivery.', 409);
+      if (status === 'DELIVERED' && order.payment?.method === 'CREDIT')
+        await appendLedger(tx, {
+          customerId: order.userId,
+          kind: 'SALE_ON_CREDIT',
+          amountPaise: order.totalPaise,
+          orderId: order.id,
+          actorId,
+          note: `Credit sale ${order.number}`,
+          occurredAt: new Date(),
+        });
       if (status === 'PREPARING' && !order.work?.acknowledgedAt)
         await tx.ownerWork.upsert({
           where: { orderId: id },
@@ -785,23 +801,39 @@ export class OrdersController {
         q: z.string().max(100).default(''),
         status: orderStatusSchema.shape.status.optional(),
         queue: z.enum(['new', 'dispatch', 'payments', 'issues']).optional(),
+        customerId: z.string().min(1).max(100).optional(),
+        group: z.enum(['all', 'today', 'pending', 'completed']).default('all'),
       })
       .safeParse(query);
     if (!parsed.success) fail('INVALID_FILTER', 'Check order filters.');
-    const { q, status, queue } = parsed.data;
-    const page = paginate(query, JSON.stringify({ list: 'admin-orders', q, status, queue }));
+    const { q, status, queue, customerId, group } = parsed.data;
+    const date = group === 'today' ? istToday() : undefined;
+    const today = date ? new Date(`${date}T00:00:00+05:30`) : null;
+    const page = paginate(
+      query,
+      JSON.stringify({ list: 'admin-orders', q, status, queue, customerId, group, date }),
+    );
     return page.finish(
       await this.db.order.findMany({
         include: { ...orderInclude, user: true },
         where: {
           AND: [
             page.after,
+            customerId ? { userId: customerId } : {},
+            today ? { createdAt: { gte: today, lt: new Date(today.getTime() + 86400000) } } : {},
+            group === 'pending'
+              ? { status: { notIn: ['DELIVERED', 'CANCELLED', 'REFUNDED'] } }
+              : {},
+            group === 'completed' ? { status: { in: ['DELIVERED', 'CANCELLED', 'REFUNDED'] } } : {},
             queue === 'new'
               ? { work: { acknowledgedAt: null }, status: { in: ['CONFIRMED', 'PENDING_PAYMENT'] } }
               : {},
             queue === 'dispatch' ? { status: { in: ['CONFIRMED', 'PREPARING'] } } : {},
             queue === 'payments'
-              ? { payment: { status: 'PENDING' }, status: { notIn: ['CANCELLED', 'REFUNDED'] } }
+              ? {
+                  payment: { status: 'PENDING', method: { not: 'CREDIT' } },
+                  status: { notIn: ['CANCELLED', 'REFUNDED'] },
+                }
               : {},
             queue === 'issues'
               ? {
@@ -817,6 +849,7 @@ export class OrdersController {
                   OR: [
                     { number: { contains: q, mode: 'insensitive' } },
                     { user: { name: { contains: q, mode: 'insensitive' } } },
+                    { user: { phone: { contains: q, mode: 'insensitive' } } },
                   ],
                 }
               : {},

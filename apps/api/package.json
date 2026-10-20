@@ -8,7 +8,7 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run test/domain.test.ts test/rate-cards.test.ts test/rate-rules.test.ts test/rate-providers.test.ts test/auth-recovery.test.ts test/redaction.test.ts test/security.test.ts test/assistant.test.ts test/runtime-unit.test.ts test/env-templates.test.ts test/error-codes.test.ts test/config-guards.test.ts",
-    "test:integration": "vitest run --no-file-parallelism test/integration.test.ts test/runtime.test.ts test/hardening-auth.test.ts test/hardening-money.test.ts test/hardening-infra.test.ts test/catalogue-hindi.test.ts",
+    "test:integration": "vitest run --no-file-parallelism test/integration.test.ts test/runtime.test.ts test/hardening-auth.test.ts test/hardening-money.test.ts test/hardening-infra.test.ts test/catalogue-hindi.test.ts test/khata.test.ts test/owner-phase2.test.ts",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "db:seed": "tsx --env-file=.env prisma/seed.ts",
@@ -33,7 +33,8 @@
     "rxjs": "^7.8.2",
     "sharp": "^0.35.5",
     "web-push": "^3.6.7",
-    "zod": "^4.3.5"
+    "zod": "^4.3.5",
+    "@shiv/i18n": "1.0.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",

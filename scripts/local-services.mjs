@@ -139,7 +139,10 @@ export async function applicationIdentity(name, origin) {
         });
         matches = docs.ok && (await docs.json()).info?.title === 'Shiv Cement Store API';
       } else if (name === 'admin')
-        matches = /<title>Shiv Cement Store · Store desk<\/title>/.test(body);
+        matches =
+          /<title>(?:Shiv Cement Store · Store desk|शिव सीमेंट स्टोर · दुकान का काम)<\/title>/.test(
+            body,
+          );
       else if (name === 'customer') matches = /<title>Shiv Cement Store<\/title>/.test(body);
       else if (name === 'storefront') matches = response.headers.get('x-shiv-app') === 'storefront';
     }

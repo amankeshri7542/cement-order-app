@@ -18,6 +18,7 @@ if (existsSync('.env.test')) loadEnvFile('.env.test');
 process.env.NODE_ENV = 'test';
 process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
 process.env.OTP_PROVIDER = 'mock';
+process.env.STAFF_PASSPHRASE_REQUIRED = 'true';
 process.env.OTP_HASH_SECRET = 'hardening-test-only-secret-not-for-production';
 process.env.CORS_ORIGINS = 'http://localhost:3000,http://localhost:8081';
 if (!process.env.DATABASE_URL || !new URL(process.env.DATABASE_URL).pathname.endsWith('_test'))
@@ -184,22 +185,24 @@ describe('F07: staff sign-in does not reveal the passphrase', () => {
     });
     expect(both.status).toBe(401);
     expect(codeOnly.status).toBe(401);
-    expect(codeOnly.body.error.code).toBe('INVALID_CREDENTIALS');
+    expect(codeOnly.body.error.code).toBe('INVALID_OTP');
     expect({ ...codeOnly.body.error, requestId: null }).toEqual({
       ...both.body.error,
       requestId: null,
     });
   });
   it('locks staff sign-in from one address after ten wrong passphrases, even with the right one', async () => {
+    let code = '';
     for (let i = 0; i < 10; i++) {
       // Five attempts per code: request a fresh one (skipping the 60-second resend wait).
       if (i % 5 === 0) {
         await db.otpChallenge.deleteMany({ where: { phone: phones.admin } });
-        await otpRequest(phones.admin).expect(201);
+        const sent = await otpRequest(phones.admin).expect(201);
+        code = sent.body.devCode;
       }
       const wrong = await otpVerify({
         phone: phones.admin,
-        code: '000000',
+        code,
         adminPassword: 'wrong-staff-passphrase',
       });
       expect(wrong.status).toBe(401);

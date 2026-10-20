@@ -4,9 +4,11 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY apps/api/package.json apps/api/package.json
 COPY packages/shared/package.json packages/shared/package.json
+COPY packages/i18n/package.json packages/i18n/package.json
 RUN npm ci --workspace @shiv/api --workspace @shiv/shared --include-workspace-root
 COPY tsconfig.base.json ./
 COPY packages/shared packages/shared
+COPY packages/i18n packages/i18n
 COPY apps/api apps/api
 RUN npm run build -w @shiv/shared && npm run db:generate && npm run build -w @shiv/api
 
@@ -17,9 +19,11 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY apps/api/package.json apps/api/package.json
 COPY packages/shared/package.json packages/shared/package.json
+COPY packages/i18n/package.json packages/i18n/package.json
 RUN npm ci --omit=dev --workspace @shiv/api --workspace @shiv/shared --include-workspace-root=false
 COPY --from=build /app/node_modules/.prisma node_modules/.prisma
 COPY --from=build /app/packages/shared/dist packages/shared/dist
+COPY --from=build /app/packages/i18n/dist packages/i18n/dist
 COPY --from=build /app/apps/api/dist apps/api/dist
 USER node
 EXPOSE 4000
