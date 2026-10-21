@@ -14,8 +14,9 @@ export type CardSnapshot = {
 };
 
 const dimensions = { STATUS: [1080, 1920], SQUARE: [1080, 1080], SHEET: [1240, 1754] } as const;
-// Direction A (packages/shared/src/theme.ts): cement ground, steel ink, slip paper, and sindoor
-// only for the शिव stamp and the counter's signboard rule. Teko 600 sets the shop name, the
+// The shared palette (packages/shared/src/theme.ts): warm paper ground, steel ink, white slip
+// paper, and amber only for the शिव stamp and the counter's signboard rule (amber text on a
+// light page is accentInk). Teko 600 sets the shop name, the
 // heading, item names and prices, as on the website; the fixed-width face keeps labels,
 // specifications and contact lines easy to check digit by digit.
 const colors = {
@@ -28,6 +29,7 @@ const colors = {
   onInk: palette.onInk,
   onInkMuted: palette.onInkMuted,
   accent: palette.accent,
+  accentInk: palette.accentInk,
   onAccent: palette.onAccent,
 };
 const mono = 'DejaVu Sans Mono, monospace';
@@ -164,7 +166,7 @@ export function renderRateCardPages(
   };
   addFooter(snapshot.promotionalCopy, colors.ink, 700);
   addFooter(snapshot.deliveryMessage, colors.ink);
-  addFooter(snapshot.contactLabel, colors.accent, 700);
+  addFooter(snapshot.contactLabel, colors.accentInk, 700);
   // These values come only from the persisted, server-owned store snapshot.
   addFooter(`CALL ${snapshot.phone}`, colors.ink, 700);
   addFooter(`WHATSAPP ${snapshot.whatsapp}`, colors.ink, 700);
@@ -224,7 +226,7 @@ export function renderRateCardPages(
       counter
         ? `<rect width="${width}" height="${headerEnd}" fill="${colors.ink}"/><rect y="${headerEnd - 8}" width="${width}" height="8" fill="${colors.accent}"/>`
         : `<rect x="0" width="16" height="${height}" fill="${colors.ink}"/><path d="M${margin} ${headerEnd - 8}H${width - margin}" stroke="${colors.ink}" stroke-width="3"/>`,
-      // The shop's stamp: a sindoor square with शिव, as on the signboard, the app and the website.
+      // The shop's stamp: an amber square with शिव, as on the signboard, the app and the website.
       `<rect x="${width - margin - stamp}" y="36" width="${stamp}" height="${stamp}" fill="${colors.accent}"/>`,
       `<text x="${width - margin - stamp / 2}" y="${36 + stamp / 2 + 24}" text-anchor="middle" font-family="${display}" font-size="62" font-weight="600" fill="${colors.onAccent}">शिव</text>`,
       text('SHIV', margin, 98, 84, headingColor, 600, display),

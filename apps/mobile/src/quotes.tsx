@@ -31,6 +31,7 @@ import {
   Tag,
 } from './ui';
 import { MaterialArt, Quantity } from './catalog';
+import { orderRule } from './pack';
 import { confirm } from './orders';
 
 export function Quotes() {
@@ -192,7 +193,7 @@ export function Quotes() {
                 >
                   <Icon
                     name={consents[q.id] === q.revision ? 'checkbox' : 'square-outline'}
-                    color={C.accent}
+                    color={C.accentInk}
                     size={28}
                   />
                   <Text style={[s.body, { flex: 1, color: C.ink }]}>
@@ -490,10 +491,12 @@ export function QuoteRequest() {
                 <Text style={s.h3}>{product?.name || t('Loading…', 'लोड हो रहा है…')}</Text>
                 {product && (
                   <Text style={s.small}>
-                    {t(
-                      `per ${product.unit} · minimum ${product.minQuantity}, steps of ${product.quantityStep}`,
-                      `प्रति ${product.unit} · कम से कम ${product.minQuantity}, ${product.quantityStep} के गुणक`,
-                    )}
+                    {[
+                      t(`per ${product.unit}`, `प्रति ${product.unit}`),
+                      orderRule(product, language),
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
                   </Text>
                 )}
               </View>
@@ -552,7 +555,7 @@ export function QuoteRequest() {
                 pressed && { opacity: 0.7 },
               ]}
             >
-              <Icon name="add-circle" color={C.accent} size={26} />
+              <Icon name="add-circle" color={C.accentInk} size={26} />
               <Text style={[s.body, { color: C.ink, flex: 1 }]}>{p.name}</Text>
               <Text style={s.small}>{p.unit}</Text>
             </Pressable>

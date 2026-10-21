@@ -1,11 +1,11 @@
 /* The store desk as the family's bahi-khata: an ink binding (sidebar, top bar, phone tabs) with a
-   sindoor marker on the open page, a paper ledger page for the work, entries on the surface tone,
+   amber marker on the open page, a paper ledger page for the work, entries on the surface tone,
    Teko for money and headings, ruled lines only in tables and forms. Colours, type sizes, the one
    radius and the easing come from ./theme.css (generated from packages/shared). */
 :root {
   /* Desk-only derivatives of the tokens. */
   --warn-soft: #f2e8d5;
-  --scrim: rgb(28 34 39 / 0.62);
+  --scrim: rgb(31 35 34 / 0.62);
   --field-line: #8f8b82;
   --lift: 0 18px 48px -18px rgb(14 18 21 / 0.55);
   color-scheme: light;
@@ -55,7 +55,7 @@ a {
   text-decoration: none;
 }
 :focus-visible {
-  outline: 3px solid var(--accent);
+  outline: 3px solid var(--blue);
   outline-offset: 2px;
 }
 h1,
@@ -107,7 +107,7 @@ small {
   white-space: nowrap;
 }
 
-/* The शिव stamp: the shop's mark, in sindoor. */
+/* The शिव stamp: the shop's mark, in amber. */
 .stamp {
   display: inline-grid;
   place-items: center;
@@ -120,7 +120,7 @@ small {
   font: 600 1.7rem/1 var(--display);
 }
 
-/* Buttons: sindoor for the one action, a folder-tab tone for the rest, underlined text links. */
+/* Buttons: amber for the one action, a folder-tab tone for the rest, underlined text links. */
 .primary,
 .secondary,
 .danger {
@@ -728,7 +728,7 @@ td > button + button {
 }
 .product-mark.bricks {
   background: var(--m-brick);
-  color: var(--on-accent);
+  color: var(--on-solid);
 }
 .product-mark.sand {
   background: var(--m-sand);
@@ -794,7 +794,7 @@ td > button + button {
   min-width: 220px;
 }
 .search:focus-within {
-  outline: 3px solid var(--accent);
+  outline: 3px solid var(--blue);
   outline-offset: 2px;
 }
 .search input {
@@ -988,7 +988,7 @@ input[type='radio'] {
   min-width: 0;
 }
 .phone-input:focus-within {
-  outline: 3px solid var(--accent);
+  outline: 3px solid var(--blue);
   outline-offset: 2px;
 }
 .phone-input > span {
@@ -1245,11 +1245,11 @@ dialog legend {
 }
 .toast.toast-error {
   background: var(--danger);
-  color: var(--on-accent);
+  color: var(--on-solid);
   font-weight: 600;
 }
 .toast.toast-error > svg {
-  color: var(--on-accent);
+  color: var(--on-solid);
 }
 
 /* Waiting, empty and recovery states. */

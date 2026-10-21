@@ -67,6 +67,9 @@ export default defineConfig({
       env: {
         EXPO_PUBLIC_API_URL: 'http://localhost:4010/api/v1',
         EXPO_PUBLIC_ASSET_ORIGIN: 'https://assets.example.invalid',
+        // The app waits 1, 2 and 4 seconds between tries on a bad connection; browser tests wait
+        // a hundredth of that.
+        EXPO_PUBLIC_RETRY_SCALE: '0.01',
         CI: '1',
       },
     },

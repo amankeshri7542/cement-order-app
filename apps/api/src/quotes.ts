@@ -12,6 +12,7 @@ import {
 import { moveStock, orderTotals, validateQuantity } from './inventory';
 import { paginate } from './pagination';
 import { Db } from './db';
+import { notifyCustomer, pushText } from './notify';
 import { workInclude } from './owner-work';
 import { Events } from './catalog';
 import { Admin, AuthRequest, Contract, Input, fail, hash } from './http';
@@ -237,13 +238,7 @@ export class QuotesController {
           details: { revision: updated.revision, totalPaise: total.totalPaise },
         },
       });
-      await tx.notification.create({
-        data: {
-          userId: quote.userId,
-          title: 'Your bulk price is ready',
-          body: `Open ${quote.number} to review your quotation.`,
-        },
-      });
+      await notifyCustomer(tx, quote.userId, pushText('quoteReady', { number: quote.number }));
       return updated;
     });
   }
@@ -407,14 +402,12 @@ export class QuotesController {
           },
         },
       });
-      await tx.notification.create({
-        data: {
-          userId: quote.userId,
-          orderId: order.id,
-          title: 'Bulk order confirmed',
-          body: `${quote.number} is now ${order.number}. Agreed prices and freight retained.`,
-        },
-      });
+      await notifyCustomer(
+        tx,
+        quote.userId,
+        pushText('quoteOrder', { quote: quote.number, order: order.number }),
+        order.id,
+      );
       return order;
     });
     this.events.publish({ type: 'CATALOG_UPDATED' });

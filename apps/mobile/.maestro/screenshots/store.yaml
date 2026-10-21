@@ -1,39 +1,124 @@
-# Google Play screenshots (docs/play-store/LISTING.md). Run against staging with the real
-# catalogue and a signed-in demo customer, once per language:
-#   maestro test -e LANGUAGE=hi .maestro/screenshots/store.yaml
-#   maestro test -e LANGUAGE=en .maestro/screenshots/store.yaml
+# Google Play screenshots (docs/play-store/LISTING.md): eight scenes, each in English and in
+# Hindi, from one run against the local API with its demo catalogue (it creates its own customer):
+#   npm run local:start && adb reverse tcp:4000 tcp:4000
+#   maestro test --test-output-dir /tmp/shots .maestro/screenshots/store.yaml
+# The images come out at the phone's size; use a 1080x1920 emulator. Re-run it against staging
+# with the real catalogue before uploading (the demo build shows a TEST mark and demo zones).
 # Not part of the smoke run (config.yaml only picks up top-level flows).
 appId: in.shivcement.store
+tags: [screenshots]
 ---
-- launchApp
+- evalScript: ${output.phone = '98887' + String(Math.floor(10000 + Math.random() * 89999))}
+- launchApp:
+    clearState: true
+- tapOn: English
+- extendedWaitUntil:
+    visible: Current rates
+    timeout: 15000
 - runFlow:
-    when:
-      true: ${LANGUAGE == 'hi'}
-    commands:
-      - tapOn:
-          text: Switch language to Hindi
-          optional: true
+    file: pair.yaml
+    env:
+      SCENE: 1-rates
+- tapOn:
+    text: Materials
+    index: 0
+- extendedWaitUntil:
+    visible: .* materials
+    timeout: 10000
 - runFlow:
-    when:
-      true: ${LANGUAGE == 'en'}
-    commands:
-      - tapOn:
-          text: भाषा अंग्रेज़ी में बदलें
-          optional: true
-- takeScreenshot: store-${LANGUAGE}-1-rates
+    file: pair.yaml
+    env:
+      SCENE: 2-materials
+- tapOn: Search materials
+- inputText: UltraTech
+- hideKeyboard
+- extendedWaitUntil:
+    visible: View UltraTech Super
+    timeout: 10000
+- tapOn: View UltraTech Super
+- extendedWaitUntil:
+    visible: Add to basket
+    timeout: 10000
+- runFlow:
+    file: pair.yaml
+    env:
+      SCENE: 3-product
+- tapOn: Add to basket
+- tapOn: Basket.*
+- assertVisible: UltraTech Super
+- runFlow:
+    file: pair.yaml
+    env:
+      SCENE: 4-basket
+- tapOn: Sign in to order
+- tapOn: 10-digit mobile number
+- inputText: ${output.phone}
+- hideKeyboard
+- tapOn: Get verification code
+- hideKeyboard
+- extendedWaitUntil:
+    visible: Local development code.*
+    timeout: 10000
+- copyTextFrom:
+    text: Local development code.*
+- evalScript: ${output.code = maestro.copiedText.match(/\d{6}/)[0]}
+- tapOn: 6-digit code
+- inputText: ${output.code}
+- pressKey: Enter
+- extendedWaitUntil:
+    visible: Skip for now
+    timeout: 15000
+- tapOn: Skip for now
+- extendedWaitUntil:
+    visible: Add address
+    timeout: 15000
+- tapOn: Add address
+- tapOn: House, plot or street
+- inputText: Plot 7, Road 2
+- pressKey: Enter
+- inputText: Boring Road
+- pressKey: Enter
+- inputText: '800001'
+- pressKey: Enter
+- inputText: Ramesh Kumar
+- hideKeyboard
+- tapOn: Save address
+- extendedWaitUntil:
+    visible: Place order.*
+    timeout: 15000
+- runFlow:
+    file: pair.yaml
+    env:
+      SCENE: 5-review
+- tapOn: Place order.*
+- extendedWaitUntil:
+    visible: Confirmed
+    timeout: 15000
+- runFlow:
+    file: pair.yaml
+    env:
+      SCENE: 6-confirmed
 - tapOn:
-    text: ${LANGUAGE == 'hi' ? 'सामग्री' : 'Materials'}
+    text: Orders
     index: 0
-- takeScreenshot: store-${LANGUAGE}-2-materials
+- extendedWaitUntil:
+    visible: Open .*
+    timeout: 10000
+- runFlow:
+    file: pair.yaml
+    env:
+      SCENE: 7-orders
 - tapOn:
-    text: ${LANGUAGE == 'hi' ? 'देखें .*' : 'View .*'}
+    text: Home
     index: 0
-- takeScreenshot: store-${LANGUAGE}-3-product
-- tapOn:
-    text: ${LANGUAGE == 'hi' ? 'टोकरी.*' : 'Basket.*'}
-    index: 0
-- takeScreenshot: store-${LANGUAGE}-4-basket
-- tapOn:
-    text: ${LANGUAGE == 'hi' ? 'ऑर्डर' : 'Orders'}
-    index: 0
-- takeScreenshot: store-${LANGUAGE}-5-orders
+- scrollUntilVisible:
+    element: Ask Shiv Sahayak
+- tapOn: Ask Shiv Sahayak
+- tapOn: Which cement is best for plaster?
+- extendedWaitUntil:
+    notVisible: Thinking…
+    timeout: 30000
+- runFlow:
+    file: pair.yaml
+    env:
+      SCENE: 8-assistant

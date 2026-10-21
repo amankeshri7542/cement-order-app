@@ -25,6 +25,8 @@ tags: [smoke, order]
 - tapOn: Sign in to order
 - tapOn: 10-digit mobile number
 - inputText: ${output.phone}
+# A keyboard with a toolbar row can cover the button, and Maestro cannot see off-screen elements.
+- hideKeyboard
 - tapOn: Get verification code
 # The local-only code notice sits under the keyboard; on a phone the code arrives by SMS.
 - hideKeyboard
@@ -38,6 +40,11 @@ tags: [smoke, order]
 - inputText: ${output.code}
 # The keyboard's done key submits the code (no extra tap on the button).
 - pressKey: Enter
+# A new account is asked for a name once; the order does not need it.
+- extendedWaitUntil:
+    visible: Skip for now
+    timeout: 15000
+- tapOn: Skip for now
 - extendedWaitUntil:
     visible: Add address
     timeout: 15000

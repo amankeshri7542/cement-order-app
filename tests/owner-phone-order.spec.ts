@@ -291,7 +291,9 @@ test('switching a credit limit override back to COD sends no override or khata c
     }
     const response = await route.fetch();
     await profileGate;
-    await route.fulfill({ response });
+    // The desk may drop this request while it is held (a newer one replaces it). Playwright then
+    // disposes the held response, which is not what this test is about.
+    await route.fulfill({ response }).catch(() => {});
   });
   const before = await db.product.findUniqueOrThrow({ where: { id: productId } });
   await draftPhoneOrder(page, phone, name);

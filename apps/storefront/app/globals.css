@@ -1,8 +1,9 @@
-/* Direction A · Counter and sindoor.
+/* The shared palette: warm paper, steel ink and construction amber.
    Tokens (--ground, --surface, --paper, --ink, --accent, --rule, --tab-*, --m-*, --t-*, --r, --ease,
    --display, --text, --hand) come from ./theme.css, generated from packages/shared/src/theme.ts.
    Rules this sheet keeps:
-   - Sindoor (--accent) only for actions and the शिव stamp; errors use --danger.
+   - Amber (--accent) only for actions and the शिव stamp, with ink text (--on-accent). Amber as text
+     or an icon on a light ground is --accent-ink; the focus ring is --blue; errors use --danger.
    - Lines (--rule) only in tables, forms and paper slips (parchi, challan, rate sheet, records).
    - One radius (--r) for controls; paper objects are square-cornered.
    - No resting shadows: only the dialog, toasts and the alert banner lift off the page.
@@ -53,7 +54,7 @@ main a:where(:not([class])) {
   text-underline-offset: 4px;
 }
 main a:where(:not([class])):hover {
-  color: var(--accent-press);
+  color: var(--accent-ink);
 }
 button,
 input,
@@ -119,7 +120,7 @@ textarea:disabled {
   color: var(--muted);
 }
 :focus-visible {
-  outline: 3px solid var(--accent);
+  outline: 3px solid var(--blue);
   outline-offset: 2px;
 }
 ::selection {
@@ -218,7 +219,7 @@ textarea {
     text-decoration-color var(--quick) var(--ease),
     transform var(--quick) var(--ease);
 }
-/* Ink and sindoor surfaces need a light focus ring to stay visible. */
+/* Ink and navy surfaces need a light focus ring to stay visible. */
 .rate-panel :focus-visible,
 .delivery-section :focus-visible,
 .site-footer :focus-visible,
@@ -304,7 +305,7 @@ textarea {
 .skip-link:focus {
   top: 12px;
 }
-/* The shop's stamp: a sindoor square with शिव set in Teko. */
+/* The shop's stamp: an amber square with शिव set in Teko. */
 .brand-stamp,
 .rate-stamp {
   display: inline-grid;
@@ -636,7 +637,7 @@ textarea {
 /* An outline would be cut by the folder shape, so the folder shows focus inside its edge. */
 a.rate-row:focus-visible {
   outline: none;
-  box-shadow: inset 0 0 0 3px var(--accent);
+  box-shadow: inset 0 0 0 3px var(--blue);
 }
 a.rate-row:hover .rate-name strong {
   text-decoration: underline;
@@ -1300,12 +1301,12 @@ a.rate-row:hover .rate-name strong {
   user-select: all;
 }
 
-/* ---------- Footer: sindoor ---------- */
+/* ---------- Footer: navy ---------- */
 .site-footer {
   margin-top: 72px;
   padding: 40px var(--margin) 120px;
-  background: var(--accent);
-  color: var(--on-accent);
+  background: var(--ink-2);
+  color: var(--on-ink);
 }
 .footer-inner {
   max-width: 1280px;
@@ -1318,10 +1319,6 @@ a.rate-row:hover .rate-name strong {
   align-items: flex-start;
   gap: 14px;
   min-width: 0;
-}
-.footer-sign .brand-stamp {
-  background: var(--on-accent);
-  color: var(--accent);
 }
 .footer-sign > div {
   min-width: 0;
@@ -1572,9 +1569,9 @@ a.rate-row:hover .rate-name strong {
   height: 92px;
   margin-top: 8px;
   padding: 8px 10px 2px;
-  border: 3px solid var(--accent);
+  border: 3px solid var(--accent-ink);
   border-radius: 50%;
-  color: var(--accent);
+  color: var(--accent-ink);
   font: 600 1.05rem/0.95 var(--display);
   text-align: center;
   overflow: hidden;
@@ -2091,7 +2088,7 @@ a.rate-row:hover .rate-name strong {
   flex-direction: column;
 }
 .assistant-dialog::backdrop {
-  background: #1c222766;
+  background: #1f232266;
   animation: fade var(--base) var(--ease);
 }
 .assistant-dialog > header {
@@ -2768,7 +2765,7 @@ a.rate-row:hover .rate-name strong {
 .first-order li::before {
   content: counter(step);
   grid-row: span 2;
-  color: var(--accent);
+  color: var(--accent-ink);
   font: 600 2.4rem/0.9 var(--display);
 }
 .first-order li strong {
@@ -2803,7 +2800,7 @@ a.rate-row:hover .rate-name strong {
   margin-top: 6px;
 }
 
-/* What happens next: the order's real steps, with the current one marked in sindoor. */
+/* What happens next: the order's real steps, with the current one marked in amber. */
 .next-steps {
   margin: 4px 0 22px;
   padding: 20px 20px 22px;

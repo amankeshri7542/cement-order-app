@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
-  Image,
   Platform,
   Pressable,
   RefreshControl,
@@ -30,11 +29,15 @@ import {
   type Page,
   type Product,
 } from '@shiv/shared';
-import { api } from './api';
+import { Image } from 'expo-image';
+import { api, getWithRetry } from './api';
+import { savedAge } from './age';
+import { readCataloguePage, writeCataloguePage } from './cache';
+import { orderRule, packLine } from './pack';
 import { useStore } from './store';
 import { awards } from './trust';
 import { useReorder } from './orders';
-import { FirstOrderCard } from './first-run';
+import { CallToOrder, FirstOrderCard } from './first-run';
 import {
   Bone,
   Button,
@@ -53,6 +56,7 @@ import {
   Section,
   Stamp,
   Tag,
+  useAfter,
   teko,
   TornEdge,
   type IconName,
@@ -103,7 +107,11 @@ export function MaterialArt({ product, size = 64 }: { product: Product; size?: n
         accessibilityIgnoresInvertColors
         source={{ uri: product.images[0] }}
         onError={() => setFailed(true)}
-        resizeMode="contain"
+        contentFit="contain"
+        // Photos stay on the phone after the first look, so a slow connection loads each once.
+        cachePolicy="memory-disk"
+        recyclingKey={product.id}
+        transition={120}
         style={{ width: size, height: size, backgroundColor: C.paper }}
       />
     );
@@ -394,9 +402,14 @@ function FolderTab({ color }: { color: string }) {
  * the front (last) as a steel-ink panel listing that material's products with Add.
  */
 function RateBoard() {
-  const { products, loading, error, t, language, navigate, refreshCatalog } = useStore();
+  const { products, loading, error, t, language, navigate, refreshCatalog, catalogSavedAt } =
+    useStore();
   const rates = useMemo(() => ratesFrom(products, 6), [products]);
-  const checkedAt = useMemo(() => new Date().toISOString(), [products]);
+  // A copy kept on this phone says when it was saved, not when it was read.
+  const checkedAt = useMemo(
+    () => new Date(catalogSavedAt ?? Date.now()).toISOString(),
+    [products, catalogSavedAt],
+  );
   // null: the first material (cement) is open, as on the counter; '' closes every folder.
   const [chosen, setChosen] = useState<string | null>(null);
   const open = chosen === null ? rates[0]?.slug || '' : chosen;
@@ -412,10 +425,16 @@ function RateBoard() {
       <Text style={s.small}>
         {loading
           ? t('Checking today’s prices…', 'आज के भाव जाँचे जा रहे हैं…')
-          : t(
-              `Lowest in-stock price · checked ${timeLabel(checkedAt)}`,
-              `सबसे कम उपलब्ध भाव · ${timeLabel(checkedAt)} पर जाँचा`,
-            )}
+          : catalogSavedAt
+            ? // A copy kept on this phone says how old it is, not a time of day that could be today's.
+              t(
+                `Lowest in-stock price · saved ${savedAge(catalogSavedAt, Date.now(), 'en')}`,
+                `सबसे कम उपलब्ध भाव · ${savedAge(catalogSavedAt, Date.now(), 'hi')} सेव किया`,
+              )
+            : t(
+                `Lowest in-stock price · checked ${timeLabel(checkedAt)}`,
+                `सबसे कम उपलब्ध भाव · ${timeLabel(checkedAt)} पर जाँचा`,
+              )}
       </Text>
       {loading && !rates.length ? (
         <View style={{ marginTop: space.md }}>
@@ -585,6 +604,7 @@ export function Home() {
         </Text>
       ) : null}
       {user && <LatestOrder />}
+      <CallToOrder />
       <RateBoard />
       <View style={cs.links}>
         {links.map(([label, onPress]) => (
@@ -660,6 +680,7 @@ export function Catalogue() {
     language,
     registerRefresh,
     say,
+    online,
   } = useStore();
   const [query, setQuery] = useState('');
   const [brand, setBrand] = useState('');
@@ -675,7 +696,13 @@ export function Catalogue() {
   const [more, setMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  // Set while the list on screen is the copy saved on this phone, not what the store just said.
+  const [savedAt, setSavedAt] = useState<number | null>(null);
   const request = useRef(0);
+  // A saved list is called "saved" once the store has been slow to confirm it.
+  const slowToConfirm = useAfter(savedAt !== null, 1500);
+  // The request that last got the store's own answer: a saved copy never replaces that.
+  const liveFor = useRef(0);
   const visibleItems = useRef(items);
   visibleItems.current = items;
   const inFlight = useRef(false);
@@ -729,8 +756,22 @@ export function Catalogue() {
         sort,
       });
       if (cursor) params.set('cursor', cursor);
+      // The first page of a view is kept for a visit with no signal; searches are not.
+      const saveKey = !search.query && !search.brand ? `${category}|${availability}|${sort}` : '';
+      if (!cursor && !background && saveKey)
+        void readCataloguePage<Product>(saveKey).then((saved) => {
+          if (!saved || current !== request.current || liveFor.current === current) return;
+          setItems(saved.items);
+          setNextCursor(saved.nextCursor);
+          setSavedAt(saved.savedAt);
+          setLoading(false);
+        });
+      // A customer waiting on a list gets a few tries; a quiet background refresh gets one.
+      const read = (path: string) =>
+        background ? api<Page<Product>>(path) : getWithRetry<Page<Product>>(path);
       try {
-        let page = await api<Page<Product>>(`/products?${params}`);
+        let page = await read(`/products?${params}`);
+        const firstPage = page;
         const refreshed = [...page.items];
         // Refresh exactly the pages already opened, preserving the customer's browsing depth.
         while (background && page.nextCursor && refreshed.length < visibleItems.current.length) {
@@ -740,6 +781,10 @@ export function Catalogue() {
           refreshed.push(...page.items);
         }
         if (current !== request.current) return;
+        liveFor.current = current;
+        setSavedAt(null);
+        if (!cursor && saveKey)
+          void writeCataloguePage(saveKey, firstPage.items, firstPage.nextCursor);
         setItems((old) =>
           cursor
             ? [
@@ -911,7 +956,15 @@ export function Catalogue() {
           {nextCursor ? t(' · more below', ' · नीचे और') : ''}
         </Text>
       )}
-      {Boolean(error) && (
+      {savedAt && (Boolean(error) || !online || slowToConfirm) ? (
+        <Notice tone="warn">
+          {t(
+            `Showing the list saved ${savedAge(savedAt, Date.now(), 'en')}. Prices may have changed.`,
+            `${savedAge(savedAt, Date.now(), 'hi')} की सेव की हुई सूची दिख रही है। भाव बदल सकते हैं।`,
+          )}
+        </Notice>
+      ) : null}
+      {Boolean(error) && !(savedAt && !online) && (
         <View style={{ gap: space.sm }}>
           <Notice error>{error}</Notice>
           <Button secondary onPress={() => void load(undefined, Boolean(items.length))}>
@@ -954,18 +1007,24 @@ export function Catalogue() {
       }
       ListEmptyComponent={
         !loading && !error ? (
-          <Empty
-            title={t('No materials match', 'कोई सामग्री नहीं मिली')}
-            body={t('Try another name, brand or category.', 'दूसरा नाम, ब्रांड या श्रेणी आज़माएँ।')}
-            action={t('Clear filters', 'फ़िल्टर हटाएँ')}
-            onAction={() => {
-              setQuery('');
-              setBrand('');
-              setCategory('');
-              setAvailability('all');
-              setSort('name');
-            }}
-          />
+          <View>
+            <Empty
+              title={t('No materials match', 'कोई सामग्री नहीं मिली')}
+              body={t(
+                'Try another name, brand or category.',
+                'दूसरा नाम, ब्रांड या श्रेणी आज़माएँ।',
+              )}
+              action={t('Clear filters', 'फ़िल्टर हटाएँ')}
+              onAction={() => {
+                setQuery('');
+                setBrand('');
+                setCategory('');
+                setAvailability('all');
+                setSort('name');
+              }}
+            />
+            <CallToOrder />
+          </View>
         ) : null
       }
       ListFooterComponent={
@@ -1144,15 +1203,12 @@ export function ProductDetail() {
               ],
               [t('Type', 'प्रकार'), product.type],
               [t('Grade', 'ग्रेड'), product.grade],
-              [t('Pack', 'पैक'), product.packSize],
-              [t('Sold per', 'बिक्री इकाई'), unitLabel(product.unit, language)],
+              [t('Pack', 'पैक'), packLine(product, language) || product.packSize],
               [
-                t('Order', 'ऑर्डर'),
-                t(
-                  `minimum ${product.minQuantity}, in steps of ${product.quantityStep}`,
-                  `कम से कम ${product.minQuantity}, ${product.quantityStep} के गुणक में`,
-                ),
+                t('Sold per', 'बिक्री इकाई'),
+                packLine(product, language) ? '' : unitLabel(product.unit, language),
               ],
+              [t('Order', 'ऑर्डर'), orderRule(product, language)],
             ] as const
           )
             .filter(([, value]) => value)

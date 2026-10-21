@@ -32,6 +32,7 @@ import {
   TornEdge,
 } from './ui';
 import { DeliveryCheck, MaterialArt, Quantity } from './catalog';
+import { CallToOrder } from './first-run';
 import { payOnline } from './payment';
 
 function MergeNotice() {
@@ -268,6 +269,7 @@ export function Cart() {
           action={t('Browse materials', 'सामग्री देखें')}
           onAction={() => navigate({ screen: 'Products' })}
         />
+        <CallToOrder />
       </Screen>
     );
   return (
@@ -629,7 +631,11 @@ export function Checkout() {
                 onPress={() => setAccepted(!accepted)}
                 style={[s.row, { minHeight: 56 }]}
               >
-                <Icon name={accepted ? 'checkbox' : 'square-outline'} color={C.accent} size={28} />
+                <Icon
+                  name={accepted ? 'checkbox' : 'square-outline'}
+                  color={C.accentInk}
+                  size={28}
+                />
                 <Text style={[s.body, { flex: 1, color: C.ink }]}>
                   {t(
                     `I accept the new prices and the total of ${money(review.totalPaise)}.`,

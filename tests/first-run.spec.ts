@@ -96,6 +96,36 @@ test('app first run: language, pincode, basket, sign-in with name, order, what h
   }
 });
 
+test('app: the language chosen before signing in is the one the store keeps for the account', async ({
+  browser,
+}) => {
+  // A new account starts as English on the server; notifications are worded from what is kept.
+  const { context, page } = await freshInstall(browser);
+  try {
+    const phone = freshPhone();
+    await page.goto(appUrl);
+    await page.getByRole('button', { name: 'हिंदी चुनें' }).click();
+    await page.getByRole('tab', { name: 'ऑर्डर', exact: true }).click();
+    await page.getByRole('textbox', { name: /मोबाइल नंबर/ }).fill(phone);
+    const sent = page.waitForResponse(
+      (r) => r.url().endsWith('/auth/otp/request') && r.status() === 201,
+    );
+    await page.getByRole('button', { name: 'कोड भेजें', exact: true }).click();
+    const code = (await (await sent).json()).devCode;
+    await page.getByRole('textbox', { name: 'सत्यापन कोड', exact: true }).fill(code);
+    await page.getByRole('button', { name: 'कोड पक्का करें', exact: true }).click();
+    // Skipping the name question must not lose the language either.
+    await page.getByRole('button', { name: 'अभी छोड़ें', exact: true }).click();
+    await expect(page.getByRole('dialog')).toBeHidden();
+    await expect(async () => {
+      const user = await db.user.findUnique({ where: { phone: `+91${phone}` } });
+      expect(user?.language).toBe('hi');
+    }).toPass();
+  } finally {
+    await context.close();
+  }
+});
+
 test('website first run: language, pincode, basket, sign-in with name, order, what happens next', async ({
   browser,
 }) => {

@@ -144,7 +144,7 @@ export function Compare() {
                 pressed && { opacity: 0.7 },
               ]}
             >
-              <Icon name="add-circle" color={C.accent} size={26} />
+              <Icon name="add-circle" color={C.accentInk} size={26} />
               <View style={{ flex: 1 }}>
                 <Text style={[s.body, { color: C.ink, fontWeight: '700' }]}>
                   {productName(product, language)}

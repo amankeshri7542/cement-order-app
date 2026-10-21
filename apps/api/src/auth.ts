@@ -20,7 +20,7 @@ import type { Prisma } from '@prisma/client';
 import { createHmac, randomBytes, randomInt } from 'node:crypto';
 import type { Response } from 'express';
 import { z } from 'zod';
-import { otpRequestSchema, otpVerifySchema, refreshSchema } from '@shiv/shared';
+import { otpRequestSchema, otpResendSeconds, otpVerifySchema, refreshSchema } from '@shiv/shared';
 import { Db } from './db';
 import { getConfig } from './config';
 import { AuthRequest, Contract, Input, Public, cookie, fail, hash, safeEqual } from './http';
@@ -184,7 +184,7 @@ export class AuthService {
       const old = await tx.otpChallenge.findUnique({ where: { phone } });
       if (
         old &&
-        (now.getTime() - old.sentAt.getTime() < 60000 ||
+        (now.getTime() - old.sentAt.getTime() < otpResendSeconds * 1000 ||
           (now.getTime() - old.windowStart.getTime() < 3600000 && old.sends >= 5))
       )
         fail('RATE_LIMITED', 'Wait before requesting another code.', 429);

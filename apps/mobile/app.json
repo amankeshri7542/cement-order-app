@@ -12,10 +12,11 @@
     },
     "android": {
       "package": "in.shivcement.store",
+      "allowBackup": false,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "monochromeImage": "./assets/adaptive-monochrome.png",
-        "backgroundColor": "#173345"
+        "backgroundColor": "#E0A42B"
       },
       "blockedPermissions": [
         "android.permission.READ_EXTERNAL_STORAGE",
@@ -31,12 +32,13 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#173345",
+          "backgroundColor": "#F6F4EE",
           "image": "./assets/splash-icon.png",
           "imageWidth": 160
         }
       ],
       "expo-secure-store",
+      "expo-image",
       "expo-notifications",
       [
         "expo-speech-recognition",
@@ -50,14 +52,17 @@
         "expo-build-properties",
         {
           "android": {
+            "compileSdkVersion": 36,
+            "targetSdkVersion": 36,
+            "buildToolsVersion": "36.0.0",
             "enableMinifyInReleaseBuilds": true,
             "enableShrinkResourcesInReleaseBuilds": true,
-            "extraProguardRules": "# Razorpay checkout (kept for when online payment is switched on)\n-keepclassmembers class * { @android.webkit.JavascriptInterface <methods>; }\n-keepattributes JavascriptInterface\n-keepattributes *Annotation*\n-dontwarn com.razorpay.**\n-keep class com.razorpay.** {*;}\n-optimizations !method/inlining/*\n-keepclasseswithmembers class * { public void onPayment*(...); }\n"
+            "extraProguardRules": "# Razorpay checkout (kept for when online payment is switched on)\n-keepclassmembers class * { @android.webkit.JavascriptInterface <methods>; }\n-keepattributes JavascriptInterface\n-keepattributes *Annotation*\n-dontwarn com.razorpay.**\n-keep class com.razorpay.** {*;}\n-optimizations !method/inlining/*\n-keepclasseswithmembers class * { public void onPayment*(...); }\n# Release builds print no debug, verbose or info lines: the SMS reader library logs each message it\n# receives, and a sign-in code must not be left in the phone's log.\n-assumenosideeffects class android.util.Log {\n public static int v(...);\n public static int d(...);\n public static int i(...);\n}\n"
           }
         }
       ]
     ],
     "icon": "./assets/icon.png",
-    "backgroundColor": "#F5F3ED"
+    "backgroundColor": "#F6F4EE"
   }
 }

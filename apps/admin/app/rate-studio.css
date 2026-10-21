@@ -344,7 +344,7 @@
   cursor: pointer;
 }
 .rs-upload:focus-within {
-  outline: 3px solid var(--accent);
+  outline: 3px solid var(--blue);
   outline-offset: 2px;
 }
 .rs-disabled {
@@ -695,7 +695,7 @@
   margin-bottom: 16px;
 }
 /* A small picture of the generated card, drawn by apps/api/src/rate-studio/cards.ts in the
-   same Direction A tokens: Counter is the ink signboard with a sindoor rule, Bulletin is the
+   same shared tokens: Counter is the ink signboard with an amber rule, Bulletin is the
    paper sheet with an ink edge, and both carry the शिव stamp. */
 .rs-template-sample {
   position: relative;

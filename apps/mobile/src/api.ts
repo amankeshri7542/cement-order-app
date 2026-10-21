@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { errorText, type Language, type User } from '@shiv/shared';
+import { retryDelays, withRetry } from './retry';
 export const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
 let accessToken = '';
 let refreshToken = '';
@@ -112,13 +113,14 @@ export async function api<T>(
   method = 'GET',
   body?: unknown,
   retry = true,
+  timeoutMs = 20000,
 ): Promise<T> {
   let response: Response;
   // The token this request carries: a late 401 for a token already renewed needs no new renewal.
   const sent = accessToken;
   // React Native has no AbortSignal.timeout(); calling it throws before any request is sent.
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 20000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     response = await fetch(`${API_URL}${path}`, {
       method,
@@ -136,6 +138,12 @@ export async function api<T>(
   } finally {
     clearTimeout(timer);
   }
+  // Any reply, even a refusal, proves the store can be reached, whatever the phone's own check of
+  // the connection says (a VPN or a network that blocks Google's check can make it say "offline").
+  if (!networkUp) {
+    networkUp = true;
+    reachedListener?.();
+  }
   if (response.status === 401 && retry && !path.startsWith('/auth/')) {
     const signedIn = Boolean(accessToken) || Platform.OS === 'web';
     const result = accessToken && accessToken !== sent ? 'ok' : await renew();
@@ -152,6 +160,9 @@ export async function api<T>(
     throw new ApiError(
       response.ok ? 'NETWORK_ERROR' : 'REQUEST_FAILED',
       'Cannot reach the store. Check your connection and try again.',
+      undefined,
+      // A gateway's own error page (502, 503, 504) is worth another try; other statuses are not.
+      response.status >= 500 ? response.status : undefined,
     );
   }
   if (!response.ok)
@@ -163,6 +174,37 @@ export async function api<T>(
     );
   return data as T;
 }
+let networkUp = true;
+/**
+ * The phone's connection as NetInfo reports it. With none, a read fails at once (the screen shows
+ * what it saved) and is made again when the connection returns, instead of waiting out retries.
+ */
+export function setNetworkState(up: boolean) {
+  networkUp = up;
+}
+let reachedListener: (() => void) | null = null;
+/** Called when the store answers while the phone's own check said there was no connection. */
+export function onStoreReached(listener: (() => void) | null) {
+  reachedListener = listener;
+}
+// Browser test builds shorten the waits between tries; a real build never sets this.
+const retryScale = Number(process.env.EXPO_PUBLIC_RETRY_SCALE) || 1;
+const delays = retryDelays.map((ms) => Math.round(ms * retryScale));
+/** A failure on the way to the store (no reply, a cut-off reply, a gateway error), not a refusal. */
+const transient = (error: unknown) =>
+  error instanceof ApiError &&
+  (error.code === 'NETWORK_ERROR' || [502, 503, 504].includes(error.status ?? 0));
+/**
+ * A read that is tried again after 1, 2 and 4 seconds when the network drops it. Used where a
+ * customer is waiting on a list (rates, materials, orders); writes are never retried here.
+ */
+export const getWithRetry = <T>(path: string) =>
+  // Ten seconds a try, so four tries and the waits between them stay under a minute.
+  withRetry(() => api<T>(path, 'GET', undefined, true, 10000), {
+    retryable: transient,
+    delays,
+    online: () => networkUp,
+  });
 /** Customer-facing text for any failure, in the chosen language. */
 export const message = (error: unknown, language: Language = 'en') =>
   error instanceof ApiError

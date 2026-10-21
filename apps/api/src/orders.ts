@@ -33,6 +33,7 @@ import { paginate } from './pagination';
 import { deliveryFor, moveStock, orderTotals, validateQuantity } from './inventory';
 import { getConfig, onlineReady } from './config';
 import { enqueueWhatsApp } from './alerts';
+import { notifyCustomer, pushText } from './notify';
 import { workInclude } from './owner-work';
 import { Events } from './catalog';
 import { appendLedger } from './khata';
@@ -357,14 +358,7 @@ export class OrdersService {
           details: { totalPaise: amounts.totalPaise, status: order.status },
         },
       });
-      await tx.notification.create({
-        data: {
-          userId,
-          title: 'Order received',
-          body: `${order.number} has been placed.`,
-          orderId: order.id,
-        },
-      });
+      await notifyCustomer(tx, userId, pushText('orderPlaced', { number: order.number }), order.id);
       return order;
     });
     this.events.publish({ type: 'CATALOG_UPDATED' });
@@ -470,14 +464,15 @@ export class OrdersService {
           details: { from: order.status, to: next },
         },
       });
-      await tx.notification.create({
-        data: {
-          userId: order.userId,
-          title: 'ऑर्डर अपडेट / Order updated',
-          body: `${order.number}: ${orderStatusText(next, 'hi')} / ${orderStatusText(next, 'en')}`,
-          orderId: id,
-        },
-      });
+      await notifyCustomer(
+        tx,
+        order.userId,
+        pushText('orderStatus', (language) => ({
+          number: order.number,
+          status: orderStatusText(next, language),
+        })),
+        id,
+      );
       // Optional WhatsApp updates to the customer at the moments that matter to them.
       const phone = (order.address as { phone?: string } | null)?.phone || '';
       if (
@@ -626,14 +621,15 @@ export class OrdersService {
       await tx.auditLog.create({
         data: { actorId, event: `DELIVERY_${input.action}`, entityId: id, details: input },
       });
-      await tx.notification.create({
-        data: {
-          userId: order.userId,
-          orderId: id,
-          title: 'Delivery updated',
-          body: `${order.number}: ${status.toLowerCase().replaceAll('_', ' ')}`,
-        },
-      });
+      await notifyCustomer(
+        tx,
+        order.userId,
+        pushText('delivery', (language) => ({
+          number: order.number,
+          status: orderStatusText(status, language),
+        })),
+        id,
+      );
       return tx.order.findUniqueOrThrow({ where: { id }, include: orderInclude });
     });
     this.events.publish({ type: 'CATALOG_UPDATED' });

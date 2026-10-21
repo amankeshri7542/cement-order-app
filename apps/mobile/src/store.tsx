@@ -9,6 +9,7 @@ import {
 } from 'react';
 import { AppState, Platform } from 'react-native';
 import EventSource from 'react-native-sse';
+import NetInfo from '@react-native-community/netinfo';
 import * as SecureStore from 'expo-secure-store';
 import {
   firstRunKeys,
@@ -35,11 +36,16 @@ import {
   ApiError,
   api,
   cannotReach,
+  getWithRetry,
   logout,
   message,
   onSessionEnded,
+  onStoreReached,
   restoreSession,
+  setNetworkState,
 } from './api';
+import { cacheKeys, clearCache, readCache, writeCache } from './cache';
+import { pushKeys, refreshPushToken } from './push';
 import { tap } from './feedback';
 import { liveStream } from './live';
 export type { Language };
@@ -220,6 +226,12 @@ function useStoreValue() {
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  // When the rates on screen were last confirmed by the store (a saved copy shows its own time),
+  // and whether the phone has a connection at all.
+  const [catalogSavedAt, setCatalogSavedAt] = useState<number | null>(null);
+  const [online, setOnline] = useState(true);
+  const onlineRef = useRef(true);
+  const catalogConfirmed = useRef(false);
   const [loginVisible, setLoginVisible] = useState(false);
   const [toast, setToast] = useState('');
   const [checkoutDraft, setCheckoutDraft] = useState(newCheckout);
@@ -241,7 +253,17 @@ function useStoreValue() {
   const catalogRequest = useRef(0);
   const accountRequest = useRef(0);
   const t = useCallback((en: string, hi: string) => (language === 'hi' ? hi : en), [language]);
-  const say = useCallback((e: unknown) => message(e, languageRef.current), []);
+  // With no connection at all the plain cause is the useful one; "the response could not be
+  // confirmed" describes a reply that got lost on the way back.
+  const say = useCallback(
+    (e: unknown) =>
+      e instanceof ApiError && e.code === 'NETWORK_ERROR' && !onlineRef.current
+        ? languageRef.current === 'hi'
+          ? 'दुकान से जुड़ नहीं पा रहे। इंटरनेट जाँचें।'
+          : 'Cannot reach the store. Check your internet connection.'
+        : message(e, languageRef.current),
+    [],
+  );
   // Set while the saved sign-in could not be checked (no signal at launch). The phone keeps it and
   // checks again on Retry, on return to the app, on reconnect and before a signed-in screen.
   const sessionUnknown = useRef(false);
@@ -252,7 +274,12 @@ function useStoreValue() {
         sessionUnknown.current = found === 'offline';
         if (found === 'offline') setError(say(cannotReach()));
         else if (found && !userRef.current) await completeLogin(found);
-        else if (!found && !userRef.current && pendingRoute.current) setLoginVisible(true);
+        else if (!found) {
+          // No session any more (ended elsewhere, or the account was deleted): what this phone
+          // saved of someone's orders goes with it.
+          void clearCache((key) => key.startsWith('orders:'));
+          if (!userRef.current && pendingRoute.current) setLoginVisible(true);
+        }
         return found;
       })
       .finally(() => {
@@ -447,16 +474,20 @@ function useStoreValue() {
     try {
       const [p, c, st] = await Promise.all([
         // Enough for the rate board and the home shelf: in-stock items, cheapest first.
-        api<Page<Product>>('/products?sort=price_asc&availability=in&limit=100'),
-        api<Category[]>('/categories'),
-        api<StoreSettings>('/store'),
+        getWithRetry<Page<Product>>('/products?sort=price_asc&availability=in&limit=100'),
+        getWithRetry<Category[]>('/categories'),
+        getWithRetry<StoreSettings>('/store'),
       ]);
       if (current !== catalogRequest.current) return;
+      catalogConfirmed.current = true;
       setProducts(p.items);
       remember(p.items);
       setCategories(c);
       setSettings(st);
+      setCatalogSavedAt(Date.now());
       setError('');
+      // Kept for the next visit with no signal.
+      void writeCache(cacheKeys.catalog, { products: p.items, categories: c, settings: st });
       // The store answers again: check the saved sign-in that could not be checked earlier.
       if (sessionUnknown.current) void restore().catch(() => {});
     } catch (e) {
@@ -551,6 +582,17 @@ function useStoreValue() {
     sessionUnknown.current = false;
     setUser(next);
     if (languageStatusRef.current !== 'set') setLanguage(next.language === 'en' ? 'en' : 'hi');
+    else if (next.language !== languageRef.current) {
+      // The language chosen on this phone is the one notifications and messages should use; a new
+      // account starts as English until told otherwise.
+      const chosen = languageRef.current;
+      languageTail.current = languageTail.current
+        .catch(() => {})
+        .then(() =>
+          userRef.current?.id === next.id ? api('/me', 'PATCH', { language: chosen }) : null,
+        )
+        .catch(() => {});
+    }
     setLoginVisible(false);
     const raw = await readSaved<SavedIntent & { uncertain?: boolean; problem?: string }>(
       mergeKey(next.id),
@@ -574,6 +616,27 @@ function useStoreValue() {
   }
   useEffect(() => {
     void refreshCatalog();
+    // The last saved rates show at once; the store's current ones replace them when it answers.
+    void readCache<{ products: Product[]; categories: Category[]; settings: StoreSettings }>(
+      cacheKeys.catalog,
+    ).then((saved) => {
+      const data = saved?.data;
+      if (
+        !saved ||
+        catalogConfirmed.current ||
+        !Array.isArray(data?.products) ||
+        !Array.isArray(data.categories) ||
+        !data.settings ||
+        typeof data.settings !== 'object'
+      )
+        return;
+      setProducts(data.products);
+      remember(data.products);
+      setCategories(data.categories);
+      setSettings(data.settings);
+      setCatalogSavedAt(saved.savedAt);
+      setLoading(false);
+    });
     void readSaved<Language>('shiv_language')
       .then((saved) => {
         if (saved === 'hi' || saved === 'en') {
@@ -614,6 +677,7 @@ function useStoreValue() {
   useEffect(() => {
     onSessionEnded(() => {
       if (!userRef.current) return;
+      void clearCache((key) => key.startsWith('orders:'));
       setUser(null);
       setToast(
         languageRef.current === 'hi'
@@ -669,6 +733,17 @@ function useStoreValue() {
   useEffect(() => {
     void refreshAccount().catch((e) => setToast(say(e)));
   }, [refreshAccount, user?.id, say]);
+  // A customer who turned notifications on keeps getting them: the phone's token is sent again
+  // at sign-in, since it can change. Someone who never chose them on this phone is not registered.
+  useEffect(() => {
+    const id = user?.id;
+    if (!id || user.role === 'ADMIN') return;
+    void readSaved<boolean>(pushKeys.on(id))
+      .then((chosen) => {
+        if (chosen === true) void refreshPushToken();
+      })
+      .catch(() => {});
+  }, [user?.id]);
   // Guest basket lines need product details that may not be on the rate board.
   const missing = guest.lines
     .map((line) => line.productId)
@@ -717,6 +792,44 @@ function useStoreValue() {
     window.addEventListener('focus', focus);
     return () => window.removeEventListener('focus', focus);
   }, [refreshCurrent]);
+  // The connection coming back refreshes what was shown from the saved copy. The phone's system
+  // says whether the network really reaches the internet (on old Androids that falls back to a
+  // check of our own health URL, never a third party). The browser build only has its
+  // online/offline events, so NetInfo's reachability check is off there: NetInfo reads "no check"
+  // as "no internet".
+  const refreshOnReturn = useRef(refreshCurrent);
+  refreshOnReturn.current = refreshCurrent;
+  useEffect(() => {
+    NetInfo.configure(
+      Platform.OS === 'web'
+        ? { reachabilityShouldRun: () => false }
+        : {
+            reachabilityUrl: `${API_URL}/health`,
+            reachabilityMethod: 'GET',
+            reachabilityTest: async (response) => response.status === 200,
+          },
+    );
+    let wasUp = true;
+    onStoreReached(() => {
+      onlineRef.current = true;
+      setOnline(true);
+      wasUp = true;
+    });
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      const up =
+        state.isConnected !== false &&
+        (Platform.OS === 'web' || state.isInternetReachable !== false);
+      setNetworkState(up);
+      onlineRef.current = up;
+      setOnline(up);
+      if (up && !wasUp) void refreshOnReturn.current();
+      wasUp = up;
+    });
+    return () => {
+      unsubscribe();
+      onStoreReached(null);
+    };
+  }, []);
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(''), 5000);
@@ -838,6 +951,8 @@ function useStoreValue() {
       // On a phone this forgets the session at once, even with no signal.
       await logout();
       sessionUnknown.current = false;
+      // The saved copy of this customer's orders goes with the session.
+      void clearCache((key) => key.startsWith('orders:'));
       await storageTail.current.catch(() => {});
       // Retain only reconciliation identifiers across sign-out; another user cannot load them.
       if (userRef.current)
@@ -862,6 +977,7 @@ function useStoreValue() {
     const id = userRef.current?.id;
     setUser(null);
     await storageTail.current.catch(() => {});
+    await clearCache((key) => key.startsWith('orders:'));
     setPincodeState('');
     if (id)
       await Promise.all([
@@ -869,6 +985,8 @@ function useStoreValue() {
         writeSaved(mergeKey(id), null),
         writeSaved(firstRunKeys.pincode, null),
         writeSaved(firstRunKeys.nameAsked(id), null),
+        writeSaved(pushKeys.asked(id), null),
+        writeSaved(pushKeys.on(id), null),
       ]).catch(() => {});
   }
   /** Remembers a checked pincode on this phone (null forgets it). */
@@ -940,6 +1058,8 @@ function useStoreValue() {
     setAddresses,
     error,
     loading,
+    online,
+    catalogSavedAt,
     refreshCatalog,
     refreshAccount,
     setQuantity,

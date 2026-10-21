@@ -1675,7 +1675,7 @@ function CardStudio({
               <Field label={t('Template', 'डिज़ाइन')}>
                 <select value={template} onChange={(e) => setTemplate(e.target.value)}>
                   <option value="COUNTER">
-                    {t('Counter · ink & sindoor', 'काउंटर · स्याही और सिंदूर')}
+                    {t('Counter · ink & amber', 'काउंटर · स्याही और पीला')}
                   </option>
                   <option value="BULLETIN">
                     {t('Bulletin · paper & ink', 'बुलेटिन · काग़ज़ और स्याही')}

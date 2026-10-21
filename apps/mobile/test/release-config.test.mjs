@@ -89,3 +89,35 @@ test('EAS preview APK and closed-test AAB use preview environment; submissions r
   for (const profile of Object.values(eas.submit))
     assert.equal(profile.android.releaseStatus, 'draft');
 });
+
+test('the Android build targets API 36, as Google Play requires of new apps', () => {
+  const properties = config(release).plugins.find(
+    (plugin) => plugin[0] === 'expo-build-properties',
+  );
+  assert.ok(properties, 'expo-build-properties plugin is configured');
+  assert.ok(properties[1].android.targetSdkVersion >= 36);
+  assert.ok(properties[1].android.compileSdkVersion >= properties[1].android.targetSdkVersion);
+});
+
+test('release submissions read the Play service account from a file that is never committed', () => {
+  const eas = JSON.parse(readFileSync('eas.json', 'utf8'));
+  const ignored = readFileSync('../../.gitignore', 'utf8');
+  for (const profile of Object.values(eas.submit)) {
+    const path = profile.android.serviceAccountKeyPath;
+    assert.equal(path, './play-service-account.json');
+    assert.ok(ignored.split('\n').includes(`apps/mobile/${path.slice(2)}`));
+    assert.ok(!existsSync(path), 'the key file must not be in the repository');
+  }
+  assert.ok(ignored.split('\n').includes('*.keystore'));
+});
+
+test('release builds strip debug logging, so no library can print a sign-in code to the device log', () => {
+  const build = config(release).plugins.find(
+    (plugin) => Array.isArray(plugin) && plugin[0] === 'expo-build-properties',
+  );
+  const rules = build[1].android.extraProguardRules;
+  assert.match(rules, /-assumenosideeffects class android\.util\.Log/);
+  for (const level of ['v', 'd', 'i'])
+    assert.match(rules, new RegExp(`int ${level}\\(\\.\\.\\.\\)`));
+  assert.doesNotMatch(rules, /\bint e\(\.\.\.\)|\bint w\(\.\.\.\)/);
+});

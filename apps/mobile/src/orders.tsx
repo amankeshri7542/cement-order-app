@@ -25,12 +25,14 @@ import {
   type Order,
   type Page,
 } from '@shiv/shared';
-import { api } from './api';
+import { api, getWithRetry } from './api';
+import { savedAge } from './age';
+import { cacheKeys, readCache, writeCache } from './cache';
 import { makeKey, readSaved, useStore, writeSaved } from './store';
 import { OrderStatusTag } from './catalog';
-import { Button, C, Empty, headingScale, Icon, Notice, s, Screen } from './ui';
+import { Button, C, Empty, headingScale, Icon, Notice, s, Screen, useAfter } from './ui';
 import { payOnline } from './payment';
-import { NextSteps } from './first-run';
+import { CallToOrder, NextSteps, NotifyPrompt } from './first-run';
 
 export async function confirm(
   text: string,
@@ -177,22 +179,46 @@ export function useReorder(order: Order | null) {
 }
 
 export function Orders() {
-  const { t, language, navigate, registerRefresh, rememberOrder, say, user } = useStore();
+  const { t, language, navigate, registerRefresh, rememberOrder, say, user, online } = useStore();
   const [orders, setOrders] = useState<Order[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  // Set while the list on screen is the copy saved on this phone, not what the store just said.
+  const [savedAt, setSavedAt] = useState<number | null>(null);
   const request = useRef(0);
+  const liveFor = useRef(0);
+  // Saved orders are called "saved" once the store has been slow to confirm them.
+  const slowToConfirm = useAfter(savedAt !== null, 1500);
+  const userId = user?.id;
   const load = useCallback(
     async (after?: string) => {
       const current = ++request.current;
       if (!after) setLoading((old) => old && !orders.length);
+      // The last orders seen on this phone show at once, and stay if the store cannot be reached.
+      if (!after && userId)
+        void readCache<Order[]>(cacheKeys.orders(userId)).then((saved) => {
+          if (
+            !saved ||
+            !Array.isArray(saved.data) ||
+            current !== request.current ||
+            liveFor.current === current
+          )
+            return;
+          setOrders(saved.data);
+          saved.data.forEach(rememberOrder);
+          setSavedAt(saved.savedAt);
+          setLoading(false);
+        });
       try {
-        const page = await api<Page<Order>>(
+        const page = await getWithRetry<Page<Order>>(
           `/orders?limit=24${after ? '&cursor=' + encodeURIComponent(after) : ''}`,
         );
         if (current !== request.current) return;
+        liveFor.current = current;
+        setSavedAt(null);
+        if (!after && userId) void writeCache(cacheKeys.orders(userId), page.items);
         setOrders((old) =>
           after
             ? [...new Map([...old, ...page.items].map((order) => [order.id, order])).values()]
@@ -206,7 +232,7 @@ export function Orders() {
         if (current === request.current) setLoading(false);
       }
     },
-    [say],
+    [say, userId],
   );
   useEffect(() => {
     if (!user) return;
@@ -277,21 +303,32 @@ export function Orders() {
               </Button>
             </View>
           )}
+          {savedAt && (Boolean(error) || !online || slowToConfirm) ? (
+            <Notice tone="warn">
+              {t(
+                `Showing the orders saved ${savedAge(savedAt, Date.now(), 'en')}. Their status may have changed.`,
+                `${savedAge(savedAt, Date.now(), 'hi')} के सेव किए ऑर्डर दिख रहे हैं। उनकी स्थिति बदल सकती है।`,
+              )}
+            </Notice>
+          ) : null}
           {loading && <Text style={s.body}>{t('Loading…', 'लोड हो रहा है…')}</Text>}
         </View>
       }
       ListEmptyComponent={
         !loading && !error ? (
-          <Empty
-            icon="receipt-outline"
-            title={t('No orders yet', 'अभी कोई ऑर्डर नहीं')}
-            body={t(
-              'Your orders and delivery updates will appear here.',
-              'आपके ऑर्डर और डिलीवरी की जानकारी यहाँ दिखेगी।',
-            )}
-            action={t('Browse materials', 'सामग्री देखें')}
-            onAction={() => navigate({ screen: 'Products' })}
-          />
+          <View>
+            <Empty
+              icon="receipt-outline"
+              title={t('No orders yet', 'अभी कोई ऑर्डर नहीं')}
+              body={t(
+                'Your orders and delivery updates will appear here.',
+                'आपके ऑर्डर और डिलीवरी की जानकारी यहाँ दिखेगी।',
+              )}
+              action={t('Browse materials', 'सामग्री देखें')}
+              onAction={() => navigate({ screen: 'Products' })}
+            />
+            <CallToOrder />
+          </View>
         ) : null
       }
       renderItem={({ item: o }) => (
@@ -344,6 +381,9 @@ export function OrderDetail() {
   const [order, setOrder] = useState<Order | null>(() => ordersById[route.id || ''] || null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  // False until the store has confirmed this order; what shows before may be a saved copy.
+  const [confirmed, setConfirmed] = useState(false);
+  const unconfirmed = useAfter(Boolean(order) && !confirmed && !error, 1500);
   const reorder = useReorder(order);
   const request = useRef(0);
   const load = useCallback(async () => {
@@ -352,6 +392,7 @@ export function OrderDetail() {
       const updated = await api<Order>(`/orders/${encodeURIComponent(route.id || '')}`);
       if (current !== request.current) return;
       setOrder(updated);
+      setConfirmed(true);
       setError('');
     } catch (e) {
       if (current === request.current) setError(say(e));
@@ -461,6 +502,14 @@ export function OrderDetail() {
           {error} {t('Your last confirmed details are shown.', 'पिछली पक्की जानकारी दिख रही है।')}
         </Notice>
       )}
+      {unconfirmed ? (
+        <Notice tone="warn">
+          {t(
+            'Showing the details this phone saw last. Checking for news…',
+            'इस फ़ोन पर पिछली बार की जानकारी दिख रही है। नई जानकारी देखी जा रही है…',
+          )}
+        </Notice>
+      ) : null}
       <View style={{ alignItems: 'center', gap: space.sm, paddingVertical: space.md }}>
         <View
           style={{
@@ -491,6 +540,8 @@ export function OrderDetail() {
         </Text>
       </View>
       <NextSteps order={order} />
+      {/* The question comes after the confirmation and what happens next, not before them. */}
+      <NotifyPrompt />
       {order.work?.acknowledgedAt && (
         <Notice tone="good">
           {t('The store has seen your order', 'दुकान ने आपका ऑर्डर देख लिया है')}

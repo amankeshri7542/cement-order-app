@@ -12,6 +12,8 @@ import {
   Text,
   TextInput,
   View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   type StyleProp,
   type TextInputProps,
   type TextStyle,
@@ -21,11 +23,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, motion, radius, space, textSize, touch } from '@shiv/shared';
 import { displayFont } from './fonts';
 
-// Direction A, "counter and sindoor" (packages/shared/src/theme.ts): cement-stone ground,
-// surfaces one tone up, slip paper for the parchi and the latest-order slip, steel ink for the
-// top bar and the open rate folder, and sindoor red only for actions and the शिव stamp.
-// Teko 600 sets display text, headings and prices, as the website's var(--display); body text
-// stays in the phone's own face.
+// The shared palette (packages/shared/src/theme.ts): warm paper ground, surfaces one tone up,
+// white paper for the parchi and the latest-order slip, steel ink for the top bar and the open
+// rate folder, and construction amber only for actions and the शिव stamp. Amber carries ink text
+// (onAccent); amber as text or an icon on a light ground is accentInk. Teko 600 sets display
+// text, headings and prices, as the website's var(--display); body text stays in the phone's
+// own face.
 export const C = colors;
 export type IconName = ComponentProps<typeof Ionicons>['name'];
 
@@ -69,7 +72,7 @@ export function Icon({
   return <Ionicons name={name} color={color} size={size} aria-hidden accessible={false} />;
 }
 
-/** The "शिव" stamp: a square of sindoor with the name in white, as on the shop's signboard. */
+/** The "शिव" stamp: a square of amber with the name in ink, as on the shop's signboard. */
 export function Stamp({ size = 44 }: { size?: number }) {
   return (
     <View accessible={false} style={[s.stamp, { width: size, height: size }]}>
@@ -167,7 +170,7 @@ export function Button({
 }: {
   children: ReactNode;
   onPress: () => void;
-  /** primary: sindoor; secondary: ink; quiet: an underlined link; paper: light on an ink ground. */
+  /** primary: amber; secondary: ink; quiet: an underlined link; paper: light on an ink ground. */
   kind?: 'primary' | 'secondary' | 'quiet' | 'paper';
   /** Shorthand for kind="secondary". */
   secondary?: boolean;
@@ -456,6 +459,56 @@ export function Bone({
 }
 
 /**
+ * True once `active` has stayed true for `ms`. A saved copy of a list is shown at once, but it is
+ * only called "saved" when the store is slow to answer, so a normal launch does not flash a notice.
+ */
+export function useAfter(active: boolean, ms: number) {
+  const [late, setLate] = useState(false);
+  useEffect(() => {
+    if (!active) {
+      setLate(false);
+      return;
+    }
+    const timer = setTimeout(() => setLate(true), ms);
+    return () => clearTimeout(timer);
+  }, [active, ms]);
+  return active && late;
+}
+
+/**
+ * A phone that has not been touched yet (a keyboard is attached, or a test started the app) hands
+ * its first focus to whichever view appears first, and a scroll view scrolls to its focused child:
+ * Home opened half way down the page, on a brand label. Until the customer first touches the
+ * list, a new screen stays at the top.
+ */
+function useOpenAtTop() {
+  const list = useRef<ScrollView>(null);
+  const touched = useRef(false);
+  const [settling, setSettling] = useState(Platform.OS === 'android');
+  useEffect(() => {
+    if (!settling) return;
+    const timer = setTimeout(() => setSettling(false), 2000);
+    return () => clearTimeout(timer);
+  }, [settling]);
+  return {
+    ref: list,
+    onTouchStart: () => {
+      touched.current = true;
+    },
+    onScrollBeginDrag: () => {
+      touched.current = true;
+    },
+    scrollEventThrottle: settling ? 16 : undefined,
+    onScroll: settling
+      ? (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+          if (!touched.current && event.nativeEvent.contentOffset.y > 0)
+            list.current?.scrollTo({ y: 0, animated: false });
+        }
+      : undefined,
+  };
+}
+
+/**
  * Every screen's scroll container. `footer` stays pinned above the tab bar so the screen's
  * main action is always visible without scrolling.
  */
@@ -472,9 +525,11 @@ export function Screen({
   onRefresh?: () => void;
   wide?: boolean;
 }) {
+  const openAtTop = useOpenAtTop();
   return (
     <View style={{ flex: 1 }}>
       <ScrollView
+        {...openAtTop}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={[s.screen, { maxWidth: wide ? 1080 : 720 }]}
         refreshControl={
@@ -529,13 +584,13 @@ export const s = StyleSheet.create({
     height: 96,
     borderRadius: 48,
     borderWidth: 3,
-    borderColor: C.accent,
+    borderColor: C.accentInk,
     alignItems: 'center',
     justifyContent: 'center',
     padding: space.sm,
     transform: [{ rotate: '-11deg' }],
   },
-  codStampText: { color: C.accent, ...teko(18), textAlign: 'center' },
+  codStampText: { color: C.accentInk, ...teko(18), textAlign: 'center' },
   torn: { height: TOOTH / 2, flexDirection: 'row', overflow: 'hidden', pointerEvents: 'none' },
   tooth: { width: TOOTH, height: TOOTH / 2 },
   toothShape: {

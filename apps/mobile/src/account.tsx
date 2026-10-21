@@ -12,7 +12,6 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import * as Notifications from 'expo-notifications';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   addressSchema,
@@ -27,6 +26,9 @@ import {
   type User,
 } from '@shiv/shared';
 import { api, clearLocalSession, saveSession } from './api';
+import { resendSeconds, secondsLeft } from './countdown';
+import { enableOrderPush, pushKeys } from './push';
+import { listenForSignInCode } from './sms';
 import { readSaved, useStore, writeSaved } from './store';
 import {
   Button,
@@ -51,12 +53,40 @@ async function needsName(user: User) {
   return (await readSaved<boolean>(firstRunKeys.nameAsked(user.id)).catch(() => null)) !== true;
 }
 
+/** Whole seconds left until `deadline` (a time in ms), counted down once a second. */
+function useSecondsLeft(deadline: number) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!deadline || Date.now() >= deadline) return;
+    setNow(Date.now());
+    const timer = setInterval(() => {
+      setNow(Date.now());
+      // Nothing left to count: stop waking the phone every second.
+      if (Date.now() >= deadline) clearInterval(timer);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [deadline]);
+  return secondsLeft(deadline, now);
+}
+
 export function Login() {
   const { loginVisible, setLoginVisible, completeLogin, t, say, language } = useStore();
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [sent, setSent] = useState(false);
   const [devCode, setDevCode] = useState('');
+  // When another code may be asked for; the wait stops a double tap from sending two SMS.
+  const [resendAt, setResendAt] = useState(0);
+  const waitSeconds = useSecondsLeft(resendAt);
+  // Android can read the SMS itself when it carries the app's hash; typing stays the fallback.
+  const [autoSubmit, setAutoSubmit] = useState(false);
+  useEffect(() => {
+    if (!sent || !loginVisible) return;
+    return listenForSignInCode((value) => {
+      setCode(value);
+      setAutoSubmit(true);
+    });
+  }, [sent, loginVisible, resendAt]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   // After the code: a new account is asked for a name once (one field, skippable).
@@ -67,6 +97,13 @@ export function Login() {
     if (!loginVisible) {
       setNaming(null);
       setName('');
+      // Closing the sheet cancels the sign-in: no countdown keeps running, and a late SMS cannot
+      // sign anyone in behind the customer's back.
+      setSent(false);
+      setCode('');
+      setDevCode('');
+      setResendAt(0);
+      setAutoSubmit(false);
     }
   }, [loginVisible]);
   async function finishNaming(user: User, save: boolean) {
@@ -102,6 +139,7 @@ export function Login() {
         });
         setDevCode(result.devCode || '');
         setSent(true);
+        setResendAt(Date.now() + resendSeconds * 1000);
       } else {
         const result = await api<{ user: User; accessToken?: string; refreshToken?: string }>(
           '/auth/otp/verify',
@@ -112,9 +150,32 @@ export function Login() {
         setSent(false);
         setCode('');
         setDevCode('');
+        setResendAt(0);
         if (await needsName(user)) setNaming(user);
         else await completeLogin(user);
       }
+    } catch (e) {
+      setError(say(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  useEffect(() => {
+    if (autoSubmit && code.length === 6 && !busy) {
+      setAutoSubmit(false);
+      void submit();
+    }
+  }, [autoSubmit, code, busy]);
+  async function resend() {
+    setBusy(true);
+    setError('');
+    try {
+      const result = await api<{ devCode?: string }>('/auth/otp/request', 'POST', {
+        phone: `+91${phone}`,
+      });
+      setDevCode(result.devCode || '');
+      setCode('');
+      setResendAt(Date.now() + resendSeconds * 1000);
     } catch (e) {
       setError(say(e));
     } finally {
@@ -258,16 +319,32 @@ export function Login() {
                     : t('Get verification code', 'कोड भेजें')}
                 </Button>
                 {sent && (
-                  <Button
-                    kind="quiet"
-                    onPress={() => {
-                      setSent(false);
-                      setCode('');
-                      setDevCode('');
-                    }}
-                  >
-                    {t('Change number or send a new code', 'नंबर बदलें या नया कोड भेजें')}
-                  </Button>
+                  <View style={[s.between, { justifyContent: 'center' }]}>
+                    <Button
+                      kind="quiet"
+                      disabled={busy || waitSeconds > 0}
+                      onPress={() => void resend()}
+                    >
+                      {waitSeconds > 0
+                        ? t(
+                            `Resend code in ${waitSeconds}s`,
+                            `कोड दोबारा भेजें (${waitSeconds} सेकंड)`,
+                          )
+                        : t('Resend code', 'कोड दोबारा भेजें')}
+                    </Button>
+                    <Button
+                      kind="quiet"
+                      disabled={busy}
+                      onPress={() => {
+                        setSent(false);
+                        setCode('');
+                        setDevCode('');
+                        setResendAt(0);
+                      }}
+                    >
+                      {t('Change number', 'नंबर बदलें')}
+                    </Button>
+                  </View>
                 )}
                 <Text style={[s.small, { textAlign: 'center' }]}>
                   {t(
@@ -334,32 +411,26 @@ export function Account() {
       );
       return;
     }
-    try {
-      await Notifications.setNotificationChannelAsync('orders', {
-        name: t('Order updates', 'ऑर्डर की जानकारी'),
-        importance: Notifications.AndroidImportance.DEFAULT,
-      });
-      const permission = await Notifications.requestPermissionsAsync();
-      if (permission.status !== 'granted') {
-        setToast(
-          t(
-            'Notifications are off. You can still see every update in Orders.',
-            'सूचनाएँ बंद हैं। ऑर्डर में हर जानकारी फिर भी दिखेगी।',
-          ),
-        );
-        return;
-      }
-      const token = await Notifications.getDevicePushTokenAsync();
-      await api('/me/devices', 'POST', { token: token.data, platform: 'android' });
-      setToast(t('Order notifications are on', 'ऑर्डर की सूचनाएँ चालू हैं'));
-    } catch {
-      setToast(
-        t(
-          'Notifications are not available in this build yet. Updates are shown in Orders.',
-          'इस ऐप में सूचनाएँ अभी उपलब्ध नहीं हैं। जानकारी ऑर्डर में दिखेगी।',
-        ),
-      );
-    }
+    const result = await enableOrderPush(t('Order updates', 'ऑर्डर की जानकारी'));
+    if (result === 'on' && user) await writeSaved(pushKeys.on(user.id), true).catch(() => {});
+    setToast(
+      result === 'on'
+        ? t('Order notifications are on', 'ऑर्डर की सूचनाएँ चालू हैं')
+        : result === 'denied'
+          ? t(
+              'Notifications are off. You can still see every update in Orders.',
+              'सूचनाएँ बंद हैं। ऑर्डर में हर जानकारी फिर भी दिखेगी।',
+            )
+          : result === 'offline'
+            ? t(
+                'No connection right now. Try again from here when you are online.',
+                'अभी कनेक्शन नहीं है। इंटरनेट आने पर यहीं से फिर कोशिश करें।',
+              )
+            : t(
+                'Notifications are not available in this build yet. Updates are shown in Orders.',
+                'इस ऐप में सूचनाएँ अभी उपलब्ध नहीं हैं। जानकारी ऑर्डर में दिखेगी।',
+              ),
+    );
   }
   function open(url: string) {
     void Linking.openURL(url).catch(() =>

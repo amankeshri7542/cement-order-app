@@ -22,3 +22,8 @@ GoogleService-Info.plist
 # Expo prebuild output (regenerated from app.config.ts; never edited by hand)
 apps/mobile/android/
 apps/mobile/ios/
+
+# Release credentials: never committed. eas submit reads the Play service account from here.
+apps/mobile/play-service-account.json
+*.keystore
+*.jks

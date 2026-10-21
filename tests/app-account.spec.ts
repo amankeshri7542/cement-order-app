@@ -20,7 +20,7 @@ test.afterAll(() => db.$disconnect());
 
 /** Signs a customer in through the API (a second phone) and returns its bearer header. */
 async function apiSession(request: APIRequestContext, phone: string) {
-  // Skip the 60-second wait between codes for one number.
+  // Skip the wait between codes for one number.
   await db.otpChallenge.deleteMany({ where: { phone: `+91${phone}` } });
   const sent = await request.post(`${apiUrl}/auth/otp/request`, { data: { phone: `+91${phone}` } });
   expect(sent.status()).toBe(201);

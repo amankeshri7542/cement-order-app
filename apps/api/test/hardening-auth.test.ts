@@ -194,7 +194,7 @@ describe('F07: staff sign-in does not reveal the passphrase', () => {
   it('locks staff sign-in from one address after ten wrong passphrases, even with the right one', async () => {
     let code = '';
     for (let i = 0; i < 10; i++) {
-      // Five attempts per code: request a fresh one (skipping the 60-second resend wait).
+      // Five attempts per code: request a fresh one (skipping the resend wait).
       if (i % 5 === 0) {
         await db.otpChallenge.deleteMany({ where: { phone: phones.admin } });
         const sent = await otpRequest(phones.admin).expect(201);

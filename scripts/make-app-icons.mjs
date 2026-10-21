@@ -1,24 +1,34 @@
 #!/usr/bin/env node
-// Draws the Android app icon, adaptive-icon layers and splash mark from the shop's "शिव" stamp
-// (the same mark as the website header) and saves them under apps/mobile/assets/.
-// Renders with Google Chrome (as the browser tests do) so the Devanagari is shaped by a real text engine.
+// Draws the Android app icon, adaptive-icon layers, splash mark, the website favicon, the owner
+// desk's install icons and the Play listing graphic from the shop's "शिव" stamp (the same mark as
+// the website header). Renders with Google Chrome (as the browser tests do) so the Devanagari is
+// shaped by a real text engine.
 //
 //   node scripts/make-app-icons.mjs
+//
+// Colours come from the shared palette (packages/shared/src/theme.ts, built to dist), so the
+// icons, the splash and the Play listing graphic move with the rest of the brand. The launcher
+// icon is the master plan's amber square with a navy stamp; the splash is that stamp on paper.
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium } from '@playwright/test';
+import shared from '@shiv/shared';
 
+const { palette } = shared;
 const root = new URL('..', import.meta.url).pathname;
-const out = join(root, 'apps/mobile/assets');
+const app = join(root, 'apps/mobile/assets');
 const store = join(root, 'docs/play-store');
-const ink = '#173345';
-const clay = '#B45438';
-const paper = '#F5F3ED';
+const desk = join(root, 'apps/admin/public');
+const site = join(root, 'apps/storefront/app');
+const amber = palette.accent;
+const navy = palette.ink2;
+const ink = palette.ink;
+const muted = palette.muted;
+const paper = palette.ground;
 const font = "'Kohinoor Devanagari', 'Noto Sans Devanagari', 'Devanagari Sangam MN', sans-serif";
 
-// The stamp: clay block with one large rounded corner (as on the shop signboard), "शिव" in
-// paper white.
-const stamp = (size, x, y, color = clay, text = paper) => {
+// The stamp: a block with one large rounded corner (as on the shop signboard), "शिव" on it.
+const stamp = (size, x, y, color = navy, text = paper) => {
   const w = size;
   const h = size * 1.08;
   const r = size * 0.05;
@@ -31,32 +41,48 @@ const stamp = (size, x, y, color = clay, text = paper) => {
         font-weight="700" font-size="${size * 0.5}" fill="${text}">शिव</text>`;
 };
 
-const images = {
-  // Full launcher icon (legacy and Play listing): ink square with the stamp.
-  'icon.png': [1024, `<rect width="1024" height="1024" fill="${ink}"/>${stamp(600, 212, 188)}`],
-  // Adaptive foreground: the stamp inside the 66% safe zone, transparent around it.
-  'adaptive-icon.png': [1024, stamp(520, 252, 230)],
-  // Themed (monochrome) icon for Android 13+: a single-colour silhouette.
-  'adaptive-monochrome.png': [1024, stamp(520, 252, 230, '#000000', '#FFFFFF')],
-  // Splash mark, shown centred on the ink splash background.
-  'splash-icon.png': [512, stamp(360, 76, 62)],
-  // Google Play feature graphic (1024×500): the signboard with what the app does.
-  'feature-graphic.png': [
-    [1024, 500],
-    `<rect width="1024" height="500" fill="${ink}"/>${stamp(230, 70, 125)}
-     <text x="350" y="205" font-family="${font}" font-weight="700" font-size="74" fill="${paper}">शिव सीमेंट स्टोर</text>
-     <text x="352" y="262" font-family="${font}" font-size="34" fill="#F2B49C">Shiv Cement Store · पटना, बिहार</text>
-     <text x="352" y="340" font-family="${font}" font-weight="700" font-size="38" fill="${paper}">आज के भाव · डिलीवरी पर भुगतान</text>
-     <text x="352" y="390" font-family="${font}" font-size="30" fill="#C9D3D8">Today’s rates · Cash on delivery · Bulk quotes</text>`,
-  ],
+// The full launcher icon at any size: amber square with the navy stamp, laid out as at 1024.
+const launcher = (size) => {
+  const k = size / 1024;
+  return `<rect width="${size}" height="${size}" fill="${amber}"/>${stamp(600 * k, 212 * k, 188 * k)}`;
 };
 
-mkdirSync(out, { recursive: true });
-mkdirSync(store, { recursive: true });
+// [file name, size or [width, height], drawing, folder]
+const images = [
+  // Full launcher icon (legacy and Play listing): amber square with the navy stamp.
+  ['icon.png', 1024, launcher(1024), app],
+  // Adaptive foreground: the stamp inside the 66% safe zone, transparent around it. The
+  // adaptive background colour is the same amber, set in app.json.
+  ['adaptive-icon.png', 1024, stamp(520, 252, 230), app],
+  // Themed (monochrome) icon for Android 13+: a single-colour silhouette.
+  ['adaptive-monochrome.png', 1024, stamp(520, 252, 230, '#000000', '#FFFFFF'), app],
+  // Splash mark, shown centred on the paper splash background.
+  ['splash-icon.png', 512, stamp(360, 76, 62), app],
+  // Owner desk install icons (the web manifest) and the website favicon / touch icon.
+  ['icon-192.png', 192, launcher(192), desk],
+  ['icon-512.png', 512, launcher(512), desk],
+  ['icon.png', 512, launcher(512), site],
+  ['apple-icon.png', 180, launcher(180), site],
+  // Google Play feature graphic (1024×500): the signboard with what the app does.
+  [
+    'feature-graphic.png',
+    [1024, 500],
+    `<rect width="1024" height="500" fill="${paper}"/><rect width="1024" height="16" fill="${amber}"/>
+     <rect y="484" width="1024" height="16" fill="${amber}"/>${stamp(230, 70, 125)}
+     <text x="350" y="205" font-family="${font}" font-weight="700" font-size="74" fill="${ink}">शिव सीमेंट स्टोर</text>
+     <text x="352" y="262" font-family="${font}" font-size="34" fill="${muted}">Shiv Cement Store · पटना, बिहार</text>
+     <text x="352" y="340" font-family="${font}" font-weight="700" font-size="38" fill="${ink}">आज के भाव · डिलीवरी पर भुगतान</text>
+     <text x="352" y="390" font-family="${font}" font-size="30" fill="${muted}">Today’s rates · Cash on delivery · Bulk quotes</text>`,
+    store,
+  ],
+];
+
+for (const folder of new Set(images.map((image) => image[3])))
+  mkdirSync(folder, { recursive: true });
 const browser = await chromium.launch({ channel: 'chrome' });
 try {
   const page = await browser.newPage({ deviceScaleFactor: 1 });
-  for (const [name, [size, body]] of Object.entries(images)) {
+  for (const [name, size, body, folder] of images) {
     const [width, height] = Array.isArray(size) ? size : [size, size];
     await page.setViewportSize({ width, height });
     await page.setContent(
@@ -65,7 +91,6 @@ try {
       </body></html>`,
     );
     await page.evaluate(() => globalThis.document.fonts.ready);
-    const folder = name.startsWith('feature') ? store : out;
     await page.screenshot({ path: join(folder, name), omitBackground: true });
     console.log(join(folder, name).replace(root, ''));
   }

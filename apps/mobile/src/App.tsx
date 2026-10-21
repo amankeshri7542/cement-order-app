@@ -17,6 +17,8 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 import { radius, space, textSize } from '@shiv/shared';
 import { StoreProvider, tabs, useStore, type Route, type Tab } from './store';
+import { cannotReach } from './api';
+import { savedAge } from './age';
 import {
   Button,
   C,
@@ -56,34 +58,36 @@ export default function App() {
   );
 }
 
-function TabScreen({ route }: { route: Route }) {
+// Screens that show one person's own details are keyed by who is signed in, so a screen that stays
+// open while the account changes never shows the previous person's orders, addresses or quotes.
+function TabScreen({ route, who }: { route: Route; who: string }) {
   switch (route.screen) {
     case 'Products':
       return <Catalogue />;
     case 'Cart':
       return <Cart />;
     case 'Orders':
-      return <Orders />;
+      return <Orders key={who} />;
     case 'Account':
-      return <Account />;
+      return <Account key={who} />;
     default:
       return <Home />;
   }
 }
-function DetailScreen({ route }: { route: Route }) {
+function DetailScreen({ route, who }: { route: Route; who: string }) {
   switch (route.screen) {
     case 'Product':
       return <ProductDetail key={route.id} />;
     case 'Checkout':
-      return <Checkout />;
+      return <Checkout key={who} />;
     case 'Order':
-      return <OrderDetail key={route.id} />;
+      return <OrderDetail key={`${route.id}:${who}`} />;
     case 'Addresses':
-      return <Addresses key={route.id || 'all'} />;
+      return <Addresses key={`${route.id || 'all'}:${who}`} />;
     case 'Quotes':
-      return <Quotes />;
+      return <Quotes key={who} />;
     case 'QuoteRequest':
-      return <QuoteRequest key={route.id || 'new'} />;
+      return <QuoteRequest key={`${route.id || 'new'}:${who}`} />;
     case 'Compare':
       return <Compare />;
     case 'Assistant':
@@ -94,6 +98,16 @@ function DetailScreen({ route }: { route: Route }) {
 }
 
 const isTab = (route: Route) => (tabs as readonly string[]).includes(route.screen);
+
+/** The current time, re-read every `ms`. */
+function useNow(ms: number) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), ms);
+    return () => clearInterval(timer);
+  }, [ms]);
+  return now;
+}
 
 function Shell() {
   const {
@@ -112,8 +126,14 @@ function Shell() {
     refreshCurrent,
     refreshing,
     error,
+    online,
+    say,
+    user,
+    catalogSavedAt,
     refreshCatalog,
   } = useStore();
+  // The saved-prices notice counts its age in minutes, so it re-reads the clock now and then.
+  const now = useNow(30000);
   // The last tab stays mounted under detail screens, so Back keeps search and scroll.
   const [tabRoute, setTabRoute] = useState<Route>({ screen: 'Home' });
   useEffect(() => {
@@ -253,10 +273,20 @@ function Shell() {
           <Text style={a.backText}>{t('Back', 'वापस')}</Text>
         </Pressable>
       )}
-      {Boolean(error) && (
+      {(Boolean(error) || !online) && (
         <View accessibilityRole="alert" style={a.offline}>
           <Icon name="cloud-offline-outline" color={C.danger} />
-          <Text style={a.offlineText}>{error}</Text>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={a.offlineLine}>{online ? error : say(cannotReach())}</Text>
+            {catalogSavedAt ? (
+              <Text style={[a.offlineLine, { fontWeight: '700' }]}>
+                {t(
+                  `Showing prices saved ${savedAge(catalogSavedAt, now, 'en')}.`,
+                  `सेव किए गए भाव दिख रहे हैं (${savedAge(catalogSavedAt, now, 'hi')})।`,
+                )}
+              </Text>
+            ) : null}
+          </View>
           <Pressable
             accessibilityRole="button"
             onPress={() => void refreshCatalog()}
@@ -288,11 +318,11 @@ function Shell() {
         style={{ flex: 1, backgroundColor: C.ground }}
       >
         <View style={[{ flex: 1 }, detail ? a.hidden : null]}>
-          <TabScreen route={tabRoute} />
+          <TabScreen route={tabRoute} who={user?.id ?? ''} />
         </View>
         {detail && (
           <View style={{ flex: 1 }}>
-            <DetailScreen route={detail} />
+            <DetailScreen route={detail} who={user?.id ?? ''} />
           </View>
         )}
         {toast ? (
@@ -468,6 +498,7 @@ const a = StyleSheet.create({
     backgroundColor: C.dangerSoft,
   },
   offlineText: { flex: 1, color: C.danger, fontSize: textSize.small, lineHeight: 20 },
+  offlineLine: { color: C.danger, fontSize: textSize.small, lineHeight: 20 },
   pendingText: {
     flex: 1,
     color: C.warn,
@@ -475,7 +506,7 @@ const a = StyleSheet.create({
     lineHeight: 20,
     fontWeight: '700',
   },
-  // Paper tabs on the cement ground; the open tab is ink with a sindoor mark.
+  // Paper tabs on the cement ground; the open tab is ink with an amber mark.
   nav: { flexDirection: 'row', backgroundColor: C.paper, paddingBottom: 6 },
   navItem: { flex: 1, alignItems: 'center', gap: 2, minHeight: 60 },
   navMark: { alignSelf: 'stretch', height: 3, marginHorizontal: space.md, marginBottom: 5 },

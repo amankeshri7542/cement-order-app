@@ -1,0 +1,14 @@
+# One scene, twice: the screen as it is (English), then the same screen in Hindi, then back.
+# Used by store.yaml with env SCENE.
+appId: in.shivcement.store
+---
+- takeScreenshot: store-en-${SCENE}
+- tapOn: Switch language to Hindi
+- extendedWaitUntil:
+    visible: भाषा अंग्रेज़ी में बदलें
+    timeout: 5000
+- takeScreenshot: store-hi-${SCENE}
+- tapOn: भाषा अंग्रेज़ी में बदलें
+- extendedWaitUntil:
+    visible: Switch language to Hindi
+    timeout: 5000

@@ -43,12 +43,17 @@
   },
   "submit": {
     "closed-test": {
-      "android": { "track": "alpha", "releaseStatus": "draft" }
+      "android": {
+        "track": "alpha",
+        "releaseStatus": "draft",
+        "serviceAccountKeyPath": "./play-service-account.json"
+      }
     },
     "production": {
       "android": {
         "track": "internal",
-        "releaseStatus": "draft"
+        "releaseStatus": "draft",
+        "serviceAccountKeyPath": "./play-service-account.json"
       }
     }
   }

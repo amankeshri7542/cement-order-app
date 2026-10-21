@@ -4,6 +4,7 @@ import { createHmac } from 'node:crypto';
 import { z } from 'zod';
 import { collectionSchema, paymentVerifySchema } from '@shiv/shared';
 import { Db } from './db';
+import { notifyCustomer, pushText } from './notify';
 import { getConfig, onlineReady } from './config';
 import { Admin, AuthRequest, Contract, Input, Public, fail, hash, safeEqual } from './http';
 
@@ -214,16 +215,12 @@ export class PaymentsService {
           details: { paymentId: entity.id, amountPaise: entity.amount },
         },
       });
-      await tx.notification.create({
-        data: {
-          userId: payment.order.userId,
-          title: late ? 'Refund required' : 'Payment confirmed',
-          body: late
-            ? 'Your payment arrived after the reservation expired. Contact the store for your refund.'
-            : `Payment for ${payment.order.number} is confirmed.`,
-          orderId: payment.orderId,
-        },
-      });
+      await notifyCustomer(
+        tx,
+        payment.order.userId,
+        pushText(late ? 'refundRequired' : 'paymentConfirmed', { number: payment.order.number }),
+        payment.orderId,
+      );
       return { ok: true };
     });
   }
