@@ -30,7 +30,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const nonce = (await headers()).get('x-nonce') ?? undefined;
   // Hindi is the desk's default; the language switch updates this on the page.
   return (
-    <html lang="hi" className={`${display.variable} ${body.variable}`}>
+    // translate="no": the desk has its own Hindi/English switch, and Chrome's page translation
+    // rewrites text React keeps updating (countdowns flicker between languages).
+    <html lang="hi" translate="no" className={`${display.variable} ${body.variable}`}>
       <body>
         <Script src="/owner-history.js" strategy="beforeInteractive" nonce={nonce} />
         {children}

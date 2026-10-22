@@ -39,8 +39,11 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   // Request-time rendering lets Next attach the per-request CSP nonce to its scripts.
   await connection();
   return (
+    // translate="no": the site has its own Hindi/English switch, and Chrome's page translation
+    // rewrites text React keeps updating, which flickers or breaks it.
     <html
       lang="en"
+      translate="no"
       data-scroll-behavior="smooth"
       className={`${display.variable} ${hand.variable}`}
     >
