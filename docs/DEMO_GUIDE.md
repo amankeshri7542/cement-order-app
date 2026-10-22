@@ -32,7 +32,13 @@ family script with roles for Papa and Chacha is [DEMO_SCRIPT.md](DEMO_SCRIPT.md)
    set -a && . .local/demo/secrets.env && set +a && Z=50047090067.development.catalystappsail.in && VIA_FRONTEND=1 API_ORIGIN=https://api-$Z ADMIN_ORIGIN=https://admin-$Z SHOP_ORIGIN=https://shop-$Z APP_ORIGIN=https://app-$Z node scripts/catalyst-demo/live-test.mjs
    ```
 
-   It signs in twice. Run it at most a few times an hour (sign-in limits below).
+   It signs in twice. Run it at most a few times an hour (sign-in limits below). It leaves test
+   customers and orders behind, so afterwards reset the database to the clean sample data
+   (drops and recreates only `shiv_demo`, about 30 seconds):
+
+   ```bash
+   bash scripts/catalyst-demo/reset-db.sh
+   ```
 
 3. Sign in to the owner desk on the laptop or phone you will hand over, and leave it on **आज**
    (Today).
