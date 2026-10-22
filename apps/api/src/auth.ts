@@ -76,7 +76,7 @@ export class AuthGuard implements CanActivate {
   ) {}
   async canActivate(ctx: ExecutionContext) {
     const req = ctx.switchToHttp().getRequest<AuthRequest>();
-    if (getConfig().OTP_PROVIDER === 'mock' && !directLoopback(req))
+    if (getConfig().OTP_PROVIDER === 'mock' && !getConfig().DEMO_MODE && !directLoopback(req))
       fail('FORBIDDEN', 'Mock authentication is restricted to local loopback requests.', 403);
     // Cookie-authenticated writes require an exact trusted Origin, including login/logout.
     const origin = req.headers.origin;
@@ -178,7 +178,13 @@ export class AuthService {
     return null;
   }
   async request(phone: string) {
-    const code = String(randomInt(100000, 1000000));
+    const c = getConfig();
+    // In a hosted demo every visitor sees mock codes, so staff use a code only the operator knows.
+    const demoStaff =
+      c.DEMO_MODE &&
+      (await this.db.user.findUnique({ where: { phone }, select: { role: true } }))?.role ===
+        'ADMIN';
+    const code = demoStaff ? c.DEMO_STAFF_CODE! : String(randomInt(100000, 1000000));
     const now = new Date();
     await this.db.atomic(async (tx) => {
       const old = await tx.otpChallenge.findUnique({ where: { phone } });
@@ -206,7 +212,7 @@ export class AuthService {
     return {
       sent: true,
       expiresIn: 300,
-      ...(getConfig().OTP_PROVIDER === 'mock'
+      ...(getConfig().OTP_PROVIDER === 'mock' && !demoStaff
         ? { devCode: code, message: 'Development only: no SMS was sent.' }
         : {}),
     };

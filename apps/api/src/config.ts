@@ -9,6 +9,16 @@ export const configSchema = z.object({
   DATABASE_URL: z.string().min(1),
   CORS_ORIGINS: z.string().default('http://localhost:3000,http://localhost:8081'),
   OTP_PROVIDER: z.enum(['mock', 'twilio']).default('mock'),
+  // Hosted demo with fake data only: lets mock OTP run in production behind the host's proxy.
+  DEMO_MODE: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+  // Staff sign-in code while DEMO_MODE is on; it is never shown on screen.
+  DEMO_STAFF_CODE: z
+    .string()
+    .regex(/^\d{6}$/)
+    .optional(),
   CREDIT_OVERRIDE_PHONE: z.union([z.literal(''), z.string().regex(/^\+91[6-9]\d{9}$/)]).default(''),
   STAFF_PASSPHRASE_REQUIRED: z
     .enum(['true', 'false'])
@@ -216,13 +226,13 @@ export function getConfig(): Config {
   }
   if (
     candidate.NODE_ENV === 'production' &&
-    (candidate.OTP_PROVIDER === 'mock' ||
+    ((candidate.OTP_PROVIDER === 'mock' && !candidate.DEMO_MODE) ||
       candidate.CORS_ORIGINS.split(',').some((o) => !o.startsWith('https://')) ||
       /development|change-me|replace|example|placeholder/i.test(candidate.OTP_HASH_SECRET))
   )
     throw new Error('Production requires real OTP, HTTPS origins, and a unique OTP hash secret');
   // Mock OTP displays codes on screen; it must never sit behind a proxy or tunnel.
-  if (candidate.OTP_PROVIDER === 'mock' && candidate.TRUST_PROXY_HOPS > 0)
+  if (candidate.OTP_PROVIDER === 'mock' && !candidate.DEMO_MODE && candidate.TRUST_PROXY_HOPS > 0)
     throw new Error('Mock OTP cannot run behind a trusted proxy (TRUST_PROXY_HOPS must be 0)');
   if (
     candidate.OTP_PROVIDER === 'twilio' &&
@@ -233,6 +243,19 @@ export function getConfig(): Config {
     )
   )
     throw new Error('Twilio Verify configuration is incomplete');
+  // Demo mode exposes sign-in codes, so it must never hold real payments, messages or SMS.
+  if (
+    candidate.DEMO_MODE &&
+    (candidate.OTP_PROVIDER !== 'mock' ||
+      !candidate.DEMO_STAFF_CODE ||
+      candidate.RAZORPAY_KEY_ID ||
+      candidate.RAZORPAY_KEY_SECRET ||
+      candidate.RAZORPAY_WEBHOOK_SECRET ||
+      candidate.WHATSAPP_PROVIDER === 'meta')
+  )
+    throw new Error(
+      'DEMO_MODE requires mock OTP and DEMO_STAFF_CODE, and forbids Razorpay and real WhatsApp',
+    );
   config = candidate;
   return config;
 }
