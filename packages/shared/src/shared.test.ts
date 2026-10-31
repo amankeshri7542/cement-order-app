@@ -31,6 +31,8 @@ import {
   stepUp,
   toMergePayload,
   guestIntentSchema,
+  addressSchema,
+  webEnquirySchema,
 } from './index';
 
 const steel = { minQuantity: 50, quantityStep: 10 };
@@ -168,4 +170,28 @@ test('phone fields keep the right ten digits from pasted and autofilled numbers'
     readFileSync(resolve(root, 'apps/mobile/src/account.tsx'), 'utf8'),
     /maxLength=\{10\}/,
   );
+});
+
+test('addresses and enquiries refuse hidden characters but keep Hindi half-letters', () => {
+  const address = {
+    label: 'Site',
+    name: 'रमेश',
+    phone: '+919876543210',
+    line1: 'Plot 12',
+    area: 'Boring Road',
+    city: 'Patna',
+    state: 'Bihar',
+    pincode: '800001',
+  };
+  assert.equal(addressSchema.safeParse(address).success, true);
+  assert.equal(addressSchema.safeParse({ ...address, landmark: '   ' }).data?.landmark, '');
+  assert.equal(
+    addressSchema.safeParse({ ...address, area: 'Boring Road\n\nURGENT: pay on UPI' }).success,
+    false,
+  );
+  assert.equal(addressSchema.safeParse({ ...address, name: 'Ram\u202Eesh' }).success, false);
+  assert.equal(addressSchema.safeParse({ ...address, name: 'क्\u200Dया' }).success, true);
+  const enquiry = { name: 'क्\u200Cष', phone: '+919876543210', message: 'एक\nदो\tतीन' };
+  assert.equal(webEnquirySchema.safeParse(enquiry).success, true);
+  assert.equal(webEnquirySchema.safeParse({ ...enquiry, message: 'a\u200Bb' }).success, false);
 });

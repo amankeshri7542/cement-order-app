@@ -52,3 +52,13 @@ export async function refreshPushToken(): Promise<void> {
     // Notifications are optional; every update is also in Orders.
   }
 }
+
+/** Clears this app's notifications from the phone's shade (on sign-out, for the next person). */
+export async function dismissNotifications() {
+  if (Platform.OS === 'web') return;
+  try {
+    await Notifications.dismissAllNotificationsAsync();
+  } catch {
+    /* Nothing to clear, or notifications are unavailable in this build. */
+  }
+}

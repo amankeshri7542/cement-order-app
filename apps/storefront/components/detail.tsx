@@ -159,6 +159,12 @@ export function ProductDetail({
               <Freshness connection={connection} checkedAt={checkedAt} busy={busy} />
               <BuyActions product={product} />
               <AskAbout id={product.id} name={product.name} />
+              <Link
+                className="text-link"
+                href={`/contact?interest=${encodeURIComponent(product.name)}#enquiry`}
+              >
+                {t('Send an enquiry to the shop', 'दुकान को पूछताछ भेजें')}
+              </Link>
               <dl className="spec-grid">
                 <div>
                   <dt>{t('Selling unit', 'बिक्री इकाई')}</dt>

@@ -1,7 +1,7 @@
 /* global window, document, PerformanceObserver */
 // Mobile Lighthouse for the website's production build, with real catalogue data.
 //
-//   node scripts/shots/lighthouse.mjs <output.json> [runs=3]
+//   [LH_PATH=/about] node scripts/shots/lighthouse.mjs <output.json> [runs=3]
 //
 // Run scripts/shots/prepare.mjs demo first. A production build refuses a plain-http API, so this
 // serves the test API (NODE_ENV=test, the demo database) through a throwaway self-signed HTTPS
@@ -118,6 +118,10 @@ try {
     NEXT_PUBLIC_API_URL: 'https://localhost:4443/api/v1',
     NEXT_PUBLIC_ASSET_ORIGIN: 'https://assets.example.invalid',
     NEXT_DIST_DIR: '.next-lighthouse',
+    // As the site will be once the owner switches indexing on, so the SEO checks see a page that
+    // may be indexed (the address is only used in canonical links).
+    SITE_URL: 'https://localhost',
+    SITE_INDEXING: 'on',
   };
   const built = spawnSync(
     'npm',
@@ -128,7 +132,9 @@ try {
   const site = spawn(
     'npm',
     ['exec', '-w', '@shiv/storefront', '--', 'next', 'start', '--port', '3031'],
-    { env: { ...env, NODE_ENV: 'production' }, stdio: 'ignore' },
+    // The website's server also reads the API (material pages are written on the server), and
+    // here that API sits behind the throwaway self-signed certificate, so the server must accept it.
+    { env: { ...env, NODE_ENV: 'production', NODE_TLS_REJECT_UNAUTHORIZED: '0' }, stdio: 'ignore' },
   );
   children.push(site);
   await waitFor('http://localhost:3031/');
@@ -200,6 +206,15 @@ try {
     pageHeight: document.documentElement.scrollHeight,
   }));
   await viewer.close();
+  // What the server itself wrote for the measured page, before any script runs.
+  const written = await fetch(`http://localhost:3031${process.env.LH_PATH || '/'}`).then((r) =>
+    r.text(),
+  );
+  production.writtenByServer = {
+    description: /<meta name="description"/.test(written),
+    structuredData: written.includes('application/ld+json'),
+    title: /<title>([^<]*)<\/title>/.exec(written)?.[1] ?? '',
+  };
 
   // 4. Lighthouse, mobile defaults, a few runs; the median run is kept.
   const results = [];
@@ -212,11 +227,11 @@ try {
         [
           '--yes',
           'lighthouse@12',
-          'http://localhost:3031/',
+          `http://localhost:3031${process.env.LH_PATH || '/'}`,
           '--quiet',
           '--output=json',
           `--output-path=${file}`,
-          '--only-categories=performance,accessibility,best-practices',
+          '--only-categories=performance,accessibility,best-practices,seo',
           '--chrome-flags=--headless=new --ignore-certificate-errors',
         ],
         { stdio: 'ignore' },
@@ -232,6 +247,10 @@ try {
       performance: Math.round(report.categories.performance.score * 100),
       accessibility: Math.round(report.categories.accessibility.score * 100),
       bestPractices: Math.round(report.categories['best-practices'].score * 100),
+      seo: Math.round(report.categories.seo.score * 100),
+      failedSeo: Object.values(report.audits)
+        .filter((a) => a.score === 0 && report.categories.seo.auditRefs.some((r) => r.id === a.id))
+        .map((a) => a.id),
       fcpMs: Math.round(audit('first-contentful-paint')),
       lcpMs: Math.round(audit('largest-contentful-paint')),
       tbtMs: Math.round(audit('total-blocking-time')),

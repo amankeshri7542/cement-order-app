@@ -29,6 +29,7 @@ import { ReportsController } from './reports';
 import { KhataController, KhataService } from './khata';
 import { PhoneOrdersController, PhoneOrdersService } from './phone-orders';
 import { CurrentRatesController } from './current-rates';
+import { WebEnquiriesController } from './web-enquiries';
 
 @Controller('health')
 class HealthController {
@@ -86,6 +87,7 @@ class HealthController {
     KhataController,
     PhoneOrdersController,
     CurrentRatesController,
+    WebEnquiriesController,
   ],
   providers: [
     AssistantService,

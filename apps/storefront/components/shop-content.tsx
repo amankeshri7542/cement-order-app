@@ -36,9 +36,9 @@ function ApprovedImage({ src, alt }: { src: string; alt: string }) {
   if (!approvedSrc(src)) return null;
   return <img src={src} alt={alt} width={640} height={480} loading="lazy" decoding="async" />;
 }
-export function ShopContent() {
-  const { t, language } = useLanguage();
-  const [shop, setShop] = useState<z.infer<typeof shopSchema> | null>(null);
+type Shop = z.infer<typeof shopSchema>;
+function useShop() {
+  const [shop, setShop] = useState<Shop | null>(null);
   useEffect(() => {
     let active = true;
     void publicGet('/shop-content', shopSchema)
@@ -50,16 +50,106 @@ export function ShopContent() {
       active = false;
     };
   }, []);
+  return shop;
+}
+/** Where and how to reach the shop: address and hours, call, WhatsApp, directions, quotes. */
+function VisitSection({ shop, enquiry = true }: { shop: Shop | null; enquiry?: boolean }) {
+  const { t } = useLanguage();
   const phone = shop?.contactApproved && /^\+91[6-9]\d{9}$/.test(shop.phone) ? shop.phone : null;
   const whatsapp =
     shop?.contactApproved && /^\+91[6-9]\d{9}$/.test(shop.whatsapp) ? shop.whatsapp : null;
-  const hasGallery = Boolean(
-    shop && (shop.family.length || shop.gallery.length || shop.credentials.length),
-  );
   const directions =
     shop?.contactApproved && /^https:\/\/(www\.)?google\.com\/maps\//.test(shop.directionsUrl)
       ? shop.directionsUrl
       : null;
+  return (
+    <section className="visit-section" id="visit">
+      <div>
+        {shop?.contactApproved ? (
+          <>
+            <h2>{t('Your shop in Patna.', 'पटना में आपकी दुकान।')}</h2>
+            <p>{shop.address}</p>
+            <p>{shop.hours}</p>
+          </>
+        ) : (
+          <>
+            <h2>{t('Talk it through first.', 'पहले बात कर लें।')}</h2>
+            <p>
+              {t(
+                'Ask about a material, its selling unit or delivery. Shiv Assistant answers from the current catalogue and the shop’s written terms. For a site list, a bulk quote gets a written reply.',
+                'किसी सामग्री, उसकी बिक्री इकाई या डिलीवरी के बारे में पूछें। शिव सहायक मौजूदा सूची और दुकान की लिखित शर्तों से जवाब देता है। साइट की सूची के लिए थोक भाव माँगें, जवाब लिखित में मिलेगा।',
+              )}
+            </p>
+          </>
+        )}
+        {!shop?.contactApproved && (
+          <ReviewNote>
+            Address, visiting hours, call/WhatsApp numbers and directions stay hidden until the
+            family confirms them and sets <code>contactApproved: true</code>.
+          </ReviewNote>
+        )}
+      </div>
+      <div className="visit-actions">
+        {/* Only an approved number is printed, in the shop's large counter type. */}
+        {phone && (
+          <p className="shop-phone" lang="en">
+            {phone.slice(3, 8)} {phone.slice(8)}
+          </p>
+        )}
+        {phone && (
+          <a className="button" href={`tel:${phone}`}>
+            {t('Call the shop', 'दुकान पर फ़ोन करें')}
+          </a>
+        )}
+        {whatsapp && (
+          <a
+            className="button secondary"
+            href={`https://wa.me/${whatsapp.slice(1)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            WhatsApp ↗
+          </a>
+        )}
+        {directions && (
+          <a className="text-link" href={directions} target="_blank" rel="noopener noreferrer">
+            {t('Open directions in Google Maps', 'Google Maps में रास्ता खोलें')} ↗
+          </a>
+        )}
+        {!phone && (
+          <button
+            className="button"
+            onClick={(event) => {
+              event.currentTarget.focus();
+              window.dispatchEvent(new CustomEvent('shiv-ask-material', { detail: null }));
+            }}
+          >
+            <span aria-hidden="true">✳</span> {t('Ask a question', 'सवाल पूछें')}
+          </button>
+        )}
+        {enquiry && (
+          <Link className="button secondary" href="/contact#enquiry">
+            {t('Send an enquiry', 'पूछताछ भेजें')}
+          </Link>
+        )}
+        <Link className="button secondary" href="/quotes">
+          {t('Request bulk quote', 'थोक भाव माँगें')}
+        </Link>
+      </div>
+    </section>
+  );
+}
+/** The visit block on its own, for the Contact page (which has the enquiry form below it). */
+export function ShopContact() {
+  const shop = useShop();
+  return <VisitSection shop={shop} enquiry={false} />;
+}
+export function ShopContent() {
+  const { t, language } = useLanguage();
+  const shop = useShop();
+  const hasGallery = Boolean(
+    shop && (shop.family.length || shop.gallery.length || shop.credentials.length),
+  );
   const cover = shop?.gallery.find((item) => approvedSrc(item.image));
   return (
     <>
@@ -138,75 +228,7 @@ export function ShopContent() {
           )}
         </div>
       </section>
-      <section className="visit-section" id="visit">
-        <div>
-          {shop?.contactApproved ? (
-            <>
-              <h2>{t('Your shop in Patna.', 'पटना में आपकी दुकान।')}</h2>
-              <p>{shop.address}</p>
-              <p>{shop.hours}</p>
-            </>
-          ) : (
-            <>
-              <h2>{t('Talk it through first.', 'पहले बात कर लें।')}</h2>
-              <p>
-                {t(
-                  'Ask about a material, its selling unit or delivery. Shiv Assistant answers from the current catalogue and the shop’s written terms. For a site list, a bulk quote gets a written reply.',
-                  'किसी सामग्री, उसकी बिक्री इकाई या डिलीवरी के बारे में पूछें। शिव सहायक मौजूदा सूची और दुकान की लिखित शर्तों से जवाब देता है। साइट की सूची के लिए थोक भाव माँगें, जवाब लिखित में मिलेगा।',
-                )}
-              </p>
-            </>
-          )}
-          {!shop?.contactApproved && (
-            <ReviewNote>
-              Address, visiting hours, call/WhatsApp numbers and directions stay hidden until the
-              family confirms them and sets <code>contactApproved: true</code>.
-            </ReviewNote>
-          )}
-        </div>
-        <div className="visit-actions">
-          {/* Only an approved number is printed, in the shop's large counter type. */}
-          {phone && (
-            <p className="shop-phone" lang="en">
-              {phone.slice(3, 8)} {phone.slice(8)}
-            </p>
-          )}
-          {phone && (
-            <a className="button" href={`tel:${phone}`}>
-              {t('Call the shop', 'दुकान पर फ़ोन करें')}
-            </a>
-          )}
-          {whatsapp && (
-            <a
-              className="button secondary"
-              href={`https://wa.me/${whatsapp.slice(1)}`}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              WhatsApp ↗
-            </a>
-          )}
-          {directions && (
-            <a className="text-link" href={directions} target="_blank" rel="noopener noreferrer">
-              {t('Open directions in Google Maps', 'Google Maps में रास्ता खोलें')} ↗
-            </a>
-          )}
-          {!phone && (
-            <button
-              className="button"
-              onClick={(event) => {
-                event.currentTarget.focus();
-                window.dispatchEvent(new CustomEvent('shiv-ask-material', { detail: null }));
-              }}
-            >
-              <span aria-hidden="true">✳</span> {t('Ask a question', 'सवाल पूछें')}
-            </button>
-          )}
-          <Link className="button secondary" href="/quotes">
-            {t('Request bulk quote', 'थोक भाव माँगें')}
-          </Link>
-        </div>
-      </section>
+      <VisitSection shop={shop} />
     </>
   );
 }

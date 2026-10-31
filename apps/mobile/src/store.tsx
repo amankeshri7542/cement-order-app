@@ -45,7 +45,7 @@ import {
   setNetworkState,
 } from './api';
 import { cacheKeys, clearCache, readCache, writeCache } from './cache';
-import { pushKeys, refreshPushToken } from './push';
+import { dismissNotifications, pushKeys, refreshPushToken } from './push';
 import { tap } from './feedback';
 import { liveStream } from './live';
 export type { Language };
@@ -950,6 +950,8 @@ function useStoreValue() {
     try {
       // On a phone this forgets the session at once, even with no signal.
       await logout();
+      // The previous customer's order notifications leave the shade with them.
+      void dismissNotifications();
       sessionUnknown.current = false;
       // The saved copy of this customer's orders goes with the session.
       void clearCache((key) => key.startsWith('orders:'));

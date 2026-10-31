@@ -153,6 +153,38 @@ afterAll(async () => {
 });
 
 describe('Phone orders and khata against PostgreSQL', () => {
+  it('never sends a customer the owner’s private notes about them', async () => {
+    await request(server)
+      .patch('/api/v1/admin/customers/customer')
+      .set(auth())
+      .send({ area: 'Danapur', tags: ['late payer'] })
+      .expect(200);
+    const responses = [
+      await request(server).get('/api/v1/me').set(auth('customer')).expect(200),
+      await request(server).get('/api/v1/auth/session').set(auth('customer')).expect(200),
+      await request(server)
+        .patch('/api/v1/me')
+        .set(auth('customer'))
+        .send({ name: 'Customer', language: 'hi' })
+        .expect(200),
+    ];
+    for (const response of responses) {
+      const text = JSON.stringify(response.body);
+      for (const field of [
+        'tags',
+        'area',
+        'creditAllowed',
+        'creditLimitPaise',
+        'khataBalancePaise',
+        'notesCount',
+        'staffTitle',
+      ])
+        expect(text).not.toContain(`"${field}"`);
+      expect(text).not.toContain('late payer');
+      expect(text).toContain('"phone"');
+    }
+  });
+
   it('protects all new routes from customers and anonymous requests', async () => {
     const paths = [
       ['post', 'orders/phone'],

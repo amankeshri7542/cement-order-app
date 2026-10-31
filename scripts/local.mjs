@@ -234,12 +234,12 @@ if (command === 'setup') {
     },
     admin: { NEXT_PUBLIC_API_URL: apiUrl },
     customer: { EXPO_PUBLIC_API_URL: apiUrl },
-    storefront: { NEXT_PUBLIC_API_URL: apiUrl },
+    storefront: { NEXT_PUBLIC_API_URL: apiUrl, SITE_URL: `http://localhost:${ports.storefront}` },
   };
   const cleanEnv = Object.fromEntries(
     Object.entries(process.env).filter(
       ([key]) =>
-        !/^(DATABASE_URL|TEST_DATABASE_URL|NODE_ENV|PORT|OTP_|CORS_|TRUST_PROXY_|TWILIO_|RAZORPAY_|R2_|FIREBASE_|GOOGLE_VISION_|OPENAI_|RATE_|NEXT_PUBLIC_|EXPO_PUBLIC_|NEXT_DIST_DIR)/.test(
+        !/^(DATABASE_URL|TEST_DATABASE_URL|NODE_ENV|PORT|OTP_|CORS_|TRUST_PROXY_|TWILIO_|RAZORPAY_|R2_|FIREBASE_|GOOGLE_VISION_|OPENAI_|RATE_|NEXT_PUBLIC_|EXPO_PUBLIC_|NEXT_DIST_DIR|SITE_)/.test(
           key,
         ),
     ),

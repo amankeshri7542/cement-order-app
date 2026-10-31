@@ -26,7 +26,7 @@ import {
 import { clientIp } from './abuse';
 import { Db } from './db';
 import { Lifecycle } from './lifecycle';
-import { Admin, AuthRequest, Contract, Input, Public, fail } from './http';
+import { Admin, AuthRequest, Contract, Input, Public, accountView, fail } from './http';
 import { paginate } from './pagination';
 import { moveStock, pastBalance } from './inventory';
 import { getConfig, onlineReady } from './config';
@@ -341,12 +341,15 @@ export class CatalogController {
 export class AccountController {
   constructor(@Inject(Db) private db: Db) {}
   @Get() me(@Req() req: AuthRequest) {
-    return req.user;
+    return accountView(req.user);
   }
   @Patch()
   @Contract(profileSchema)
-  profile(@Input(profileSchema) body: z.infer<typeof profileSchema>, @Req() req: AuthRequest) {
-    return this.db.user.update({
+  async profile(
+    @Input(profileSchema) body: z.infer<typeof profileSchema>,
+    @Req() req: AuthRequest,
+  ) {
+    const user = await this.db.user.update({
       where: { id: req.user.id },
       data: {
         name: body.name,
@@ -356,6 +359,7 @@ export class AccountController {
           : {}),
       },
     });
+    return accountView(user);
   }
   @Get('addresses') addresses(@Req() req: AuthRequest) {
     return this.db.address.findMany({

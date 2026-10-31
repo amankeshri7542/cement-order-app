@@ -52,7 +52,15 @@ export async function enqueueWhatsApp(
       channel: 'WHATSAPP',
       recipient,
       template: message.template,
-      params: message.params.map((value) => value.slice(0, 120)),
+      // WhatsApp refuses template values with new lines, tabs or long runs of spaces, and a value
+      // built from customer text must stay one plain line inside the shop's own alert.
+      params: message.params.map((value) =>
+        value
+          .replace(/\s+/g, ' ')
+          .replace(/[^\P{C}\u200C\u200D]/gu, '')
+          .trim()
+          .slice(0, 120),
+      ),
       dedupeKey: message.dedupeKey,
     },
   });

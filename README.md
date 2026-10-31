@@ -1,8 +1,10 @@
 # Shiv Cement Store
 
 Master Plan v2 (20 October 2026): [Phase 1 phone orders and khata](docs/MASTER_PLAN_PHASE1.md)
-and [Phase 2 owner dashboard](docs/MASTER_PLAN_PHASE2.md) implement the Hindi owner workflow.
-The earlier reports below use the previous roadmap numbering. Nothing is deployed and online
+and [Phase 2 owner dashboard](docs/MASTER_PLAN_PHASE2.md) implement the Hindi owner workflow;
+[Phase 3](docs/MASTER_PLAN_PHASE3.md) prepares the customer app for the Play Store and
+[Phase 4](docs/MASTER_PLAN_PHASE4.md) completes the public website (with its security review).
+What only the family can do is in [manual tasks](docs/MANUAL_TASKS.md). The earlier reports below use the previous roadmap numbering. Nothing is deployed and online
 payments remain off. Account setup and physical-phone acceptance remain in the
 [operator checklist](docs/OPERATOR_CHECKLIST.md) and [release checklist](docs/RELEASE_CHECKLIST.md).
 

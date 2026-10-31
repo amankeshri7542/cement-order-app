@@ -46,6 +46,20 @@ export function phoneDigits(value: string) {
   return localPhone(value).replace(/\D/g, '').slice(0, 10);
 }
 const text = (max = 200) => z.string().trim().min(1).max(max);
+// Letters, digits, punctuation, spaces (and new lines and tabs where asked) only: no control,
+// direction-override or zero-width characters that could disguise a name or number on the owner's
+// screen. The zero-width joiner and non-joiner (U+200C, U+200D) stay allowed: Hindi keyboards type
+// them to choose a half-letter form, as in क्या (क्, U+200D, या).
+const plainText = (max: number, lines = false) =>
+  z
+    .string()
+    .trim()
+    .min(1)
+    .max(max)
+    .refine(
+      (value) => !(lines ? /[^\P{C}\n\t\u200C\u200D]/u : /[^\P{C}\u200C\u200D]/u).test(value),
+      'Remove special characters',
+    );
 const paise = z.number().int().min(0).max(100_000_000);
 const id = z.string().min(1).max(100);
 // An optional translation: blank clears it (null), leaving the field out keeps the saved text.
@@ -69,16 +83,23 @@ export const profileSchema = z.strictObject({
   language: z.enum(['en', 'hi']),
   contractor: z.boolean().optional(),
 });
+// Address text is shown to the owner and goes into the shop's WhatsApp alerts, so it is held to
+// plain text like an enquiry.
 export const addressSchema = z.strictObject({
-  label: text(40),
-  name: text(100),
+  label: plainText(40),
+  name: plainText(100),
   phone: phoneSchema,
-  line1: text(250),
-  area: text(120),
-  city: text(100),
+  line1: plainText(250),
+  area: plainText(120),
+  city: plainText(100),
   state: z.literal('Bihar'),
   pincode: z.string().regex(/^\d{6}$/),
-  landmark: z.string().trim().max(200).default(''),
+  landmark: z
+    .string()
+    .trim()
+    .max(200)
+    .refine((value) => !/[^\P{C}\u200C\u200D]/u.test(value), 'Remove special characters')
+    .default(''),
 });
 export const cartItemSchema = z.strictObject({
   productId: id,
@@ -614,6 +635,21 @@ export const customerContactSchema = z.strictObject({
   channel: z.enum(['CALL', 'WHATSAPP']),
   purpose: z.string().trim().min(1).max(500),
 });
+
+/** A question from the website's Contact page. `website` is a honeypot that people never fill. */
+export const webEnquirySchema = z.strictObject({
+  name: plainText(80),
+  phone: phoneSchema,
+  pincode: z
+    .string()
+    .regex(/^[1-9]\d{5}$/, 'Enter a 6-digit pincode')
+    .optional(),
+  interest: plainText(200).optional(),
+  message: plainText(1000, true),
+  language: z.enum(['hi', 'en']).default('hi'),
+  website: z.string().max(500).optional(),
+});
+export type WebEnquiryInput = z.infer<typeof webEnquirySchema>;
 
 export function khataBalance(balancePaise: number, amountPaise: number): number {
   const next = balancePaise + amountPaise;

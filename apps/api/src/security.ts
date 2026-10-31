@@ -57,15 +57,31 @@ export async function assertSession(
     fail('UNAUTHORIZED', 'Verify your staff passphrase to continue.', 401);
 }
 
+/** Whose number a code is for: an owner, a customer with an account, or a number never seen. */
+export type OtpTier = 'owner' | 'known' | 'new';
+export async function otpTier(db: Pick<Prisma.TransactionClient, 'user'>, phone: string) {
+  const user = await db.user.findUnique({ where: { phone }, select: { role: true } });
+  return !user ? 'new' : user.role === 'ADMIN' ? 'owner' : 'known';
+}
+
 /**
  * Store-wide daily OTP budget. Callers charge it only after the per-IP limit (limitOtp) and the
  * per-phone checks pass, so one client's rejected requests cannot switch sign-in off for everyone.
+ * Numbers never seen before share one budget and existing customers have their own, so a flood of
+ * codes to made-up numbers cannot lock out the shop's customers. Owners' numbers are not counted
+ * at all (each is still held to five codes an hour), so the shop can always sign in. The worst-case
+ * SMS spend is therefore about twice the configured daily figure.
  */
-export async function otpBudget(tx: Prisma.TransactionClient, action: 'send' | 'verify') {
+export async function otpBudget(
+  tx: Prisma.TransactionClient,
+  action: 'send' | 'verify',
+  tier: OtpTier,
+) {
+  if (tier === 'owner') return;
   const c = getConfig();
   await budget(
     tx,
-    `otp:${action}:global`,
+    tier === 'known' ? `otp:${action}:known` : `otp:${action}:global`,
     'store',
     action === 'send' ? c.OTP_SENDS_PER_DAY : c.OTP_CHECKS_PER_DAY,
     86400000,

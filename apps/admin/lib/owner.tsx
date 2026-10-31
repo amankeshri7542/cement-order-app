@@ -463,6 +463,7 @@ function useLiveOrders(enabled: boolean) {
       lastRefresh = Date.now();
       void client.invalidateQueries({ queryKey: ['dashboard'] });
       void client.invalidateQueries({ queryKey: ['orders', 'list'] });
+      void client.invalidateQueries({ queryKey: ['enquiries'] });
     };
     const open = () => {
       if (stopped || !navigator.onLine) return;

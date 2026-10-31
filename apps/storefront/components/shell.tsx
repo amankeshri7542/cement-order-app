@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useLanguage } from './language';
 import { useCommerce } from './commerce';
 import { AssistantLauncher } from './assistant-launcher';
+import { playUrl } from '../lib/play';
 
 export function Header() {
   const { language, setLanguage, t } = useLanguage();
@@ -41,7 +42,11 @@ export function Header() {
             >
               {t('Materials', 'सामग्री')}
             </Link>
-            <Link href="/quotes">{t('Bulk quotes', 'थोक भाव')}</Link>
+            {/* "Quotes" here (the footer says "Bulk quotes") so five links fit one row on a phone. */}
+            <Link href="/quotes">{t('Quotes', 'थोक भाव')}</Link>
+            <Link href="/contact" aria-current={pathname === '/contact' ? 'page' : undefined}>
+              {t('Contact', 'संपर्क')}
+            </Link>
             <Link href="/account">{c.user ? t('Account', 'खाता') : t('Sign in', 'साइन इन')}</Link>
             <Link href="/cart" className="header-basket">
               {t('Basket', 'टोकरी')}{' '}
@@ -98,6 +103,20 @@ export function Footer() {
           </Link>
           <Link href="/cart">{t('Basket', 'टोकरी')}</Link>
           <Link href="/orders">{t('Orders', 'ऑर्डर')}</Link>
+        </nav>
+        <nav aria-label={t('About the shop', 'दुकान के बारे में')}>
+          <h2>{t('About the shop', 'जानकारी')}</h2>
+          <Link href="/about">{t('About', 'परिचय')}</Link>
+          <Link href="/delivery">{t('Delivery', 'डिलीवरी')}</Link>
+          <Link href="/contact">{t('Contact', 'संपर्क')}</Link>
+          {playUrl ? (
+            <a href={playUrl} target="_blank" rel="noopener noreferrer">
+              {t('Get the app on Google Play', 'Google Play पर ऐप पाएँ')} ↗
+            </a>
+          ) : null}
+          <Link href="/privacy">{t('Privacy', 'निजता')}</Link>
+          <Link href="/terms">{t('Terms', 'शर्तें')}</Link>
+          <Link href="/delete-account">{t('Delete account', 'खाता हटाएँ')}</Link>
         </nav>
         <div className="footer-terms">
           <h2>{t('How payment works', 'भुगतान कैसे होता है')}</h2>

@@ -6,9 +6,18 @@ export class CustomerError extends Error {
     readonly code: string,
     message: string,
     readonly status = 0,
+    /** For INVALID_INPUT: which fields the store refused, as [{ field, message }]. */
+    readonly details?: unknown,
   ) {
     super(message);
   }
+}
+/** The fields the store refused in a 400 INVALID_INPUT answer. */
+export function refusedFields(error: unknown): string[] {
+  if (!(error instanceof CustomerError) || !Array.isArray(error.details)) return [];
+  return error.details
+    .map((item) => (item && typeof item === 'object' ? (item as { field?: unknown }).field : null))
+    .filter((field): field is string => typeof field === 'string');
 }
 let refreshing: Promise<void> | null = null;
 export async function customerApi<T>(
@@ -63,6 +72,7 @@ export async function customerApi<T>(
       data?.error?.code || 'REQUEST_FAILED',
       data?.error?.message || 'Could not complete the request.',
       response.status,
+      data?.error?.details,
     );
   }
   if (data === null || typeof data !== 'object')

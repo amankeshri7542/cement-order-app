@@ -24,6 +24,7 @@ import { OwnerWorkService } from './owner-work';
 import { AlertsService } from './alerts';
 import { istToday } from '@shiv/shared';
 import { KhataService } from './khata';
+import { purgeEnquiries } from './web-enquiries';
 
 @Injectable()
 export class Maintenance implements OnModuleInit, OnModuleDestroy {
@@ -129,6 +130,7 @@ export class Maintenance implements OnModuleInit, OnModuleDestroy {
             data: { status: 'EXPIRED' },
           }),
       ],
+      ['enquiries', () => purgeEnquiries(this.db)],
       [
         'sessions',
         () => this.db.session.deleteMany({ where: { refreshExpiresAt: { lt: new Date() } } }),

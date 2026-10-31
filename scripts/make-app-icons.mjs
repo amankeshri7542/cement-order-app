@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Draws the Android app icon, adaptive-icon layers, splash mark, the website favicon, the owner
-// desk's install icons and the Play listing graphic from the shop's "शिव" stamp (the same mark as
+// desk's install icons, the website's link-preview picture and the Play listing graphic from the shop's "शिव" stamp (the same mark as
 // the website header). Renders with Google Chrome (as the browser tests do) so the Devanagari is
 // shaped by a real text engine.
 //
@@ -63,6 +63,18 @@ const images = [
   ['icon-512.png', 512, launcher(512), desk],
   ['icon.png', 512, launcher(512), site],
   ['apple-icon.png', 180, launcher(180), site],
+  // The picture that shows when a page of the website is shared (Open Graph, 1200×630).
+  [
+    'opengraph-image.png',
+    [1200, 630],
+    `<rect width="1200" height="630" fill="${paper}"/><rect width="1200" height="20" fill="${amber}"/>
+     <rect y="610" width="1200" height="20" fill="${amber}"/>${stamp(300, 90, 150)}
+     <text x="450" y="260" font-family="${font}" font-weight="700" font-size="92" fill="${ink}">शिव सीमेंट स्टोर</text>
+     <text x="452" y="330" font-family="${font}" font-size="40" fill="${muted}">Shiv Cement Store · पटना, बिहार</text>
+     <text x="452" y="430" font-family="${font}" font-weight="700" font-size="44" fill="${ink}">सीमेंट · सरिया · ईंट · बालू · गिट्टी</text>
+     <text x="452" y="490" font-family="${font}" font-size="34" fill="${muted}">Cement · Steel · Bricks · Sand · Stone chips</text>`,
+    site,
+  ],
   // Google Play feature graphic (1024×500): the signboard with what the app does.
   [
     'feature-graphic.png',

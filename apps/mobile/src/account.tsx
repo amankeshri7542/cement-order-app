@@ -79,10 +79,17 @@ export function Login() {
   const [resendAt, setResendAt] = useState(0);
   const waitSeconds = useSecondsLeft(resendAt);
   // Android can read the SMS itself when it carries the app's hash; typing stays the fallback.
+  // Only the first code read for each request is used. On Android 7-12 another app can fake the
+  // SMS broadcast, and five fake codes would use up every check the store allows for one code; this
+  // way a fake costs one check at most and the customer can still type the real code.
   const [autoSubmit, setAutoSubmit] = useState(false);
+  const autoRead = useRef(false);
   useEffect(() => {
     if (!sent || !loginVisible) return;
+    autoRead.current = false;
     return listenForSignInCode((value) => {
+      if (autoRead.current) return;
+      autoRead.current = true;
       setCode(value);
       setAutoSubmit(true);
     });

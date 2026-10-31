@@ -1778,6 +1778,41 @@ describe('security hardening concurrency and recovery', () => {
       c.OTP_SENDS_PER_DAY = old;
     }
   });
+  it('keeps sign-in open for owners and existing customers when unknown numbers use up the budget', async () => {
+    const { getConfig } = await import('../src/config');
+    const c = getConfig();
+    const old = c.OTP_SENDS_PER_DAY;
+    c.OTP_SENDS_PER_DAY = 2;
+    try {
+      for (let i = 0; i < 2; i++)
+        await request(server)
+          .post('/api/v1/auth/otp/request')
+          .send({ phone: `+91977777777${i}` })
+          .expect(201);
+      await request(server)
+        .post('/api/v1/auth/otp/request')
+        .send({ phone: '+919777777779' })
+        .expect(429);
+      // The customer has an account; the admin is an owner and is never counted.
+      const customer = await request(server)
+        .post('/api/v1/auth/otp/request')
+        .send({ phone: '+919999999991' })
+        .expect(201);
+      await request(server)
+        .post('/api/v1/auth/otp/verify')
+        .send({ phone: '+919999999991', code: customer.body.devCode })
+        .expect(201);
+      await request(server)
+        .post('/api/v1/auth/otp/request')
+        .send({ phone: '+919999999993' })
+        .expect(201);
+      expect(
+        await db.authRateLimit.count({ where: { key: { startsWith: 'budget:otp:send:known:' } } }),
+      ).toBe(1);
+    } finally {
+      c.OTP_SENDS_PER_DAY = old;
+    }
+  });
   it('holds resource concurrency across DB clients and honours emergency switches', async () => {
     const { leased } = await import('../src/abuse');
     const { getConfig } = await import('../src/config');

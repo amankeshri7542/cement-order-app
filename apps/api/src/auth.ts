@@ -23,12 +23,23 @@ import { z } from 'zod';
 import { otpRequestSchema, otpResendSeconds, otpVerifySchema, refreshSchema } from '@shiv/shared';
 import { Db } from './db';
 import { getConfig } from './config';
-import { AuthRequest, Contract, Input, Public, cookie, fail, hash, safeEqual } from './http';
+import {
+  AuthRequest,
+  Contract,
+  Input,
+  Public,
+  accountView,
+  cookie,
+  fail,
+  hash,
+  safeEqual,
+} from './http';
 import {
   assertSession,
   assertStaffAttempts,
   limitOtp,
   otpBudget,
+  otpTier,
   recordStaffFailure,
   refreshLifetime,
   verifyPassword,
@@ -194,7 +205,7 @@ export class AuthService {
           (now.getTime() - old.windowStart.getTime() < 3600000 && old.sends >= 5))
       )
         fail('RATE_LIMITED', 'Wait before requesting another code.', 429);
-      await otpBudget(tx, 'send');
+      await otpBudget(tx, 'send', await otpTier(tx, phone));
       const freshWindow = !old || now.getTime() - old.windowStart.getTime() >= 3600000;
       const data = {
         codeHash: this.otpHash(phone, code),
@@ -244,7 +255,7 @@ export class AuthService {
         },
         data: { attempts: { increment: 1 } },
       });
-      if (counted.count) await otpBudget(tx, 'verify');
+      if (counted.count) await otpBudget(tx, 'verify', await otpTier(tx, phone));
       return counted;
     });
     if (!attempt.count) fail('INVALID_OTP', 'Code expired or invalid.', 401);
@@ -401,9 +412,9 @@ export class AuthController {
         ...options,
         maxAge: refreshLifetime(result.user.role),
       });
-      return { user: result.user };
+      return { user: accountView(result.user) };
     }
-    return result;
+    return { ...result, user: accountView(result.user) };
   }
   @Public()
   @Post('otp/request')
@@ -474,7 +485,7 @@ export class AuthController {
     return { ok: true };
   }
   @Get('session') session(@Req() req: AuthRequest) {
-    return { user: req.user };
+    return { user: accountView(req.user) };
   }
   @Get('sessions') async sessions(@Req() req: AuthRequest) {
     const sessions = await this.db.session.findMany({

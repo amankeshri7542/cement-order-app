@@ -22,6 +22,25 @@ export type AuthRequest = Request & {
   requestId: string;
   rawBody?: Buffer;
 };
+/**
+ * What a signed-in person may see of their own account. The User row also holds the owner's own
+ * notes about a customer (tags, area, credit limit, khata balance, how many private notes), which
+ * customers must never receive, so no response returns the row itself.
+ */
+export function accountView(user: User) {
+  return {
+    id: user.id,
+    phone: user.phone,
+    name: user.name,
+    role: user.role,
+    language: user.language,
+    contractorStatus: user.contractorStatus,
+    deletedAt: user.deletedAt,
+    ...(user.role === 'ADMIN'
+      ? { staffTitle: user.staffTitle, whatsappAlerts: user.whatsappAlerts }
+      : {}),
+  };
+}
 export const Public = () => SetMetadata('public', true);
 export const Admin = () => SetMetadata('admin', true);
 export function fail(code: string, message: string, status = 400, details?: unknown): never {
@@ -49,7 +68,10 @@ class SchemaPipe implements PipeTransform {
         'INVALID_INPUT',
         'Check the highlighted fields.',
         400,
-        parsed.error.issues.map((i) => ({ field: i.path.join('.'), message: i.message })),
+        // A huge invalid body (thousands of bad list items) must not produce a huge answer.
+        parsed.error.issues
+          .slice(0, 20)
+          .map((i) => ({ field: i.path.join('.'), message: i.message })),
       );
     return parsed.data;
   }
@@ -96,6 +118,13 @@ export class Errors implements ExceptionFilter {
       status = error.getStatus();
       const detail = error.getResponse();
       body = typeof detail === 'object' ? { ...detail } : { message: detail };
+      // Nest turns unreadable JSON into its own 400 carrying the parser's message (positions,
+      // the character it choked on). Every 400 of ours has a code, so one without is Nest's.
+      if (status === 400 && !body.code)
+        body = {
+          code: 'INVALID_BODY',
+          message: 'The request could not be read. Please try again.',
+        };
       if (!body.code)
         body.code = status === 429 ? 'RATE_LIMITED' : HttpStatus[status] || 'REQUEST_FAILED';
     } else if (

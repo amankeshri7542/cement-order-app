@@ -26,7 +26,8 @@ GRANT DELETE ON TABLE
   public."OutboundMessage",
   public."PriceUpdateBatchItem",
   public."PushSubscription",
-  public."Session"
+  public."Session",
+  public."WebEnquiry"
   TO :"runtime_role";
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO :"runtime_role";
 REVOKE ALL ON TABLE public."_prisma_migrations" FROM :"runtime_role";

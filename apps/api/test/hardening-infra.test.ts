@@ -459,13 +459,16 @@ describe('malformed request bodies', () => {
         .send('{"productId":"cement","quantity":1}');
       expect(encoding.status).toBe(415);
       expect(encoding.body.error.code).toBe('INVALID_BODY');
-      // Nest already answers truncated JSON itself with 400 BAD_REQUEST.
+      // Nest answers truncated JSON itself with a 400; the parser's own message is not passed on.
       const broken = await request(server)
         .post('/api/v1/cart/items')
         .set(auth())
         .set('Content-Type', 'application/json')
         .send('{"productId":');
       expect(broken.status).toBe(400);
+      expect(broken.body.error.code).toBe('INVALID_BODY');
+      expect(broken.body.error.message).not.toMatch(/JSON|position/i);
+      expect(broken.body.error).not.toHaveProperty('statusCode');
     });
     expect(logged).not.toContain('REQUEST_FAILED');
   });

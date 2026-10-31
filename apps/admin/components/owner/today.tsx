@@ -7,6 +7,7 @@ import { api } from '../../lib/api';
 import { useT } from '../../lib/i18n';
 import type { Dashboard } from '../../lib/owner-types';
 import { PageHeader, QueryStatus } from './common';
+import { EnquiryCards, useNewEnquiries } from './enquiries';
 import { NextOrderAction } from './orders';
 import css from './owner.module.css';
 
@@ -28,6 +29,7 @@ export function Today() {
       );
     },
   });
+  const enquiries = useNewEnquiries();
   const seen = new Set<string>();
   const rows =
     work.data?.flatMap(({ queue, page }) =>
@@ -64,10 +66,12 @@ export function Today() {
           </Link>
         </div>
       )}
+      {/* Questions sent from the website's Contact page; nothing shows while there are none. */}
+      <EnquiryCards items={enquiries.data?.items ?? []} />
       <section className={css.stack} aria-label={t('owner.nextWork')}>
         <h2>{t('owner.nextWork')}</h2>
         <QueryStatus query={work} />
-        {!work.isPending && !rows.length && !work.error && (
+        {!work.isPending && !rows.length && !work.error && !enquiries.data?.items.length && (
           <EmptyState title={t('owner.emptyWork')} action={<p>{t('owner.emptyWorkBody')}</p>} />
         )}
         {rows.map(({ queue, order }) => (

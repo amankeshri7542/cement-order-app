@@ -54,9 +54,11 @@ export async function publicGet<T>(
   path: string,
   schema: z.ZodType<T>,
   signal?: AbortSignal,
+  /** Seconds the server may reuse the answer for; omitted, every request asks the store. */
+  revalidate?: number,
 ): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
-    cache: 'no-store',
+    ...(revalidate ? { next: { revalidate } } : { cache: 'no-store' as const }),
     credentials: 'omit',
     signal: signal ?? AbortSignal.timeout(10_000),
     headers: { Accept: 'application/json' },
