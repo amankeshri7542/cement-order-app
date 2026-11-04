@@ -12,6 +12,7 @@ export class ApiError extends Error {
     public code: string,
     message: string,
     public messageKey?: ErrorMessageKey,
+    public details?: Record<string, unknown>,
   ) {
     super(message);
   }
@@ -69,7 +70,7 @@ async function request(
 function responseError(response: Response, data: unknown): ApiError {
   const detail =
     data && typeof data === 'object' && 'error' in data && typeof data.error === 'object'
-      ? (data.error as { code?: unknown; message?: unknown } | null)
+      ? (data.error as { code?: unknown; message?: unknown; details?: unknown } | null)
       : null;
   const messageKey: ErrorMessageKey =
     response.status >= 500
@@ -93,6 +94,9 @@ function responseError(response: Response, data: unknown): ApiError {
             : 'REQUEST_FAILED',
     typeof detail?.message === 'string' ? detail.message : 'Could not complete the request.',
     messageKey,
+    detail?.details && typeof detail.details === 'object'
+      ? (detail.details as Record<string, unknown>)
+      : undefined,
   );
 }
 

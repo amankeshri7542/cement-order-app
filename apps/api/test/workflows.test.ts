@@ -15,6 +15,7 @@ import { Events } from '../src/catalog';
 import { OwnerWorkService } from '../src/owner-work';
 import { OrdersService } from '../src/orders';
 import { PaymentsService } from '../src/payments';
+import { confirmOrder, grantOwners } from './staff-helper';
 
 if (existsSync('.env.test')) loadEnvFile('.env.test');
 if (!process.env.TEST_DATABASE_URL)
@@ -128,6 +129,7 @@ beforeEach(async () => {
         addresses: { create: { id: `${id}-address`, ...address } },
       },
     });
+  await grantOwners(db);
   await db.category.create({ data: { id: 'cement-category', name: 'Cement', slug: 'cement' } });
   await db.product.create({ data: product });
   await db.inventoryMovement.create({
@@ -199,6 +201,8 @@ async function status(id: string, next: string) {
     .send({ status: next, note: 'Workflow test action' });
 }
 async function dispatch(id: string) {
+  const { status: now } = await db.order.findUniqueOrThrow({ where: { id } });
+  if (now === 'AWAITING_CONFIRMATION') await confirmOrder(server, db, tokens.father, id);
   expect((await status(id, 'PREPARING')).status).toBe(200);
   expect((await status(id, 'OUT_FOR_DELIVERY')).status).toBe(200);
 }
@@ -368,11 +372,12 @@ describe('Local shop workflows against isolated PostgreSQL', () => {
   it('completes the 50 bags × ₹390 + ₹500 COD flow without duplicate stock or collection', async () => {
     const o = await order();
     expect(o).toMatchObject({
-      status: 'CONFIRMED',
+      status: 'AWAITING_CONFIRMATION',
       subtotalPaise: 1950000,
       deliveryFeePaise: 50000,
       totalPaise: 2000000,
     });
+    await confirmOrder(server, db, tokens.father, o.id);
     await request(server)
       .post(`/api/v1/admin/orders/${o.id}/acknowledge`)
       .set(auth('father'))
@@ -643,7 +648,11 @@ describe('Local shop workflows against isolated PostgreSQL', () => {
       where: { id: o.id },
       include: { payment: true },
     });
-    expect(final).toMatchObject({ status: 'CONFIRMED', payment: { status: 'CAPTURED' } });
+    // Paid, and waiting for a person to look.
+    expect(final).toMatchObject({
+      status: 'AWAITING_CONFIRMATION',
+      payment: { status: 'CAPTURED' },
+    });
     expect((await db.product.findUniqueOrThrow({ where: { id: 'cement' } })).stock).toBe(50);
     expect(await db.inventoryMovement.count({ where: { kind: 'ORDER_CANCELLED' } })).toBe(0);
   }, 20000);
@@ -879,6 +888,7 @@ describe('Local shop workflows against isolated PostgreSQL', () => {
 
   it('reports immutable collection/refund/counter events independently of Payment.updatedAt and preserves sale prices on retry', async () => {
     const o = await order();
+    await confirmOrder(server, db, tokens.father, o.id);
     await request(server)
       .post(`/api/v1/admin/orders/${o.id}/cod-received`)
       .set(auth('father'))

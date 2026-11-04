@@ -68,6 +68,7 @@ function staffFixture() {
       upsert: vi.fn(async () => user),
     },
     adminCredential: { findUnique: vi.fn(async () => credential) },
+    staffMembership: { findFirst: vi.fn(async () => ({ id: 'owner-membership' })) },
     authRateLimit: {
       count: vi.fn(async () => 0),
       create: vi.fn(async () => ({})),

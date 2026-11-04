@@ -9,6 +9,7 @@ import type { Server } from 'node:http';
 import { Db } from '../src/db';
 import { hash } from '../src/http';
 import { KhataService } from '../src/khata';
+import { grantOwners } from './staff-helper';
 
 if (existsSync('.env.test')) loadEnvFile('.env.test');
 process.env.NODE_ENV = 'test';
@@ -120,6 +121,7 @@ beforeEach(async () => {
         },
       },
     });
+  await grantOwners(db);
   await db.category.create({ data: { id: 'category', name: 'Cement', slug: 'cement' } });
   await db.product.create({
     data: {

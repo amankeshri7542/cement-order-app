@@ -205,8 +205,14 @@ describe('Public assistant input and tool boundary', () => {
         pricePaise: true,
         priceVersion: true,
         stock: true,
+        sourcing: true,
+        stockMode: true,
+        stockLevels: { where: { location: { active: true } }, select: { isOn: true } },
       },
     });
+    // Counts stay out of anything a language model reads.
+    expect(JSON.stringify(result)).not.toContain('"stock"');
+    expect(JSON.stringify(result)).toContain('"availability":"IN_STOCK"');
     expect(JSON.stringify(result)).not.toMatch(/internalMargin|supplierPrivate|PRIVATE_SUPPLIER/);
     expect(await service.tool('shop', {})).toBe(shopContent);
     expect(await service.tool('faq', { topic: 'engineering' })).toEqual(

@@ -24,7 +24,7 @@ test('catalogue keeps a product press intact across an unchanged search debounce
 async function mobileLogin(page: Page, phone: string) {
   await appLogin(page, phone);
 }
-async function adminLogin(page: Page, phone = '9297513707') {
+async function adminLogin(page: Page, phone = '9999997007') {
   await page.addInitScript(() => localStorage.setItem('shiv-owner-language', 'en'));
   await page.goto('http://localhost:3001/today');
   await page.getByRole('textbox', { name: en['owner.loginPhone'] }).fill(phone);
@@ -63,7 +63,9 @@ test('customer places a COD order, tracks it, reorders and requests a bulk quote
   await page.getByRole('button', { name: 'Review order', exact: true }).click();
   await expect(page.getByText('₹4,600.00', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Place order · ₹4,600.00', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Confirmed', exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Waiting for the shop', exact: true }),
+  ).toBeVisible();
   await page.getByRole('button', { name: 'Order again', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Review order', exact: true })).toBeVisible();
   await tab(page, 'Home').click();
@@ -91,19 +93,21 @@ test('admin changes price and finance policy, fulfils an order and replies to a 
   await expect(page.getByRole('heading', { name: 'Today' })).toBeVisible();
   await expect(page.getByRole('region', { name: en['owner.nextWork'], exact: true })).toBeVisible();
   await expect(
-    page.getByRole('link', { name: en['owner.newOrderAction'], exact: true }),
+    page
+      .getByRole('navigation', { name: en['owner.desk'], exact: true })
+      .getByRole('link', { name: en['owner.newOrder'], exact: true }),
   ).toBeVisible();
   await page.screenshot({ path: 'test-results/admin-overview.png', fullPage: true });
-  await page.goto('http://localhost:3001/more?view=products');
-  await page.getByRole('textbox', { name: 'Search products', exact: true }).fill('UltraTech Super');
-  await page.getByRole('button', { name: 'Edit UltraTech Super' }).click();
-  await page.getByLabel('Selling price (₹)').fill('425');
-  await page.getByRole('button', { name: 'Save product', exact: true }).click();
+  await page.goto('http://localhost:3001/stock?tab=maal');
+  await page
+    .getByRole('searchbox', { name: 'Find goods or brand', exact: true })
+    .fill('UltraTech Super');
+  await page.getByRole('button', { name: /^Change goods UltraTech Super/ }).click();
+  await page.getByLabel('Selling rate (₹)').fill('425');
+  await page.getByRole('dialog').getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page.getByText('₹425.00', { exact: true })).toBeVisible();
   await page.goto('http://localhost:3001/more?view=zones');
-  const patna = page
-    .getByRole('article')
-    .filter({ has: page.getByRole('heading', { name: /Patna test/ }) });
+  const patna = page.getByRole('listitem').filter({ hasText: /Patna test/ });
   await patna.getByRole('button', { name: en['owner.edit'], exact: true }).click();
   const zone = page.getByRole('dialog');
   await zone.getByLabel(en['owner.deliveryFee'], { exact: true }).fill('600');
@@ -133,6 +137,14 @@ test('admin changes price and finance policy, fulfils an order and replies to a 
   const orderPath = await orderLink.getAttribute('href');
   const orderId = orderPath!.split('/').at(-1)!;
   await orderLink.click();
+  // A customer's order waits for a person, so it is confirmed first.
+  await page
+    .getByRole('main')
+    .getByRole('link', { name: new RegExp(en['owner.pakka.confirm']) })
+    .click();
+  await page.getByRole('button', { name: en['owner.pakka.confirm'], exact: true }).click();
+  await expect(page.getByRole('button', { name: /^Take back \d+$/ })).toBeVisible();
+  await page.goto(`http://localhost:3001/orders/${orderId}`);
   await page.getByRole('button', { name: en['owner.startPreparing'], exact: true }).click();
   await page.getByRole('button', { name: en['owner.dispatch'], exact: true }).click();
   await page.getByRole('button', { name: en['owner.deliver'], exact: true }).click();
@@ -145,21 +157,17 @@ test('admin changes price and finance policy, fulfils an order and replies to a 
     await page.request.get(`http://localhost:4010/api/v1/admin/orders/${orderId}`)
   ).json()) as Order;
   expect(supplied).toMatchObject({ status: 'DELIVERED', payment: { status: 'CAPTURED' } });
-  await page.goto('http://localhost:3001/more?view=quotes');
-  const openQuote = page.getByRole('button', { name: /^Open quote/ }).first();
-  const quoteNumber = (await openQuote.getAttribute('aria-label'))!.replace('Open quote ', '');
-  await openQuote.click();
-  await page.getByLabel(/UltraTech Super.*price per unit/).fill('400');
+  await page.goto('http://localhost:3001/lists');
+  await page.getByRole('button', { name: /QT-/ }).first().click();
+  await page.getByLabel(/UltraTech Super.*rate for one/).fill('400');
   await page.getByRole('checkbox', { name: /I checked the site/ }).check();
-  await page.getByRole('button', { name: 'Send quotation', exact: true }).click();
+  await page.getByRole('button', { name: en['owner.lists.send'], exact: true }).click();
   await page
     .getByRole('dialog')
     .last()
-    .getByRole('button', { name: 'Send quotation', exact: true })
+    .getByRole('button', { name: en['owner.lists.send'], exact: true })
     .click();
-  await expect(
-    page.getByRole('row').filter({ hasText: quoteNumber }).getByText('Sent', { exact: true }),
-  ).toBeVisible();
+  await expect(page.getByText(en['owner.lists.state.SENT'], { exact: true }).first()).toBeVisible();
 });
 test('live price updates refresh the catalogue and invalidate an accepted checkout total', async ({
   page,
@@ -176,10 +184,10 @@ test('live price updates refresh the catalogue and invalidate an accepted checko
   await expect(page.getByText('Address saved', { exact: true })).toBeVisible();
   await searchMaterials(page, 'UltraTech Super');
   const otp = await request.post('http://localhost:4010/api/v1/auth/otp/request', {
-    data: { phone: '+919297513708' },
+    data: { phone: '+919999997008' },
   });
   const login = await request.post('http://localhost:4010/api/v1/auth/otp/verify', {
-    data: { phone: '+919297513708', code: (await otp.json()).devCode },
+    data: { phone: '+919999997008', code: (await otp.json()).devCode },
   });
   const headers = { Authorization: `Bearer ${(await login.json()).accessToken}` };
   // This price-change journey owns its freight fixture; it does not depend on an earlier test.
@@ -272,7 +280,9 @@ test('live price updates refresh the catalogue and invalidate an accepted checko
   await expect(page.getByRole('button', { name: /^Place order/ })).toBeDisabled();
   await page.getByRole('checkbox').check();
   await page.getByRole('button', { name: /^Place order/ }).click();
-  await expect(page.getByRole('heading', { name: 'Confirmed', exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Waiting for the shop', exact: true }),
+  ).toBeVisible();
 });
 
 test('admin UI denies a customer account and a lost network produces a recoverable error', async ({
@@ -293,20 +303,16 @@ test('admin UI denies a customer account and a lost network produces a recoverab
 test('store records stock and delivery rules; customers browse server pages on mobile', async ({
   page,
 }) => {
-  await adminLogin(page, '9297513709');
-  await page.goto('http://localhost:3001/more?view=products');
-  await page.getByRole('textbox', { name: 'Search products', exact: true }).fill('UltraTech Super');
-  await page.getByRole('button', { name: 'Stock ledger UltraTech Super' }).click();
-  await page.getByRole('combobox', { name: 'Movement', exact: true }).selectOption('WALK_IN_SALE');
-  await page.getByLabel('Quantity', { exact: true }).fill('5');
-  await page.getByLabel('Receipt / reference').fill('WALK-IN-5');
-  await page.getByLabel('Reason', { exact: true }).fill('Counter collection');
-  await page.getByRole('button', { name: 'Record stock movement' }).click();
-  await expect(
-    page.getByRole('dialog').getByRole('cell', { name: 'WALK-IN-5 Counter collection' }),
-  ).toBeVisible();
+  await adminLogin(page, '9999997009');
+  await page.goto('http://localhost:3001/stock');
+  const goods = page.getByRole('row').filter({ hasText: 'UltraTech Super' }).first();
+  await goods.getByRole('button', { name: en['owner.stockReceived'], exact: true }).click();
+  const received = page.getByRole('dialog');
+  await received.getByLabel(en['owner.purchaseQuantity'], { exact: true }).fill('5');
+  await received.getByLabel(en['owner.stockNote'], { exact: true }).fill('WALK-IN-5 Truck bill');
+  await received.getByRole('button', { name: en['owner.save'], exact: true }).click();
+  await expect(received).toBeHidden();
   await page.screenshot({ path: 'test-results/pilot-stock-ledger.png' });
-  await page.getByRole('button', { name: 'Close dialog' }).click();
   await page.goto('http://localhost:3001/more?view=zones');
   await page.getByRole('button', { name: en['owner.addZone'], exact: true }).click();
   const area = page.getByRole('dialog');
@@ -318,13 +324,13 @@ test('store records stock and delivery rules; customers browse server pages on m
     .fill('2–3 days after confirmation');
   await area.getByRole('button', { name: en['owner.save'], exact: true }).click();
   await expect(area).toBeHidden();
-  await expect(page.getByRole('heading', { name: 'Outstation check', exact: true })).toBeVisible();
+  await expect(page.getByText('Outstation check', { exact: true })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   const nav = page.getByRole('navigation', { name: en['owner.desk'], exact: true });
   await expect(nav).toBeVisible();
   await nav.getByRole('link', { name: en['owner.more'], exact: true }).click();
-  await page.getByRole('link', { name: en['owner.zones'], exact: true }).click();
-  await expect(page).toHaveURL(/\/more\?view=zones$/);
+  await page.getByRole('link', { name: en['owner.settings.title'], exact: true }).click();
+  await expect(page).toHaveURL(/\/settings$/);
   await expect(page.locator('.sidebar')).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,

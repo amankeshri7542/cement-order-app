@@ -1,4 +1,4 @@
-import { ApiError, api } from './api';
+import { API_URL, ApiError, api } from './api';
 
 // Phone and computer alerts for the owner desk (web push). The server sends them only to the
 // devices an owner switched on here; turning them off removes this device from the list.
@@ -19,7 +19,9 @@ function keyBytes(base64: string) {
 /** Registers the alert worker; safe to call on every visit. */
 export async function registerWorker() {
   if (!pushSupported()) return null;
-  return navigator.serviceWorker.register('/sw.js', { scope: '/' });
+  return navigator.serviceWorker.register(`/sw.js?api=${encodeURIComponent(API_URL)}`, {
+    scope: '/',
+  });
 }
 
 /** Whether this device already receives alerts. */

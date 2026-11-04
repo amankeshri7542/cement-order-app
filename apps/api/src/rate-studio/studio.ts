@@ -28,7 +28,7 @@ import {
   type RateIssue,
 } from '@shiv/shared';
 import { Db } from '../db';
-import { Admin, AuthRequest, Contract, Input, fail } from '../http';
+import { Can, AuthRequest, Contract, Input, fail } from '../http';
 import { Events } from '../catalog';
 import { paginate } from '../pagination';
 import { RateProviders, RateProviderError } from './providers';
@@ -775,6 +775,8 @@ export class RateStudioService {
           );
       }
       const settings = await tx.storeSettings.findUniqueOrThrow({ where: { id: 'store' } });
+      if (!settings.phone.trim())
+        fail('STORE_PHONE_MISSING', 'Add the shop phone number in Settings before sharing rates.', 409);
       // A card headed in Hindi is a Hindi card: it names each material by its Hindi name where
       // the shop has saved one (prices, units and specifications stay as published).
       const hindi = hasDevanagari(input.heading);
@@ -818,7 +820,7 @@ export class RateStudioService {
     });
   }
 }
-@Admin()
+@Can('rates.publish')
 @Controller('admin/rate-studio')
 export class RateStudioController {
   constructor(

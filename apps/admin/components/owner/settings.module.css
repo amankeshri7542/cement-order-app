@@ -1,0 +1,70 @@
+/* Settings and System: laptop two columns, phone one. A short column never stretches a card. */
+.board {
+  display: grid;
+  gap: 1rem;
+  align-items: start;
+  min-inline-size: 0;
+}
+.column {
+  display: grid;
+  gap: 1rem;
+  min-inline-size: 0;
+}
+.section {
+  display: grid;
+  gap: 0.75rem;
+  min-inline-size: 0;
+}
+.section > h2 {
+  margin: 0;
+}
+.facts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.375rem 1rem;
+  margin: 0;
+}
+.facts dt {
+  color: var(--shiv-ink2);
+}
+.facts dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  text-align: end;
+}
+.rows {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rows > li {
+  display: grid;
+  gap: 0.25rem;
+  padding-block: 0.75rem;
+  border-block-end: 0.0625rem solid var(--shiv-line);
+}
+.rows > li:last-child {
+  border-block-end: 0;
+}
+.rowHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem 0.75rem;
+}
+.problemText {
+  color: var(--shiv-ink2);
+  font-size: var(--shiv-small);
+  overflow-wrap: anywhere;
+}
+@media (min-width: 64rem) {
+  .board {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .board > .single {
+    grid-column: 1 / -1;
+  }
+}

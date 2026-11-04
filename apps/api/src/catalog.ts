@@ -24,12 +24,25 @@ import {
   settingsSchema,
 } from '@shiv/shared';
 import { clientIp } from './abuse';
+import { blindShops, itemsBeingCounted } from './blind-count';
 import { Db } from './db';
 import { Lifecycle } from './lifecycle';
-import { Admin, AuthRequest, Contract, Input, Public, accountView, fail } from './http';
+import {
+  accountView,
+  AuthRequest,
+  Can,
+  Contract,
+  fail,
+  Input,
+  Public,
+  scoped,
+  Self,
+  shopWhere,
+} from './http';
 import { paginate } from './pagination';
 import { moveStock, pastBalance } from './inventory';
 import { getConfig, onlineReady } from './config';
+import { availabilityOf, type Access } from '@shiv/shared';
 
 @Injectable()
 export class Events {
@@ -60,6 +73,30 @@ export class Events {
     };
   }
 }
+/**
+ * While an item is being counted, anyone can read this route, including the person counting. There
+ * or not there still works for buying, and placing an order checks the real figure as always.
+ */
+export const stockDuringCount = 10_000;
+export const stockFor = (product: { id: string; stock: number }, counting: ReadonlySet<string>) =>
+  counting.has(product.id) && product.stock > 0 ? stockDuringCount : product.stock;
+
+/** Availability sits beside stock until every client has moved to it; levels stay private. */
+function publicProduct<
+  T extends {
+    id: string;
+    stock: number;
+    sourcing: string;
+    stockMode: string;
+    stockLevels: { isOn: boolean }[];
+  },
+>({ stockLevels, ...product }: T, counting: ReadonlySet<string>) {
+  return {
+    ...product,
+    stock: stockFor(product, counting),
+    availability: availabilityOf({ ...product, stockLevels }),
+  };
+}
 @ApiTags('Catalogue')
 @Controller()
 export class CatalogController {
@@ -73,7 +110,12 @@ export class CatalogController {
   products(@Query() query: Record<string, string>) {
     return this.productPage(query, false);
   }
-  async productPage(query: Record<string, string>, admin: boolean) {
+  async productPage(
+    query: Record<string, string>,
+    admin: boolean,
+    shops: { locationId?: { in: string[] } } = {},
+    access?: Access,
+  ) {
     const parsed = z
       .object({
         q: z.string().trim().max(100).default(''),
@@ -92,38 +134,65 @@ export class CatalogController {
       f.sort.startsWith('price') ? 'pricePaise' : f.sort === 'newest' ? 'createdAt' : 'name',
       ['price_desc', 'newest'].includes(f.sort) ? 'desc' : 'asc',
     );
+    const rows = await this.db.product.findMany({
+      where: {
+        AND: [
+          admin ? {} : { active: true },
+          admin && f.lowStock === 'true'
+            ? { active: true, stock: { lte: this.db.product.fields.lowStockAt } }
+            : {},
+          page.after,
+          f.q
+            ? {
+                OR: [
+                  { name: { contains: f.q, mode: 'insensitive' } },
+                  { nameHi: { contains: f.q, mode: 'insensitive' } },
+                  { brand: { contains: f.q, mode: 'insensitive' } },
+                  { grade: { contains: f.q, mode: 'insensitive' } },
+                ],
+              }
+            : {},
+          f.category ? { category: { slug: f.category } } : {},
+          f.brand ? { brand: f.brand } : {},
+          f.availability === 'in'
+            ? { stock: { gt: 0 } }
+            : f.availability === 'out'
+              ? { stock: 0 }
+              : {},
+        ],
+      },
+      include: {
+        category: true,
+        stockLevels: admin
+          ? { where: shops, select: { locationId: true, quantity: true, isOn: true } }
+          : { where: { location: { active: true } }, select: { isOn: true } },
+      },
+      ...(admin ? { omit: { lowStockAt: false } } : {}),
+      orderBy: page.orderBy,
+      take: page.take,
+    });
+    if (!admin) {
+      const counting = await itemsBeingCounted(this.db);
+      return page.finish(rows.map((row) => publicProduct(row, counting)));
+    }
+    const blind = access ? await blindShops(this.db, access) : new Set<string>();
+    // A person limited to certain shops sees those shops' count, not the whole firm's, and nobody
+    // being kept blind sees a figure for the shop being counted.
     return page.finish(
-      await this.db.product.findMany({
-        where: {
-          AND: [
-            admin ? {} : { active: true },
-            admin && f.lowStock === 'true'
-              ? { active: true, stock: { lte: this.db.product.fields.lowStockAt } }
-              : {},
-            page.after,
-            f.q
-              ? {
-                  OR: [
-                    { name: { contains: f.q, mode: 'insensitive' } },
-                    { nameHi: { contains: f.q, mode: 'insensitive' } },
-                    { brand: { contains: f.q, mode: 'insensitive' } },
-                    { grade: { contains: f.q, mode: 'insensitive' } },
-                  ],
-                }
-              : {},
-            f.category ? { category: { slug: f.category } } : {},
-            f.brand ? { brand: f.brand } : {},
-            f.availability === 'in'
-              ? { stock: { gt: 0 } }
-              : f.availability === 'out'
-                ? { stock: 0 }
-                : {},
-          ],
-        },
-        include: { category: true },
-        ...(admin ? { omit: { lowStockAt: false } } : {}),
-        orderBy: page.orderBy,
-        take: page.take,
+      rows.map((row) => {
+        const levels = row.stockLevels as { locationId: string; quantity: number; isOn: boolean }[];
+        const open = levels.filter((level) => !blind.has(level.locationId));
+        const hiding = open.length !== levels.length;
+        if (!hiding && !('locationId' in shops)) return row;
+        return {
+          ...row,
+          stock:
+            hiding && !open.length ? null : open.reduce((sum, level) => sum + level.quantity, 0),
+          stockHidden: hiding,
+          stockLevels: levels.map((level) =>
+            blind.has(level.locationId) ? { ...level, quantity: null } : level,
+          ),
+        };
       }),
     );
   }
@@ -138,10 +207,13 @@ export class CatalogController {
   async product(@Param('id') id: string) {
     const product = await this.db.product.findFirst({
       where: { id, active: true },
-      include: { category: true },
+      include: {
+        category: true,
+        stockLevels: { where: { location: { active: true } }, select: { isOn: true } },
+      },
     });
     if (!product) fail('NOT_FOUND', 'This product is not available.', 404);
-    return product;
+    return publicProduct(product, await itemsBeingCounted(this.db));
   }
   @Public() @Get('categories') categories() {
     return this.db.category.findMany({ orderBy: { name: 'asc' } });
@@ -176,10 +248,21 @@ export class CatalogController {
     );
   }
 
-  @Admin() @Get('admin/products') adminProducts(@Query() query: Record<string, string>) {
-    return this.productPage(query, true);
+  @Can('stock.read', scoped) @Get('admin/products') async adminProducts(
+    @Query() query: Record<string, string>,
+    @Req() req: AuthRequest,
+  ) {
+    const page = await this.productPage(query, true, shopWhere(req, 'stock.read'), req.access);
+    if (req.access['orders.read.money']) return page;
+    // No rupee value for anyone who loads goods but does not see money.
+    return {
+      ...page,
+      items: page.items.map((product) =>
+        Object.fromEntries(Object.entries(product).filter(([key]) => !/paise$/i.test(key))),
+      ),
+    };
   }
-  @Admin()
+  @Can('products.edit')
   @Post('admin/products')
   @Contract(productSchema)
   async create(@Input(productSchema) body: z.infer<typeof productSchema>, @Req() req: AuthRequest) {
@@ -218,7 +301,7 @@ export class CatalogController {
     this.events.publish({ type: 'CATALOG_UPDATED', productId: product.id });
     return product;
   }
-  @Admin()
+  @Can('products.edit')
   @Patch('admin/products/:id')
   @Contract(productUpdateSchema)
   async update(
@@ -297,13 +380,13 @@ export class CatalogController {
     });
     return product;
   }
-  @Admin()
+  @Can('products.edit')
   @Post('admin/categories')
   @Contract(categorySchema)
   category(@Input(categorySchema) body: z.infer<typeof categorySchema>) {
     return this.db.category.create({ data: body });
   }
-  @Admin()
+  @Can('store.edit')
   @Patch('admin/store')
   @Contract(settingsSchema)
   async updateStore(
@@ -327,7 +410,8 @@ export class CatalogController {
           actorId: req.user.id,
           event: 'STORE_SETTINGS_UPDATED',
           entityId: 'store',
-          details: data,
+          // The shop phone may be someone's own number, and this log can never be changed.
+          details: { fields: Object.keys(data) },
         },
       });
     });
@@ -340,9 +424,10 @@ export class CatalogController {
 @Controller('me')
 export class AccountController {
   constructor(@Inject(Db) private db: Db) {}
-  @Get() me(@Req() req: AuthRequest) {
+  @Self() @Get() me(@Req() req: AuthRequest) {
     return accountView(req.user);
   }
+  @Self()
   @Patch()
   @Contract(profileSchema)
   async profile(
@@ -361,12 +446,13 @@ export class AccountController {
     });
     return accountView(user);
   }
-  @Get('addresses') addresses(@Req() req: AuthRequest) {
+  @Self() @Get('addresses') addresses(@Req() req: AuthRequest) {
     return this.db.address.findMany({
       where: { userId: req.user.id },
       orderBy: { createdAt: 'desc' },
     });
   }
+  @Self()
   @Post('addresses')
   @Contract(addressSchema)
   async addAddress(
@@ -379,6 +465,7 @@ export class AccountController {
       return tx.address.create({ data: { ...body, userId: req.user.id } });
     });
   }
+  @Self()
   @Patch('addresses/:id')
   @Contract(addressSchema)
   async editAddress(
@@ -394,14 +481,20 @@ export class AccountController {
     return this.db.address.findUniqueOrThrow({ where: { id } });
   }
 
-  @Delete('addresses/:id') async deleteAddress(@Param('id') id: string, @Req() req: AuthRequest) {
+  @Self() @Delete('addresses/:id') async deleteAddress(
+    @Param('id') id: string,
+    @Req() req: AuthRequest,
+  ) {
     const result = await this.db.address.deleteMany({ where: { id, userId: req.user.id } });
     if (!result.count) fail('NOT_FOUND', 'Address not found.', 404);
     return { ok: true };
   }
-  @Get('notifications') notifications(@Req() req: AuthRequest) {
+  @Self() @Get('notifications') notifications(@Req() req: AuthRequest) {
     return this.db.notification.findMany({
-      where: { userId: req.user.id },
+      where: {
+        userId: req.user.id,
+        OR: [{ sendAfter: null }, { sendAfter: { lte: new Date() } }],
+      },
       orderBy: { createdAt: 'desc' },
       take: 100,
     });

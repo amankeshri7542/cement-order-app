@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import assert from 'node:assert/strict';
 
 // Local pattern scan, not a substitute for a maintained scanner or history/provider review.
@@ -40,7 +40,8 @@ const files = execFileSync(
   .filter(Boolean);
 const findings = [];
 for (const file of files) {
-  if (!statSync(file).isFile()) continue;
+  // A file deleted but not yet committed is still listed, and has nothing left to scan.
+  if (!existsSync(file) || !statSync(file).isFile()) continue;
   if (/(^|\/)\.env(?:\.|$)/.test(file) && !file.endsWith('.env.example'))
     findings.push(`${file}: secret-bearing environment file included`);
   const bytes = readFileSync(file);

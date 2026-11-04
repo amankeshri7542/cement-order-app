@@ -18,12 +18,34 @@ import {
   useQueryClient,
   type QueryKey,
 } from '@tanstack/react-query';
-import { ClipboardList, Home, Menu, Package, Users } from 'lucide-react';
+import {
+  Activity,
+  BarChart3,
+  BookOpen,
+  CheckCircle,
+  ClipboardList,
+  Contact,
+  FileText,
+  History,
+  Home,
+  IndianRupee,
+  Menu,
+  MessageCircle,
+  Package,
+  Plus,
+  Settings,
+  ShieldCheck,
+  UserCog,
+  Users,
+  Wallet,
+} from 'lucide-react';
 import { BottomNav, Button, Confirm, Field, PhoneField, Skeleton, Toast } from '@shiv/design';
-import { phoneDigits, type User } from '@shiv/shared';
+import { canDo, phoneDigits, type Access, type Permission, type User } from '@shiv/shared';
 import type { MessageKey } from '@shiv/i18n';
 import { API_URL, ApiError, api } from './api';
 import { LanguageProvider, useLanguage, useT, useWords } from './i18n';
+import { homeFor, pathAllowed } from './nav';
+import { ringBell, soundOn } from './bell';
 import { registerWorker } from './push';
 import { refreshAfterWrite } from './refresh';
 import css from '../components/owner/owner.module.css';
@@ -34,9 +56,21 @@ declare global {
   }
 }
 
+export type Shop = { id: string; name: string };
+type DeskSession = {
+  user: User;
+  access: Access;
+  permissionsVersion: number;
+  locations: Shop[];
+  hasPassphrase: boolean;
+};
 type Confirmation = { title: string; body: string; confirmLabel: string; noteLabel?: string };
 type OwnerContext = {
   me: User;
+  /** Whether this person may do this, at one shop or at all. Hiding a button is only manners: the API decides. */
+  can: (permission: Permission, locationId?: string | null) => boolean;
+  shops: Shop[];
+  hasPassphrase: boolean;
   notice: (message: string, error?: boolean) => void;
   confirm: (options: Confirmation) => Promise<boolean>;
   setDirty: (dirty: boolean) => void;
@@ -45,6 +79,11 @@ type OwnerContext = {
   requestClose: (close: () => void) => Promise<void>;
   endSession: () => void;
   offline: boolean;
+  /** Whether this person's job includes a page. */
+  canOpen: (path: string) => boolean;
+  /** The shop being looked at, remembered on this device. Empty means every shop. */
+  shopId: string | null;
+  setShopId: (id: string | null) => void;
 };
 const Owner = createContext<OwnerContext | null>(null);
 export function useOwner() {
@@ -78,13 +117,24 @@ export function OwnerProvider({ children }: { children: ReactNode }) {
 
 async function session() {
   try {
-    return await api<{ user: User }>('/auth/session');
+    return await api<DeskSession>('/auth/session');
   } catch (error) {
     if (!(error instanceof ApiError) || error.code !== 'UNAUTHORIZED') throw error;
     await api('/auth/refresh', 'POST', {}, false);
-    return api<{ user: User }>('/auth/session');
+    return api<DeskSession>('/auth/session');
   }
 }
+
+/** How many orders are waiting, on the Aaj tab. Android shows no number on the app icon. */
+function WaitingCount() {
+  const count = useContext(WaitingCounts);
+  return count ? (
+    <span className={css.tabCount} aria-label={String(count)}>
+      {count}
+    </span>
+  ) : null;
+}
+const WaitingCounts = createContext(0);
 
 function OwnerShell({ children }: { children: ReactNode }) {
   const t = useT();
@@ -92,7 +142,7 @@ function OwnerShell({ children }: { children: ReactNode }) {
   const client = useQueryClient();
   const path = usePathname();
   const router = useRouter();
-  const auth = useQuery<{ user: User } | null>({
+  const auth = useQuery<DeskSession | null>({
     queryKey: ['owner-session'],
     queryFn: session,
     staleTime: 5 * 60000,
@@ -268,10 +318,60 @@ function OwnerShell({ children }: { children: ReactNode }) {
     const timer = setTimeout(() => setToast(null), 5000);
     return () => clearTimeout(timer);
   }, [toast]);
-  useLiveOrders(auth.data?.user.role === 'ADMIN');
+  const access = auth.data?.access;
+  const onDesk = !!access?.['desk.use'];
+  // Large text makes the tabs taller, and anything resting on them must rise with them.
   useEffect(() => {
-    if (auth.data?.user.role === 'ADMIN') void registerWorker().catch(() => {});
-  }, [auth.data?.user.role]);
+    const nav = document.querySelector<HTMLElement>('nav[data-owner-tabs]');
+    if (!nav || typeof ResizeObserver === 'undefined') return;
+    const measure = () =>
+      document.documentElement.style.setProperty('--owner-tabs', `${nav.offsetHeight}px`);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(nav);
+    return () => observer.disconnect();
+  });
+  const [chosenShop, setChosenShop] = useState<string | null>(null);
+  useEffect(() => {
+    try {
+      setChosenShop(localStorage.getItem(shopStorageKey));
+    } catch {
+      /* Keep this visit usable when browser storage is disabled. */
+    }
+  }, []);
+  const chooseShop = useCallback((id: string | null) => {
+    setChosenShop(id);
+    try {
+      if (id) localStorage.setItem(shopStorageKey, id);
+      else localStorage.removeItem(shopStorageKey);
+    } catch {
+      /* Keep this visit usable when browser storage is disabled. */
+    }
+  }, []);
+  const waiting = useQuery({
+    enabled: !!access?.['orders.confirm'],
+    queryKey: ['inbox'],
+    queryFn: () => api<{ count: number }>('/admin/inbox'),
+    staleTime: 5000,
+    refetchInterval: 30000,
+  });
+  useLiveOrders(onDesk);
+  // The bell, for work that arrives while the desk is open.
+  const lastWaiting = useRef<number | null>(null);
+  useEffect(() => {
+    const count = waiting.data?.count;
+    if (count === undefined) return;
+    if (lastWaiting.current !== null && count > lastWaiting.current && soundOn()) ringBell();
+    lastWaiting.current = count;
+  }, [waiting.data?.count]);
+  useEffect(() => {
+    if (onDesk) void registerWorker().catch(() => {});
+  }, [onDesk]);
+  // The home page depends on the job, and a shared link to another page shows a polite note.
+  useEffect(() => {
+    if (onDesk && access && path === '/today' && !pathAllowed(access, path))
+      router.replace(homeFor(access));
+  }, [onDesk, access, path, router]);
   if (auth.isPending)
     return (
       <div className={css.login}>
@@ -288,10 +388,12 @@ function OwnerShell({ children }: { children: ReactNode }) {
       );
     return <Login />;
   }
-  if (auth.data.user.role !== 'ADMIN')
+  if (!onDesk || !access)
     return (
       <div className={css.login}>
-        <p role="alert">{t('owner.onlyOwner')}</p>
+        <p role="alert">
+          {t(auth.data.user.role === 'ADMIN' ? 'owner.noDeskAccess' : 'owner.onlyOwner')}
+        </p>
         <Button onClick={() => void api('/auth/logout', 'POST').finally(endSession)}>
           {t('owner.logout')}
         </Button>
@@ -299,6 +401,10 @@ function OwnerShell({ children }: { children: ReactNode }) {
     );
   const value: OwnerContext = {
     me: auth.data.user,
+    can: (permission, locationId) => canDo(access, permission, locationId),
+    canOpen: (route) => pathAllowed(access, route),
+    shops: auth.data.locations,
+    hasPassphrase: auth.data.hasPassphrase,
     notice,
     confirm,
     setDirty,
@@ -307,72 +413,158 @@ function OwnerShell({ children }: { children: ReactNode }) {
     requestClose,
     endSession,
     offline,
+    shopId:
+      chosenShop && auth.data.locations.some((shop) => shop.id === chosenShop) ? chosenShop : null,
+    setShopId: chooseShop,
   };
   return (
     <Owner.Provider value={value}>
-      <div className={css.shell}>
-        <a href="#owner-main" className={css.skip}>
-          {t('owner.continue')}
-        </a>
-        <header className={css.topbar}>
-          <Link href="/today" className={css.brand}>
-            <img src="/icon-192.png" alt="" width="40" height="40" />
-            <span>{t('owner.store')}</span>
-          </Link>
-          <Link href="/stock" className={css.stockLink}>
-            <Package size={20} />
-            <span>{t('owner.stock')}</span>
-          </Link>
-        </header>
-        {offline && (
-          <p role="alert" className={css.offline}>
-            {t('owner.offline')}
-          </p>
-        )}
-        <main id="owner-main" className={css.main}>
-          {children}
-        </main>
-        {path !== '/orders/new' && (
-          <Link href="/orders/new" className={css.fab}>
-            {t('owner.newOrderAction')}
-          </Link>
-        )}
-        <BottomNav label={t('owner.desk')}>
-          {[
-            ['/today', 'owner.today', Home],
-            ['/orders', 'owner.orders', ClipboardList],
-            ['/customers', 'owner.customers', Users],
-            ['/more', 'owner.more', Menu],
-          ].map(([href, key, Icon]) => {
-            const route = href as string;
-            const Mark = Icon as typeof Home;
-            return (
-              <Link
-                key={route}
-                href={route}
-                aria-current={path === route || path.startsWith(route + '/') ? 'page' : undefined}
-              >
-                <Mark size={22} aria-hidden="true" />
-                {t(key as MessageKey)}
+      <WaitingCounts.Provider value={waiting.data?.count ?? 0}>
+        <div className={css.shell}>
+          <a href="#owner-main" className={css.skip}>
+            {t('owner.continue')}
+          </a>
+          <header className={css.topbar}>
+            <Link href="/today" className={css.brand}>
+              <img src="/icon-192.png" alt="" width="40" height="40" />
+              <span>{t('owner.deskName')}</span>
+            </Link>
+            <ShopSwitcher />
+            {/* Someone whose day starts at stock has it in the bar below instead. */}
+            {canDo(access, 'stock.read') && pathAllowed(access, '/today') && (
+              <Link href="/stock" className={css.stockLink}>
+                <Package size={20} />
+                <span>{t('owner.stock')}</span>
               </Link>
-            );
-          })}
-        </BottomNav>
-        {toast && <Toast error={toast.error}>{toast.message}</Toast>}
-        {confirmation && (
-          <Confirm
-            title={confirmation.title}
-            body={confirmation.body}
-            confirmLabel={confirmation.confirmLabel}
-            cancelLabel={t('owner.keepEditing')}
-            closeLabel={t('owner.close')}
-            onConfirm={() => finishConfirm(true)}
-            onCancel={() => finishConfirm(false)}
-          />
-        )}
-      </div>
+            )}
+          </header>
+          {process.env.NEXT_PUBLIC_TEST_DESK === 'true' && (
+            <p className={css.testBand}>{t('owner.pakka.testBand')}</p>
+          )}
+          {offline && (
+            <p role="alert" className={css.offline}>
+              {t('owner.offline')}
+            </p>
+          )}
+          <main id="owner-main" className={css.main}>
+            {pathAllowed(access, path) ? (
+              children
+            ) : (
+              <section className={css.card}>
+                <h1>{t('owner.notYourPage')}</h1>
+                <p>{t('owner.notYourPageBody')}</p>
+                <Link className={css.inlineLink} href={homeFor(access)}>
+                  {t('owner.back')}
+                </Link>
+              </section>
+            )}
+          </main>
+          <BottomNav label={t('owner.desk')}>
+            {deskLinks
+              .filter(({ href }) => pathAllowed(access, href))
+              .map(({ href: route, key, Icon: Mark, tab }) => (
+                <Link
+                  key={route}
+                  href={route}
+                  // Everything is on the laptop's side bar. A phone has room for five.
+                  className={
+                    tab === true || (route === '/stock' && !pathAllowed(access, '/today'))
+                      ? undefined
+                      : css.sideOnly
+                  }
+                  aria-current={
+                    path === route ||
+                    (path.startsWith(route + '/') &&
+                      !(route === '/orders' && path === '/orders/new'))
+                      ? 'page'
+                      : undefined
+                  }
+                >
+                  <Mark size={22} aria-hidden="true" />
+                  {t(key as MessageKey)}
+                  {route === '/today' && <WaitingCount />}
+                </Link>
+              ))}
+          </BottomNav>
+          {toast && <Toast error={toast.error}>{toast.message}</Toast>}
+          {confirmation && (
+            <Confirm
+              title={confirmation.title}
+              body={confirmation.body}
+              confirmLabel={confirmation.confirmLabel}
+              cancelLabel={t('owner.keepEditing')}
+              closeLabel={t('owner.close')}
+              onConfirm={() => finishConfirm(true)}
+              onCancel={() => finishConfirm(false)}
+            />
+          )}
+        </div>
+      </WaitingCounts.Provider>
     </Owner.Provider>
   );
+}
+
+const shopStorageKey = 'shiv-desk-shop';
+/** Every page on the desk, in the order the side bar shows them. `tab` puts one on a phone's bar. */
+export const deskLinks: { href: string; key: MessageKey; Icon: typeof Home; tab?: boolean }[] = [
+  { href: '/today', key: 'owner.today', Icon: Home, tab: true },
+  { href: '/inbox', key: 'owner.pakka.title', Icon: CheckCircle },
+  { href: '/orders', key: 'owner.orders', Icon: ClipboardList, tab: true },
+  { href: '/orders/new', key: 'owner.newOrder', Icon: Plus, tab: true },
+  { href: '/lists', key: 'owner.lists.title', Icon: FileText },
+  { href: '/customers', key: 'owner.customers', Icon: Users, tab: true },
+  { href: '/udhaar', key: 'owner.khata', Icon: BookOpen },
+  { href: '/rates', key: 'owner.rates.nav', Icon: IndianRupee },
+  { href: '/stock', key: 'owner.stock', Icon: Package },
+  { href: '/manzoori', key: 'owner.manzoori.title', Icon: ShieldCheck },
+  { href: '/galla', key: 'owner.galla.title', Icon: Wallet },
+  { href: '/reports', key: 'owner.reports', Icon: BarChart3 },
+  { href: '/activity', key: 'owner.activity', Icon: History },
+  { href: '/users', key: 'owner.people', Icon: UserCog },
+  { href: '/staff', key: 'owner.staff', Icon: Contact },
+  { href: '/whatsapp', key: 'owner.whatsappReading', Icon: MessageCircle },
+  { href: '/settings', key: 'owner.settings.title', Icon: Settings },
+  { href: '/system', key: 'owner.system.title', Icon: Activity },
+  { href: '/more', key: 'owner.more', Icon: Menu, tab: true },
+];
+
+/** One shop at a time, or all of them. The server checks every read and write regardless. */
+function ShopSwitcher() {
+  const t = useT();
+  const { shops, shopId, setShopId, can } = useOwner();
+  // Only where this person works. Other shops exist, but there is nothing of theirs to narrow to.
+  const mine = shops.filter(
+    (shop) =>
+      can('stock.read', shop.id) || can('orders.read', shop.id) || can('galla.read', shop.id),
+  );
+  if (mine.length < 2) return null;
+  return (
+    <label className={css.shopSwitch}>
+      <span>{t('owner.shell.shop')}</span>
+      <select value={shopId ?? ''} onChange={(event) => setShopId(event.target.value || null)}>
+        <option value="">{t('owner.shell.allShops')}</option>
+        {mine.map((shop) => (
+          <option key={shop.id} value={shop.id}>
+            {shop.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+/** Whether this is a laptop's width. Before the page is mounted it answers as a phone. */
+export function useIsWide() {
+  const [wide, setWide] = useState(false);
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return;
+    const query = window.matchMedia('(min-width: 64rem)');
+    const update = () => setWide(query.matches);
+    update();
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, []);
+  return wide;
 }
 
 export function useBeforeUnload(active: boolean) {
@@ -457,6 +649,7 @@ function useLiveOrders(enabled: boolean) {
     const invalidate = () => {
       lastRefresh = Date.now();
       void client.invalidateQueries({ queryKey: ['dashboard'] });
+      void client.invalidateQueries({ queryKey: ['inbox'] });
       void client.invalidateQueries({ queryKey: ['orders', 'list'] });
       void client.invalidateQueries({ queryKey: ['enquiries'] });
     };
@@ -541,6 +734,7 @@ function Login() {
       const result = await api<{ user: User }>('/auth/otp/verify', 'POST', {
         phone: `+91${phoneDigits(phone)}`,
         code,
+        surface: 'DESK',
       });
       if (result.user.role !== 'ADMIN') {
         await api('/auth/logout', 'POST');
@@ -552,7 +746,7 @@ function Login() {
   return (
     <div className={css.login}>
       <img className={css.loginIcon} src="/icon-192.png" alt="" width="64" height="64" />
-      <p className={css.eyebrow}>{t('owner.store')}</p>
+      <p className={css.eyebrow}>{t('owner.deskName')}</p>
       <h1>{t('owner.loginTitle')}</h1>
       <p>{t('owner.loginBody')}</p>
       <form

@@ -469,7 +469,13 @@ try {
           };
           if (frontend === 'storefront') page.on('response', collectScript);
           page.on('pageerror', (error) => {
-            errors.push(error.message);
+            // WebKit reports a page's own Next.js prefetch, cancelled by the reload below, as an
+            // error. Only that exact case is excused: same origin, and marked as a prefetch.
+            const cancelledPrefetch =
+              engine === 'webkit' &&
+              error.message.includes(`localhost:${tls}/`) &&
+              /[?&]_rsc=\S* due to access control checks\.?$/.test(error.message);
+            if (!cancelledPrefetch) errors.push(error.message);
             pageErrors.push({ phase, message: error.message, stack: error.stack });
           });
           page.on('console', (message) =>

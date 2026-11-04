@@ -18,12 +18,22 @@ describe('customer notifications', () => {
     const hindi = fakeTx('hi');
     await notifyCustomer(hindi.tx, 'u1', pushText('orderPlaced', { number: 'SC-1' }), 'o1');
     expect(hindi.created).toEqual([
-      { userId: 'u1', title: 'ऑर्डर मिल गया', body: 'SC-1 दर्ज हो गया है।', orderId: 'o1' },
+      {
+        userId: 'u1',
+        title: 'Order mil gaya',
+        body: 'Order SC-1 mil gaya. Dukaan pakka karte hi message aayega.',
+        orderId: 'o1',
+      },
     ]);
     const english = fakeTx('en');
     await notifyCustomer(english.tx, 'u1', pushText('orderPlaced', { number: 'SC-1' }), 'o1');
     expect(english.created).toEqual([
-      { userId: 'u1', title: 'Order received', body: 'SC-1 has been placed.', orderId: 'o1' },
+      {
+        userId: 'u1',
+        title: 'We got your order',
+        body: 'We got order SC-1. You will get a message when the shop confirms.',
+        orderId: 'o1',
+      },
     ]);
   });
 
@@ -31,7 +41,7 @@ describe('customer notifications', () => {
     for (const language of [null, '', 'fr']) {
       const { created, tx } = fakeTx(language);
       await notifyCustomer(tx, 'u1', pushText('quoteReady', { number: 'Q-9' }));
-      expect(created[0]).toMatchObject({ title: 'आपका थोक भाव तैयार है' });
+      expect(created[0]).toMatchObject({ title: 'Aapka thok rate taiyaar hai' });
     }
   });
 
@@ -41,18 +51,19 @@ describe('customer notifications', () => {
       status: orderStatusText('OUT_FOR_DELIVERY', language),
     }));
     expect(words('hi')).toEqual({
-      title: 'ऑर्डर की जानकारी',
+      title: 'Order ka haal',
       body: `SC-2: ${orderStatusText('OUT_FOR_DELIVERY', 'hi')}`,
     });
     expect(words('en').body).toBe(`SC-2: ${orderStatusText('OUT_FOR_DELIVERY', 'en')}`);
-    expect(words('hi').body).toMatch(/[ऀ-ॿ]/);
   });
 
   it('leave out the order link when there is none', async () => {
     const { created, tx } = fakeTx('hi');
     await notifyCustomer(tx, 'u1', pushText('quoteOrder', { quote: 'Q-1', order: 'SC-3' }));
     expect(created[0]).not.toHaveProperty('orderId');
-    expect(created[0]).toMatchObject({ body: 'Q-1 अब SC-3 है। तय भाव और भाड़ा वही रहेंगे।' });
+    expect(created[0]).toMatchObject({
+      body: 'Aapki list ab order SC-3 hai. Rate aur bhada wahi rahenge. (Q-1)',
+    });
   });
 
   it('have both languages for every template', () => {

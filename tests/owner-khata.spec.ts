@@ -63,7 +63,7 @@ test.beforeAll(async () => {
       name: 'खाता अभ्यास इलाका',
       deliveryFeePaise,
       minimumOrderPaise: 0,
-      estimate: 'आज',
+      estimate: 'Aaj',
       pincodes: { create: [{ pincode: '800072' }] },
     },
   });
@@ -79,15 +79,17 @@ async function signInHindi(page: Page) {
     }
   });
   await page.goto(desk + '/today');
-  await page.getByRole('textbox', { name: 'मालिक का मोबाइल नंबर', exact: true }).fill('9297513707');
+  await page
+    .getByRole('textbox', { name: 'Staff ka mobile number', exact: true })
+    .fill('9999997007');
   const sent = page.waitForResponse(
     (response) => response.url().endsWith('/auth/otp/request') && response.status() === 201,
   );
-  await page.getByRole('button', { name: 'कोड भेजें', exact: true }).click();
+  await page.getByRole('button', { name: 'Code mangao', exact: true }).click();
   const challenge = (await (await sent).json()) as { devCode: string };
-  await page.getByRole('textbox', { name: 'साइन इन कोड', exact: true }).fill(challenge.devCode);
-  await page.getByRole('button', { name: 'दुकान डेस्क खोलें', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'आज', exact: true })).toBeVisible();
+  await page.getByRole('textbox', { name: 'Code', exact: true }).fill(challenge.devCode);
+  await page.getByRole('button', { name: 'Desk kholo', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Aaj', exact: true })).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('lang', 'hi');
 }
 
@@ -98,12 +100,12 @@ test('Hindi customer settings, credit delivery, payment and reversal preserve th
   await signInHindi(page);
   await page.goto(`${desk}/customers/${customerId}`);
   await expect(page.getByRole('heading', { name: customerName, exact: true })).toBeVisible();
-  await page.getByRole('tab', { name: 'उधार और जानकारी', exact: true }).click();
-  await page.getByRole('checkbox', { name: 'उधार चालू करें', exact: true }).check();
-  await page.getByRole('textbox', { name: 'उधार की सीमा (₹)', exact: true }).fill('5000');
-  await page.getByRole('textbox', { name: 'इलाका', exact: true }).fill('दानापुर अभ्यास');
+  await page.getByRole('tab', { name: 'Udhaar aur details', exact: true }).click();
+  await page.getByRole('checkbox', { name: 'Udhaar chalu karo', exact: true }).check();
+  await page.getByRole('textbox', { name: 'Udhaar limit (₹)', exact: true }).fill('5000');
+  await page.getByRole('textbox', { name: 'Area', exact: true }).fill('दानापुर अभ्यास');
   await page
-    .getByRole('textbox', { name: 'पहचान, कॉमा से अलग करें', exact: true })
+    .getByRole('textbox', { name: 'Tag, comma lagakar', exact: true })
     .fill('ठेकेदार, नियमित');
   const settingsSaved = page.waitForResponse(
     (response) =>
@@ -111,7 +113,7 @@ test('Hindi customer settings, credit delivery, payment and reversal preserve th
       response.request().method() === 'PATCH' &&
       response.ok(),
   );
-  await page.getByRole('button', { name: 'सहेजें', exact: true }).click();
+  await page.getByRole('button', { name: 'Save karo', exact: true }).click();
   await settingsSaved;
   expect(await db.user.findUniqueOrThrow({ where: { id: customerId } })).toMatchObject({
     creditAllowed: true,
@@ -120,9 +122,9 @@ test('Hindi customer settings, credit delivery, payment and reversal preserve th
     tags: ['ठेकेदार', 'नियमित'],
     khataBalancePaise: 0,
   });
-  await page.getByRole('tab', { name: 'नोट्स', exact: true }).click();
+  await page.getByRole('tab', { name: 'Note', exact: true }).click();
   await page
-    .getByRole('textbox', { name: 'दुकान को क्या याद रखना है?', exact: true })
+    .getByRole('textbox', { name: 'Dukaan ko kya yaad rakhna hai?', exact: true })
     .fill(customerNote);
   const noteSaved = page.waitForResponse(
     (response) =>
@@ -130,39 +132,44 @@ test('Hindi customer settings, credit delivery, payment and reversal preserve th
       response.request().method() === 'POST' &&
       response.ok(),
   );
-  await page.getByRole('button', { name: 'नोट जोड़ें', exact: true }).click();
+  await page.getByRole('button', { name: 'Note jodo', exact: true }).click();
   await noteSaved;
   await expect(page.getByText(customerNote, { exact: true })).toBeVisible();
   expect(await db.customerNote.count({ where: { customerId, body: customerNote } })).toBe(1);
 
-  await page.getByRole('link', { name: 'नया ऑर्डर', exact: true }).click();
+  await page
+    .locator('#owner-main')
+    .getByRole('link', { name: hi['owner.newOrder'], exact: true })
+    .click();
   await expect(page).toHaveURL(new RegExp(`/orders/new\\?customer=${customerId}$`));
-  await expect(page.getByRole('textbox', { name: 'मोबाइल नंबर', exact: true })).toHaveValue(
+  await expect(page.getByRole('textbox', { name: 'Mobile number', exact: true })).toHaveValue(
     customerPhone.slice(3),
   );
-  await expect(page.getByRole('textbox', { name: 'ग्राहक का नाम', exact: true })).toHaveValue(
+  await expect(page.getByRole('textbox', { name: 'Grahak ka naam', exact: true })).toHaveValue(
     customerName,
   );
-  await page.getByRole('button', { name: 'आगे बढ़ें', exact: true }).click();
-  await page.getByRole('searchbox', { name: 'सामग्री खोजें', exact: true }).fill(productName);
+  await page.getByRole('button', { name: 'Aage badho', exact: true }).click();
+  await page.getByRole('searchbox', { name: 'Maal dhoondo', exact: true }).fill(productName);
   await expect(page.getByRole('heading', { name: productNameHi, exact: true })).toBeVisible();
-  await page.getByRole('textbox', { name: `मात्रा ${productNameHi}`, exact: true }).fill('2');
-  await page.getByRole('button', { name: 'आगे बढ़ें', exact: true }).click();
   await page
-    .getByRole('textbox', { name: 'घर, प्लॉट या साइट का पता', exact: true })
+    .getByRole('textbox', { name: `${hi['owner.quantity']} ${productNameHi}`, exact: true })
+    .fill('2');
+  await page.getByRole('button', { name: 'Aage badho', exact: true }).click();
+  await page
+    .getByRole('textbox', { name: 'Ghar, plot ya site ka pata', exact: true })
     .fill('साइट ७२, स्कूल के पास');
-  await page.getByRole('textbox', { name: 'इलाका', exact: true }).fill('दानापुर अभ्यास');
-  await page.getByRole('textbox', { name: 'पिनकोड', exact: true }).fill('800072');
-  await expect(page.getByRole('button', { name: 'उधार', exact: true })).toBeEnabled();
-  await page.getByRole('button', { name: 'उधार', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'उधार', exact: true })).toHaveAttribute(
+  await page.getByRole('textbox', { name: 'Area', exact: true }).fill('दानापुर अभ्यास');
+  await page.getByRole('textbox', { name: 'Pincode', exact: true }).fill('800072');
+  await expect(page.getByRole('button', { name: 'Udhaar', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Udhaar', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Udhaar', exact: true })).toHaveAttribute(
     'aria-pressed',
     'true',
   );
-  await page.getByRole('button', { name: 'ऑर्डर जाँचें', exact: true }).click();
-  const review = page.getByRole('dialog', { name: 'ऑर्डर जाँचें', exact: true });
+  await page.getByRole('button', { name: 'Order dekho', exact: true }).click();
+  const review = page.getByRole('dialog', { name: 'Order dekho', exact: true });
   await expect(
-    review.getByText(`इस उधार के बाद बाकी: ${money(totalPaise)}`, { exact: true }),
+    review.getByText(`${hi['owner.balanceAfter']}: ${money(totalPaise)}`, { exact: true }),
   ).toBeVisible();
   const created = page.waitForResponse(
     (response) =>
@@ -170,22 +177,22 @@ test('Hindi customer settings, credit delivery, payment and reversal preserve th
       response.request().method() === 'POST' &&
       response.ok(),
   );
-  await review.getByRole('button', { name: 'ऑर्डर पक्का करें', exact: true }).click();
+  await review.getByRole('button', { name: 'Order pakka karo', exact: true }).click();
   const order = (await (await created).json()) as {
     id: string;
     number: string;
     totalPaise: number;
   };
   expect(order.totalPaise).toBe(totalPaise);
-  const success = page.getByRole('dialog', { name: 'ऑर्डर दर्ज हो गया', exact: true });
+  const success = page.getByRole('dialog', { name: 'Order ban gaya', exact: true });
   await expect(success).toBeVisible();
-  await success.getByRole('button', { name: 'ऑर्डर देखें', exact: true }).click();
+  await success.getByRole('button', { name: 'Order dekho', exact: true }).click();
   expect(await db.customerLedgerEntry.count({ where: { orderId: order.id } })).toBe(0);
   expect((await db.user.findUniqueOrThrow({ where: { id: customerId } })).khataBalancePaise).toBe(
     0,
   );
-  await page.getByRole('button', { name: 'माल तैयार करें', exact: true }).click();
-  await page.getByRole('button', { name: 'माल भेजें', exact: true }).click();
+  await page.getByRole('button', { name: 'Taiyaari shuru karo', exact: true }).click();
+  await page.getByRole('button', { name: 'Maal nikal gaya', exact: true }).click();
   let hiddenDeliveryReply = false;
   await page.route(`**/admin/orders/${order.id}/status`, async (route) => {
     const body = route.request().postDataJSON();
@@ -196,14 +203,14 @@ test('Hindi customer settings, credit delivery, payment and reversal preserve th
       await route.abort('failed');
     } else await route.continue();
   });
-  await page.getByRole('button', { name: 'डिलीवरी पूरी करें', exact: true }).click();
+  await page.getByRole('button', { name: 'Maal pahunch gaya', exact: true }).click();
   await page
-    .getByRole('dialog', { name: 'डिलीवरी पूरी करें', exact: true })
-    .getByRole('button', { name: 'डिलीवरी पूरी करें', exact: true })
+    .getByRole('dialog', { name: 'Maal pahunch gaya', exact: true })
+    .getByRole('button', { name: 'Maal pahunch gaya', exact: true })
     .click();
-  await expect(page.getByText('डिलीवरी पूरी', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Pahunch gaya', { exact: true }).first()).toBeVisible();
   await expect(
-    page.getByText('यह बिक्री ग्राहक के खाते में दर्ज है।', { exact: true }),
+    page.getByText('Yeh bikri grahak ke khate mein hai.', { exact: true }),
   ).toBeVisible();
   const sale = await db.customerLedgerEntry.findUniqueOrThrow({ where: { orderId: order.id } });
   expect(sale).toMatchObject({
@@ -214,19 +221,19 @@ test('Hindi customer settings, credit delivery, payment and reversal preserve th
   });
   expect((await db.product.findUniqueOrThrow({ where: { id: productId } })).stock).toBe(48);
   await page.reload();
-  await expect(page.getByText('डिलीवरी पूरी', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Pahunch gaya', { exact: true }).first()).toBeVisible();
   expect(hiddenDeliveryReply).toBe(true);
   expect(await db.customerLedgerEntry.count({ where: { orderId: order.id } })).toBe(1);
-  await page.getByRole('link', { name: 'खाता', exact: true }).click();
+  await page.getByRole('link', { name: 'Udhaar', exact: true }).click();
   await expect(page.getByRole('heading', { name: customerName, exact: true })).toBeVisible();
   await expect(page.getByText(money(totalPaise), { exact: true }).first()).toBeVisible();
 
-  await page.getByRole('button', { name: 'पैसा मिला', exact: true }).click();
-  const receipt = page.getByRole('dialog', { name: 'पैसा मिला', exact: true });
-  await receipt.getByRole('textbox', { name: 'रकम (₹)', exact: true }).fill('200');
-  await receipt.getByRole('textbox', { name: 'नोट', exact: true }).fill(paymentNote);
-  await receipt.getByLabel('भुगतान का तरीका', { exact: true }).selectOption('CASH');
-  await receipt.getByRole('button', { name: 'सहेजें', exact: true }).click();
+  await page.getByRole('button', { name: 'Paisa mil gaya', exact: true }).click();
+  const receipt = page.getByRole('dialog', { name: 'Paisa mil gaya', exact: true });
+  await receipt.getByRole('textbox', { name: 'Rakam (₹)', exact: true }).fill('200');
+  await receipt.getByRole('textbox', { name: 'Note', exact: true }).fill(paymentNote);
+  await receipt.getByLabel('Paisa kaise', { exact: true }).selectOption('CASH');
+  await receipt.getByRole('button', { name: 'Save karo', exact: true }).click();
   await expect(receipt).toBeHidden();
   const paymentRow = page.getByRole('tabpanel').locator('article').filter({ hasText: paymentNote });
   await expect(paymentRow).toBeVisible();
@@ -246,15 +253,15 @@ test('Hindi customer settings, credit delivery, payment and reversal preserve th
     totalPaise - paymentPaise,
   );
 
-  await paymentRow.getByRole('button', { name: 'एंट्री उलटें', exact: true }).click();
-  const reverse = page.getByRole('dialog', { name: 'एंट्री उलटें', exact: true });
-  await reverse.getByRole('textbox', { name: 'सुधार की वजह', exact: true }).fill(reversalNote);
-  await reverse.getByRole('button', { name: 'एंट्री उलटें', exact: true }).click();
+  await paymentRow.getByRole('button', { name: 'Entry kaato', exact: true }).click();
+  const reverse = page.getByRole('dialog', { name: 'Entry kaato', exact: true });
+  await reverse
+    .getByRole('textbox', { name: 'Kyon kaat rahe hain', exact: true })
+    .fill(reversalNote);
+  await reverse.getByRole('button', { name: 'Entry kaato', exact: true }).click();
   await expect(reverse).toBeHidden();
   await expect(page.getByRole('tabpanel').getByText(reversalNote, { exact: true })).toBeVisible();
-  await expect(paymentRow.getByRole('button', { name: 'एंट्री उलटें', exact: true })).toHaveCount(
-    0,
-  );
+  await expect(paymentRow.getByRole('button', { name: 'Entry kaato', exact: true })).toHaveCount(0);
   const reversal = await db.customerLedgerEntry.findUniqueOrThrow({
     where: { reversesId: payment.id },
     include: { financialMovement: true },
@@ -289,7 +296,7 @@ test('Hindi customer settings, credit delivery, payment and reversal preserve th
     }),
   ).toBe(2);
   await page.goto(desk + '/khata');
-  await expect(page.getByRole('heading', { name: 'खाता', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Udhaar', exact: true })).toBeVisible();
   await expect(page.getByRole('link').filter({ hasText: customerName }).first()).toBeVisible();
 });
 

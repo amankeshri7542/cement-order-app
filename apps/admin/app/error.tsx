@@ -1,6 +1,6 @@
 'use client';
 import { useEffect } from 'react';
-import { LanguageProvider, useLanguage } from '../lib/i18n';
+import { LanguageProvider, useLanguage, useT } from '../lib/i18n';
 
 // The desk's last line of defence: one malformed reply must not leave staff with a blank page.
 // The page's language provider is inside the failed page, so this screen brings its own.
@@ -16,24 +16,17 @@ export default function ErrorPage({ error, reset }: { error: Error; reset: () =>
 }
 
 function Recovery({ retry }: { retry: () => void }) {
-  const { language, setLanguage, t } = useLanguage();
+  const t = useT();
+  const { language, setLanguage } = useLanguage();
   return (
     <div className="loading-page" role="alert">
-      <span className="stamp" aria-hidden="true">
-        शिव
-      </span>
-      <h1>{t('Something went wrong', 'कुछ गड़बड़ हो गई')}</h1>
-      <p>
-        {t(
-          'The store desk could not show this screen. Your saved work is safe.',
-          'दुकान डेस्क यह स्क्रीन नहीं दिखा सका। सहेजा हुआ काम सुरक्षित है।',
-        )}
-      </p>
+      <h1>{t('owner.errorPage.title')}</h1>
+      <p>{t('owner.errorPage.body')}</p>
       <button className="primary" onClick={retry}>
-        {t('Try again', 'फिर कोशिश करें')}
+        {t('owner.retry')}
       </button>
       <button className="secondary" onClick={() => setLanguage(language === 'hi' ? 'en' : 'hi')}>
-        {language === 'hi' ? 'English' : 'हिन्दी'}
+        {language === 'hi' ? 'English' : 'Hinglish'}
       </button>
     </div>
   );

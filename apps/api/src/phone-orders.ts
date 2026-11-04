@@ -1,9 +1,21 @@
+import { activeRules, priceFor } from './price-rules';
 import { Controller, Inject, Injectable, Post, Req } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import { istToday, khataBalance, phoneOrderSchema } from '@shiv/shared';
 import { Db } from './db';
-import { Admin, AuthRequest, Contract, Input, fail, hash } from './http';
+import {
+  AuthRequest,
+  Can,
+  Contract,
+  fail,
+  hash,
+  Input,
+  MAIN_LOCATION,
+  requireAt,
+  scoped,
+  shopForAction,
+} from './http';
 import { Events } from './catalog';
 import { getConfig } from './config';
 import { deliveryFor, moveStock, orderTotals, validateQuantity } from './inventory';
@@ -17,7 +29,11 @@ export class PhoneOrdersService {
     @Inject(Events) private events: Events,
   ) {}
 
-  async create(input: z.infer<typeof phoneOrderSchema>, actorId: string) {
+  async create(
+    { locationId: asked, ...input }: z.infer<typeof phoneOrderSchema>,
+    actorId: string,
+    locationId = asked ?? MAIN_LOCATION,
+  ) {
     const customerPhone = input.customerPhone ?? 'walk-in:store';
     const items = [...input.items].sort((a, b) => a.productId.localeCompare(b.productId));
     const requestHash = hash(JSON.stringify({ ...input, items }));
@@ -62,20 +78,34 @@ export class PhoneOrdersService {
       const deliveryDate = input.deliveryDate === 'today' ? istToday() : input.deliveryDate;
       validDelivery(deliveryDate);
       const lines = [];
+      const rules = await activeRules(tx);
+      const { customerGroupId } = await tx.user.findUniqueOrThrow({
+        where: { id: user.id },
+        select: { customerGroupId: true },
+      });
       for (const item of items) {
         const product = await tx.product.findUnique({ where: { id: item.productId } });
-        if (!product?.active || product.stock < item.quantity)
+        // What this shop holds counts here, not what the whole firm holds.
+        const level = await tx.stockLevel.findUnique({
+          where: { productId_locationId: { productId: item.productId, locationId } },
+          select: { quantity: true },
+        });
+        if (!product?.active || (level?.quantity ?? 0) < item.quantity)
           fail('OUT_OF_STOCK', 'That product or quantity is not available.', 409);
         validateQuantity(product, item.quantity);
+        const priced = priceFor(product, item.quantity, user.id, customerGroupId, rules);
         lines.push({
           productId: product.id,
           name: product.name,
           unit: product.unit,
           packSize: product.packSize,
           quantity: item.quantity,
-          pricePaise: product.pricePaise,
+          pricePaise: priced.pricePaise,
+          listPricePaise: product.pricePaise,
+          ruleId: priced.ruleId,
+          ruleKind: priced.ruleKind,
           priceVersion: product.priceVersion,
-          lineTotalPaise: product.pricePaise * item.quantity,
+          lineTotalPaise: priced.pricePaise * item.quantity,
         });
       }
       const subtotal = orderTotals(lines, 0, null).subtotalPaise;
@@ -122,6 +152,7 @@ export class PhoneOrdersService {
           reference: number,
           note: 'Owner-created order reservation',
           idempotencyKey: `phone:${number}:${line.productId}`,
+          locationId,
         });
       // Preserve the address snapshot shape for existing consumers, including store pickup.
       const address = input.address ?? {
@@ -138,12 +169,16 @@ export class PhoneOrdersService {
       const order = await tx.order.create({
         data: {
           number,
+          locationId,
           userId: user.id,
           source: input.source,
           createdById: actorId,
           requestHash,
           idempotencyKey: input.idempotencyKey,
+          // A person at the shop made it, so it is confirmed from the start.
           status: 'CONFIRMED',
+          confirmedAt: new Date(),
+          confirmedById: actorId,
           address,
           deliveryDate,
           notes: input.notes,
@@ -196,16 +231,19 @@ export class PhoneOrdersService {
 }
 
 @ApiTags('Owner phone orders')
-@Admin()
 @Controller('admin/orders/phone')
 export class PhoneOrdersController {
   constructor(@Inject(PhoneOrdersService) private orders: PhoneOrdersService) {}
+  @Can('orders.create', scoped)
   @Post()
   @Contract(phoneOrderSchema)
   create(
     @Input(phoneOrderSchema) input: z.infer<typeof phoneOrderSchema>,
     @Req() req: AuthRequest,
   ) {
-    return this.orders.create(input, req.user.id);
+    const locationId = shopForAction(req, 'orders.create', input.locationId);
+    // A phone order is confirmed from the start, so udhaar here is an udhaar decision.
+    if (input.paymentMethod === 'CREDIT') requireAt(req, 'orders.confirm.credit', locationId);
+    return this.orders.create(input, req.user.id, locationId);
   }
 }

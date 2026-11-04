@@ -64,6 +64,34 @@ export async function budget(
   }
 }
 
+/** Gives back what a reservation did not use. Never takes a budget below zero. */
+export async function refundBudget(
+  db: Pick<Prisma.TransactionClient, 'authRateLimit'>,
+  scope: string,
+  subject: string,
+  amount: number,
+) {
+  if (amount <= 0) return;
+  await db.authRateLimit.updateMany({
+    where: { key: budgetKey(scope, subject), count: { gte: amount } },
+    data: { count: { decrement: amount } },
+  });
+}
+
+/** Adds what a call cost beyond its reservation. The next call then meets the true total. */
+export async function chargeBudget(
+  db: Pick<Prisma.TransactionClient, 'authRateLimit'>,
+  scope: string,
+  subject: string,
+  amount: number,
+) {
+  if (amount <= 0) return;
+  await db.authRateLimit.updateMany({
+    where: { key: budgetKey(scope, subject) },
+    data: { count: { increment: amount } },
+  });
+}
+
 export async function requestBudget(
   tx: Prisma.TransactionClient,
   kind: 'order' | 'quote' | 'review',
@@ -95,7 +123,7 @@ export async function requestBudget(
 }
 
 export const pendingCod: Prisma.OrderWhereInput = {
-  status: 'CONFIRMED',
+  status: { in: ['AWAITING_CONFIRMATION', 'CONFIRMED'] },
   payment: { method: 'COD', status: 'PENDING' },
   OR: [{ work: null }, { work: { acknowledgedAt: null } }],
 };

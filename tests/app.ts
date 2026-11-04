@@ -84,5 +84,5 @@ export async function fillAddress(
 export async function placeOrder(page: Page) {
   await page.getByRole('button', { name: 'Review order', exact: true }).click();
   await page.getByRole('button', { name: /^Place order/ }).click();
-  await expect(page.getByRole('heading', { name: 'Confirmed', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Waiting for the shop', exact: true })).toBeVisible();
 }

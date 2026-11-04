@@ -5,6 +5,13 @@ import { RateProviders } from './rate-studio/providers';
 import { RateStorage } from './rate-studio/storage';
 import 'reflect-metadata';
 import { OperationsController } from './operations';
+import { ApprovalsController, ApprovalsService } from './approvals';
+import { GallaController, GallaService } from './galla';
+import { PricingController, PricingService } from './pricing';
+import { StockController, StockService } from './stock';
+import { WaDeskController, WaWebhookController } from './whatsapp/controller';
+import { WaReader } from './whatsapp/reader';
+import { WaService } from './whatsapp/service';
 import { Controller, Get, Inject, Module } from '@nestjs/common';
 import { APP_GUARD, NestFactory } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
@@ -30,6 +37,8 @@ import { KhataController, KhataService } from './khata';
 import { PhoneOrdersController, PhoneOrdersService } from './phone-orders';
 import { CurrentRatesController } from './current-rates';
 import { WebEnquiriesController } from './web-enquiries';
+import { UsersController } from './users';
+import { ConfirmService, InboxController } from './confirm';
 
 @Controller('health')
 class HealthController {
@@ -88,6 +97,14 @@ class HealthController {
     PhoneOrdersController,
     CurrentRatesController,
     WebEnquiriesController,
+    UsersController,
+    InboxController,
+    WaWebhookController,
+    WaDeskController,
+    StockController,
+    PricingController,
+    ApprovalsController,
+    GallaController,
   ],
   providers: [
     AssistantService,
@@ -104,6 +121,13 @@ class HealthController {
     KhataService,
     PhoneOrdersService,
     Maintenance,
+    ConfirmService,
+    WaReader,
+    WaService,
+    StockService,
+    PricingService,
+    ApprovalsService,
+    GallaService,
     AlertsService,
     Lifecycle,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
@@ -195,6 +219,8 @@ export async function createApp() {
     (req: Request, res: Response, next: NextFunction) => rateJson(req, res, next),
   );
   app.use('/api/v1/admin/uploads', raw({ type: '*/*', limit: '5mb' }));
+  // The partner signs the exact bytes, and may send several messages at once.
+  app.use('/api/v1/whatsapp/webhook', raw({ type: '*/*', limit: '4mb' }));
   app.useGlobalFilters(new Errors());
   if (c.NODE_ENV !== 'production')
     SwaggerModule.setup(

@@ -24,19 +24,25 @@ import { otpRequestSchema, otpResendSeconds, otpVerifySchema, refreshSchema } fr
 import { Db } from './db';
 import { getConfig } from './config';
 import {
+  accountView,
   AuthRequest,
   Contract,
-  Input,
-  Public,
-  accountView,
   cookie,
   fail,
+  forbid,
   hash,
+  Input,
+  MAIN_LOCATION,
+  Public,
   safeEqual,
+  Self,
+  type CanRule,
 } from './http';
 import {
   assertSession,
   assertStaffAttempts,
+  checkPassphrase,
+  hashPassword,
   limitOtp,
   otpBudget,
   otpTier,
@@ -44,6 +50,8 @@ import {
   refreshLifetime,
   verifyPassword,
 } from './security';
+import { PERMISSIONS_VERSION, accessFor, canDo, passphraseSetSchema } from '@shiv/shared';
+import { tellOtherOwners } from './users';
 
 // One answer for every failed staff sign-in, whichever factor was wrong.
 const staffRejection = 'The sign-in details could not be verified.';
@@ -107,21 +115,44 @@ export class AuthGuard implements CanActivate {
     if (!token) fail('UNAUTHORIZED', 'Please sign in to continue.', 401);
     const session = await this.db.session.findUnique({
       where: { accessHash: hash(token) },
-      include: { user: true },
+      include: {
+        user: {
+          include: {
+            staffMemberships: {
+              where: { endedAt: null },
+              select: { role: true, locationId: true },
+            },
+          },
+        },
+      },
     });
     if (!session || session.expiresAt <= new Date())
       fail('UNAUTHORIZED', 'Your session expired. Sign in again.', 401);
     await assertSession(this.db, session);
-    req.user = session.user;
+    const { staffMemberships, ...user } = session.user;
+    req.user = user;
+    // Read fresh on every request, so a changed role or a pause takes effect at once.
+    req.access =
+      session.surface === 'CUSTOMER' || user.staffPausedAt || user.role !== 'ADMIN'
+        ? {}
+        : accessFor(staffMemberships);
     if (req.headers['x-shiv-account'] && req.headers['x-shiv-account'] !== session.user.id)
       fail('ACCOUNT_CHANGED', 'The signed-in account changed. Refresh before continuing.', 409);
     req.sessionId = session.id;
     req.sessionAccessHash = session.accessHash;
-    if (
-      this.reflector.getAllAndOverride<boolean>('admin', [ctx.getHandler(), ctx.getClass()]) &&
-      session.user.role !== 'ADMIN'
-    )
-      fail('FORBIDDEN', 'Store staff access is required.', 403);
+    const rule = this.reflector.getAllAndOverride<CanRule | undefined>('can', [
+      ctx.getHandler(),
+      ctx.getClass(),
+    ]);
+    if (rule) {
+      if (!req.access[rule.permission]) forbid(req, rule.permission);
+      if (typeof rule.shop === 'function') {
+        const locationId = await rule.shop(this.db as never, req);
+        // Nothing found means no shop to compare; the handler answers 404 as usual.
+        if (locationId && !canDo(req.access, rule.permission, locationId))
+          forbid(req, rule.permission);
+      }
+    }
     if (session.lastSeenAt.getTime() < Date.now() - 60000)
       await this.db.session.updateMany({
         where: { id: session.id },
@@ -168,12 +199,18 @@ export class AuthService {
     return body as { status: string };
   }
   private async verifyStaff(
-    db: Pick<Prisma.TransactionClient, 'adminCredential'>,
+    db: Pick<Prisma.TransactionClient, 'adminCredential' | 'staffMembership'>,
     userId: string,
     adminPassword?: string,
     failures?: { db: Db; ip: string },
   ) {
     if (!getConfig().STAFF_PASSPHRASE_REQUIRED) return new Date();
+    // Only roles that can reach everything carry a passphrase. Other staff use OTP alone.
+    const needsPassphrase = await db.staffMembership.findFirst({
+      where: { userId, endedAt: null, role: { in: ['OWNER', 'ACCOUNTANT'] } },
+      select: { id: true },
+    });
+    if (!needsPassphrase) return new Date();
     const credential = await db.adminCredential.findUnique({ where: { userId } });
     if (credential) {
       if (!adminPassword || !(await verifyPassword(adminPassword, credential.passwordHash))) {
@@ -183,9 +220,8 @@ export class AuthService {
       }
       return new Date();
     }
-    if (getConfig().NODE_ENV === 'production')
-      fail('ADMIN_SETUP_REQUIRED', 'Staff authentication must be configured by the store.', 403);
-    // Development-only fixture exception: no credential permits OTP-only local staff login.
+    // Added from the desk and not linked yet: the code alone signs them in, and until they set a
+    // passphrase they cannot change anyone's access (requireStepUp).
     return null;
   }
   async request(phone: string) {
@@ -234,6 +270,7 @@ export class AuthService {
     adminPassword?: string,
     label = 'Unknown device',
     ip = 'unknown',
+    surface?: 'CUSTOMER' | 'DESK',
   ) {
     const challenge = await this.db.otpChallenge.findUnique({ where: { phone } });
     if (
@@ -317,6 +354,8 @@ export class AuthService {
           adminVerifiedAt,
           expiresAt: new Date(Date.now() + 1800000),
           refreshExpiresAt: new Date(Date.now() + refreshLifetime(user.role)),
+          // Only staff can hold a desk session, whatever the request asked for.
+          surface: user.role === 'ADMIN' ? (surface ?? 'DESK') : 'CUSTOMER',
         },
       });
       return { user, accessToken, refreshToken };
@@ -352,7 +391,7 @@ export class AuthService {
             actorId: session.userId,
             event: 'REFRESH_TOKEN_REUSED',
             entityId: session.id,
-            details: { label: session.label },
+            details: {},
           },
         });
         return null;
@@ -443,6 +482,7 @@ export class AuthController {
         body.adminPassword,
         req.get('user-agent') || 'Unknown device',
         ip,
+        body.surface,
       ),
       req,
       res,
@@ -484,10 +524,68 @@ export class AuthController {
     for (const name of ['shiv_access', 'shiv_refresh']) res.clearCookie(name, { path: '/api/v1' });
     return { ok: true };
   }
-  @Get('session') session(@Req() req: AuthRequest) {
-    return { user: accountView(req.user) };
+  @Self() @Get('session') async session(@Req() req: AuthRequest) {
+    const locations = Object.keys(req.access).length
+      ? await this.db.location.findMany({
+          where: { active: true },
+          select: { id: true, name: true },
+          orderBy: { name: 'asc' },
+        })
+      : [];
+    // The main shop comes first, so a chooser never starts on some other shop by accident.
+    locations.sort((a, b) => Number(b.id === MAIN_LOCATION) - Number(a.id === MAIN_LOCATION));
+    return {
+      user: accountView(req.user),
+      access: req.access,
+      permissionsVersion: PERMISSIONS_VERSION,
+      locations,
+      hasPassphrase: req.access['desk.use']
+        ? (await this.db.adminCredential.count({ where: { userId: req.user.id } })) > 0
+        : false,
+    };
   }
-  @Get('sessions') async sessions(@Req() req: AuthRequest) {
+  /** Sets this person's own passphrase. Changing one asks for the old one and ends other phones. */
+  @Self()
+  @Post('passphrase')
+  @Contract(passphraseSetSchema)
+  async setPassphrase(
+    @Input(passphraseSetSchema) body: z.infer<typeof passphraseSetSchema>,
+    @Req() req: AuthRequest,
+  ) {
+    if (!req.access['desk.use']) forbid(req, 'desk.use');
+    const credential = await this.db.adminCredential.findUnique({
+      where: { userId: req.user.id },
+    });
+    if (credential)
+      await checkPassphrase(this.db, req.user.id, body.current, credential.passwordHash);
+    const passwordHash = await hashPassword(body.next);
+    await this.db.atomic(async (tx) => {
+      await tx.adminCredential.upsert({
+        where: { userId: req.user.id },
+        create: { userId: req.user.id, passwordHash },
+        update: { passwordHash },
+      });
+      await tx.session.update({
+        where: { id: req.sessionId },
+        data: { adminVerifiedAt: new Date() },
+      });
+      if (credential)
+        await tx.session.deleteMany({
+          where: { userId: req.user.id, id: { not: req.sessionId }, surface: { not: 'CUSTOMER' } },
+        });
+      await tx.auditLog.create({
+        data: {
+          actorId: req.user.id,
+          event: 'STAFF_PASSPHRASE_SET',
+          entityId: req.user.id,
+          details: { first: !credential },
+        },
+      });
+      await tellOtherOwners(tx, req.user.id, 'owner.alert.passphraseSet', req.user.name);
+    });
+    return { ok: true };
+  }
+  @Self() @Get('sessions') async sessions(@Req() req: AuthRequest) {
     const sessions = await this.db.session.findMany({
       where: { userId: req.user.id, refreshExpiresAt: { gt: new Date() } },
       select: {
@@ -505,6 +603,7 @@ export class AuthController {
       deviceCount: _count.devices,
     }));
   }
+  @Self()
   @Patch('sessions/:id')
   @Contract(z.strictObject({ label: z.string().trim().min(1).max(100) }))
   async rename(
@@ -524,12 +623,16 @@ export class AuthController {
       return { ok: true };
     });
   }
-  @Delete('sessions/:id') async revoke(@Param('id') id: string, @Req() req: AuthRequest) {
+  @Self()
+  @Delete('sessions/:id')
+  async revoke(@Param('id') id: string, @Req() req: AuthRequest) {
     const result = await this.db.session.deleteMany({ where: { id, userId: req.user.id } });
     if (!result.count) fail('NOT_FOUND', 'Session not found.', 404);
     return { ok: true };
   }
-  @Post('sessions/revoke-others') async revokeOthers(@Req() req: AuthRequest) {
+  @Self()
+  @Post('sessions/revoke-others')
+  async revokeOthers(@Req() req: AuthRequest) {
     const result = await this.db.session.deleteMany({
       where: { userId: req.user.id, id: { not: req.sessionId } },
     });

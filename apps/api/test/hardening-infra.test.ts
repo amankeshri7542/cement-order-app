@@ -1,3 +1,4 @@
+import type { WaService } from '../src/whatsapp/service';
 import 'reflect-metadata';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadEnvFile } from 'node:process';
@@ -15,6 +16,7 @@ import { OwnerWorkService } from '../src/owner-work';
 import { AlertsService, knownPushService } from '../src/alerts';
 import { Maintenance } from '../src/integrations';
 import { resetConfigForTests } from '../src/config';
+import { grantOwners } from './staff-helper';
 
 // Firebase is replaced so the worker's phone-push step can run without a real project.
 const fcm = vi.hoisted(() => ({ apps: [] as unknown[], send: vi.fn() }));
@@ -98,6 +100,7 @@ function worker(steps: { expireReservations?: () => Promise<unknown> } = {}) {
     { dispatch: async () => {} } as unknown as OwnerWorkService,
     { deliver: async () => {} } as unknown as AlertsService,
     new KhataService(db),
+    { runDue: async () => 0, purge: async () => {} } as unknown as WaService,
   );
 }
 
@@ -134,6 +137,7 @@ beforeEach(async () => {
       },
     });
   }
+  await grantOwners(db);
   await db.category.create({ data: { id: 'cement-category', name: 'Cement', slug: 'cement' } });
   await db.product.create({
     data: {
@@ -424,7 +428,8 @@ describe('account deletion', () => {
     const granted = await db.auditLog.findFirstOrThrow({
       where: { event: 'DEMAND_OVERRIDE_GRANTED' },
     });
-    expect(granted.details).toEqual({ personalDataRemoved: true });
+    // Nothing typed about a person enters this log, as it can never be changed afterwards.
+    expect(granted.details).not.toHaveProperty('reason');
     const messages = await db.outboundMessage.findMany();
     // Delivery evidence stays for the owner; the customer's details do not.
     expect(messages).toHaveLength(2);

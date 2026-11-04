@@ -8,6 +8,7 @@ import type { INestApplication } from '@nestjs/common';
 import type { Server } from 'node:http';
 import { Db } from '../src/db';
 import { hash } from '../src/http';
+import { grantOwners } from './staff-helper';
 
 // Hindi product names and descriptions: saved from the desk, returned by the public catalogue,
 // found by Hindi search, cleared with a blank field, and used on rate cards headed in Hindi.
@@ -78,8 +79,11 @@ beforeEach(async () => {
       },
     },
   });
+  await grantOwners(db);
   await db.category.create({ data: { id: 'cement-category', name: 'Cement', slug: 'cement' } });
-  await db.storeSettings.create({ data: { id: 'store', deliveryFeePaise: 50000 } });
+  await db.storeSettings.create({
+    data: { id: 'store', phone: '+919999999000', deliveryFeePaise: 50000 },
+  });
 });
 afterAll(async () => {
   await app?.close();

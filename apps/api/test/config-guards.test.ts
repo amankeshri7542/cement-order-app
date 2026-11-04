@@ -71,6 +71,7 @@ describe('DEMO_MODE', () => {
     NODE_ENV: 'production',
     OTP_PROVIDER: 'mock',
     DEMO_MODE: 'true',
+    DEMO_DATABASE_HOST: 'localhost',
     DEMO_STAFF_CODE: '482913',
     TRUST_PROXY_HOPS: '1',
     CORS_ORIGINS: 'https://admin.demo.test',
@@ -107,6 +108,17 @@ describe('DEMO_MODE', () => {
   ])('refuses %s', async (_name, env) => {
     const getConfig = await load({ ...demo, ...env });
     expect(() => getConfig()).toThrow(/DEMO_MODE requires/);
+  });
+  it.each([
+    ['no named database', { DEMO_DATABASE_HOST: undefined }],
+    ['a different database', { DEMO_DATABASE_HOST: 'demo.example.test' }],
+    [
+      'a copied setting pointing at the real database',
+      { DATABASE_URL: 'postgresql://user:pass@real.example.test:5432/shiv_cement' },
+    ],
+  ])('refuses %s', async (_name, env) => {
+    const getConfig = await load({ ...demo, ...env });
+    expect(() => getConfig()).toThrow(/DEMO_DATABASE_HOST/);
   });
   it('rejects a staff code that is not six digits', async () => {
     const getConfig = await load({ ...demo, DEMO_STAFF_CODE: '1234' });

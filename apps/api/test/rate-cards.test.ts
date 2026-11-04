@@ -9,8 +9,8 @@ const snapshot: CardSnapshot = {
   deliveryMessage: 'Delivery charges confirmed for your site.',
   promotionalCopy: 'Speak with our store team.',
   contactLabel: 'SHIV STORE DESK',
-  phone: '+919297513707',
-  whatsapp: '+919297513708',
+  phone: '+919999997007',
+  whatsapp: '+919999997008',
   publishedAt: '2026-10-02T20:00:00.000Z',
   items: [
     {
@@ -43,8 +43,8 @@ describe('Approved rate-card rendering', () => {
         expect(svg).toContain(`width="${width}" height="${height}"`);
         expect(svg).toContain('₹425.50');
         expect(svg).toContain('03 Oct 2026, 01:30 IST');
-        expect(svg).toContain('CALL +919297513707');
-        expect(svg).toContain('WHATSAPP +919297513708');
+        expect(svg).toContain('CALL +919999997007');
+        expect(svg).toContain('WHATSAPP +919999997008');
         expect(metadata(svg!).items[0]).toEqual({
           ...snapshot.items[0],
           formattedPrice: '₹425.50',

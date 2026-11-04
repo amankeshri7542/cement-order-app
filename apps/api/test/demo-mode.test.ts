@@ -11,6 +11,7 @@ process.env.NODE_ENV = 'development';
 process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
 process.env.OTP_PROVIDER = 'mock';
 process.env.DEMO_MODE = 'true';
+process.env.DEMO_DATABASE_HOST = new URL(process.env.TEST_DATABASE_URL ?? 'postgresql://x').hostname;
 process.env.DEMO_STAFF_CODE = '482913';
 process.env.OTP_HASH_SECRET = 'demo-mode-test-only-secret-with-32-characters';
 process.env.CORS_ORIGINS = 'http://localhost:3000';

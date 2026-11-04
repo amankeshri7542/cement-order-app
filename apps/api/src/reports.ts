@@ -1,26 +1,83 @@
-import { Controller, Get, Inject, Query, Res } from '@nestjs/common';
+import { Controller, Get, Inject, Query, Res, Req } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import { OrderSource, Prisma } from '@prisma/client';
 import type { Response } from 'express';
-import { reportRangeSchema, type MoneyReport } from '@shiv/shared';
+import { istToday, reportRangeSchema, type MoneyReport } from '@shiv/shared';
 import { Db } from './db';
-import { Admin, fail } from './http';
+import { AuthRequest, Can, fail, scoped, shopAsked, shopWhere } from './http';
 
 const day = (date: Date) =>
   new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(date);
 const rupees = (paise: number) => (paise / 100).toFixed(2);
+const DAY_MS = 86400000;
 
+/** Money in and out of the shop, the same way the money report adds it up. */
+const moneyIn = ['COLLECTION', 'KHATA_PAYMENT', 'COUNTER_SALE'];
+const moneyOut = ['REFUND', 'KHATA_PAYMENT_REVERSAL'];
+/** Orders no one has agreed to yet, or that are gone, bring in no money. */
+const notSold = [
+  'PENDING_PAYMENT',
+  'AWAITING_CONFIRMATION',
+  'CANCELLED',
+  'REFUNDED',
+  'REFUND_PENDING',
+] as const;
+/** These are made by a person at the shop, so they are confirmed the moment they exist. */
+const bornConfirmed = ['PHONE', 'WALK_IN', 'QUOTE'] as const;
+/** How many items get their own bar. The rest join under one lighter bar. */
+const ITEM_BARS = 5;
+
+// The family has not given each shop's hours yet (plan 01, question 9), and Location has no field
+// for them. Staff work 8-9 AM to 6-7 PM, so the wait is counted from 8 AM to 7 PM, India time.
+const OPENS_AT = 8 * 60;
+const CLOSES_AT = 19 * 60;
+const IST_OFFSET = 330;
+
+/** The minutes between two moments that fall inside shop hours: a night order waits only from 8 AM. */
+export function shopMinutes(from: Date, to: Date) {
+  const openUpTo = (at: Date) => {
+    const minute = at.getTime() / 60000 + IST_OFFSET;
+    const whole = Math.floor(minute / 1440);
+    const today = Math.min(Math.max(minute - whole * 1440 - OPENS_AT, 0), CLOSES_AT - OPENS_AT);
+    return whole * (CLOSES_AT - OPENS_AT) + today;
+  };
+  return Math.max(0, openUpTo(to) - openUpTo(from));
+}
+const median = (values: number[]) => {
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2;
+};
+/** The days of a range, India time, from its first day to its last. */
+function daysOf(start: Date, end: Date) {
+  const dates: string[] = [];
+  for (let t = start.getTime(); t < end.getTime(); t += DAY_MS)
+    dates.push(day(new Date(t + 6 * 3600000)));
+  return dates;
+}
+function rangeOf(query: Record<string, unknown>) {
+  const parsed = reportRangeSchema.safeParse({ from: query.from, to: query.to });
+  if (!parsed.success)
+    fail('INVALID_INPUT', parsed.error.issues[0]?.message || 'Choose a valid date range.');
+  const { from, to } = parsed.data;
+  const start = new Date(`${from}T00:00:00+05:30`);
+  const end = new Date(new Date(`${to}T00:00:00+05:30`).getTime() + DAY_MS);
+  return { from, to, start, end };
+}
 /**
  * The shop's money for any range of days (India time): what was ordered, what was collected
  * and how (cash, UPI, online), counter sales, refunds, cash still to collect and quotes.
  * Collections are not profit: purchase costs are not tracked.
  */
 @ApiTags('Store administration')
-@Admin()
 @Controller('admin/reports')
 export class ReportsController {
   constructor(@Inject(Db) private db: Db) {}
 
-  async money(query: Record<string, string>): Promise<MoneyReport> {
+  async money(
+    query: Record<string, string>,
+    shop: { locationId?: { in: string[] } } = {},
+  ): Promise<MoneyReport> {
     const parsed = reportRangeSchema.safeParse({ from: query.from, to: query.to });
     if (!parsed.success)
       fail('INVALID_INPUT', parsed.error.issues[0]?.message || 'Choose a valid date range.');
@@ -30,7 +87,7 @@ export class ReportsController {
     const range = { gte: start, lt: end };
     const [orders, movements, pending, quotes, creditSales] = await Promise.all([
       this.db.order.findMany({
-        where: { createdAt: range },
+        where: { createdAt: range, ...shop },
         select: {
           createdAt: true,
           totalPaise: true,
@@ -39,7 +96,7 @@ export class ReportsController {
         },
       }),
       this.db.financialMovement.findMany({
-        where: { occurredAt: range },
+        where: { occurredAt: range, ...shop },
         select: { kind: true, channel: true, amountPaise: true, occurredAt: true },
       }),
       this.db.payment.aggregate({
@@ -47,16 +104,26 @@ export class ReportsController {
           method: 'COD',
           status: 'PENDING',
           order: {
-            status: { in: ['CONFIRMED', 'PREPARING', 'OUT_FOR_DELIVERY', 'DELIVERY_EXCEPTION'] },
+            ...shop,
+            status: {
+              in: [
+                'AWAITING_CONFIRMATION',
+                'CONFIRMED',
+                'PREPARING',
+                'OUT_FOR_DELIVERY',
+                'DELIVERY_EXCEPTION',
+              ],
+            },
           },
         },
         _count: true,
         _sum: { amountPaise: true },
       }),
-      this.db.quote.groupBy({ by: ['status'], where: { createdAt: range }, _count: true }),
+      this.db.quote.groupBy({ by: ['status'], where: { createdAt: range, ...shop }, _count: true }),
       this.db.customerLedgerEntry.aggregate({
         where: {
           occurredAt: range,
+          ...shop,
           OR: [
             { kind: 'SALE_ON_CREDIT' },
             { kind: 'REVERSAL', reverses: { kind: 'SALE_ON_CREDIT' } },
@@ -163,25 +230,193 @@ export class ReportsController {
     };
   }
 
-  @Get('money') report(@Query() query: Record<string, string>) {
-    return this.money(query);
+  @Can('reports.read', scoped) @Get('money') report(
+    @Query() query: Record<string, string>,
+    @Req() req: AuthRequest,
+  ) {
+    return this.money(query, shopWhere(req, 'reports.read'));
+  }
+
+  /** The numbers behind the Report page's charts. Reads only. Money figures are never profit. */
+  @Can('reports.read', scoped) @Get('trends') async trends(
+    @Query() query: Record<string, unknown>,
+    @Req() req: AuthRequest,
+  ) {
+    const shop = shopAsked(req, 'reports.read', query.locationId);
+    const { from, to, start, end } = rangeOf(query);
+    const range = { gte: start, lt: end };
+    const [locations, movements, itemRows, sourceRows, tapped, firstOrder, firstMoney] =
+      await Promise.all([
+        this.db.location.findMany({
+          where: shop.locationId ? { id: shop.locationId } : {},
+          select: { id: true, name: true, active: true },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        }),
+        this.db.financialMovement.findMany({
+          where: { occurredAt: range, kind: { in: [...moneyIn, ...moneyOut] }, ...shop },
+          select: { locationId: true, kind: true, amountPaise: true, occurredAt: true },
+        }),
+        this.db.orderItem.groupBy({
+          by: ['productId', 'unit'],
+          where: { order: { createdAt: range, status: { notIn: [...notSold] }, ...shop } },
+          _sum: { lineTotalPaise: true, quantity: true },
+        }),
+        this.db.order.groupBy({
+          by: ['source'],
+          where: { createdAt: range, ...shop },
+          _count: { _all: true },
+        }),
+        this.db.order.findMany({
+          where: { confirmedAt: range, source: { notIn: [...bornConfirmed] }, ...shop },
+          select: { createdAt: true, confirmedAt: true },
+        }),
+        this.db.order.aggregate({ where: shop, _min: { createdAt: true } }),
+        this.db.financialMovement.aggregate({ where: shop, _min: { occurredAt: true } }),
+      ]);
+
+    const dates = daysOf(start, end);
+    const perShop = new Map<string, Map<string, number>>();
+    for (const m of movements) {
+      const days = perShop.get(m.locationId) ?? new Map<string, number>();
+      const date = day(m.occurredAt);
+      const signed = moneyOut.includes(m.kind) ? -m.amountPaise : m.amountPaise;
+      days.set(date, (days.get(date) ?? 0) + signed);
+      perShop.set(m.locationId, days);
+    }
+    const shops = locations
+      // A closed shop stays on the chart only for the days it took money.
+      .filter((location) => location.active || perShop.has(location.id))
+      .map((location) => {
+        const days = dates.map((date) => ({
+          date,
+          moneyInPaise: perShop.get(location.id)?.get(date) ?? 0,
+        }));
+        return {
+          id: location.id,
+          name: location.name,
+          totalPaise: days.reduce((sum, row) => sum + row.moneyInPaise, 0),
+          days,
+        };
+      });
+
+    const products = await this.db.product.findMany({
+      where: { id: { in: itemRows.map((row) => row.productId) } },
+      select: { id: true, name: true },
+    });
+    const ranked = itemRows
+      .map((row) => ({
+        productId: row.productId,
+        name: products.find((product) => product.id === row.productId)?.name ?? '',
+        unit: row.unit,
+        // Bori, kg and cu ft cannot be added together, so each line keeps its own unit.
+        quantity: row._sum.quantity ?? 0,
+        totalPaise: row._sum.lineTotalPaise ?? 0,
+      }))
+      .filter((row) => row.totalPaise > 0)
+      .sort((a, b) => b.totalPaise - a.totalPaise || a.name.localeCompare(b.name));
+    const rest = ranked.slice(ITEM_BARS);
+
+    const sources = Object.values(OrderSource)
+      .map((source) => ({
+        source,
+        orders: sourceRows.find((row) => row.source === source)?._count._all ?? 0,
+      }))
+      .sort((a, b) => b.orders - a.orders || a.source.localeCompare(b.source));
+
+    const waits = new Map<string, number[]>();
+    for (const order of tapped) {
+      const minutes = shopMinutes(order.createdAt, order.confirmedAt!);
+      // Asked and answered outside shop hours: there was no shop wait to measure.
+      if (minutes <= 0) continue;
+      const date = day(order.confirmedAt!);
+      waits.set(date, [...(waits.get(date) ?? []), minutes]);
+    }
+    const today = istToday();
+    const firsts = [firstOrder._min.createdAt, firstMoney._min.occurredAt].filter(
+      (value): value is Date => !!value,
+    );
+    const firstDay = firsts.length
+      ? day(new Date(Math.min(...firsts.map((value) => value.getTime()))))
+      : null;
+    const historyDays = firstDay
+      ? Math.max(0, (Date.parse(today) - Date.parse(firstDay)) / DAY_MS) + 1
+      : 0;
+    return {
+      from,
+      to,
+      today,
+      historyDays,
+      shops,
+      items: ranked.slice(0, ITEM_BARS),
+      otherItems: {
+        products: new Set(rest.map((row) => row.productId)).size,
+        totalPaise: rest.reduce((sum, row) => sum + row.totalPaise, 0),
+      },
+      sources,
+      confirm: dates.map((date) => {
+        const minutes = waits.get(date);
+        return {
+          date,
+          orders: minutes?.length ?? 0,
+          medianMinutes: minutes ? Math.round(median(minutes) * 10) / 10 : null,
+        };
+      }),
+    };
+  }
+
+  /**
+   * How old the udhaar is today. Payments clear the oldest debt first, as on the khata summary, so
+   * what is still owed is always the newest debts. Each debt stays with the shop that gave it: a
+   * shop's people see only theirs, even when a payment landed at another shop.
+   */
+  @Can('reports.read', scoped) @Get('udhaar-age') async udhaarAge(
+    @Query() query: Record<string, unknown>,
+    @Req() req: AuthRequest,
+  ) {
+    const asked = shopAsked(req, 'reports.read', query.locationId).locationId;
+    const ids = typeof asked === 'string' ? [asked] : asked?.in;
+    const midnight = new Date(`${istToday()}T00:00:00+05:30`).getTime();
+    // Columns hold UTC with no zone. A Date sent as it is would be compared in the database
+    // session's zone, so on a server not set to UTC each step would be hours out.
+    const [d30, d60, d90] = [30, 60, 90].map(
+      (days) => Prisma.sql`${new Date(midnight - days * DAY_MS).toISOString()}::text::timestamp`,
+    );
+    const rows = await this.db.$queryRaw<{ step: number; paise: bigint }[]>`
+      WITH debts AS (
+        SELECT e."locationId", e."occurredAt", e."amountPaise"::bigint AS amount,
+          u."khataBalancePaise"::bigint AS balance,
+          COALESCE(SUM(e."amountPaise"::bigint) OVER (
+            PARTITION BY e."customerId" ORDER BY e."occurredAt" DESC, e.id DESC
+            ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+          ), 0) AS newer
+        FROM "CustomerLedgerEntry" e JOIN "User" u ON u.id = e."customerId"
+        WHERE e."amountPaise" > 0 AND u."khataBalancePaise" > 0
+          AND u."deletedAt" IS NULL AND u.role <> 'ADMIN'
+      )
+      SELECT (CASE WHEN "occurredAt" >= ${d30} THEN 0 WHEN "occurredAt" >= ${d60} THEN 1
+        WHEN "occurredAt" >= ${d90} THEN 2 ELSE 3 END)::int AS step,
+        SUM(LEAST(amount, balance - newer))::bigint AS paise
+      FROM debts
+      WHERE newer < balance
+        ${ids ? Prisma.sql`AND "locationId" = ANY(${ids})` : Prisma.empty}
+      GROUP BY 1`;
+    const steps = (['0-30', '31-60', '61-90', '90+'] as const).map((step, index) => ({
+      step,
+      paise: Number(rows.find((row) => row.step === index)?.paise ?? 0),
+    }));
+    return { totalPaise: steps.reduce((sum, row) => sum + row.paise, 0), steps };
   }
 
   /** The same report as a spreadsheet (UTF-8 with BOM so Excel shows Hindi and ₹ correctly). */
-  @Get(['money.csv', 'export']) async csv(
+  @Can('reports.read', scoped) @Get(['money.csv', 'export']) async csv(
     @Query() query: Record<string, string>,
     @Res() res: Response,
+    @Req() req: AuthRequest,
   ) {
-    const r = await this.money(query);
+    const r = await this.money(query, shopWhere(req, 'reports.read'));
     const customerText = (value: string) => (/^\s*[=+\-@]/.test(value) ? `'${value}` : value);
     const lines = [
-      [
-        'तारीख / Date',
-        'ऑर्डर / Orders',
-        'वसूली / Collected (₹)',
-        'काउंटर / Counter (₹)',
-        'वापसी / Refunds (₹)',
-      ],
+      ['Date', 'Orders', 'Collected (₹)', 'Counter (₹)', 'Refunds (₹)'],
       ...r.days.map((d) => [
         d.date,
         String(d.orders),
@@ -190,26 +425,26 @@ export class ReportsController {
         rupees(d.refundsPaise),
       ]),
       [],
-      ['कुल / Totals', `${r.from} – ${r.to}`],
-      ['नकद / Cash collected', rupees(r.collections.cashPaise)],
+      ['Totals', `${r.from} – ${r.to}`],
+      ['Cash collected', rupees(r.collections.cashPaise)],
       ['UPI collected', rupees(r.collections.upiPaise)],
-      ['ऑनलाइन / Online', rupees(r.collections.onlinePaise)],
-      ['तरीका दर्ज नहीं / Method not recorded', rupees(r.collections.unrecordedPaise)],
-      ['काउंटर नकद / Counter cash', rupees(r.counter.cashPaise)],
-      ['काउंटर UPI / Counter UPI', rupees(r.counter.upiPaise)],
-      ['वापसी / Refunds', rupees(r.refundsPaise)],
-      ['शुद्ध वसूली / Net collected', rupees(r.netPaise)],
-      ['उधार दिया (₹)', rupees(r.creditSalesPaise)],
-      ['उधार वापस मिला (₹)', rupees(r.creditPaymentsPaise)],
+      ['Online', rupees(r.collections.onlinePaise)],
+      ['Method not recorded', rupees(r.collections.unrecordedPaise)],
+      ['Counter cash', rupees(r.counter.cashPaise)],
+      ['Counter UPI', rupees(r.counter.upiPaise)],
+      ['Refunds', rupees(r.refundsPaise)],
+      ['Net collected', rupees(r.netPaise)],
+      ['Credit given (₹)', rupees(r.creditSalesPaise)],
+      ['Credit paid back (₹)', rupees(r.creditPaymentsPaise)],
       [
-        'बाकी नकद / Cash still to collect',
+        'Cash still to collect',
         rupees(r.pendingCash.amountPaise),
         `${r.pendingCash.orders} orders`,
       ],
-      ['थोक भाव स्वीकार / Quotes accepted', String(r.quotes.accepted)],
-      ['थोक भाव अस्वीकार / Quotes rejected', String(r.quotes.rejected)],
+      ['Quotes accepted', String(r.quotes.accepted)],
+      ['Quotes rejected', String(r.quotes.rejected)],
       [],
-      ['टॉप ग्राहक', 'मोबाइल', 'बिक्री (₹)', 'ऑर्डर'],
+      ['Top customers', 'Mobile', 'Sales (₹)', 'Orders'],
       ...r.topCustomers.map((customer) => [
         customerText(customer.name),
         customerText(customer.phone),
@@ -218,7 +453,7 @@ export class ReportsController {
       ]),
     ];
     const cell = (value: string) =>
-      /[",\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
+      /[",\r\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
     res
       .status(200)
       .type('text/csv; charset=utf-8')

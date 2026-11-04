@@ -166,13 +166,14 @@ export function ContactPage() {
   );
 }
 
+const whatsappPartner = process.env.NEXT_PUBLIC_WHATSAPP_PARTNER;
 export function PrivacyPage() {
   const { t } = useLanguage();
   return (
     <div className="info-page">
       <Heading
         title={t('Privacy, in plain language', 'निजता, सरल भाषा में')}
-        lead={t('Last updated 21 October 2026.', 'आख़िरी बदलाव: 21 अक्टूबर 2026।')}
+        lead={t('Last updated 4 November 2026.', 'आख़िरी बदलाव: 4 नवंबर 2026।')}
       />
       <Block id="collect" title={t('What we collect and why', 'हम क्या लेते हैं और क्यों')}>
         <p>
@@ -199,6 +200,35 @@ export function PrivacyPage() {
           {t(
             'The website uses only what it needs: sign-in cookies when you sign in, a cookie and local storage that remember your language, and local storage for your basket and last checked pincode. There are no advertising or tracking cookies.',
             'वेबसाइट सिर्फ़ ज़रूरी चीज़ें इस्तेमाल करती है: साइन इन करने पर साइन इन कुकी, आपकी भाषा याद रखने के लिए एक कुकी और लोकल स्टोरेज, और आपकी टोकरी व आख़िरी जाँचे पिनकोड के लिए लोकल स्टोरेज। विज्ञापन या ट्रैकिंग कुकी नहीं हैं।',
+          )}
+        </p>
+      </Block>
+      <Block id="whatsapp" title={t('WhatsApp messages to the shop', 'दुकान को WhatsApp संदेश')}>
+        <p>
+          {whatsappPartner
+            ? t(
+                `Messages sent to the shop's WhatsApp number pass through Meta (WhatsApp) and our WhatsApp partner, ${whatsappPartner}, to our server.`,
+                `दुकान के WhatsApp नंबर पर भेजे गए संदेश Meta (WhatsApp) और हमारे WhatsApp साझेदार ${whatsappPartner} से होकर हमारे सर्वर तक आते हैं।`,
+              )
+            : t(
+                "The shop's WhatsApp number is not connected to this service yet. Before it is, this page will name the WhatsApp partner the messages pass through, along with Meta (WhatsApp).",
+                'दुकान का WhatsApp नंबर अभी इस सेवा से जुड़ा नहीं है। जुड़ने से पहले यह पेज उस WhatsApp साझेदार का नाम बताएगा जिससे संदेश गुज़रेंगे, साथ में Meta (WhatsApp) का भी।',
+              )}{' '}
+          {t(
+            'Once connected, a computer program reads messages about orders and rates and prepares a draft for a person at the shop. At this stage it sends you nothing and cannot confirm an order. Only a person at the shop confirms orders.',
+            'जुड़ने के बाद एक कंप्यूटर प्रोग्राम ऑर्डर और रेट के संदेश पढ़कर दुकान के व्यक्ति के लिए ड्राफ़्ट बनाता है। इस चरण में यह आपको कुछ नहीं भेजता और ऑर्डर पक्का नहीं कर सकता। ऑर्डर सिर्फ़ दुकान का व्यक्ति पक्का करता है।',
+          )}
+        </p>
+        <p>
+          {t(
+            "Plain typed orders are read by our own rules. Other messages about the shop's business may go to Google's Gemini model, on a paid plan that does not use them to improve Google's products. Google receives the words of the message and our product list, not your name, number or account.",
+            'साफ़ लिखे ऑर्डर हमारे अपने नियमों से पढ़े जाते हैं। दुकान के काम के दूसरे संदेश Google के Gemini मॉडल को जा सकते हैं, ऐसे भुगतान वाले प्लान पर जिसमें Google उनसे अपने उत्पाद नहीं सुधारता। Google को संदेश के शब्द और हमारी सामान सूची मिलती है, आपका नाम, नंबर या खाता नहीं।',
+          )}
+        </p>
+        <p>
+          {t(
+            "We keep the words of these messages for 30 days and then delete them. We do not keep voice notes or photos. Messages that are not about the shop's business are not kept, and numbers the shop marks as family or personal are never read. Write STOP on WhatsApp to stop your messages being read, or ask the shop.",
+            'इन संदेशों के शब्द हम 30 दिन रखते हैं, फिर मिटा देते हैं। आवाज़ वाले संदेश और फ़ोटो हम नहीं रखते। दुकान के काम से अलग संदेश नहीं रखे जाते, और जिन नंबरों को दुकान घर का या निजी बताती है वे कभी नहीं पढ़े जाते। अपने संदेश पढ़े जाना रोकने के लिए WhatsApp पर STOP लिखें, या दुकान से कहें।',
           )}
         </p>
       </Block>
@@ -387,6 +417,7 @@ export function DeleteAccountPage() {
         const result = await customerApi<{ user: { phone: string } }>('/auth/otp/verify', 'POST', {
           phone: `+91${phone}`,
           code,
+          surface: 'CUSTOMER',
         });
         setSignedInAs(result.user.phone);
       } else {

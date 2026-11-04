@@ -30,6 +30,7 @@ const env = {
     CORS_ORIGINS: ['admin', 'shop', 'app'].map(url).join(','),
     OTP_PROVIDER: 'mock',
     DEMO_MODE: 'true',
+    DEMO_DATABASE_HOST: new URL(secrets.RUNTIME_DATABASE_URL).hostname,
     DEMO_STAFF_CODE: secrets.DEMO_STAFF_CODE,
     OTP_HASH_SECRET: secrets.OTP_HASH_SECRET,
     TRUST_PROXY_HOPS: process.env.TRUST_PROXY_HOPS || '1',

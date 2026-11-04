@@ -357,7 +357,7 @@ export function Avatar({ name }: { name: string }) {
 }
 export function BottomNav({ children, label }: { children: ReactNode; label: string }) {
   return (
-    <nav aria-label={label} className={styles.bottomNav}>
+    <nav aria-label={label} className={styles.bottomNav} data-owner-tabs="">
       {children}
     </nav>
   );

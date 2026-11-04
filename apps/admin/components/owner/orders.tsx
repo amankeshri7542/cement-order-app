@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { Button, EmptyState, Field, MoneyText, SearchBar, Sheet } from '@shiv/design';
-import { istToday, money, unitLabel, type Order, type StoreSettings } from '@shiv/shared';
+import { istToday, money, type Order, type StoreSettings } from '@shiv/shared';
 import { api } from '../../lib/api';
 import { useLanguage, useT, useWords } from '../../lib/i18n';
 import { useAction, useDebounced, useOwner } from '../../lib/owner';
@@ -26,9 +26,10 @@ export function OrdersList() {
   const [search, setSearch] = useState('');
   const q = useDebounced(search);
   const [group, setGroup] = useState('pending');
+  const { shopId } = useOwner();
   const orders = usePaged<Order>(
-    ['orders', 'list', group, q],
-    `/admin/orders?limit=24&group=${group}&q=${encodeURIComponent(q)}`,
+    ['orders', 'list', group, q, shopId],
+    `/admin/orders?limit=24&group=${group}&q=${encodeURIComponent(q)}${shopId ? `&locationId=${shopId}` : ''}`,
   );
   const rows = orders.data?.pages.flatMap((page) => page.items) ?? [];
   return (
@@ -72,7 +73,42 @@ export function OrdersList() {
     </>
   );
 }
+/** A stock keeper's view of an order: what to load and where it goes. No rupees, no customer. */
+type LoadingOrder = Pick<Order, 'id' | 'number' | 'status' | 'deliveryDate'> & {
+  area: string;
+  items: { id: string; name: string; unit: string; quantity: number }[];
+};
+function LoadingCard({ order }: { order: LoadingOrder }) {
+  const t = useT();
+  return (
+    <>
+      <div className={css.row}>
+        <h3>{order.number}</h3>
+        <Status value={order.status} />
+      </div>
+      <p>
+        {order.area} · <OwnerDate value={order.deliveryDate} />
+      </p>
+      <h3>{t('owner.toLoad')}</h3>
+      {order.items.map((item) => (
+        <div className={css.row} key={item.id}>
+          <span>{item.name}</span>
+          <strong>
+            {item.quantity} {item.unit}
+          </strong>
+        </div>
+      ))}
+    </>
+  );
+}
 export function OrderRow({ order }: { order: Order }) {
+  const { can } = useOwner();
+  if (!can('orders.read.money'))
+    return (
+      <Link href={`/orders/${order.id}`} className={`${css.card} ${css.cardLink}`}>
+        <LoadingCard order={order as unknown as LoadingOrder} />
+      </Link>
+    );
   return (
     <Link href={`/orders/${order.id}`} className={`${css.card} ${css.cardLink}`}>
       <div className={css.row}>
@@ -97,7 +133,7 @@ export function OrderDetails({ id }: { id: string }) {
   const created = params.get('created') === '1';
   const words = useWords();
   const { language } = useLanguage();
-  const { confirm } = useOwner();
+  const { confirm, can } = useOwner();
   const detail = useQuery({
     queryKey: ['orders', 'detail', id],
     queryFn: () => api<Order>(`/admin/orders/${id}`),
@@ -127,6 +163,16 @@ export function OrderDetails({ id }: { id: string }) {
     [['orders', 'detail', id]],
   );
   const order = detail.data;
+  const canChange = !!order && can('orders.status', order.locationId);
+  if (order && !can('orders.read.money'))
+    return (
+      <>
+        <PageHeader title={t('owner.orderNumber', { number: order.number })} back="/orders" />
+        <section className={css.card}>
+          <LoadingCard order={order as unknown as LoadingOrder} />
+        </section>
+      </>
+    );
   return (
     <>
       <PageHeader
@@ -168,7 +214,7 @@ export function OrderDetails({ id }: { id: string }) {
                   <MoneyText value={item.lineTotalPaise} />
                 </div>
                 <p>
-                  {item.quantity} {unitLabel(item.unit, language)} × {money(item.pricePaise)}
+                  {item.quantity} {(item.unit)} × {money(item.pricePaise)}
                 </p>
               </div>
             ))}
@@ -199,6 +245,12 @@ export function OrderDetails({ id }: { id: string }) {
               </Link>
             )}
             <NextOrderAction order={order} />
+            {order.status === 'AWAITING_CONFIRMATION' &&
+              can('orders.confirm', order.locationId) && (
+                <Link className={css.inlineLink} href={`/inbox/${order.id}`}>
+                  {t('owner.pakka.confirm')} <span aria-hidden="true">→</span>
+                </Link>
+              )}
           </section>
           <Problem error={cancel.error || reconcile.error} />
           <details className={`${css.card} ${css.details}`}>
@@ -207,7 +259,7 @@ export function OrderDetails({ id }: { id: string }) {
               <Button variant="secondary" onClick={() => window.print()}>
                 {t('owner.printSummary')}
               </Button>
-              {['CONFIRMED', 'PREPARING'].includes(order.status) && (
+              {['CONFIRMED', 'PREPARING'].includes(order.status) && canChange && (
                 <Button
                   variant="danger"
                   disabled={cancel.isPending}
@@ -216,7 +268,7 @@ export function OrderDetails({ id }: { id: string }) {
                   {t('owner.cancelOrder')}
                 </Button>
               )}
-              {['OUT_FOR_DELIVERY', 'DELIVERY_EXCEPTION'].includes(order.status) && (
+              {['OUT_FOR_DELIVERY', 'DELIVERY_EXCEPTION'].includes(order.status) && canChange && (
                 <Button variant="secondary" onClick={() => setProblem(true)}>
                   {t('owner.issue')}
                 </Button>
@@ -230,24 +282,26 @@ export function OrderDetails({ id }: { id: string }) {
                   </div>
                 ))}
               </details>
-              {settings.data?.onlinePaymentsEnabled && order.payment.method === 'ONLINE' && (
-                <form
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    reconcile.mutate();
-                  }}
-                >
-                  <Field label={t('owner.paymentMethod')}>
-                    <input
-                      value={technicalId}
-                      onChange={(event) => setTechnicalId(event.target.value)}
-                      pattern="order_[A-Za-z0-9]+"
-                      required
-                    />
-                  </Field>
-                  <Button disabled={reconcile.isPending}>{t('owner.confirm')}</Button>
-                </form>
-              )}
+              {can('money.refund', order.locationId) &&
+                settings.data?.onlinePaymentsEnabled &&
+                order.payment.method === 'ONLINE' && (
+                  <form
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      reconcile.mutate();
+                    }}
+                  >
+                    <Field label={t('owner.paymentMethod')}>
+                      <input
+                        value={technicalId}
+                        onChange={(event) => setTechnicalId(event.target.value)}
+                        pattern="order_[A-Za-z0-9]+"
+                        required
+                      />
+                    </Field>
+                    <Button disabled={reconcile.isPending}>{t('owner.confirm')}</Button>
+                  </form>
+                )}
             </div>
           </details>
         </div>
@@ -277,14 +331,12 @@ export function OrderDetails({ id }: { id: string }) {
 
 export function NextOrderAction({ order, task }: { order: Order; task?: 'next' | 'payment' }) {
   const t = useT();
-  const { confirm } = useOwner();
+  const { confirm, can } = useOwner();
   const [receipt, setReceipt] = useState<'only' | 'deliver' | null>(null);
   const [refund, setRefund] = useState(false);
   const [channel, setChannel] = useState('CASH');
   const action = useAction(
     async (next: string) => {
-      if (next === 'PREPARING' && !order.work?.acknowledgedAt)
-        await api(`/admin/orders/${order.id}/acknowledge`, 'POST');
       if (next === 'RECEIPT') {
         await api(`/admin/orders/${order.id}/cod-received`, 'POST', { channel });
         if (receipt === 'only') {
@@ -333,7 +385,7 @@ export function NextOrderAction({ order, task }: { order: Order; task?: 'next' |
   return (
     <>
       <Problem error={action.error} />
-      {next && task !== 'payment' && (
+      {next && task !== 'payment' && can('orders.status', order.locationId) && (
         <Button
           className={css.wide}
           disabled={action.isPending}
@@ -364,7 +416,8 @@ export function NextOrderAction({ order, task }: { order: Order; task?: 'next' |
       {['CONFIRMED', 'PREPARING', 'OUT_FOR_DELIVERY', 'DELIVERED'].includes(order.status) &&
         task !== 'next' &&
         order.payment.method === 'COD' &&
-        order.payment.status !== 'CAPTURED' && (
+        order.payment.status !== 'CAPTURED' &&
+        can('money.receive', order.locationId) && (
           <Button
             variant="secondary"
             className={css.wide}
@@ -374,11 +427,13 @@ export function NextOrderAction({ order, task }: { order: Order; task?: 'next' |
             {t('owner.receiveMoney')}
           </Button>
         )}
-      {order.status === 'REFUND_PENDING' && order.payment.method === 'COD' && (
-        <Button variant="danger" className={css.wide} onClick={() => setRefund(true)}>
-          {t('owner.refund')}
-        </Button>
-      )}
+      {order.status === 'REFUND_PENDING' &&
+        order.payment.method === 'COD' &&
+        can('money.refund', order.locationId) && (
+          <Button variant="danger" className={css.wide} onClick={() => setRefund(true)}>
+            {t('owner.refund')}
+          </Button>
+        )}
       {(receipt || refund) && (
         <Sheet
           title={t(refund ? 'owner.refund' : 'owner.receiveMoney')}
@@ -420,7 +475,6 @@ export function NextOrderAction({ order, task }: { order: Order; task?: 'next' |
 
 function DeliveryProblem({ order, close }: { order: Order; close: () => void }) {
   const t = useT();
-  const { language } = useLanguage();
   const [mode, setMode] = useState(order.status === 'DELIVERY_EXCEPTION' ? 'RETRY' : 'REPORT');
   const [reason, setReason] = useState('UNAVAILABLE');
   const [note, setNote] = useState('');
@@ -520,7 +574,7 @@ function DeliveryProblem({ order, close }: { order: Order; close: () => void }) 
             {order.items.map((item) => (
               <fieldset key={item.productId} className={css.card}>
                 <legend>
-                  {item.name} · {item.quantity} {unitLabel(item.unit, language)}
+                  {item.name} · {item.quantity} {(item.unit)}
                 </legend>
                 {(['sellableQuantity', 'damagedQuantity'] as const).map((field) => (
                   <Field

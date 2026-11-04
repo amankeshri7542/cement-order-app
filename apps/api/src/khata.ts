@@ -23,7 +23,17 @@ import {
   ledgerReverseSchema,
 } from '@shiv/shared';
 import { Db } from './db';
-import { Admin, AuthRequest, Contract, Input, fail, hash } from './http';
+import {
+  AuthRequest,
+  Can,
+  Contract,
+  fail,
+  hash,
+  homeShop,
+  Input,
+  MAIN_LOCATION,
+  requireAt,
+} from './http';
 import { paginate } from './pagination';
 
 // All operations for one account touch this row, including idempotent replays.
@@ -50,6 +60,7 @@ export async function appendLedger(
     orderId?: string;
     financialMovementId?: string;
     reversesId?: string;
+    locationId?: string;
   },
 ) {
   const customer = await khataCustomer(tx, input.customerId);
@@ -91,6 +102,18 @@ function businessTime(value?: string) {
   return time;
 }
 
+/** Whose drawer took this cash. Someone at two shops must say, or it lands in the wrong one. */
+function drawerFor(req: AuthRequest, asked?: string) {
+  if (asked) {
+    requireAt(req, 'money.receive', asked);
+    return asked;
+  }
+  const scope = req.access['money.receive'];
+  if (Array.isArray(scope) && scope.length > 1)
+    fail('SHOP_REQUIRED', 'Choose which shop took this money.', 400);
+  return homeShop(req);
+}
+
 @Injectable()
 export class KhataService {
   constructor(@Inject(Db) private db: Db) {}
@@ -102,6 +125,7 @@ export class KhataService {
     },
     actorId: string,
     payment: boolean,
+    locationId: string = MAIN_LOCATION,
   ) {
     const requestHash = hash(
       JSON.stringify({ ...input, operation: payment ? 'PAYMENT' : 'ADJUST' }),
@@ -132,9 +156,12 @@ export class KhataService {
         ? await tx.financialMovement.create({
             data: {
               kind: 'KHATA_PAYMENT',
+              locationId,
               amountPaise: input.amountPaise,
               actorId,
-              occurredAt,
+              // The ledger keeps the business date. Cash entered a drawer now, whatever the date
+              // says, or a back-dated receipt would land in a day already closed.
+              occurredAt: (input.channel ?? 'CASH') === 'CASH' ? new Date() : occurredAt,
               channel: input.channel ?? 'CASH',
               counterParty: customerId,
             },
@@ -142,6 +169,7 @@ export class KhataService {
         : undefined;
       // A payment may leave an advance balance; credit permission is needed for sales only.
       return appendLedger(tx, {
+        locationId,
         customerId: customer.id,
         kind,
         amountPaise: payment ? -input.amountPaise : input.amountPaise,
@@ -194,6 +222,7 @@ export class KhataService {
         ? await tx.financialMovement.create({
             data: {
               kind: 'KHATA_PAYMENT_REVERSAL',
+              locationId: original.financialMovement.locationId,
               amountPaise: original.financialMovement.amountPaise,
               channel: original.financialMovement.channel,
               actorId,
@@ -203,6 +232,7 @@ export class KhataService {
           })
         : undefined;
       return appendLedger(tx, {
+        locationId: original.locationId,
         customerId,
         kind: 'REVERSAL',
         amountPaise: -original.amountPaise,
@@ -240,11 +270,11 @@ export class KhataService {
           overduePaise: number;
         }[]
       >`SELECT u.id, u.name, u.phone, u."khataBalancePaise" AS "balancePaise",
-        LEAST(u."khataBalancePaise", SUM(CASE WHEN e."occurredAt" < ${cutoff}
+        LEAST(u."khataBalancePaise", SUM(CASE WHEN e."occurredAt" < ${cutoff.toISOString()}::timestamp
           OR e."amountPaise" < 0 THEN e."amountPaise" ELSE 0 END))::integer AS "overduePaise"
         FROM "User" u JOIN "CustomerLedgerEntry" e ON e."customerId" = u.id
         WHERE u."deletedAt" IS NULL AND u.role <> 'ADMIN' AND u."khataBalancePaise" > 0
-        GROUP BY u.id HAVING SUM(CASE WHEN e."occurredAt" < ${cutoff}
+        GROUP BY u.id HAVING SUM(CASE WHEN e."occurredAt" < ${cutoff.toISOString()}::timestamp
           OR e."amountPaise" < 0 THEN e."amountPaise" ELSE 0 END) > 0
         ORDER BY "overduePaise" DESC, u.id`;
       return {
@@ -277,7 +307,6 @@ export class KhataService {
 }
 
 @ApiTags('Customer khata and CRM')
-@Admin()
 @Controller('admin')
 export class KhataController {
   constructor(
@@ -285,6 +314,7 @@ export class KhataController {
     @Inject(KhataService) private khata: KhataService,
   ) {}
 
+  @Can('khata.read.one')
   @Get('customers/:id/khata')
   ledger(@Param('id') id: string, @Query() query: Record<string, string>) {
     const page = paginate(query, `khata:${id}`);
@@ -310,6 +340,7 @@ export class KhataController {
     });
   }
 
+  @Can('khata.payment')
   @Post('customers/:id/khata/payment')
   @Contract(khataPaymentSchema)
   payment(
@@ -317,8 +348,10 @@ export class KhataController {
     @Input(khataPaymentSchema) input: z.infer<typeof khataPaymentSchema>,
     @Req() req: AuthRequest,
   ) {
-    return this.khata.record(id, input, req.user.id, true);
+    const { locationId: asked, ...entry } = input;
+    return this.khata.record(id, entry, req.user.id, true, drawerFor(req, asked));
   }
+  @Can('khata.adjust')
   @Post('customers/:id/khata/adjust')
   @Contract(ledgerEntrySchema)
   adjust(
@@ -326,8 +359,9 @@ export class KhataController {
     @Input(ledgerEntrySchema) input: z.infer<typeof ledgerEntrySchema>,
     @Req() req: AuthRequest,
   ) {
-    return this.khata.record(id, input, req.user.id, false);
+    return this.khata.record(id, input, req.user.id, false, homeShop(req));
   }
+  @Can('khata.reverse')
   @Post('customers/:id/khata/reverse/:entryId')
   @Contract(ledgerReverseSchema)
   reverse(
@@ -338,10 +372,11 @@ export class KhataController {
   ) {
     return this.khata.reverse(id, entryId, input, req.user.id);
   }
-  @Get('khata/summary') summary() {
+  @Can('khata.read.list') @Get('khata/summary') summary() {
     return this.khata.summary();
   }
 
+  @Can('khata.credit.set')
   @Patch('customers/:id')
   @Contract(customerUpdateSchema)
   update(
@@ -364,10 +399,13 @@ export class KhataController {
             before: {
               creditAllowed: customer.creditAllowed,
               creditLimitPaise: customer.creditLimitPaise,
-              area: customer.area,
-              tags: customer.tags,
             },
-            after: input,
+            after: {
+              ...(input.creditAllowed === undefined ? {} : { creditAllowed: input.creditAllowed }),
+              ...(input.creditLimitPaise === undefined
+                ? {}
+                : { creditLimitPaise: input.creditLimitPaise }),
+            },
           },
         },
       });
@@ -375,6 +413,7 @@ export class KhataController {
     });
   }
 
+  @Can('customers.note')
   @Post('customers/:id/notes')
   @Contract(customerNoteSchema)
   note(
@@ -399,6 +438,7 @@ export class KhataController {
       return note;
     });
   }
+  @Can('customers.read')
   @Get('customers/:id/notes')
   async notes(@Param('id') id: string, @Query() query: Record<string, string>) {
     if (!(await this.db.user.findFirst({ where: { id, deletedAt: null, role: { not: 'ADMIN' } } })))
@@ -412,6 +452,7 @@ export class KhataController {
       }),
     );
   }
+  @Can('customers.note')
   @Post('customers/:id/contacts')
   @Contract(customerContactSchema)
   contact(

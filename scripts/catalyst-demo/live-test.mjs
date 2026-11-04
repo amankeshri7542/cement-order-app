@@ -350,7 +350,7 @@ await check(
       body: { reviewId, idempotencyKey: randomUUID() },
     });
     const order = expectStatus(placed, 201, 'place order');
-    need(order.status === 'CONFIRMED', `status ${order.status}`);
+    need(order.status === 'AWAITING_CONFIRMATION', `status ${order.status}`);
     need(order.payment?.method === 'COD', `payment ${order.payment?.method}`);
     state.orderA = order;
     state.audit.push(['ORDER_CREATED', order.id]);
@@ -399,6 +399,12 @@ await check(
       need(expectStatus(r, 200, status).status === status, `${status} not applied`);
       state.audit.push([`ORDER_${status}`, a.id]);
     };
+    const cardA = expectStatus(await admin.call('GET', `/admin/inbox/${a.id}`), 200, 'card A');
+    const confirmed = await admin.call('POST', `/admin/orders/${a.id}/confirm`, {
+      body: { expectedVersion: cardA.version, decisionKey: randomUUID() },
+    });
+    need(expectStatus(confirmed, 201, 'confirm').status === 'CONFIRMED', 'not confirmed');
+    state.audit.push(['ORDER_CONFIRMED', a.id]);
     await move('PREPARING');
     await move('OUT_FOR_DELIVERY');
     const cod = await admin.call('POST', `/admin/orders/${a.id}/cod-received`, {
@@ -422,12 +428,18 @@ await check(
     const b = expectStatus(placed, 201, 'place (B)');
     state.orderB = b;
     state.audit.push(['ORDER_CREATED', b.id]);
-    const cancelled = await admin.call('PATCH', `/admin/orders/${b.id}/status`, {
-      body: { status: 'CANCELLED', note: 'Live acceptance test cleanup' },
+    const cardB = expectStatus(await admin.call('GET', `/admin/inbox/${b.id}`), 200, 'card B');
+    const cancelled = await admin.call('POST', `/admin/orders/${b.id}/refuse`, {
+      body: {
+        expectedVersion: cardB.version,
+        decisionKey: randomUUID(),
+        reason: 'OTHER',
+        note: 'Live acceptance test cleanup',
+      },
     });
-    need(expectStatus(cancelled, 200, 'cancel B').status === 'CANCELLED', 'B not cancelled');
-    state.audit.push(['ORDER_CANCELLED', b.id]);
-    return `${a.number}: CONFIRMED→PREPARING→OUT_FOR_DELIVERY→COD received→DELIVERED; ${b.number} CANCELLED`;
+    need(expectStatus(cancelled, 201, 'refuse B').status === 'CANCELLED', 'B not cancelled');
+    state.audit.push(['ORDER_REFUSED', b.id]);
+    return `${a.number}: waiting→CONFIRMED→PREPARING→OUT_FOR_DELIVERY→COD received→DELIVERED; ${b.number} CANCELLED`;
   },
   { requires: ['5', '6'] },
 );

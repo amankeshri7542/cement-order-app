@@ -68,8 +68,8 @@ family script with roles for Papa and Chacha is [DEMO_SCRIPT.md](DEMO_SCRIPT.md)
 
 - **Live updates:** Catalyst documents a 30-second limit per request, so the owner desk's live feed
   may drop and reconnect instead of staying open (not measured).
-- **Rate Studio** passes its backend test, but its screen stays hidden in the owner desk
-  (`NEXT_PUBLIC_FEATURE_RATE_STUDIO` is off, as the master plan decided).
+- **Rate Studio** passes its backend test, but has no screen in the owner desk. Daily rates are
+  changed on the desk's Daam aur offer page.
 - **Idle sleep:** services sleep after about 5 minutes idle. The background job (reminders, expiry
   of unpaid online orders) only runs while the API is awake. It is harmless with cash-only orders.
 - **Same-origin API:** each site serves the API at its own `/api/v1`, because the Catalyst gateway

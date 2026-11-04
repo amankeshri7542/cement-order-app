@@ -2,16 +2,15 @@ import { Controller, Inject, Post, Req } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import { Db } from './db';
-import { Admin, AuthRequest, Contract, Input, fail } from './http';
+import { AuthRequest, Can, Contract, fail, Input } from './http';
 import { t } from '@shiv/i18n';
 import { rateCardPng, renderRateCardPages, type CardSnapshot } from './rate-studio/cards';
 const schema = z.strictObject({ language: z.enum(['hi', 'en']).default('hi') });
 @ApiTags('Owner current rates')
-@Admin()
 @Controller('admin/rate-cards')
 export class CurrentRatesController {
   constructor(@Inject(Db) private db: Db) {}
-  @Post('current')
+  @Can('ratecard.share') @Post('current')
   @Contract(schema)
   async current(@Input(schema) input: z.infer<typeof schema>, @Req() req: AuthRequest) {
     const snapshot = await this.db.atomic(async (tx) => {
@@ -24,6 +23,8 @@ export class CurrentRatesController {
       if (products.length > 100)
         fail('RESOURCE_LIMIT', 'Use Rate Studio to share a selected catalogue.', 409);
       const settings = await tx.storeSettings.findUniqueOrThrow({ where: { id: 'store' } });
+      if (!settings.phone.trim())
+        fail('STORE_PHONE_MISSING', 'Add the shop phone number in Settings before sharing rates.', 409);
       const snapshot: CardSnapshot = {
         heading: t('owner.shareRates', {}, input.language),
         deliveryMessage: settings.deliveryMessage,

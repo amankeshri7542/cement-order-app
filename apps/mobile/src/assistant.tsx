@@ -12,7 +12,7 @@ type AssistantProduct = {
   brand: string;
   unit: string;
   pricePaise: number;
-  stock: number;
+  availability: 'IN_STOCK' | 'ON_REQUEST' | 'ASK_SHOP';
   minQuantity: number;
 };
 type Answer = {
@@ -140,10 +140,6 @@ export function Assistant() {
     }
   }
   const starters = [
-    t(
-      'How many bags of cement for a 10×10 ft slab?',
-      '10×10 फ़ुट की छत में कितनी बोरी सीमेंट लगेगी?',
-    ),
     t('Which cement is best for plaster?', 'प्लास्टर के लिए कौन सा सीमेंट अच्छा है?'),
     t('Do you deliver to my pincode?', 'क्या मेरे पिनकोड पर डिलीवरी है?'),
   ];

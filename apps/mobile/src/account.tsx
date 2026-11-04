@@ -151,7 +151,7 @@ export function Login() {
         const result = await api<{ user: User; accessToken?: string; refreshToken?: string }>(
           '/auth/otp/verify',
           'POST',
-          { phone: `+91${phone}`, code },
+          { phone: `+91${phone}`, code, surface: 'CUSTOMER' },
         );
         const user = await saveSession(result);
         setSent(false);

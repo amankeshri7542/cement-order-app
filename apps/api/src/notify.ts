@@ -24,6 +24,21 @@ export const pushText =
     };
   };
 
+/** Takes back a customer's message that has not gone yet. */
+export async function clearHeldMessages(
+  tx: Pick<Prisma.TransactionClient, 'notification' | 'outboundMessage'>,
+  orderId: string,
+  now = new Date(),
+) {
+  await tx.notification.deleteMany({
+    where: { orderId, dedupeKey: { startsWith: 'decision:' }, sendAfter: { gt: now } },
+  });
+  await tx.outboundMessage.updateMany({
+    where: { dedupeKey: { startsWith: `wa:decision:${orderId}:` }, status: 'PENDING' },
+    data: { status: 'CANCELLED' },
+  });
+}
+
 /**
  * Records a notification for a customer, worded in the language they chose in the app (Hindi when
  * they never chose one). Written inside the caller's transaction, so it exists exactly when the

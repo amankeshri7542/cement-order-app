@@ -3,8 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import { Button } from '@shiv/design';
 import type { Page } from '@shiv/shared';
 import { api } from '../../lib/api';
-import { useLanguage, useT } from '../../lib/i18n';
-import { useAction } from '../../lib/owner';
+import { useT } from '../../lib/i18n';
+import { useAction, useOwner } from '../../lib/owner';
 import { ContactActions } from './common';
 import css from './owner.module.css';
 
@@ -21,7 +21,9 @@ export type Enquiry = {
 };
 
 export function useNewEnquiries() {
+  const { can } = useOwner();
   return useQuery({
+    enabled: can('enquiries.handle'),
     queryKey: ['enquiries', 'new'],
     queryFn: () => api<Page<Enquiry>>('/admin/enquiries?status=NEW&limit=20'),
   });
@@ -29,13 +31,12 @@ export function useNewEnquiries() {
 
 function EnquiryCard({ enquiry }: { enquiry: Enquiry }) {
   const t = useT();
-  const { language } = useLanguage();
   const handle = useAction(
     (id: string) => api(`/admin/enquiries/${id}/handle`, 'POST', {}),
     [['enquiries']],
     'owner.enquiryHandledDone',
   );
-  const when = new Intl.DateTimeFormat(language === 'hi' ? 'hi-IN' : 'en-IN', {
+  const when = new Intl.DateTimeFormat('en-IN', {
     timeZone: 'Asia/Kolkata',
     day: 'numeric',
     month: 'short',

@@ -8,6 +8,7 @@ import type { INestApplication } from '@nestjs/common';
 import type { Server } from 'node:http';
 import { Db } from '../src/db';
 import { hash } from '../src/http';
+import { confirmOrder, grantOwners } from './staff-helper';
 
 // Money and stock records: owner edits after orders, replayed money actions, stale delivery
 // keys, refunds by the collection channel, late quote conversion and oversized totals.
@@ -77,6 +78,7 @@ async function order(quantity = 10) {
     .set(auth())
     .send({ reviewId: checked.body.id, idempotencyKey: randomUUID() });
   expect(placed.status, JSON.stringify(placed.body)).toBe(201);
+  await confirmOrder(server, db, tokens.admin, placed.body.id);
   return placed.body as { id: string; totalPaise: number };
 }
 function status(id: string, next: string) {
@@ -120,6 +122,7 @@ beforeEach(async () => {
         addresses: { create: { id: `${role}-address`, ...address } },
       },
     });
+  await grantOwners(db);
   await db.category.create({ data: { id: 'cement-category', name: 'Cement', slug: 'cement' } });
   await db.product.create({ data: product });
   await db.inventoryMovement.create({

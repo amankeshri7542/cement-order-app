@@ -1,0 +1,102 @@
+# The whole shop on one small server: database, API with its worker, two websites and a Cloudflare
+# tunnel. Nothing listens on the internet, the tunnel reaches out. See docs/SERVER_SETUP.md.
+# Run with: docker compose -f infra/docker-compose.yml --env-file infra/server.env up -d
+name: shiv
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: shiv_owner
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in server.env}
+      POSTGRES_DB: shiv_cement
+    # Sized for a 2 GB server. Finished logs go to /wal, and backup.sh logs encrypts and sends them.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - max_connections=40
+      - -c
+      - wal_level=replica
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_timeout=600
+      - -c
+      - archive_command=test ! -f /wal/%f && cp %p /wal/%f.tmp && mv /wal/%f.tmp /wal/%f
+    volumes:
+      - /srv/shiv/postgres:/var/lib/postgresql/data
+      - /srv/shiv/wal:/wal
+    # Only this machine can reach it, for the backup scripts.
+    ports:
+      - '127.0.0.1:5432:5432'
+    mem_limit: 700m
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U shiv_owner -d shiv_cement']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Run by infra/deploy.sh only, never at start-up: docker compose run --rm migrate
+  migrate:
+    profiles: [tools]
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: build
+    working_dir: /app/apps/api
+    command: npx prisma migrate deploy
+    environment:
+      DATABASE_URL: postgresql://shiv_owner:${POSTGRES_PASSWORD}@db:5432/shiv_cement
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: [api.env]
+    environment:
+      NODE_ENV: production
+      PORT: '4000'
+      SHIV_ROLE: all
+      # The tunnel is the one proxy between Cloudflare's address header and the API.
+      TRUST_PROXY_HOPS: '1'
+      DATABASE_URL: postgresql://shiv_runtime:${RUNTIME_PASSWORD:?set in server.env}@db:5432/shiv_cement
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 500m
+
+  desk:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.web
+      args:
+        APP: admin
+        API_URL: https://${API_HOST:?set in server.env}/api/v1
+    restart: unless-stopped
+    mem_limit: 250m
+
+  shop:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.web
+      args:
+        APP: storefront
+        API_URL: https://${API_HOST}/api/v1
+    restart: unless-stopped
+    mem_limit: 250m
+
+  tunnel:
+    # Pin this to the exact version on the day of setup: the tag below always moves.
+    image: ${CLOUDFLARED_IMAGE:-cloudflare/cloudflared:latest}
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set in server.env}
+    depends_on: [api, desk, shop]
+    mem_limit: 100m

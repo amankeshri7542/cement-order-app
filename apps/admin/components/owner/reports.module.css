@@ -1,0 +1,443 @@
+/* The Report page's charts and the activity log. No gradients, no shadows, no animation: charts
+   are drawn in ink, with the lamp colour only on today. */
+.page {
+  /* Light to dark as udhaar gets older. Each step also has words, so colour is never alone. */
+  --ramp-1: #9fa5a1;
+  --ramp-2: #707672;
+  --ramp-3: #4c514e;
+  --ramp-4: #191d1b;
+  display: grid;
+  gap: 1rem;
+  min-inline-size: 0;
+}
+.ranges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.figures {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.figure {
+  min-inline-size: 0;
+  color: var(--shiv-ink2);
+}
+.figure strong {
+  display: block;
+  color: var(--shiv-ink);
+  font: 700 clamp(1.375rem, 1rem + 2vw, var(--shiv-display)) / 1.25 var(--shiv-font-display);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.charts {
+  display: grid;
+  gap: 1rem;
+}
+.chart {
+  margin: 0;
+  min-inline-size: 0;
+}
+.chartHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.125rem 1rem;
+}
+.chartHead h2 {
+  margin: 0;
+}
+.toggle {
+  text-decoration: underline;
+}
+
+/* Columns and the line share one plot: lines behind, marks in front, labels to the side. */
+.plot {
+  position: relative;
+  block-size: 11rem;
+  margin-block-start: 1.75rem;
+  margin-inline-start: 3.25rem;
+}
+.plotSmall {
+  block-size: 6rem;
+  margin-block-start: 0.25rem;
+  margin-inline-start: 0;
+}
+/* "16 ghante" needs more room at the side than "₹2L". */
+.plotWide {
+  margin-inline-start: 5rem;
+}
+.gridLine {
+  position: absolute;
+  inset-inline: 0;
+  block-size: 0.0625rem;
+  background: var(--shiv-line);
+}
+.gridLine i {
+  position: absolute;
+  inset-block-start: -0.65em;
+  inset-inline-end: calc(100% + 0.375rem);
+  color: var(--shiv-ink2);
+  font-size: var(--shiv-small);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.columns,
+.hits {
+  position: absolute;
+  inset: 0;
+  display: flex;
+}
+.columns {
+  align-items: flex-end;
+}
+.column,
+.hit {
+  position: relative;
+  flex: 1 1 0;
+  min-inline-size: 0;
+  block-size: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: default;
+}
+.column {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-inline: 0.0625rem;
+}
+.column span {
+  display: block;
+  inline-size: 100%;
+  max-inline-size: 1rem;
+  background: var(--shiv-ink);
+  border-radius: 0.125rem 0.125rem 0 0;
+}
+.column .hasValue {
+  min-block-size: 0.125rem;
+}
+.today span {
+  background: var(--shiv-brand);
+}
+.column em {
+  position: absolute;
+  inset-block-start: -1.5rem;
+  inset-inline-end: 0;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.column:focus-visible,
+.hit:focus-visible,
+.hbar:focus-visible,
+.segment:focus-visible {
+  outline: 0.1875rem solid var(--shiv-blue);
+  outline-offset: 0;
+}
+.axisX {
+  display: flex;
+  justify-content: space-between;
+  margin-block-start: 0.25rem;
+  margin-inline-start: 3.25rem;
+  color: var(--shiv-ink2);
+  font-size: var(--shiv-small);
+  font-variant-numeric: tabular-nums;
+}
+.axisXSmall {
+  margin-inline-start: 0;
+}
+.axisXWide {
+  margin-inline-start: 5rem;
+}
+.readout {
+  min-block-size: 1.5em;
+  font-size: var(--shiv-small);
+  font-variant-numeric: tabular-nums;
+}
+.thin {
+  padding-block: 2rem;
+  color: var(--shiv-ink2);
+  text-align: center;
+}
+
+/* One small chart per shop, on the same scale. */
+.shops {
+  display: grid;
+  gap: 1rem;
+  margin-block-start: 0.75rem;
+}
+.shopHead {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0 0.5rem;
+  font-weight: 600;
+}
+.shopHead span:last-child {
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
+}
+
+/* Horizontal bars: the name and value above, the bar below. Long names wrap. */
+.hbars {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.hbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.125rem 0.75rem;
+  align-items: baseline;
+  inline-size: 100%;
+  min-block-size: 2.75rem;
+  padding: 0.25rem 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: default;
+}
+.hbarName {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+.hbarValue {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  text-align: end;
+}
+.hbarValue small {
+  margin-inline-start: 0.375rem;
+  color: var(--shiv-ink2);
+  font-size: var(--shiv-small);
+  font-weight: 400;
+}
+.hbarTrack {
+  display: block;
+  grid-column: 1 / -1;
+  block-size: 0.75rem;
+}
+.hbarFill {
+  display: block;
+  block-size: 100%;
+  background: var(--shiv-ink);
+  border-radius: 0 0.125rem 0.125rem 0;
+}
+.lighter .hbarFill {
+  background: var(--ramp-1);
+}
+
+/* One bar for the age of udhaar. Text colours meet 4.5:1 on their step. */
+.stackBar {
+  display: flex;
+  gap: 0.125rem;
+  block-size: 2.75rem;
+  margin-block-start: 0.75rem;
+}
+.segment {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: 0.5rem;
+  padding: 0;
+  border: 0;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: default;
+}
+.ramp1 {
+  background: var(--ramp-1);
+  color: var(--shiv-ink);
+}
+.ramp2 {
+  background: var(--ramp-2);
+  color: var(--shiv-card);
+}
+.ramp3 {
+  background: var(--ramp-3);
+  color: var(--shiv-card);
+}
+.ramp4 {
+  background: var(--ramp-4);
+  color: var(--shiv-card);
+}
+.legend {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0.625rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.legend li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.legend i {
+  flex: none;
+  inline-size: 0.75rem;
+  block-size: 0.75rem;
+}
+.legend b {
+  margin-inline-start: auto;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+/* The line: drawn once in SVG, with one full-height button per day over it. */
+.line svg {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  overflow: visible;
+}
+.line polyline {
+  fill: none;
+  stroke: var(--shiv-ink);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.dot {
+  position: absolute;
+  inline-size: 0.625rem;
+  block-size: 0.625rem;
+  margin: -0.3125rem 0 0 -0.3125rem;
+  background: var(--shiv-ink);
+  border-radius: 50%;
+  pointer-events: none;
+}
+.endLabel {
+  position: absolute;
+  inset-inline-end: 0;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translateY(0.5rem);
+}
+.endLabelUp {
+  transform: translateY(-1.875rem);
+}
+
+/* Table dekho: the same numbers, exact. */
+.tableWrap {
+  max-block-size: 22rem;
+  margin-block-start: 0.75rem;
+  overflow: auto;
+}
+.data thead th {
+  color: var(--shiv-ink2);
+  font-size: var(--shiv-small);
+  font-weight: 500;
+}
+.data td.num,
+.data th.num {
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+/* The activity log: a table on a laptop, one block per event on a phone. */
+.filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+  gap: 0 0.75rem;
+}
+.logWhen {
+  color: var(--shiv-ink2);
+  font-size: var(--shiv-small);
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 44.99rem) {
+  table.log,
+  table.log tbody,
+  table.log tr {
+    display: block;
+  }
+  table.log thead {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  table.log tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0 0.75rem;
+    padding-block: 0.75rem;
+    border-block-end: 0.0625rem solid var(--shiv-line);
+  }
+  table.log td,
+  table.log td + td {
+    display: block;
+    padding: 0;
+    border: 0;
+  }
+  table.log .logWhat {
+    grid-column: 1 / -1;
+    order: -1;
+    font-weight: 500;
+  }
+  table.log .logShop {
+    text-align: end;
+  }
+  table.log .logWhen {
+    grid-column: 1 / -1;
+    order: 1;
+  }
+}
+@media (min-width: 40rem) {
+  .legend {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.25rem 1.5rem;
+  }
+}
+@media (min-width: 45rem) {
+  .figures {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+@media (min-width: 48rem) {
+  .shops {
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  }
+}
+@media (min-width: 64rem) {
+  .charts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .wide {
+    grid-column: 1 / -1;
+  }
+}
+@media (hover: hover) and (pointer: fine) {
+  .column:hover span {
+    opacity: 0.78;
+  }
+  .hit:hover::after {
+    content: '';
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 50%;
+    inline-size: 0.0625rem;
+    background: var(--shiv-ink2);
+  }
+}

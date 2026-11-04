@@ -6,6 +6,7 @@ import { Contract, Input, Public, fail } from './http';
 import { budget, clientIp, leased } from './abuse';
 import { getConfig } from './config';
 import { materialFaqs, shopContent } from './public-content';
+import { availabilityOf, type Availability } from '@shiv/shared';
 
 export const assistantInput = z.strictObject({
   message: z.string().trim().min(1).max(600),
@@ -16,6 +17,10 @@ export const assistantInput = z.strictObject({
     .max(8)
     .default([]),
 });
+// How much to use in a building is a question for an engineer. Hinglish counts too, because the
+// shop's customers mostly ask this way.
+const structuralQuestion =
+  /beam|column|load|mix|structur|reinforc|slab|lintel|footing|foundation|chhat|chat dhal|lenter|lintal|neev|nakasha|naksha|kitni bori|kitna sariya|kitna cement|छत|बीम|मिश्रण|नींव|लेंटर/;
 const productSelect = {
   id: true,
   name: true,
@@ -28,6 +33,9 @@ const productSelect = {
   pricePaise: true,
   priceVersion: true,
   stock: true,
+  sourcing: true,
+  stockMode: true,
+  stockLevels: { where: { location: { active: true } }, select: { isOn: true } },
 } as const;
 export const publicToolSchemas = {
   products: z.strictObject({ query: z.string().max(80), id: z.string().max(100) }),
@@ -46,7 +54,8 @@ export type PublicProduct = {
   quantityStep: number;
   pricePaise: number;
   priceVersion: number;
-  stock: number;
+  // In stock or not, never how much: an exact count here would reach a language model.
+  availability: Availability;
 };
 type AssistantAnswer = {
   mode: 'fallback' | 'live' | 'simulation';
@@ -152,7 +161,7 @@ export class AssistantService {
     if (!parsed.success) fail('ASSISTANT_TOOL_INVALID', 'Invalid public tool arguments.', 400);
     if (name === 'products') {
       const { query, id } = parsed.data as z.infer<typeof publicToolSchemas.products>;
-      return this.db.product.findMany({
+      const rows = await this.db.product.findMany({
         where: {
           active: true,
           ...(id
@@ -171,6 +180,10 @@ export class AssistantService {
         orderBy: { name: 'asc' },
         take: 6,
       });
+      return rows.map(({ stock, sourcing, stockMode, stockLevels, ...product }) => ({
+        ...product,
+        availability: availabilityOf({ stock, sourcing, stockMode, stockLevels }),
+      }));
     }
     if (name === 'delivery') {
       const { pincode } = parsed.data as z.infer<typeof publicToolSchemas.delivery>;
@@ -201,7 +214,7 @@ export class AssistantService {
     });
     const hi = body.language === 'hi' || /[\u0900-\u097f]/.test(body.message);
     const terms = body.message.toLowerCase();
-    const topic = /beam|column|load|mix|structur|reinforc|छत|बीम|मिश्रण/.test(terms)
+    const topic = structuralQuestion.test(terms)
       ? 'engineering'
       : /deliver|pincode|pin code|डिलीवरी|पिन/.test(terms)
         ? 'delivery'

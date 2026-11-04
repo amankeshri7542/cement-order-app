@@ -212,7 +212,7 @@ Use a private window (website) or clear the app's storage, so nothing is remembe
    once. Save a name or press **Skip for now**. The new-address form starts with that name and
    the pincode.
 4. **Place a COD order**: the order page says what happens next: order received, **the shop
-   calls you** (now), prepared, on the way, delivered. No Call/WhatsApp buttons until the family
+   confirms** (now, no call needed), prepared, on the way, delivered. No Call/WhatsApp buttons until the family
    approves the shop's number (C2).
 5. **Owner desk on a new store** (no delivery areas or materials): Today shows "Set up your
    store" (**दुकान तैयार करें**) with four rows. Each button opens the right screen; each row ticks
@@ -300,7 +300,9 @@ Browser suites in `tests/`:
 | `owner-workflows.spec.ts`              | Order steps, money, returns, quotes on the desk                 |
 | `desk-hardening.spec.ts`               | Wave 1 desk fixes: order search, money range, settings, outages |
 | `qa-audit.spec.ts`, `qa-stock.spec.ts` | Sign-in edge cases, customer kept out of the desk, stock        |
-| `rate-studio.spec.ts`                  | Rate Studio review and publish                                  |
+| `owner-phase4.spec.ts`                 | Rates, slabs, transfers, blind and opening counts, Galla, shell |
+| `owner-lists.spec.ts`                  | Quote lists: rates, freight, fresh consent, one order           |
+| `owner-reports.spec.ts`                | Reports with charts and CSV, who may open them                  |
 | `security-browser.spec.ts`             | Browser security boundaries                                     |
 | `storefront.spec.ts`                   | Website pages in both languages                                 |
 | `storefront-commerce.spec.ts`          | Website basket, checkout, orders, quotes                        |

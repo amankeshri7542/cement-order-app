@@ -13,12 +13,31 @@ import {
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { Prisma } from '@prisma/client';
+import { randomBytes } from 'node:crypto';
 import webPush from 'web-push';
 import { z } from 'zod';
-import { pushSubscriptionSchema, staffUpdateSchema } from '@shiv/shared';
+import {
+  accessFor,
+  canDo,
+  istToday,
+  pushAckSchema,
+  pushSubscriptionSchema,
+  staffUpdateSchema,
+} from '@shiv/shared';
 import { getConfig } from './config';
 import { Db } from './db';
-import { Admin, AuthRequest, Contract, Input, errorCause, fail } from './http';
+import {
+  AuthRequest,
+  Can,
+  Contract,
+  errorCause,
+  fail,
+  hash,
+  Input,
+  Public,
+  scoped,
+  shopWhere,
+} from './http';
 import { paginate } from './pagination';
 
 /** WhatsApp message templates. Each must be approved in Meta Business Manager with these names
@@ -40,6 +59,8 @@ export async function enqueueWhatsApp(
     template: WhatsappTemplate;
     params: string[];
     dedupeKey: string;
+    /** Held until then, so a decision can still be taken back. */
+    sendAfter?: Date;
   },
 ) {
   const recipient = message.phone.replace(/\D/g, '');
@@ -62,11 +83,15 @@ export async function enqueueWhatsApp(
           .slice(0, 120),
       ),
       dedupeKey: message.dedupeKey,
+      ...(message.sendAfter ? { nextAttemptAt: message.sendAfter } : {}),
     },
   });
 }
 
 const masked = (phone: string) => `…${phone.slice(-4)}`;
+const pushAckLifetimeMs = 2 * 3600000;
+/** A button on a lock screen stays good for a working day, and is checked again when tapped. */
+const pushConfirmLifetimeMs = 8 * 3600000;
 /** Browser push services the owner desk may subscribe through (Chrome/Edge, Firefox, Safari,
  * legacy Edge). Any other endpoint would make the worker post alerts to an arbitrary server. */
 export function knownPushService(endpoint: string) {
@@ -109,7 +134,14 @@ export class AlertsService {
       where: {
         pushedAt: null,
         createdAt: { gte: new Date(Date.now() - 6 * 3600000) },
-        user: { role: 'ADMIN', pushSubscriptions: { some: {} } },
+        OR: [{ sendAfter: null }, { sendAfter: { lte: new Date() } }],
+        user: {
+          role: 'ADMIN',
+          deletedAt: null,
+          staffPausedAt: null,
+          staffMemberships: { some: { endedAt: null } },
+          pushSubscriptions: { some: {} },
+        },
       },
       include: { user: { include: { pushSubscriptions: true } } },
       take: 20,
@@ -117,16 +149,55 @@ export class AlertsService {
     });
     for (const note of pending) {
       // Mark first: a crash mid-send must not repeat an alert the owner already heard.
-      const claimed = await this.db.notification.updateMany({
-        where: { id: note.id, pushedAt: null },
-        data: { pushedAt: new Date() },
+      const ack = randomBytes(24).toString('base64url');
+      const confirmToken = randomBytes(24).toString('base64url');
+      const offered = await this.confirmOffer(note);
+      const claimed = await this.db.atomic(async (tx) => {
+        const { count } = await tx.notification.updateMany({
+          where: { id: note.id, pushedAt: null },
+          data: { pushedAt: new Date() },
+        });
+        // The phone reports delivery with this, so it needs no session while the desk is closed.
+        if (count)
+          await tx.pushActionToken.create({
+            data: {
+              tokenHash: hash(ack),
+              userId: note.userId,
+              notificationId: note.id,
+              purpose: 'ack',
+              expiresAt: new Date(Date.now() + pushAckLifetimeMs),
+            },
+          });
+        if (count && offered?.clean)
+          await tx.pushActionToken.create({
+            data: {
+              tokenHash: hash(confirmToken),
+              userId: note.userId,
+              notificationId: note.id,
+              orderId: note.orderId,
+              orderVersion: offered.version,
+              purpose: 'confirm',
+              expiresAt: new Date(Date.now() + pushConfirmLifetimeMs),
+            },
+          });
+        return count;
       });
-      if (!claimed.count) continue;
+      if (!claimed) continue;
       const payload = JSON.stringify({
         title: note.title,
         body: note.body,
-        url: note.orderId ? `/orders/${note.orderId}` : '/more?view=quotes',
+        url: note.orderId
+          ? offered?.waiting
+            ? `/inbox/${note.orderId}`
+            : `/orders/${note.orderId}`
+          : note.dedupeKey?.startsWith('approval:')
+            ? '/manzoori'
+            : note.dedupeKey?.startsWith('people:')
+            ? '/users'
+            : '/lists',
         tag: note.orderId || note.id,
+        ack,
+        ...(offered?.clean ? { confirmToken } : {}),
       });
       for (const subscription of note.user.pushSubscriptions) {
         // Subscriptions saved before endpoints were checked are never posted to.
@@ -138,7 +209,8 @@ export class AlertsService {
               keys: { p256dh: subscription.p256dh, auth: subscription.auth },
             },
             payload,
-            { TTL: 3600, urgency: 'high' },
+            // A hung push service must not hold up the rest of the lane.
+            { TTL: 3600, urgency: 'high', timeout: 15000 },
           );
         } catch (error) {
           const status = (error as { statusCode?: number }).statusCode;
@@ -149,6 +221,27 @@ export class AlertsService {
         }
       }
     }
+  }
+
+  /** For an order still waiting: whether this person may confirm it from the notification. */
+  private async confirmOffer(note: { userId: string; orderId: string | null }) {
+    if (!note.orderId) return null;
+    const order = await this.db.order.findUnique({
+      where: { id: note.orderId },
+      include: { payment: { select: { method: true, status: true } } },
+    });
+    if (order?.status !== 'AWAITING_CONFIRMATION') return null;
+    const memberships = await this.db.staffMembership.findMany({
+      where: { userId: note.userId, endedAt: null },
+      select: { role: true, locationId: true },
+    });
+    const clean =
+      canDo(accessFor(memberships), 'orders.confirm', order.locationId) &&
+      order.payment?.method === 'COD' &&
+      order.payment.status !== 'CAPTURED' &&
+      !order.notes.trim() &&
+      order.deliveryDate >= istToday();
+    return { version: order.version, waiting: true, clean };
   }
 
   private async whatsapp() {
@@ -166,6 +259,12 @@ export class AlertsService {
       where: { status: 'SENT', sentAt: { gte: dayStart } },
     });
     for (const message of due) {
+      // Hold the row while sending, so a second worker skips it. A crash frees it in 5 minutes.
+      const held = await this.db.outboundMessage.updateMany({
+        where: { id: message.id, status: 'PENDING', nextAttemptAt: message.nextAttemptAt },
+        data: { nextAttemptAt: new Date(Date.now() + 5 * 60000) },
+      });
+      if (!held.count) continue;
       // A late "new order" alert is noise; past the daily budget the message is skipped.
       if (sentToday >= c.WHATSAPP_DAILY_LIMIT) {
         await this.db.outboundMessage.update({
@@ -261,7 +360,6 @@ const staffSelect = {
 } as const;
 
 @ApiTags('Owner alerts and staff')
-@Admin()
 @Controller('admin')
 export class AlertsController {
   constructor(
@@ -270,14 +368,20 @@ export class AlertsController {
   ) {}
 
   /** Shop staff with their roles and alert choices. Creating a staff login stays a terminal step. */
-  @Get('staff') staff() {
+  @Can('staff.read', scoped) @Get('staff') staff(@Req() req: AuthRequest) {
+    const shops = shopWhere(req, 'staff.read');
     return this.db.user.findMany({
-      where: { role: 'ADMIN', deletedAt: null },
+      where: {
+        role: 'ADMIN',
+        deletedAt: null,
+        staffMemberships: { some: { endedAt: null, ...shops } },
+      },
       select: staffSelect,
       orderBy: { createdAt: 'asc' },
     });
   }
 
+  @Can('staff.manage')
   @Patch('staff/:id')
   @Contract(staffUpdateSchema)
   async updateStaff(
@@ -303,10 +407,34 @@ export class AlertsController {
     });
   }
 
-  @Get('push/key') key() {
+  /** The phone showed this alert. Works with the token alone; a replay changes nothing. */
+  @Public()
+  @Post('push/ack')
+  @Contract(pushAckSchema)
+  async pushAck(@Input(pushAckSchema) body: z.infer<typeof pushAckSchema>) {
+    const token = await this.db.pushActionToken.findUnique({
+      where: { tokenHash: hash(body.token) },
+    });
+    if (!token || token.purpose !== 'ack' || token.expiresAt <= new Date())
+      fail('INVALID_TOKEN', 'This alert has expired.', 410);
+    await this.db.atomic(async (tx) => {
+      const first = await tx.pushActionToken.updateMany({
+        where: { id: token.id, usedAt: null },
+        data: { usedAt: new Date() },
+      });
+      if (first.count)
+        await tx.notification.updateMany({
+          where: { id: token.notificationId, deliveredAt: null },
+          data: { deliveredAt: new Date() },
+        });
+    });
+    return { ok: true };
+  }
+  @Can('desk.use') @Get('push/key') key() {
     return { publicKey: this.alerts.pushKey() };
   }
 
+  @Can('desk.use')
   @Post('push/subscriptions')
   @Contract(pushSubscriptionSchema)
   async subscribe(
@@ -330,6 +458,7 @@ export class AlertsController {
     return { ok: true };
   }
 
+  @Can('desk.use')
   @Delete('push/subscriptions')
   async unsubscribe(@Body() body: { endpoint?: unknown }, @Req() req: AuthRequest) {
     const parsed = z.string().url().max(1000).safeParse(body?.endpoint);
@@ -340,7 +469,7 @@ export class AlertsController {
   }
 
   /** Sends a test alert to the signed-in owner on every channel they have switched on. */
-  @Post('alerts/test') async test(@Req() req: AuthRequest) {
+  @Can('alerts.manage') @Post('alerts/test') async test(@Req() req: AuthRequest) {
     const owner = await this.db.user.findUniqueOrThrow({ where: { id: req.user.id } });
     const stamp = new Date().toISOString();
     await this.db.atomic(async (tx) => {
@@ -365,7 +494,9 @@ export class AlertsController {
   }
 
   /** Recent WhatsApp messages and their delivery state (no message bodies beyond the template). */
-  @Get('alerts/messages') async messages(@Query() query: Record<string, string>) {
+  @Can('alerts.manage') @Get('alerts/messages') async messages(
+    @Query() query: Record<string, string>,
+  ) {
     const page = paginate(query, 'outbound');
     const rows = await this.db.outboundMessage.findMany({
       where: page.after,
@@ -385,7 +516,7 @@ export class AlertsController {
     return page.finish(rows.map((row) => ({ ...row, recipient: masked(row.recipient) })));
   }
 
-  @Post('alerts/messages/:id/retry') async retry(@Param('id') id: string) {
+  @Can('alerts.manage') @Post('alerts/messages/:id/retry') async retry(@Param('id') id: string) {
     const changed = await this.db.outboundMessage.updateMany({
       where: { id, status: { in: ['FAILED', 'SKIPPED'] } },
       data: { status: 'PENDING', attempts: 0, nextAttemptAt: new Date(), lastError: null },

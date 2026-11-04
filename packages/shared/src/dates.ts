@@ -1,11 +1,11 @@
 import type { Language } from './i18n';
 
-// All shop dates are Patna time. Hindi uses hi-IN formatting; a fixed 24-hour time avoids
+// All shop dates are Patna time, in Roman script in both languages. A fixed 24-hour time avoids
 // day-period differences between engines (server render, WebKit, Android's Hermes).
 const ZONE = 'Asia/Kolkata';
 
-export function dateLabel(value: string | Date, language: Language): string {
-  return new Intl.DateTimeFormat(language === 'hi' ? 'hi-IN' : 'en-IN', {
+export function dateLabel(value: string | Date, _language: Language): string {
+  return new Intl.DateTimeFormat('en-IN', {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
@@ -29,16 +29,16 @@ export function momentLabel(value: string, language: Language): string {
 }
 
 const noon = (day: string) => new Date(`${day}T12:00:00+05:30`);
-/** "Thu" / "गुरु" for a YYYY-MM-DD delivery day. */
+const weekdays = ['Itvaar', 'Somvar', 'Mangalvar', 'Budhvar', 'Guruvar', 'Shukravar', 'Shanivar'];
+/** "Thu" / "Guruvar" for a YYYY-MM-DD delivery day. */
 export function weekdayLabel(day: string, language: Language): string {
-  return new Intl.DateTimeFormat(language === 'hi' ? 'hi-IN' : 'en-IN', {
-    weekday: 'short',
-    timeZone: ZONE,
-  }).format(noon(day));
+  return language === 'hi'
+    ? weekdays[noon(day).getUTCDay()]!
+    : new Intl.DateTimeFormat('en-IN', { weekday: 'short', timeZone: ZONE }).format(noon(day));
 }
-/** "16 Oct" / "16 अक्टू॰" for a YYYY-MM-DD delivery day. */
-export function shortDayLabel(day: string, language: Language): string {
-  return new Intl.DateTimeFormat(language === 'hi' ? 'hi-IN' : 'en-IN', {
+/** "16 Oct" for a YYYY-MM-DD delivery day. */
+export function shortDayLabel(day: string, _language: Language): string {
+  return new Intl.DateTimeFormat('en-IN', {
     day: 'numeric',
     month: 'short',
     timeZone: ZONE,
@@ -56,14 +56,14 @@ export function deliveryDateOptions(now: Date = new Date(), leadDays = 1, count 
     return day.toISOString().slice(0, 10);
   });
 }
-/** "2 घंटे / 3 दिन" style age for owner queues and order cards. */
+/** "2 ghante / 3 din" style age for owner queues and order cards. */
 export function ageLabel(since: string | Date, language: Language, now: Date = new Date()): string {
   const minutes = Math.max(0, Math.floor((now.getTime() - new Date(since).getTime()) / 60000));
   const [value, unit] =
     minutes < 60
-      ? [minutes, language === 'hi' ? 'मिनट' : 'min']
+      ? [minutes, language === 'hi' ? 'minute' : 'min']
       : minutes < 1440
-        ? [Math.floor(minutes / 60), language === 'hi' ? 'घंटे' : 'h']
-        : [Math.floor(minutes / 1440), language === 'hi' ? 'दिन' : 'd'];
+        ? [Math.floor(minutes / 60), language === 'hi' ? 'ghante' : 'h']
+        : [Math.floor(minutes / 1440), language === 'hi' ? 'din' : 'd'];
   return language === 'hi' ? `${value} ${unit}` : `${value}${unit === 'min' ? ' min' : unit}`;
 }

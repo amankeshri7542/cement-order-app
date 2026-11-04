@@ -369,6 +369,7 @@ export function Orders() {
 
 const moving = [
   'PENDING_PAYMENT',
+  'AWAITING_CONFIRMATION',
   'CONFIRMED',
   'PREPARING',
   'OUT_FOR_DELIVERY',
@@ -710,7 +711,7 @@ export function OrderDetail() {
       >
         {t('Share order summary', 'ऑर्डर सारांश भेजें')}
       </Button>
-      {['PENDING_PAYMENT', 'CONFIRMED'].includes(order.status) && (
+      {['PENDING_PAYMENT', 'AWAITING_CONFIRMATION', 'CONFIRMED'].includes(order.status) && (
         <Button kind="quiet" loading={busy} onPress={() => void cancel()}>
           {t('Cancel order', 'ऑर्डर रद्द करें')}
         </Button>

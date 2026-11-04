@@ -4,7 +4,8 @@ import { pick, type Bilingual, type Language } from './i18n';
 // Every order status must have customer-facing text in both languages (compile-time check).
 export const orderStatusLabels: Record<OrderStatus, Bilingual> = {
   PENDING_PAYMENT: ['Payment pending', 'भुगतान बाकी'],
-  CONFIRMED: ['Confirmed', 'पक्का हुआ'],
+  AWAITING_CONFIRMATION: ['Waiting for the shop', 'Dukaan ka jawab baaki'],
+  CONFIRMED: ['Confirmed by the shop', 'Dukaan ne pakka kiya'],
   PREPARING: ['Preparing', 'तैयारी हो रही है'],
   OUT_FOR_DELIVERY: ['Out for delivery', 'डिलीवरी के लिए निकला'],
   DELIVERY_EXCEPTION: ['Delivery needs attention', 'डिलीवरी पर ध्यान चाहिए'],
@@ -49,6 +50,7 @@ export function quoteStatusText(status: string, language: Language): string {
 // Notes the server writes itself, so they can be shown in Hindi. Notes typed by staff are shown
 // as written.
 const systemNotes: Record<string, string> = {
+  'Confirmed by the shop.': 'Dukaan ne pakka kiya.',
   'Cash on delivery order placed.': 'डिलीवरी पर भुगतान वाला ऑर्डर आया।',
   'Stock reserved for 30 minutes while awaiting payment.':
     'भुगतान के इंतज़ार में स्टॉक 30 मिनट के लिए रोका गया।',

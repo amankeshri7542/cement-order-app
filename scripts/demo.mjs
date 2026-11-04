@@ -31,6 +31,7 @@ const transaction = { maxWait: 10000, timeout: 120000 };
 const hours = (n) => new Date(Date.now() - n * 3600000);
 // The steps an order passes through on the desk, in order, for each sample status.
 const statusPath = {
+  AWAITING_CONFIRMATION: ['AWAITING_CONFIRMATION'],
   CONFIRMED: ['CONFIRMED'],
   OUT_FOR_DELIVERY: ['CONFIRMED', 'PREPARING', 'OUT_FOR_DELIVERY'],
   DELIVERED: ['CONFIRMED', 'PREPARING', 'OUT_FOR_DELIVERY', 'DELIVERED'],
@@ -144,6 +145,7 @@ export async function prepare(db, { Prisma, log = console.log, phones } = {}) {
           packSize: product.packSize,
           quantity: line.quantity,
           pricePaise: product.pricePaise,
+          listPricePaise: product.pricePaise,
           priceVersion: product.priceVersion,
           lineTotalPaise: product.pricePaise * line.quantity,
         });
@@ -195,6 +197,8 @@ export async function prepare(db, { Prisma, log = console.log, phones } = {}) {
           reviewId: review.id,
           idempotencyKey: spec.idempotencyKey,
           status: spec.status,
+          // Orders already moving were confirmed when they first moved; the newest one still waits.
+          ...(path.length > 1 ? { confirmedAt: at(1), confirmedById: DEMO_ACTOR } : {}),
           address: JSON.parse(JSON.stringify(address)),
           deliveryDate,
           notes,

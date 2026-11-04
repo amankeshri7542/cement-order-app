@@ -1,0 +1,25 @@
+# Builds one website as a small standalone server.
+#   docker build -f infra/Dockerfile.web --build-arg APP=admin --build-arg API_URL=https://... .
+# APP is admin or storefront. NEXT_PUBLIC_ values are fixed at build time.
+FROM node:22-bookworm-slim AS build
+ARG APP
+ARG API_URL
+ARG ASSET_ORIGIN=
+ENV NEXT_PUBLIC_API_URL=$API_URL NEXT_PUBLIC_ASSET_ORIGIN=$ASSET_ORIGIN NEXT_TELEMETRY_DISABLED=1
+WORKDIR /app
+COPY . .
+RUN test -n "$APP" && test -n "$API_URL"
+RUN npm ci --workspace "@shiv/$APP" --include-workspace-root
+RUN npm run build -w "@shiv/$APP"
+
+FROM node:22-bookworm-slim AS runtime
+ARG APP
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 HOSTNAME=0.0.0.0 PORT=3000 APP=$APP
+WORKDIR /app
+COPY --from=build /app/apps/$APP/.next/standalone ./
+COPY --from=build /app/apps/$APP/.next/static ./apps/$APP/.next/static
+COPY --from=build /app/apps/$APP/public ./apps/$APP/public
+USER node
+EXPOSE 3000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s CMD node -e "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"
+CMD ["sh", "-c", "exec node apps/$APP/server.js"]

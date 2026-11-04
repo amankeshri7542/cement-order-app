@@ -123,7 +123,7 @@ test('sample catalogue is clearly labelled, bilingual and sellable', () => {
   const left = new Map(products.map((p) => [p.id, p.stock]));
   assert.deepEqual(
     orders.map((o) => o.status),
-    ['CONFIRMED', 'OUT_FOR_DELIVERY', 'DELIVERED'],
+    ['AWAITING_CONFIRMATION', 'OUT_FOR_DELIVERY', 'DELIVERED'],
   );
   for (const spec of [...orders, quote]) {
     assert(spec.id.startsWith(DEMO_PREFIX) && customers.some((c) => c.id === spec.customer));
@@ -295,7 +295,7 @@ test(
       assert.deepEqual(
         orders.map((o) => [o.status, o.payment.status, o.history.length]),
         [
-          ['CONFIRMED', 'PENDING', 1],
+          ['AWAITING_CONFIRMATION', 'PENDING', 1],
           ['OUT_FOR_DELIVERY', 'PENDING', 3],
           ['DELIVERED', 'CAPTURED', 4],
         ],

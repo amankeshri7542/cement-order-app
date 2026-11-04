@@ -6,8 +6,6 @@ import { Mukta, Inter } from 'next/font/google';
 import { color } from '@shiv/design/tokens';
 import '@shiv/design/tokens.css';
 import './theme.css';
-import './styles.css';
-import './rate-studio.css';
 import './owner-base.css';
 
 const display = Mukta({
@@ -19,10 +17,10 @@ const display = Mukta({
 const body = Inter({ subsets: ['latin'], display: 'swap', variable: '--font-inter' });
 export const metadata: Metadata = {
   // Local tooling recognises the desk by this title; the home-screen name comes from the manifest.
-  title: 'शिव सीमेंट स्टोर · दुकान का काम',
-  description: 'शिव सीमेंट स्टोर के ऑर्डर, माल और हिसाब का काम।',
+  title: 'Shiv Cement · Dukaan ka kaam',
+  description: 'Shiv Cement ke order, maal aur hisaab ka kaam.',
   icons: { icon: '/icon-192.png', apple: '/icon-192.png' },
-  appleWebApp: { capable: true, title: 'शिव डेस्क', statusBarStyle: 'default' },
+  appleWebApp: { capable: true, title: 'Shiv Cement Desk', statusBarStyle: 'default' },
 };
 export const viewport: Viewport = { themeColor: color.navy };
 export default async function RootLayout({ children }: { children: React.ReactNode }) {

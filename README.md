@@ -25,13 +25,13 @@ Testing and the family demo: [testing guide](docs/TESTING_GUIDE.md) for all thre
 [manual setup](docs/MANUAL_SETUP.md) for accounts and keys, the
 [demo script](docs/DEMO_SCRIPT.md) and the Hindi [owner desk guide](docs/FAMILY_GUIDE_HI.md).
 
-An Expo Android customer app, a Next.js customer website, a Next.js owner desk, and a NestJS/PostgreSQL commerce backend for **Shiv Cement Store**, serving **Patna and Bihar**. Contact/WhatsApp initially **9297513707**, editable under **More → Store details**.
+An Expo Android customer app, a Next.js customer website, a Next.js owner desk, and a NestJS/PostgreSQL commerce backend for **Shiv Cement Store**, serving **Patna and Bihar**. Contact/WhatsApp initially **9999997007**, editable under **More → Store details**.
 
 The backend owns prices, delivery charges, inventory and payment state. Local example inventory and mock OTP are for development. **Do not accept real payments until the production setup and provider verification below are complete.**
 
 The [pilot implementation report](docs/PILOT_IMPLEMENTATION.md) covers inventory movements, paginated catalogues, pincode zones, staff security, and the updated UI.
 
-[Rate Studio](docs/RATE_STUDIO.md) adds private rate-sheet imports, reviewed bulk price publication and deterministic shareable rate cards. Manual workflows work without AI credentials.
+[Rate Studio](docs/RATE_STUDIO.md) is API only since the desk's Daam aur offer page replaced its screens. It adds private rate-sheet imports, reviewed bulk price publication and deterministic shareable rate cards. Manual workflows work without AI credentials.
 
 ## Local review handoff
 
@@ -70,7 +70,7 @@ npm run build -w @shiv/shared
 npm run db:migrate
 npm run db:seed
 # Owner access uses OTP only by default; this command grants the owner role.
-npm run admin:grant -w @shiv/api -- +919297513707
+npm run admin:grant -w @shiv/api -- +919999999001
 ```
 
 Run each app in its own terminal:

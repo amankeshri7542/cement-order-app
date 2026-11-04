@@ -26,18 +26,70 @@ import {
   orderStatusText,
   placeOrderSchema,
   transitions,
+  canDo,
 } from '@shiv/shared';
 import { Db } from './db';
-import { Admin, AuthRequest, Contract, Input, errorCause, fail } from './http';
+import {
+  atOrder,
+  AuthRequest,
+  Can,
+  Contract,
+  errorCause,
+  fail,
+  forbid,
+  Input,
+  scoped,
+  Self,
+  shopAsked,
+} from './http';
 import { paginate } from './pagination';
+import { activeRules, priceFor } from './price-rules';
 import { deliveryFor, moveStock, orderTotals, validateQuantity } from './inventory';
 import { getConfig, onlineReady } from './config';
 import { enqueueWhatsApp } from './alerts';
-import { notifyCustomer, pushText } from './notify';
+import { clearHeldMessages, notifyCustomer, pushText } from './notify';
 import { workInclude } from './owner-work';
-import { Events } from './catalog';
+import { itemsBeingCounted } from './blind-count';
+import { Events, stockFor } from './catalog';
 import { appendLedger } from './khata';
 
+/**
+ * What a stock keeper sees of an order: what to load and for which area. It lists what may be
+ * shown rather than what may not, so a field added to orders later stays private by default.
+ */
+/** Who an order is for. A customer's balance and limit are the udhaar list's, not the order's. */
+export const orderPerson = { id: true, name: true, phone: true } as const;
+
+export function loadingView(order: {
+  id: string;
+  number: string;
+  locationId: string;
+  status: string;
+  source: string;
+  deliveryDate: string;
+  createdAt: Date;
+  address: unknown;
+  items: { id: string; productId: string; name: string; unit: string; quantity: number }[];
+}) {
+  const address = (order.address ?? {}) as { area?: unknown };
+  return {
+    id: order.id,
+    number: order.number,
+    locationId: order.locationId,
+    status: order.status,
+    source: order.source,
+    deliveryDate: order.deliveryDate,
+    createdAt: order.createdAt,
+    area: typeof address.area === 'string' ? address.area : '',
+    items: order.items.map(({ id, productId, name, unit, quantity }) => ({
+      id,
+      productId,
+      name,
+      unit,
+      quantity,
+    })),
+  };
+}
 export const orderInclude = {
   work: { include: workInclude },
   deliveryAttempts: { orderBy: { createdAt: 'asc' as const } },
@@ -50,7 +102,93 @@ export const orderInclude = {
 export const customerWork = {
   select: { acknowledgedAt: true, assignedTo: { select: { name: true } } },
 } as const;
-export const customerOrderInclude = { ...orderInclude, work: customerWork };
+export const customerOrderInclude = {
+  ...orderInclude,
+  work: customerWork,
+  amendments: { orderBy: { version: 'desc' as const }, take: 1 },
+};
+type CustomerRow = Prisma.OrderGetPayload<{ include: typeof customerOrderInclude }>;
+const decisionStatuses = ['CONFIRMED', 'CANCELLED', 'REFUND_PENDING'];
+/**
+ * What a customer may see of an order. While a decision can still be taken back it is still
+ * waiting for them, and who at the shop decided is not theirs to know.
+ */
+export function customerView(order: CustomerRow) {
+  const {
+    decisionKey: _key,
+    confirmedById: _by,
+    decisionHoldUntil: hold,
+    version: _version,
+    amendments,
+    ...rest
+  } = order;
+  // A decision that was taken back never happened, as far as the customer is concerned.
+  const history: Omit<CustomerRow['history'][number], 'actorId'>[] = [];
+  for (const { actorId: _actor, ...row } of order.history) {
+    if (
+      row.status === 'AWAITING_CONFIRMATION' &&
+      decisionStatuses.includes(history.at(-1)?.status ?? '')
+    )
+      history.pop();
+    else history.push(row);
+  }
+  const items = order.items.map(
+    ({ listPricePaise: _list, ruleId: _rule, ruleKind: _kind, rateChangedById: _who, ...item }) =>
+      item,
+  );
+  if (!hold || hold <= new Date()) return { ...rest, items, history };
+  // Inside the hold nothing has happened yet: the order reads as it did before the decision.
+  const lastDecision = history
+    .map((row) => decisionStatuses.includes(row.status))
+    .lastIndexOf(true);
+  const held = {
+    ...rest,
+    items,
+    status: 'AWAITING_CONFIRMATION' as const,
+    confirmedAt: null,
+    history: lastDecision < 0 ? history : history.slice(0, lastDecision),
+    work: order.work && { ...order.work, acknowledgedAt: null, assignedTo: null },
+    payment: order.payment && {
+      ...order.payment,
+      status:
+        order.payment.status === 'REFUND_PENDING' ? ('CAPTURED' as const) : order.payment.status,
+    },
+  };
+  const amendment = amendments[0]?.version === order.version ? amendments[0] : null;
+  if (!amendment) return held;
+  const before = amendment.before as unknown as {
+    lines: (Omit<CustomerRow['items'][number], 'id' | 'orderId'> & { listPricePaise: number })[];
+    deliveryFeePaise: number;
+    deliveryDate: string;
+    paymentMethod: NonNullable<CustomerRow['payment']>['method'];
+    locationId: string;
+  };
+  const amounts = orderTotals(before.lines, before.deliveryFeePaise, null);
+  return {
+    ...held,
+    ...amounts,
+    items: before.lines.map(
+      ({
+        listPricePaise: _list,
+        ruleId: _rule,
+        ruleKind: _kind,
+        rateChangedById: _who,
+        ...line
+      }) => ({
+        ...line,
+        id: `${order.id}:${line.productId}`,
+        orderId: order.id,
+      }),
+    ),
+    deliveryDate: before.deliveryDate,
+    locationId: before.locationId,
+    payment: held.payment && {
+      ...held.payment,
+      amountPaise: amounts.totalPaise,
+      method: before.paymentMethod,
+    },
+  };
+}
 const reorderSchema = z.strictObject({ idempotencyKey: z.string().uuid().optional() }).default({});
 const normalizeReturns = (items: unknown) =>
   Array.isArray(items)
@@ -84,12 +222,17 @@ export class OrdersService {
     @Inject(Db) private db: Db,
     @Inject(Events) private events: Events,
   ) {}
-  cart(userId: string, db: Prisma.TransactionClient = this.db) {
-    return db.cartItem.findMany({
+  async cart(userId: string, db: Prisma.TransactionClient = this.db) {
+    const rows = await db.cartItem.findMany({
       where: { userId },
       include: { product: { include: { category: true } } },
       orderBy: { productId: 'asc' },
     });
+    const counting = await itemsBeingCounted(db);
+    return rows.map((row) => ({
+      ...row,
+      product: { ...row.product, stock: stockFor(row.product, counting) },
+    }));
   }
   async setCart(userId: string, input: z.infer<typeof cartItemSchema>) {
     await this.db.atomic(async (tx) => {
@@ -201,7 +344,13 @@ export class OrdersService {
       const settings = await tx.storeSettings.findUniqueOrThrow({ where: { id: 'store' } });
       if (input.paymentMethod === 'ONLINE' && !(settings.onlinePaymentsEnabled && onlineReady()))
         fail('PAYMENTS_UNAVAILABLE', 'Online payment is unavailable. Choose cash on delivery.');
+      const buyer = await tx.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: { customerGroupId: true },
+      });
+      const rules = await activeRules(tx);
       const items = cart.map(({ product, quantity }) => {
+        const priced = priceFor(product, quantity, userId, buyer.customerGroupId, rules);
         validateQuantity(product, quantity);
         if (!product.active || product.stock < quantity)
           fail('OUT_OF_STOCK', `${product.name} is not available in that quantity.`, 409);
@@ -211,9 +360,12 @@ export class OrdersService {
           unit: product.unit,
           packSize: product.packSize,
           quantity,
-          pricePaise: product.pricePaise,
+          pricePaise: priced.pricePaise,
+          listPricePaise: product.pricePaise,
+          ruleId: priced.ruleId,
+          ruleKind: priced.ruleKind,
           priceVersion: product.priceVersion,
-          lineTotalPaise: product.pricePaise * quantity,
+          lineTotalPaise: priced.pricePaise * quantity,
         };
       });
       const zone = await deliveryFor(
@@ -245,7 +397,15 @@ export class OrdersService {
           expiresAt: new Date(Date.now() + 300000),
         },
       });
-      return { ...snapshot, id: review.id, expiresAt: review.expiresAt };
+      // The rule behind a rate stays on the server, and is checked again on placing.
+      return {
+        ...snapshot,
+        items: items.map(
+          ({ listPricePaise: _list, ruleId: _rule, ruleKind: _kind, ...item }) => item,
+        ),
+        id: review.id,
+        expiresAt: review.expiresAt,
+      };
     });
   }
   async place(userId: string, input: z.infer<typeof placeOrderSchema>, ip = 'internal') {
@@ -289,9 +449,16 @@ export class OrdersService {
       const zone = await deliveryFor(tx, snapshot.address.pincode, snapshot.subtotalPaise);
       if (zone.id !== snapshot.deliveryZoneId || zone.version !== snapshot.deliveryZoneVersion)
         fail('PRICE_CHANGED', 'Delivery policy changed. Review the updated total.', 409);
+      const buyer = await tx.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: { customerGroupId: true },
+      });
+      const rules = await activeRules(tx);
       for (const line of snapshot.items) {
         const product = await tx.product.findUniqueOrThrow({ where: { id: line.productId } });
-        if (product.priceVersion !== line.priceVersion || product.pricePaise !== line.pricePaise)
+        // Worked out again now: an ended offer or a changed rule must not carry through.
+        const priced = priceFor(product, line.quantity, userId, buyer.customerGroupId, rules);
+        if (product.priceVersion !== line.priceVersion || priced.pricePaise !== line.pricePaise)
           fail(
             'PRICE_CHANGED',
             `${product.name} now costs a different amount. Review the updated total.`,
@@ -299,7 +466,7 @@ export class OrdersService {
             {
               productId: product.id,
               oldPricePaise: line.pricePaise,
-              currentPricePaise: product.pricePaise,
+              currentPricePaise: priced.pricePaise,
             },
           );
         validateQuantity(product, line.quantity);
@@ -313,6 +480,7 @@ export class OrdersService {
           reference: review.id,
           note: 'Online order reservation',
           idempotencyKey: `order:${review.id}:${product.id}`,
+          locationId: zone.locationId,
         });
       }
       const amounts = orderTotals(
@@ -324,21 +492,28 @@ export class OrdersService {
       const order = await tx.order.create({
         data: {
           number: reference('SC'),
+          locationId: zone.locationId,
           work: { create: {} },
           userId,
           reviewId: review.id,
           idempotencyKey: input.idempotencyKey,
-          status: online ? 'PENDING_PAYMENT' : 'CONFIRMED',
+          // Nobody has looked yet, so it waits for a person at the shop.
+          status: online ? 'PENDING_PAYMENT' : 'AWAITING_CONFIRMATION',
           address: snapshot.address as unknown as Prisma.InputJsonValue,
           deliveryDate: snapshot.deliveryDate,
           notes: snapshot.notes,
           ...amounts,
           reservedUntil: online ? new Date(Date.now() + 30 * 60000) : null,
-          items: { create: snapshot.items },
+          items: {
+            create: snapshot.items.map((item) => ({
+              ...item,
+              listPricePaise: item.listPricePaise ?? item.pricePaise,
+            })),
+          },
           payment: { create: { method: snapshot.paymentMethod, amountPaise: amounts.totalPaise } },
           history: {
             create: {
-              status: online ? 'PENDING_PAYMENT' : 'CONFIRMED',
+              status: online ? 'PENDING_PAYMENT' : 'AWAITING_CONFIRMATION',
               note: online
                 ? 'Stock reserved for 30 minutes while awaiting payment.'
                 : 'Cash on delivery order placed.',
@@ -394,9 +569,13 @@ export class OrdersService {
         );
       if (
         ownerId &&
-        (!['PENDING_PAYMENT', 'CONFIRMED'].includes(order.status) || status !== 'CANCELLED')
+        (!['PENDING_PAYMENT', 'AWAITING_CONFIRMATION', 'CONFIRMED'].includes(order.status) ||
+          status !== 'CANCELLED')
       )
         fail('INVALID_TRANSITION', 'Contact the store to cancel this order.', 409);
+      // At the shop, a waiting order moves on only through Pakka karo or Nahi ho payega.
+      if (!ownerId && order.status === 'AWAITING_CONFIRMATION')
+        fail('NOT_WAITING', 'Use Pakka karo or Nahi ho payega for this order.', 409);
       if (
         !transitions[order.status].includes(status) ||
         ['CONFIRMED', 'REFUND_PENDING', 'REFUNDED'].includes(status)
@@ -410,6 +589,7 @@ export class OrdersService {
         fail('PAYMENT_PENDING', 'Record payment received before completing delivery.', 409);
       if (status === 'DELIVERED' && order.payment?.method === 'CREDIT')
         await appendLedger(tx, {
+          locationId: order.locationId,
           customerId: order.userId,
           kind: 'SALE_ON_CREDIT',
           amountPaise: order.totalPaise,
@@ -436,6 +616,7 @@ export class OrdersService {
             reference: order.id,
             note: 'Cancelled order stock release',
             idempotencyKey: `cancel:${order.id}:${line.productId}`,
+            locationId: order.locationId,
           });
         if (next === 'REFUND_PENDING')
           await tx.payment.update({ where: { orderId: id }, data: { status: 'REFUND_PENDING' } });
@@ -444,7 +625,10 @@ export class OrdersService {
         where: { id },
         data: {
           status: next,
+          version: { increment: 1 },
           reservedUntil: null,
+          // A decision still on hold has no message left to send once the order is cancelled.
+          ...(status === 'CANCELLED' ? { decisionHoldUntil: null } : {}),
           history: {
             create: {
               status: next,
@@ -456,6 +640,7 @@ export class OrdersService {
           },
         },
       });
+      if (status === 'CANCELLED') await clearHeldMessages(tx, id);
       await tx.auditLog.create({
         data: {
           actorId,
@@ -595,6 +780,7 @@ export class OrdersService {
                 reference: id,
                 note: 'Delivery physically returned; sellable quantity confirmed',
                 idempotencyKey: `return:${id}:${line.productId}`,
+                locationId: order.locationId,
               });
           status = order.payment?.status === 'CAPTURED' ? 'REFUND_PENDING' : 'CANCELLED';
           if (status === 'REFUND_PENDING')
@@ -619,7 +805,12 @@ export class OrdersService {
         data: { ...input, items: input.items || Prisma.JsonNull, orderId: id, actorId },
       });
       await tx.auditLog.create({
-        data: { actorId, event: `DELIVERY_${input.action}`, entityId: id, details: input },
+        data: {
+          actorId,
+          event: `DELIVERY_${input.action}`,
+          entityId: id,
+          details: { action: input.action },
+        },
       });
       await notifyCustomer(
         tx,
@@ -680,7 +871,8 @@ export class OrdersService {
           continue;
         }
         if (!old) count++;
-        if (item.product.pricePaise !== item.pricePaise)
+        // A customer's own rate on the old order is not the list having moved.
+        if (item.product.pricePaise !== item.listPricePaise)
           notices.push(`${item.name}: price has changed; current price added.`);
         await tx.cartItem.upsert({
           where: { userId_productId: { userId, productId: item.productId } },
@@ -719,53 +911,61 @@ export class OrdersController {
     @Inject(OrdersService) private orders: OrdersService,
     @Inject(Db) private db: Db,
   ) {}
-  @Get('cart') cart(@Req() req: AuthRequest) {
+  @Self() @Get('cart') cart(@Req() req: AuthRequest) {
     return this.orders.cart(req.user.id);
   }
-  @Put('cart/items') @Contract(cartItemSchema) cartItem(
+  @Self() @Put('cart/items') @Contract(cartItemSchema) cartItem(
     @Input(cartItemSchema) body: z.infer<typeof cartItemSchema>,
     @Req() req: AuthRequest,
   ) {
     return this.orders.setCart(req.user.id, body);
   }
-  @Post('cart/merge') @Contract(cartMergeSchema) mergeCart(
+  @Self() @Post('cart/merge') @Contract(cartMergeSchema) mergeCart(
     @Input(cartMergeSchema) body: z.infer<typeof cartMergeSchema>,
     @Req() req: AuthRequest,
   ) {
     return this.orders.mergeCart(req.user.id, body);
   }
-  @Post('checkout/review') @Contract(checkoutSchema) review(
+  @Self() @Post('checkout/review') @Contract(checkoutSchema) review(
     @Input(checkoutSchema) body: z.infer<typeof checkoutSchema>,
     @Req() req: AuthRequest,
   ) {
     return this.orders.review(req.user.id, body, clientIp(req));
   }
-  @Post('orders') @Contract(placeOrderSchema) place(
+  @Self() @Post('orders') @Contract(placeOrderSchema) place(
     @Input(placeOrderSchema) body: z.infer<typeof placeOrderSchema>,
     @Req() req: AuthRequest,
   ) {
-    return this.orders.place(req.user.id, body, clientIp(req));
+    return this.orders.place(req.user.id, body, clientIp(req)).then(customerView);
   }
-  @Get('orders') async list(@Req() req: AuthRequest, @Query() query: Record<string, string>) {
+  @Self() @Get('orders') async list(
+    @Req() req: AuthRequest,
+    @Query() query: Record<string, string>,
+  ) {
     const page = paginate(query, `orders:${req.user.id}`);
     return page.finish(
-      await this.db.order.findMany({
-        where: { userId: req.user.id, ...page.after },
-        include: customerOrderInclude,
-        orderBy: page.orderBy,
-        take: page.take,
-      }),
+      await this.db.order
+        .findMany({
+          where: { userId: req.user.id, ...page.after },
+          include: customerOrderInclude,
+          orderBy: page.orderBy,
+          take: page.take,
+        })
+        .then((rows) => rows.map(customerView)),
     );
   }
-  @Get('orders/:id') async detail(@Param('id') id: string, @Req() req: AuthRequest) {
+  @Self() @Get('orders/:id') async detail(@Param('id') id: string, @Req() req: AuthRequest) {
     const order = await this.db.order.findFirst({
       where: { id, userId: req.user.id },
       include: customerOrderInclude,
     });
     if (!order) fail('ORDER_NOT_FOUND', 'Order not found.', 404);
-    return order;
+    return customerView(order);
   }
-  @Get('orders/:id/invoice') async invoice(@Param('id') id: string, @Req() req: AuthRequest) {
+  @Self() @Get('orders/:id/invoice') async invoice(
+    @Param('id') id: string,
+    @Req() req: AuthRequest,
+  ) {
     return {
       documentType: 'ORDER_SUMMARY',
       taxInvoice: false,
@@ -773,14 +973,17 @@ export class OrdersController {
       order: await this.detail(id, req),
     };
   }
-  @Post('orders/:id/reorder') @Contract(reorderSchema) reorder(
+  @Self() @Post('orders/:id/reorder') @Contract(reorderSchema) reorder(
     @Param('id') id: string,
     @Input(reorderSchema) body: z.infer<typeof reorderSchema>,
     @Req() req: AuthRequest,
   ) {
     return this.orders.reorder(id, req.user.id, body.idempotencyKey);
   }
-  @Post('orders/:id/cancel') async cancel(@Param('id') id: string, @Req() req: AuthRequest) {
+  @Self() @Post('orders/:id/cancel') async cancel(
+    @Param('id') id: string,
+    @Req() req: AuthRequest,
+  ) {
     await this.orders.changeStatus(
       id,
       'CANCELLED',
@@ -791,7 +994,10 @@ export class OrdersController {
     // Re-read through the customer view: changeStatus returns the desk view.
     return this.detail(id, req);
   }
-  @Admin() @Get('admin/orders') async all(@Query() query: Record<string, string>) {
+  @Can('orders.read', scoped) @Get('admin/orders') async all(
+    @Query() query: Record<string, string>,
+    @Req() req: AuthRequest,
+  ) {
     const parsed = z
       .object({
         q: z.string().max(100).default(''),
@@ -803,75 +1009,91 @@ export class OrdersController {
       .safeParse(query);
     if (!parsed.success) fail('INVALID_FILTER', 'Check order filters.');
     const { q, status, queue, customerId, group } = parsed.data;
+    // Someone who sees no customers or money must not learn them from what a filter matches.
+    // A customer's balance and limit belong to the udhaar list, not to the order list.
+    const seesCustomers = !!req.access['orders.read.money'];
+    if (!seesCustomers && (customerId || queue === 'payments')) forbid(req, 'orders.read.money');
     const date = group === 'today' ? istToday() : undefined;
     const today = date ? new Date(`${date}T00:00:00+05:30`) : null;
     const page = paginate(
       query,
       JSON.stringify({ list: 'admin-orders', q, status, queue, customerId, group, date }),
     );
+    const rows = await this.db.order.findMany({
+      include: { ...orderInclude, user: { select: orderPerson } },
+      where: {
+        AND: [
+          page.after,
+          shopAsked(req, 'orders.read', query.locationId),
+          customerId ? { userId: customerId } : {},
+          today ? { createdAt: { gte: today, lt: new Date(today.getTime() + 86400000) } } : {},
+          group === 'pending' ? { status: { notIn: ['DELIVERED', 'CANCELLED', 'REFUNDED'] } } : {},
+          group === 'completed' ? { status: { in: ['DELIVERED', 'CANCELLED', 'REFUNDED'] } } : {},
+          queue === 'new'
+            ? { work: { acknowledgedAt: null }, status: { in: ['CONFIRMED', 'PENDING_PAYMENT'] } }
+            : {},
+          queue === 'dispatch' ? { status: { in: ['CONFIRMED', 'PREPARING'] } } : {},
+          queue === 'payments'
+            ? {
+                payment: { status: 'PENDING', method: { not: 'CREDIT' } },
+                // A waiting order is on the Pakka karo queue, and no money is due yet.
+                status: { notIn: ['AWAITING_CONFIRMATION', 'CANCELLED', 'REFUNDED'] },
+              }
+            : {},
+          queue === 'issues'
+            ? {
+                OR: [
+                  { status: { in: ['DELIVERY_EXCEPTION', 'REFUND_PENDING'] } },
+                  { work: { lastError: { not: null } } },
+                ],
+              }
+            : {},
+          status ? { status } : {},
+          q
+            ? {
+                OR: [
+                  { number: { contains: q, mode: 'insensitive' } },
+                  ...(seesCustomers
+                    ? [
+                        { user: { name: { contains: q, mode: 'insensitive' as const } } },
+                        { user: { phone: { contains: q, mode: 'insensitive' as const } } },
+                      ]
+                    : []),
+                ],
+              }
+            : {},
+        ],
+      },
+      orderBy: page.orderBy,
+      take: page.take,
+    });
+    // Someone may see money at one shop and only load goods at another.
     return page.finish(
-      await this.db.order.findMany({
-        include: { ...orderInclude, user: true },
-        where: {
-          AND: [
-            page.after,
-            customerId ? { userId: customerId } : {},
-            today ? { createdAt: { gte: today, lt: new Date(today.getTime() + 86400000) } } : {},
-            group === 'pending'
-              ? { status: { notIn: ['DELIVERED', 'CANCELLED', 'REFUNDED'] } }
-              : {},
-            group === 'completed' ? { status: { in: ['DELIVERED', 'CANCELLED', 'REFUNDED'] } } : {},
-            queue === 'new'
-              ? { work: { acknowledgedAt: null }, status: { in: ['CONFIRMED', 'PENDING_PAYMENT'] } }
-              : {},
-            queue === 'dispatch' ? { status: { in: ['CONFIRMED', 'PREPARING'] } } : {},
-            queue === 'payments'
-              ? {
-                  payment: { status: 'PENDING', method: { not: 'CREDIT' } },
-                  status: { notIn: ['CANCELLED', 'REFUNDED'] },
-                }
-              : {},
-            queue === 'issues'
-              ? {
-                  OR: [
-                    { status: { in: ['DELIVERY_EXCEPTION', 'REFUND_PENDING'] } },
-                    { work: { lastError: { not: null } } },
-                  ],
-                }
-              : {},
-            status ? { status } : {},
-            q
-              ? {
-                  OR: [
-                    { number: { contains: q, mode: 'insensitive' } },
-                    { user: { name: { contains: q, mode: 'insensitive' } } },
-                    { user: { phone: { contains: q, mode: 'insensitive' } } },
-                  ],
-                }
-              : {},
-          ],
-        },
-        orderBy: page.orderBy,
-        take: page.take,
-      }),
+      rows.map((row) =>
+        canDo(req.access, 'orders.read.money', row.locationId) ? row : loadingView(row),
+      ),
     );
   }
-  @Admin()
+  @Can('orders.read', atOrder())
   @Get('admin/orders/:id')
-  adminDetail(@Param('id') id: string) {
-    return this.db.order.findUniqueOrThrow({
+  async adminDetail(@Param('id') id: string, @Req() req: AuthRequest) {
+    const order = await this.db.order.findUniqueOrThrow({
       where: { id },
-      include: { ...orderInclude, user: true },
+      include: { ...orderInclude, user: { select: orderPerson } },
     });
+    return canDo(req.access, 'orders.read.money', order.locationId) ? order : loadingView(order);
   }
-  @Admin() @Patch('admin/orders/:id/status') @Contract(orderStatusSchema) change(
+  @Can('orders.status', atOrder())
+  @Patch('admin/orders/:id/status')
+  @Contract(orderStatusSchema)
+  change(
     @Param('id') id: string,
     @Input(orderStatusSchema) body: z.infer<typeof orderStatusSchema>,
     @Req() req: AuthRequest,
   ) {
     return this.orders.changeStatus(id, body.status, req.user.id, body.note);
   }
-  @Admin()
+  @Can('orders.status', atOrder())
   @Post('admin/orders/:id/delivery')
   delivery(
     @Param('id') id: string,
@@ -881,7 +1103,7 @@ export class OrdersController {
     return this.orders.delivery(id, body, req.user.id);
   }
 
-  @Admin() @Post('admin/orders/expire-reservations') expire() {
+  @Can('orders.maintain') @Post('admin/orders/expire-reservations') expire() {
     return this.orders.expireReservations();
   }
 }

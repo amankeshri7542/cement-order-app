@@ -54,6 +54,7 @@ jobs:
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends postgresql-client-16
           PG_BIN=/usr/lib/postgresql/16/bin npm run test:restore
+          PG_BIN=/usr/lib/postgresql/16/bin npm run test:backup
       - run: npm run build --workspaces --if-present
       - name: Verify isolated production headers and storefront bundle
         run: node scripts/check-production-headers.mjs --self-test && node scripts/check-production-headers.mjs

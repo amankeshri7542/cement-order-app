@@ -26,7 +26,10 @@ export function Customers() {
   const t = useT();
   const [search, setSearch] = useState('');
   const q = useDebounced(search);
-  const [sort, setSort] = useState('due');
+  const { can } = useOwner();
+  // Who owes what, across everyone, is for those who may read the udhaar list.
+  const seesDue = can('khata.read.list');
+  const [sort, setSort] = useState(seesDue ? 'due' : 'recent');
   const customers = usePaged<Customer>(
     ['customers', 'list', sort, q],
     `/admin/customers?limit=24&sort=${sort}&q=${encodeURIComponent(q)}`,
@@ -41,7 +44,7 @@ export function Customers() {
         onChange={(event) => setSearch(event.target.value)}
       />
       <div className={css.chips}>
-        {['due', 'recent'].map((value) => (
+        {(seesDue ? ['due', 'recent'] : ['recent']).map((value) => (
           <Button
             key={value}
             variant={value === sort ? 'primary' : 'secondary'}
@@ -74,25 +77,29 @@ export function Customers() {
 }
 function CustomerRow({ customer }: { customer: Customer }) {
   const t = useT();
+  const { can } = useOwner();
+  const seesDue = can('khata.read.list');
   return (
     <Link href={`/customers/${customer.id}`} className={`${css.card} ${css.cardLink}`}>
       <div className={css.row}>
         <h3>{customer.name || customer.phone}</h3>
-        <MoneyText value={customer.balancePaise} signed />
+        {seesDue && <MoneyText value={customer.balancePaise} signed />}
       </div>
       <p>
         {customer.phone}
         {customer.area ? ` · ${customer.area}` : ''}
       </p>
-      <span className={css.hint}>
-        {t(
-          customer.balancePaise > 0
-            ? 'owner.due'
-            : customer.balancePaise < 0
-              ? 'owner.advance'
-              : 'owner.clearBalance',
-        )}
-      </span>
+      {seesDue && (
+        <span className={css.hint}>
+          {t(
+            customer.balancePaise > 0
+              ? 'owner.due'
+              : customer.balancePaise < 0
+                ? 'owner.advance'
+                : 'owner.clearBalance',
+          )}
+        </span>
+      )}
     </Link>
   );
 }
@@ -170,7 +177,11 @@ export function Khata() {
 
 export function CustomerDetails({ id }: { id: string }) {
   const t = useT();
-  const { requestClose } = useOwner();
+  const { requestClose, can } = useOwner();
+  // Credit limits are an owner's decision, so that tab is only for them.
+  const tabs = (['ledger', 'orders', 'notes', 'settings'] as const).filter(
+    (value) => value !== 'settings' || can('khata.credit.set'),
+  );
   const customer = useQuery({
     queryKey: ['customers', 'detail', id],
     queryFn: () => api<Customer>(`/admin/customers/${id}`),
@@ -199,24 +210,28 @@ export function CustomerDetails({ id }: { id: string }) {
             </p>
             <p className={css.moneyHero}>{money(Math.abs(customer.data.balancePaise))}</p>
             <div className={css.actions}>
-              <Button
-                onClick={() =>
-                  void requestClose(() => {
-                    setTab('ledger');
-                    setForm('payment');
-                  })
-                }
-              >
-                {t('owner.receiveMoney')}
-              </Button>
-              <Link className={css.inlineLink} href={`/orders/new?customer=${id}`}>
-                {t('owner.newOrder')}
-              </Link>
+              {can('khata.payment') && (
+                <Button
+                  onClick={() =>
+                    void requestClose(() => {
+                      setTab('ledger');
+                      setForm('payment');
+                    })
+                  }
+                >
+                  {t('owner.receiveMoney')}
+                </Button>
+              )}
+              {can('orders.create') && (
+                <Link className={css.inlineLink} href={`/orders/new?customer=${id}`}>
+                  {t('owner.newOrder')}
+                </Link>
+              )}
             </div>
             <ContactActions phone={customer.data.phone} customerId={id} />
           </section>
           <div role="tablist" aria-label={t('owner.customer')} className={css.tabs}>
-            {(['ledger', 'orders', 'notes', 'settings'] as const).map((value) => (
+            {tabs.map((value) => (
               <Button
                 key={value}
                 role="tab"
@@ -229,17 +244,16 @@ export function CustomerDetails({ id }: { id: string }) {
                   if (value !== tab) void requestClose(() => setTab(value));
                 }}
                 onKeyDown={(event) => {
-                  const tabs = ['ledger', 'orders', 'notes', 'settings'];
-                  const index = tabs.indexOf(tab);
+                  const index = tabs.indexOf(tab as (typeof tabs)[number]);
                   const target =
                     event.key === 'Home'
                       ? 0
                       : event.key === 'End'
-                        ? 3
+                        ? tabs.length - 1
                         : event.key === 'ArrowRight'
-                          ? (index + 1) % 4
+                          ? (index + 1) % tabs.length
                           : event.key === 'ArrowLeft'
-                            ? (index + 3) % 4
+                            ? (index + tabs.length - 1) % tabs.length
                             : null;
                   if (target === null) return;
                   event.preventDefault();
@@ -265,7 +279,9 @@ export function CustomerDetails({ id }: { id: string }) {
             {tab === 'ledger' && <CustomerLedger id={id} onAdjust={() => setForm('adjust')} />}
             {tab === 'orders' && <CustomerOrders id={id} />}
             {tab === 'notes' && <CustomerNotes id={id} />}
-            {tab === 'settings' && <CustomerSettings key={id} customer={customer.data} />}
+            {tab === 'settings' && can('khata.credit.set') && (
+              <CustomerSettings key={id} customer={customer.data} />
+            )}
           </div>
           {form && <LedgerForm id={id} mode={form} close={() => setForm(null)} />}
         </>
@@ -276,6 +292,7 @@ export function CustomerDetails({ id }: { id: string }) {
 
 function CustomerLedger({ id, onAdjust }: { id: string; onAdjust: () => void }) {
   const t = useT();
+  const { can } = useOwner();
   const words = useWords();
   const [reverse, setReverse] = useState<LedgerEntry | null>(null);
   const query = useInfiniteQuery({
@@ -291,9 +308,11 @@ function CustomerLedger({ id, onAdjust }: { id: string; onAdjust: () => void }) 
   return (
     <div className={css.stack}>
       <QueryStatus query={query} />
-      <Button variant="secondary" onClick={onAdjust}>
-        {t(entries.length ? 'owner.adjust' : 'owner.openingBalance')}
-      </Button>
+      {can('khata.adjust') && (
+        <Button variant="secondary" onClick={onAdjust}>
+          {t(entries.length ? 'owner.adjust' : 'owner.openingBalance')}
+        </Button>
+      )}
       {!query.isPending && !entries.length && <EmptyState title={t('owner.emptyLedger')} />}
       {entries.map((entry) => (
         <article key={entry.id} className={css.card}>
@@ -307,7 +326,7 @@ function CustomerLedger({ id, onAdjust }: { id: string; onAdjust: () => void }) 
             <span>{t('owner.runningBalance')}</span>
             <MoneyText value={entry.balanceAfterPaise} signed />
           </div>
-          {entry.kind !== 'REVERSAL' && !entry.reversal && (
+          {entry.kind !== 'REVERSAL' && !entry.reversal && can('khata.reverse') && (
             <Button variant="ghost" onClick={() => setReverse(entry)}>
               {t('owner.reverse')}
             </Button>
@@ -334,7 +353,9 @@ function LedgerForm({
   close: () => void;
 }) {
   const t = useT();
-  const { me } = useOwner();
+  const { me, can, shops, shopId } = useOwner();
+  // Someone working at more than one shop says whose drawer took it.
+  const drawers = shops.filter((shop) => can('money.receive', shop.id));
   const storageKey = `shiv-owner-khata:${me.id}:${id}:${mode}:${entry?.id || ''}`;
   const [saved] = useState(() => {
     try {
@@ -355,6 +376,7 @@ function LedgerForm({
   );
   const [date, setDate] = useState(String(saved?.occurredAt ?? istToday()));
   const [channel, setChannel] = useState(String(saved?.channel ?? 'CASH'));
+  const [drawer, setDrawer] = useState(String(saved?.locationId ?? shopId ?? drawers[0]?.id ?? ''));
   const frozen = useRef<Record<string, unknown> | null>(saved);
   const persisted = useRef(!!saved);
   const [locked, setLocked] = useState(!!saved);
@@ -374,6 +396,7 @@ function LedgerForm({
               occurredAt: date,
               idempotencyKey: key,
               ...(mode === 'payment' ? { channel } : {}),
+              ...(mode === 'payment' && drawers.length > 1 && drawer ? { locationId: drawer } : {}),
             });
       frozen.current = body;
       setLocked(true);
@@ -484,6 +507,17 @@ function LedgerForm({
                   </select>
                 </Field>
               )}
+              {mode === 'payment' && drawers.length > 1 && (
+                <Field label={t('owner.khata.whichShop')}>
+                  <select value={drawer} onChange={(event) => setDrawer(event.target.value)}>
+                    {drawers.map((shop) => (
+                      <option key={shop.id} value={shop.id}>
+                        {shop.name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              )}
             </>
           )}
           <Field label={t(mode === 'reverse' ? 'owner.reverseReason' : 'owner.note')}>
@@ -525,6 +559,7 @@ function CustomerOrders({ id }: { id: string }) {
 }
 function CustomerNotes({ id }: { id: string }) {
   const t = useT();
+  const { can } = useOwner();
   const words = useWords();
   const [body, setBody] = useState('');
   const notes = usePaged<{ id: string; body: string; createdAt: string }>(
@@ -546,24 +581,26 @@ function CustomerNotes({ id }: { id: string }) {
   );
   return (
     <div className={css.stack}>
-      <form
-        className={css.card}
-        onSubmit={(event) => {
-          event.preventDefault();
-          action.mutate();
-        }}
-      >
-        <Field label={t('owner.notePlaceholder')}>
-          <textarea
-            value={body}
-            onChange={(event) => setBody(event.target.value)}
-            maxLength={2000}
-            required
-          />
-        </Field>
-        <Problem error={action.error} />
-        <Button disabled={action.isPending}>{t('owner.addNote')}</Button>
-      </form>
+      {can('customers.note') && (
+        <form
+          className={css.card}
+          onSubmit={(event) => {
+            event.preventDefault();
+            action.mutate();
+          }}
+        >
+          <Field label={t('owner.notePlaceholder')}>
+            <textarea
+              value={body}
+              onChange={(event) => setBody(event.target.value)}
+              maxLength={2000}
+              required
+            />
+          </Field>
+          <Problem error={action.error} />
+          <Button disabled={action.isPending}>{t('owner.addNote')}</Button>
+        </form>
+      )}
       <QueryStatus query={notes} />
       {notes.data?.pages
         .flatMap((page) => page.items)

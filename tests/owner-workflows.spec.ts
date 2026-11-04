@@ -5,6 +5,7 @@ import { PrismaClient } from '@prisma/client';
 import { mkdir } from 'node:fs/promises';
 import type { Order, Quote } from '@shiv/shared';
 import { en } from '@shiv/i18n';
+import { grantOwners } from '../apps/api/test/staff-helper';
 
 // These journeys use real HTTP and PostgreSQL. OTP is the explicitly isolated mock provider.
 test.use({ actionTimeout: 15000 });
@@ -29,11 +30,12 @@ test.beforeAll(async () => {
   await db.user.createMany({
     skipDuplicates: true,
     data: [31, 32, 33, 34, 35, 36].map((suffix) => ({
-      phone: `+9192975137${suffix}`,
+      phone: `+9199999970${suffix}`,
       name: `Family workflow owner ${suffix}`,
       role: 'ADMIN' as const,
     })),
   });
+  await grantOwners(db);
   await db.deliveryZone.upsert({
     where: { id: 'family-workflow-zone' },
     update: {},
@@ -101,39 +103,43 @@ test('SSE outage: polling finds new work and competing owners keep one durable a
     await customerLogin(page, 34);
     const { order } = await submitOrder(page, products[3]!, 5);
     // No owner reload, navigation, focus or manual refresh after order submission.
-    await openOrder(father, order);
-    await openOrder(uncle, order);
-    // Hold both real requests until both clicks arrive: polling can otherwise remove
-    // the second owner's button before WebKit finishes its click.
+    const cards = [father, uncle].map((owner) =>
+      owner.locator(`article[data-order="${order.id}"]`),
+    );
+    for (const card of cards) await expect(card).toBeVisible({ timeout: 40000 });
+    // Hold both real requests until both taps arrive, so polling cannot take the second button
+    // away before it is tapped.
     let release = () => {};
     let arrivals = 0;
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
     for (const owner of [father, uncle])
-      await owner.route(`**/orders/${order.id}/acknowledge`, async (route) => {
+      await owner.route(`**/orders/${order.id}/confirm`, async (route) => {
         if (route.request().method() !== 'POST') return route.continue();
         if (++arrivals === 2) release();
         await gate;
         await route.continue();
       });
     const responses = [father, uncle].map((owner) =>
-      owner.waitForResponse((r) => r.url().endsWith(`/orders/${order.id}/acknowledge`)),
+      owner.waitForResponse((r) => r.url().endsWith(`/orders/${order.id}/confirm`)),
     );
-    for (const owner of [father, uncle])
-      await owner.getByRole('button', { name: en['owner.startPreparing'], exact: true }).click();
-    for (const response of await Promise.all(responses)) expect(response.status()).toBe(201);
+    for (const card of cards)
+      await card.getByRole('button', { name: en['owner.pakka.confirm'], exact: true }).click();
+    const statuses = (await Promise.all(responses)).map((response) => response.status()).sort();
+    // One wins, and the other is told who, not shown an error.
+    expect(statuses).toEqual([201, 409]);
     expect(arrivals).toBe(2);
     const work = await db.ownerWork.findUniqueOrThrow({
       where: { orderId: order.id },
       include: { assignedTo: true },
     });
     expect(work.acknowledgedAt).not.toBeNull();
-    expect(['+919297513734', '+919297513735']).toContain(work.assignedTo?.phone);
+    expect(['+919999997034', '+919999997035']).toContain(work.assignedTo?.phone);
     expect(
-      await db.auditLog.count({ where: { entityId: order.id, event: 'ORDER_ACKNOWLEDGED' } }),
+      await db.auditLog.count({ where: { entityId: order.id, event: 'ORDER_CONFIRMED' } }),
     ).toBe(1);
-    await father.reload();
+    await father.goto(`http://localhost:3001/orders/${order.id}`);
     await expect(
       father.getByRole('heading', { name: `Order ${order.number}`, exact: true }),
     ).toBeVisible();
@@ -250,7 +256,7 @@ async function customerLogin(page: Page, suffix: number) {
 async function ownerLogin(page: Page, suffix: number) {
   observePage(page, test.info());
   await page.goto('http://localhost:3001/today');
-  await page.getByRole('textbox', { name: en['owner.loginPhone'] }).fill(`92975137${suffix}`);
+  await page.getByRole('textbox', { name: en['owner.loginPhone'] }).fill(`99999970${suffix}`);
   const sent = page.waitForResponse(
     (response) => response.url().endsWith('/auth/otp/request') && response.status() === 201,
   );
@@ -260,6 +266,7 @@ async function ownerLogin(page: Page, suffix: number) {
     .fill((await (await sent).json()).devCode);
   await page.getByRole('button', { name: en['owner.signIn'] }).click();
   await expect(page.getByRole('heading', { name: en['owner.today'], exact: true })).toBeVisible();
+  await page.goto('http://localhost:3001/inbox');
 }
 async function submitOrder(page: Page, product: (typeof products)[number], quantity: number) {
   await openMaterial(page, product.name);
@@ -277,7 +284,9 @@ async function submitOrder(page: Page, product: (typeof products)[number], quant
   await page.getByRole('button', { name: `Place order · ${total}`, exact: true }).click();
   const response = await created;
   expect(response.status()).toBe(201);
-  await expect(page.getByRole('heading', { name: 'Confirmed', exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Waiting for the shop', exact: true }),
+  ).toBeVisible();
   return { order: (await response.json()) as Order, response };
 }
 async function replay(page: Page, response: Response) {
@@ -293,11 +302,16 @@ async function replay(page: Page, response: Response) {
   expect(result.ok(), `Replay ${result.status()}: ${await result.text()}`).toBe(true);
   return result.json();
 }
+/** Waits for the order on the queue with no refresh, confirms it there, then opens its page. */
+async function confirmOnCard(owner: Page, order: Order) {
+  const card = owner.locator(`article[data-order="${order.id}"]`);
+  await expect(card).toBeVisible({ timeout: 40000 });
+  await card.getByRole('button', { name: en['owner.pakka.confirm'], exact: true }).click();
+  await expect(owner.getByRole('button', { name: /^Take back \d+$/ }).first()).toBeVisible();
+}
 async function openOrder(owner: Page, order: Order) {
-  const link = owner.locator(`a[href="/orders/${order.id}"]`).first();
-  await expect(link).toBeVisible({ timeout: 30000 });
-  await link.click();
-  await expect(owner).toHaveURL(new RegExp(`/orders/${order.id}$`));
+  await confirmOnCard(owner, order);
+  await owner.goto(`http://localhost:3001/orders/${order.id}`);
   await expect(
     owner.getByRole('heading', { name: `Order ${order.number}`, exact: true }),
   ).toBeVisible();
@@ -341,11 +355,7 @@ async function collectAndDeliver(owner: Page, channel: 'CASH' | 'UPI' = 'CASH') 
   await expect(sheet).toBeHidden();
 }
 async function openQuote(owner: Page, quote: Quote) {
-  await owner.goto('http://localhost:3001/more?view=quotes');
-  await owner
-    .locator('.owner-order-cards')
-    .getByRole('button', { name: `Open quote ${quote.number}`, exact: true })
-    .click();
+  await owner.goto(`http://localhost:3001/lists?id=${quote.id}`);
 }
 async function confirmQuote(owner: Page, action: string, confirmation: string) {
   await owner.getByRole('button', { name: action, exact: true }).click();
@@ -373,13 +383,15 @@ test('phone COD: automatic owner queue, acknowledgment, actual collection, deliv
   page.on('pageerror', collect);
   try {
     await ownerLogin(owner, 31);
+    await owner.goto('http://localhost:3001/today');
     await ownerLanguage(owner, 'hi');
     await owner.reload();
-    await expect(owner.getByRole('heading', { name: 'आज', exact: true })).toBeVisible();
+    await expect(owner.getByRole('heading', { name: 'Aaj', exact: true })).toBeVisible();
     await ownerLanguage(owner, 'en');
     await expect(
       owner.getByRole('heading', { name: en['owner.today'], exact: true }),
     ).toBeVisible();
+    await owner.goto('http://localhost:3001/inbox');
     await customerLogin(page, 31);
     const { order, response } = await submitOrder(page, products[0]!, 50);
     expect(order.totalPaise).toBe(2000000);
@@ -457,7 +469,7 @@ test('phone refused delivery: retry and physical return without fake collection,
       );
     }
     await refuse('Customer refused today; requested another delivery attempt.');
-    await owner.getByRole('link', { name: en['owner.today'], exact: true }).click();
+    await owner.getByRole('link', { name: new RegExp(`^${en['owner.today']}( \\d+)?$`) }).click();
     const issue = owner
       .locator(`a[href="/orders/${order.id}"]`)
       .filter({ hasText: en['owner.workIssue'] });
@@ -540,12 +552,13 @@ test('wholesale UI: freight confirmation, renewed consent and one order at the n
     const quote = (await (await requested).json()) as Quote;
     expect(quote.items[0]!.quantity).toBe(100);
     await openQuote(owner, quote);
-    await owner.getByRole('button', { name: 'Acknowledge quotation', exact: true }).click();
+    await owner.getByRole('button', { name: en['owner.lists.take'], exact: true }).click();
+    await expect(owner.getByText(en['owner.lists.taken'])).toBeVisible();
     await openQuote(owner, quote);
-    await owner.getByLabel(/Family Bulk Cement.*price per unit/).fill('380');
-    await owner.getByLabel('Delivery charge (₹)', { exact: true }).fill('750');
+    await owner.getByLabel(/Family Bulk Cement.*rate for one/).fill('380');
+    await owner.getByLabel(en['owner.lists.freight'], { exact: true }).fill('750');
     await owner.getByRole('checkbox', { name: /I checked the site/ }).check();
-    await confirmQuote(owner, 'Send quotation', 'Send quotation');
+    await confirmQuote(owner, en['owner.lists.send'], en['owner.lists.send']);
     await expect(owner.getByRole('dialog')).toHaveCount(0);
     await page.getByRole('button', { name: 'Refresh current screen', exact: true }).click();
     const consent = page.getByRole('checkbox', { name: /I reviewed this revision/ });
@@ -557,12 +570,10 @@ test('wholesale UI: freight confirmation, renewed consent and one order at the n
       .poll(async () => (await db.quote.findUniqueOrThrow({ where: { id: quote.id } })).status)
       .toBe('ACCEPTED');
     await openQuote(owner, quote);
-    await owner
-      .getByRole('button', { name: 'Revise terms for fresh consent', exact: true })
-      .click();
-    await owner.getByLabel(/Family Bulk Cement.*price per unit/).fill('381');
-    await owner.getByLabel('Delivery charge (₹)', { exact: true }).fill('760');
-    await confirmQuote(owner, 'Send revised quote', 'Send quotation');
+    await owner.getByRole('button', { name: en['owner.lists.changeRates'], exact: true }).click();
+    await owner.getByLabel(/Family Bulk Cement.*rate for one/).fill('381');
+    await owner.getByLabel(en['owner.lists.freight'], { exact: true }).fill('760');
+    await confirmQuote(owner, en['owner.lists.sendAgain'], en['owner.lists.sendAgain']);
     await expect
       .poll(async () => (await db.quote.findUniqueOrThrow({ where: { id: quote.id } })).status)
       .toBe('SENT');
@@ -584,13 +595,13 @@ test('wholesale UI: freight confirmation, renewed consent and one order at the n
     const converted = owner.waitForResponse(
       (r) => r.url().endsWith(`/quotes/${quote.id}/convert`) && r.request().method() === 'POST',
     );
-    await confirmQuote(owner, 'Create supply order', 'Create supply order');
+    await confirmQuote(owner, en['owner.lists.makeOrder'], en['owner.lists.makeOrder']);
     const response = await converted;
     expect(response.status()).toBe(201);
     const order = (await response.json()) as Order;
     expect((await replay(owner, response)).id).toBe(order.id);
     await expect(
-      owner.getByRole('heading', { name: `Order ${order.number}`, exact: true }),
+      owner.getByText(en['owner.lists.orderMade'].replace('{number}', order.number)).first(),
     ).toBeVisible();
     const persisted = await db.order.findUniqueOrThrow({
       where: { id: order.id },

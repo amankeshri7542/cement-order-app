@@ -33,6 +33,7 @@
     "test:workflows": "npm run test:workflows -w @shiv/api",
     "test:bootstrap": "npm run test:bootstrap -w @shiv/api",
     "test:restore": "npm exec -w @shiv/api -- tsx scripts/restore-rehearsal.ts",
+    "test:backup": "node --test scripts/backup.test.mjs",
     "security:scan": "node scripts/security-scan.mjs",
     "serve:customer": "node scripts/serve-customer.mjs",
     "dev:storefront": "npm run dev -w @shiv/storefront",

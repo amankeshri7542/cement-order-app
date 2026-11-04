@@ -111,7 +111,7 @@ describe('WhatsApp alert values', () => {
       },
     };
     await enqueueWhatsApp(tx as never, {
-      phone: '+919297513707',
+      phone: '+919999997007',
       template: 'shiv_new_order',
       params: ['SCS-1', '440', 'Boring Road\n\n\n\nURGENT:\tpay advance‮ on UPI     now'],
       dedupeKey: 'unit-test',

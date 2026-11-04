@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { webEnquirySchema, type WebEnquiryInput } from '@shiv/shared';
 import { budget, clientIp } from './abuse';
 import { Db } from './db';
-import { Admin, AuthRequest, Contract, Input, Public, fail } from './http';
+import { AuthRequest, Can, Contract, fail, Input, Public } from './http';
 import { OwnerWorkService } from './owner-work';
 import { paginate } from './pagination';
 
@@ -85,8 +85,7 @@ export class WebEnquiriesController {
     return { received: true };
   }
 
-  @Admin()
-  @Get('admin/enquiries')
+  @Can('enquiries.handle') @Get('admin/enquiries')
   async list(@Query() query: Record<string, string>) {
     const parsed = listSchema.safeParse({ status: query.status });
     if (!parsed.success) fail('INVALID_INPUT', 'Choose NEW or HANDLED.');
@@ -106,8 +105,7 @@ export class WebEnquiriesController {
     return page.finish(rows);
   }
 
-  @Admin()
-  @Post('admin/enquiries/:id/handle')
+  @Can('enquiries.handle') @Post('admin/enquiries/:id/handle')
   async handle(@Param('id') id: string, @Req() req: AuthRequest) {
     if (!id || id.length > 100) fail('NOT_FOUND', 'This enquiry could not be found.', 404);
     const enquiry = await this.db.atomic(async (tx) => {

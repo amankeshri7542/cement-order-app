@@ -128,7 +128,7 @@ describe('mock authentication boundary', () => {
 });
 
 describe('strict owner sessions', () => {
-  it('keeps the absolute eight-hour limit when passphrases are required', async () => {
+  it('with passphrases on, an owner stays signed in for the owner session days, and no longer', async () => {
     const config = await import('../src/config');
     const policy = config.configSchema.parse({
       NODE_ENV: 'test',
@@ -140,21 +140,110 @@ describe('strict owner sessions', () => {
     const mocked = vi.spyOn(config, 'getConfig').mockReturnValue(policy);
     try {
       const { assertSession, refreshLifetime } = await import('../src/security');
-      const db = { adminCredential: { findUnique: vi.fn() } };
+      const verifiedAt = new Date(Date.now() - 29 * 86400000);
+      const db = {
+        adminCredential: { findUnique: vi.fn(async () => ({ updatedAt: new Date(0) })) },
+        staffMembership: { findFirst: vi.fn(async () => ({ id: 'owner-membership' })) },
+      };
       const session = {
         userId: 'owner',
         user: { role: 'ADMIN', deletedAt: null },
-        createdAt: new Date(Date.now() - 8 * 3600000 - 1000),
-        adminVerifiedAt: new Date(),
-        refreshExpiresAt: new Date(Date.now() + 30 * 86400000),
+        createdAt: verifiedAt,
+        adminVerifiedAt: verifiedAt,
+        refreshExpiresAt: new Date(Date.now() + 86400000),
       } as Parameters<typeof assertSession>[1];
-      expect(refreshLifetime('ADMIN')).toBe(8 * 3600000);
+      expect(refreshLifetime('ADMIN')).toBe(30 * 86400000);
+      // Day 29: still signed in, with no passphrase asked for that morning.
       await expect(
         assertSession(db as unknown as Parameters<typeof assertSession>[0], session),
+      ).resolves.toBeUndefined();
+      // Day 30: time to sign in again.
+      db.adminCredential.findUnique.mockClear();
+      await expect(
+        assertSession(db as unknown as Parameters<typeof assertSession>[0], {
+          ...session,
+          createdAt: new Date(Date.now() - 30 * 86400000 - 1000),
+        }),
       ).rejects.toMatchObject({
         status: 401,
       });
       expect(db.adminCredential.findUnique).not.toHaveBeenCalled();
+    } finally {
+      mocked.mockRestore();
+    }
+  });
+
+  it.each([
+    ['a live shop refuses an owner with no passphrase', 'production', undefined, 'STEP_UP_SETUP'],
+    ['a demo with fake data does not', 'production', 'true', null],
+    ['nor does local development', 'test', undefined, null],
+  ])('%s', async (_name, nodeEnv, demo, code) => {
+    const config = await import('../src/config');
+    const real = config.configSchema.parse({
+      NODE_ENV: 'test',
+      DATABASE_URL: 'postgresql://unused/security_test',
+      OTP_PROVIDER: 'mock',
+      OTP_HASH_SECRET: 'strict-test-only-secret-at-least-32-characters',
+    });
+    const mocked = vi.spyOn(config, 'getConfig').mockReturnValue({
+      ...real,
+      NODE_ENV: nodeEnv as 'production',
+      DEMO_MODE: demo === 'true',
+    });
+    try {
+      const { requireStepUp } = await import('../src/security');
+      const db = { adminCredential: { findUnique: vi.fn(async () => null) } };
+      const result = requireStepUp(db as never, 'owner');
+      if (code) await expect(result).rejects.toMatchObject({ response: { code } });
+      else await expect(result).resolves.toBeUndefined();
+    } finally {
+      mocked.mockRestore();
+    }
+  });
+
+  it('staff who carry no passphrase are not asked for one', async () => {
+    const config = await import('../src/config');
+    const policy = config.configSchema.parse({
+      NODE_ENV: 'production',
+      DATABASE_URL: 'postgresql://unused/security_test',
+      OTP_PROVIDER: 'twilio',
+      TWILIO_ACCOUNT_SID: 'a',
+      TWILIO_AUTH_TOKEN: 'b',
+      TWILIO_VERIFY_SERVICE_SID: 'c',
+      CORS_ORIGINS: 'https://desk.example.test',
+      OTP_HASH_SECRET: 'strict-test-only-secret-at-least-32-characters',
+      STAFF_PASSPHRASE_REQUIRED: 'true',
+    });
+    const mocked = vi.spyOn(config, 'getConfig').mockReturnValue(policy);
+    try {
+      const { assertSession } = await import('../src/security');
+      const db = {
+        adminCredential: { findUnique: vi.fn(async () => null) },
+        staffMembership: { findFirst: vi.fn(async () => null) },
+      };
+      const session = {
+        userId: 'cashier',
+        user: { role: 'ADMIN', deletedAt: null },
+        createdAt: new Date(),
+        adminVerifiedAt: new Date(),
+        refreshExpiresAt: new Date(Date.now() + 86400000),
+      } as Parameters<typeof assertSession>[1];
+      await expect(
+        assertSession(db as unknown as Parameters<typeof assertSession>[0], session),
+      ).resolves.toBeUndefined();
+      // An owner added from the desk signs in by code, then sets their passphrase.
+      db.staffMembership.findFirst.mockResolvedValue({ id: 'owner-membership' } as never);
+      await expect(
+        assertSession(db as unknown as Parameters<typeof assertSession>[0], session),
+      ).resolves.toBeUndefined();
+      // Once they have one, a session that never gave it is refused.
+      db.adminCredential.findUnique.mockResolvedValue({ updatedAt: new Date(0) } as never);
+      await expect(
+        assertSession(db as unknown as Parameters<typeof assertSession>[0], {
+          ...session,
+          adminVerifiedAt: null,
+        }),
+      ).rejects.toMatchObject({ status: 401 });
     } finally {
       mocked.mockRestore();
     }
@@ -175,6 +264,7 @@ describe('strict owner sessions', () => {
       const verifiedAt = new Date(Date.now() - 60000);
       const db = {
         adminCredential: { findUnique: vi.fn(async () => ({ updatedAt: new Date() })) },
+        staffMembership: { findFirst: vi.fn(async () => ({ id: 'owner-membership' })) },
       };
       const session = {
         userId: 'owner',

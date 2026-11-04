@@ -117,6 +117,7 @@ export function AccountPage() {
         const result = await customerApi<{ user: User }>('/auth/otp/verify', 'POST', {
           phone: number,
           code,
+          surface: 'CUSTOMER',
         });
         if (request.current !== current || account.current !== owner) return;
         target = result.user.id;

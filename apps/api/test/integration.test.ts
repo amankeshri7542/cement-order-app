@@ -13,6 +13,7 @@ import { PaymentsService } from '../src/payments';
 import { hashPassword } from '../src/security';
 import { OrdersService } from '../src/orders';
 import { getConfig } from '../src/config';
+import { confirmOrder, grantOwners } from './staff-helper';
 
 if (existsSync('.env.test')) loadEnvFile('.env.test');
 process.env.NODE_ENV = 'test';
@@ -154,6 +155,7 @@ beforeEach(async () => {
       },
     });
   }
+  await grantOwners(db);
   await db.category.create({ data: { id: 'cement-category', name: 'Cement', slug: 'cement' } });
   await db.product.create({ data: product });
   await db.inventoryMovement.create({
@@ -179,7 +181,12 @@ beforeEach(async () => {
     },
   });
   await db.storeSettings.create({
-    data: { id: 'store', deliveryFeePaise: 50000, onlinePaymentsEnabled: true },
+    data: {
+      id: 'store',
+      phone: '+919999999000',
+      deliveryFeePaise: 50000,
+      onlinePaymentsEnabled: true,
+    },
   });
 });
 afterAll(async () => {
@@ -433,7 +440,7 @@ describe('Checkout and stock transaction integrity', () => {
       .patch('/api/v1/admin/store')
       .set(auth('admin'))
       .send({
-        phone: '+919297513707',
+        phone: '+919999997007',
         deliveryFeePaise: 60000,
         freeDeliveryAbovePaise: null,
         onlinePaymentsEnabled: true,
@@ -514,6 +521,7 @@ describe('Orders, payments and replay protection', () => {
       .set(auth('admin'))
       .send({ status: 'DELIVERED' })
       .expect(409);
+    await confirmOrder(server, db, tokens.admin, o.id);
     for (const status of ['PREPARING', 'OUT_FOR_DELIVERY'])
       await request(server)
         .patch(`/api/v1/admin/orders/${o.id}/status`)
@@ -588,11 +596,16 @@ describe('Orders, payments and replay protection', () => {
     const result = await Promise.all([webhook(capture, id), webhook(capture, id)]);
     expect(result.map((r) => r.status)).toEqual([201, 201]);
     expect(await db.paymentEvent.count()).toBe(1);
-    expect((await db.order.findUniqueOrThrow({ where: { id: o.id } })).status).toBe('CONFIRMED');
+    // Paid, but no person has looked yet.
+    expect((await db.order.findUniqueOrThrow({ where: { id: o.id } })).status).toBe(
+      'AWAITING_CONFIRMATION',
+    );
     expect((await webhook({ ...capture, amount: 123 }, id)).status).toBe(409);
     expect((await webhook(capture)).status).toBe(201);
     expect(
-      await db.orderStatusHistory.count({ where: { orderId: o.id, status: 'CONFIRMED' } }),
+      await db.orderStatusHistory.count({
+        where: { orderId: o.id, status: 'AWAITING_CONFIRMATION' },
+      }),
     ).toBe(1);
   });
   it('expires unpaid reservations and flags late captured payments for refund without reserving stock again', async () => {
@@ -1014,14 +1027,6 @@ describe('Pilot operations and privacy', () => {
         status: 'CANCELLED',
         actorId: 'admin',
         note: address.phone + ' ' + address.line1,
-      },
-    });
-    await db.auditLog.create({
-      data: {
-        actorId: 'admin',
-        event: 'STAFF_NOTE',
-        entityId: o.id,
-        details: { note: address.phone },
       },
     });
     await request(server)
@@ -1744,7 +1749,7 @@ describe('security hardening concurrency and recovery', () => {
       expect(results.map((r) => r.status).sort()).toEqual([201, 429]);
       await db.order.updateMany({ data: { createdAt: new Date(0) } });
       await app.get(OrdersService).expireReservations();
-      expect(await db.order.count({ where: { status: 'CONFIRMED' } })).toBe(1);
+      expect(await db.order.count({ where: { status: 'AWAITING_CONFIRMATION' } })).toBe(1);
       expect((await db.product.findUniqueOrThrow({ where: { id: 'cement' } })).stock).toBe(90);
     } finally {
       c.PENDING_COD_STORE = old;
@@ -2027,6 +2032,7 @@ describe('Owner desk operations (Phase 4)', () => {
 
   it('records how cash-on-delivery money was paid and reports cash, UPI and net', async () => {
     const o = await order();
+    await confirmOrder(server, db, tokens.admin, o.id);
     await request(server)
       .post(`/api/v1/admin/orders/${o.id}/cod-received`)
       .set(admin())
@@ -2069,7 +2075,7 @@ describe('Owner desk operations (Phase 4)', () => {
       .set(admin())
       .expect(200);
     expect(csv.headers['content-type']).toContain('text/csv');
-    expect(csv.text.startsWith('\uFEFFतारीख / Date')).toBe(true);
+    expect(csv.text.startsWith('\uFEFFDate')).toBe(true);
     expect(csv.text).toContain(`UPI collected,${(o.totalPaise / 100).toFixed(2)}`);
     await request(server)
       .get('/api/v1/admin/reports/money?from=2026-02-01&to=2026-01-01')

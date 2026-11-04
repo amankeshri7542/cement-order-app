@@ -34,3 +34,64 @@ a {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* The few pages outside the desk: privacy, account deletion and the error page. */
+.policy-page,
+.loading-page {
+  max-inline-size: 42rem;
+  margin: 0 auto;
+  padding: 2rem 1rem 4rem;
+  font: var(--shiv-body)/1.65 var(--shiv-font-body);
+  color: var(--shiv-ink);
+}
+.policy-page h1,
+.policy-page h2,
+.loading-page h1 {
+  font-family: var(--shiv-font-display);
+  line-height: 1.3;
+  margin-block: 1.25rem 0.5rem;
+}
+.form-stack {
+  display: grid;
+  gap: 0.75rem;
+}
+.form-stack .field {
+  display: grid;
+  gap: 0.25rem;
+}
+.form-stack input,
+.form-stack textarea {
+  font: inherit;
+  min-block-size: 3rem;
+  padding: 0.5rem 0.75rem;
+  border: 0.0625rem solid var(--shiv-line);
+  border-radius: var(--shiv-radius-sm);
+}
+.primary,
+.secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 3rem;
+  margin-inline-end: 0.5rem;
+  padding-inline: 1rem;
+  border-radius: var(--shiv-radius-sm);
+  border: 0.0625rem solid var(--shiv-navy);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+.primary {
+  background: var(--shiv-navy);
+  color: var(--shiv-card);
+}
+.secondary {
+  background: transparent;
+  color: var(--shiv-ink);
+}
+.error,
+.warning {
+  color: var(--shiv-red);
+}
+

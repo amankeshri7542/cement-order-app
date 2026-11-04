@@ -213,21 +213,21 @@ test('an enquiry from the Contact page reaches the owner’s Today screen and ca
   const desk = await owner.newPage();
   await desk.addInitScript(() => localStorage.setItem('shiv-owner-language', 'hi'));
   await desk.goto('http://localhost:3001/today');
-  await desk.getByRole('textbox', { name: 'मालिक का मोबाइल नंबर', exact: true }).fill('9297513707');
+  await desk.getByRole('textbox', { name: 'Staff ka mobile number', exact: true }).fill('9999997007');
   const code = desk.waitForResponse(
     (r) => r.url().endsWith('/auth/otp/request') && r.status() === 201,
   );
-  await desk.getByRole('button', { name: 'कोड भेजें', exact: true }).click();
+  await desk.getByRole('button', { name: 'Code mangao', exact: true }).click();
   const { devCode } = (await (await code).json()) as { devCode: string };
-  await desk.getByRole('textbox', { name: 'साइन इन कोड', exact: true }).fill(devCode);
-  await desk.getByRole('button', { name: 'दुकान डेस्क खोलें', exact: true }).click();
+  await desk.getByRole('textbox', { name: 'Code', exact: true }).fill(devCode);
+  await desk.getByRole('button', { name: 'Desk kholo', exact: true }).click();
   const card = desk.getByRole('article').filter({ hasText: name });
   await expect(card).toBeVisible();
-  await expect(card.getByText('सामग्री: PPC cement')).toBeVisible();
+  await expect(card.getByText('Baare mein: PPC cement')).toBeVisible();
   // Markup sent by a visitor is shown as text, never rendered.
   await expect(card.getByText('<b>not bold</b>', { exact: false })).toBeVisible();
   await expect(card.locator('b')).toHaveCount(0);
-  await card.getByRole('button', { name: 'हो गया', exact: true }).click();
+  await card.getByRole('button', { name: 'Ho gaya', exact: true }).click();
   await expect(card).toHaveCount(0);
   expect((await db.webEnquiry.findUniqueOrThrow({ where: { id: stored.id } })).status).toBe(
     'HANDLED',

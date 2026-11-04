@@ -286,7 +286,7 @@ const orders = [
     number: 'SC-DEMO-0001',
     idempotencyKey: '7d0c6a43-1f4e-4c4a-9d55-0a5d0e000001',
     customer: `${DEMO_PREFIX}customer-1`,
-    status: 'CONFIRMED',
+    status: 'AWAITING_CONFIRMATION',
     hoursAgo: 1,
     deliveryInDays: 1,
     lines: [{ productId: `${DEMO_PREFIX}ppc-cement`, quantity: 50 }],
