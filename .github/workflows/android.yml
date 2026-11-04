@@ -21,7 +21,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   maestro:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 75
     services:
       postgres:
@@ -32,7 +32,7 @@ jobs:
           POSTGRES_DB: shiv_cement
         ports: ['5432:5432']
         options: >-
-          --health-cmd "pg_isready -U shiv"
+          --health-cmd "pg_isready -U shiv -d shiv_cement"
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       CI: '1'
