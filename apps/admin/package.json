@@ -7,7 +7,7 @@
     "build": "next build --webpack",
     "start": "next start --port 3000",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test lib/api.test.ts"
+    "test": "node --import tsx --test lib/api.test.ts lib/refresh.test.ts"
   },
   "dependencies": {
     "@shiv/design": "1.0.0",

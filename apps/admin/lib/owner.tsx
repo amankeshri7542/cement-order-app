@@ -25,6 +25,7 @@ import type { MessageKey } from '@shiv/i18n';
 import { API_URL, ApiError, api } from './api';
 import { LanguageProvider, useLanguage, useT, useWords } from './i18n';
 import { registerWorker } from './push';
+import { refreshAfterWrite } from './refresh';
 import css from '../components/owner/owner.module.css';
 
 declare global {
@@ -435,17 +436,11 @@ export function useAction<T, R = unknown>(
       return run(input);
     },
     onSuccess: async () => {
-      await Promise.all(
-        [['dashboard'], ...keys].map((queryKey) => client.invalidateQueries({ queryKey })),
-      );
+      await refreshAfterWrite(client, [['dashboard'], ...keys]);
       if (success) notice(t(success));
     },
     // A transport failure can hide a committed write. Refresh its authoritative state too.
-    onError: async () => {
-      await Promise.all(
-        [['dashboard'], ...keys].map((queryKey) => client.invalidateQueries({ queryKey })),
-      );
-    },
+    onError: () => refreshAfterWrite(client, [['dashboard'], ...keys]),
   });
 }
 
