@@ -18,7 +18,7 @@ test('phone order contracts distinguish delivery from pickup and reject untruste
     { totalPaise: 1 },
     { source: 'APP' },
     { deliveryDate: '2026-02-30' },
-    { customerPhone: '+919297513707 ', actorId: 'papa' },
+    { customerPhone: '+919999997007 ', actorId: 'papa' },
     { items: [...input.items, ...input.items] },
   ])
     assert.equal(phoneOrderSchema.safeParse({ ...input, ...changes }).success, false);

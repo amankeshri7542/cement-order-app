@@ -200,7 +200,7 @@ function Orders({ orderId }: { orderId?: string }) {
               </h2>
               <p>
                 {new Date(order.createdAt).toLocaleDateString(
-                  language === 'hi' ? 'hi-IN' : 'en-IN',
+                  'en-IN',
                 )}
               </p>
             </div>
@@ -229,7 +229,7 @@ function Orders({ orderId }: { orderId?: string }) {
                       <Status status={item.status} />
                       <span>
                         {new Date(item.createdAt).toLocaleString(
-                          language === 'hi' ? 'hi-IN' : 'en-IN',
+                          'en-IN',
                         )}
                       </span>
                       {historyNote(item.note, language) && (
@@ -277,7 +277,7 @@ function Orders({ orderId }: { orderId?: string }) {
                 >
                   {t('Share on WhatsApp', 'WhatsApp पर भेजें')}
                 </a>
-                {['CONFIRMED', 'PENDING_PAYMENT'].includes(order.status) && (
+                {['AWAITING_CONFIRMATION', 'CONFIRMED', 'PENDING_PAYMENT'].includes(order.status) && (
                   <button
                     className="text-link"
                     disabled={busy}

@@ -25,8 +25,25 @@ async function main() {
       const user = await tx.user.upsert({
         where: { phone },
         create: { phone, role: 'ADMIN', name: process.argv[3] || 'Store owner' },
-        update: { role: 'ADMIN', ...(process.argv[3] ? { name: process.argv[3] } : {}) },
+        update: {
+          role: 'ADMIN',
+          staffPausedAt: null,
+          ...(process.argv[3] ? { name: process.argv[3] } : {}),
+        },
       });
+      // Rights come from the membership. An owner holds one with no shop on it.
+      const active = await tx.staffMembership.findMany({
+        where: { userId: user.id, endedAt: null },
+      });
+      if (!active.some((membership) => membership.role === 'OWNER')) {
+        await tx.staffMembership.updateMany({
+          where: { userId: user.id, endedAt: null },
+          data: { endedAt: new Date(), endedById: 'bootstrap-cli' },
+        });
+        await tx.staffMembership.create({
+          data: { userId: user.id, locationId: null, role: 'OWNER', grantedById: 'bootstrap-cli' },
+        });
+      }
       if (passwordHash)
         await tx.adminCredential.upsert({
           where: { userId: user.id },

@@ -9,6 +9,20 @@ export const configSchema = z.object({
   DATABASE_URL: z.string().min(1),
   CORS_ORIGINS: z.string().default('http://localhost:3000,http://localhost:8081'),
   OTP_PROVIDER: z.enum(['mock', 'twilio']).default('mock'),
+  // Hosted demo with fake data only: lets mock OTP run in production behind the host's proxy.
+  DEMO_MODE: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+  // The one database demo mode may run against, so a copied setting cannot open a real one.
+  DEMO_DATABASE_HOST: z.string().optional(),
+  // all: one process does both. web: serves requests only. worker: background work only.
+  SHIV_ROLE: z.enum(['all', 'web', 'worker']).default('all'),
+  // Staff sign-in code while DEMO_MODE is on; it is never shown on screen.
+  DEMO_STAFF_CODE: z
+    .string()
+    .regex(/^\d{6}$/)
+    .optional(),
   CREDIT_OVERRIDE_PHONE: z.union([z.literal(''), z.string().regex(/^\+91[6-9]\d{9}$/)]).default(''),
   STAFF_PASSPHRASE_REQUIRED: z
     .enum(['true', 'false'])
@@ -108,6 +122,44 @@ export const configSchema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
+  // Silent reading of the shop's WhatsApp. There is no reply mode yet, on purpose: no setting can
+  // make this send anything. Off refuses the webhook.
+  WA_MODE: z.enum(['off', 'shadow']).default('off'),
+  WA_WEBHOOK_PROVIDER: z.enum(['meta', 'd360', 'ycloud']).optional(),
+  // Named on the privacy page, so it must be set before any customer's words arrive.
+  WA_PARTNER_NAME: z.string().trim().min(2).max(60).optional(),
+  WA_BUSINESS_PHONE: z
+    .string()
+    .regex(/^\+\d{10,15}$/)
+    .optional(),
+  WHATSAPP_APP_SECRET: z.string().min(16).optional(),
+  WHATSAPP_WEBHOOK_SECRET: z.string().min(16).optional(),
+  WHATSAPP_VERIFY_TOKEN: z.string().min(16).max(200).optional(),
+  WA_READER_PROVIDER: z.enum(['off', 'fake', 'gemini']).default('off'),
+  WA_READER_MODEL: z.string().min(3).max(100).optional(),
+  GEMINI_API_KEY: z.string().min(16).optional(),
+  // Google's free tier may use what it reads to improve its products, which Meta's terms forbid.
+  WA_READER_PAID_KEY: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  WA_READER_INPUT_MICRO_USD_PER_MILLION: z.coerce.number().int().min(1).max(100000000).optional(),
+  WA_READER_OUTPUT_MICRO_USD_PER_MILLION: z.coerce.number().int().min(1).max(100000000).optional(),
+  // About 500 rupees at 95 to the dollar. Past it, a person reads the original words.
+  WA_READER_MONTHLY_BUDGET_MICRO_USD: z.coerce
+    .number()
+    .int()
+    .min(1000)
+    .max(100000000)
+    .default(5200000),
+  WA_READER_CALLS_PER_THREAD_HOUR: z.coerce.number().int().min(1).max(1000).default(12),
+  WA_READER_CALLS_PER_THREAD_DAY: z.coerce.number().int().min(1).max(10000).default(40),
+  WA_BURST_WAIT_SECONDS: z.coerce.number().int().min(0).max(120).default(8),
+  WA_HUMAN_QUIET_MINUTES: z.coerce.number().int().min(0).max(1440).default(45),
+  // Decision 10: stored words stay short-lived while reading silently.
+  WA_TEXT_RETENTION_DAYS: z.coerce.number().int().min(1).max(400).default(30),
+  // A sample until the family gives their figure.
+  WA_BIG_ORDER_PAISE: z.coerce.number().int().min(1).max(2000000000).default(15000000),
   // Web Push for the installed owner desk (generate once: npx web-push generate-vapid-keys).
   WEB_PUSH_PUBLIC_KEY: z.string().min(40).max(200).optional(),
   WEB_PUSH_PRIVATE_KEY: z.string().min(20).max(200).optional(),
@@ -164,6 +216,34 @@ export function getConfig(): Config {
     !(candidate.WHATSAPP_ACCESS_TOKEN && candidate.WHATSAPP_PHONE_NUMBER_ID)
   )
     throw new Error('WhatsApp needs its access token and phone number ID');
+  if (candidate.WA_MODE !== 'off') {
+    if (!candidate.WA_PARTNER_NAME || !candidate.WA_WEBHOOK_PROVIDER)
+      throw new Error('WhatsApp reading needs its partner named and its webhook provider set');
+    const missing =
+      candidate.WA_WEBHOOK_PROVIDER === 'meta'
+        ? !(
+            candidate.WHATSAPP_APP_SECRET &&
+            candidate.WHATSAPP_VERIFY_TOKEN &&
+            candidate.WHATSAPP_PHONE_NUMBER_ID
+          )
+        : candidate.WA_WEBHOOK_PROVIDER === 'd360'
+          ? !(candidate.WHATSAPP_WEBHOOK_SECRET && candidate.WHATSAPP_PHONE_NUMBER_ID)
+          : !(candidate.WHATSAPP_WEBHOOK_SECRET && candidate.WA_BUSINESS_PHONE);
+    if (missing) throw new Error('WhatsApp reading needs its webhook secret and own number');
+  }
+  if (candidate.NODE_ENV === 'production' && candidate.WA_READER_PROVIDER === 'fake')
+    throw new Error('The fake WhatsApp reader is forbidden in production');
+  if (
+    candidate.WA_READER_PROVIDER === 'gemini' &&
+    !(
+      candidate.GEMINI_API_KEY &&
+      candidate.WA_READER_MODEL &&
+      candidate.WA_READER_PAID_KEY &&
+      candidate.WA_READER_INPUT_MICRO_USD_PER_MILLION &&
+      candidate.WA_READER_OUTPUT_MICRO_USD_PER_MILLION
+    )
+  )
+    throw new Error('The WhatsApp reader needs a paid key, a pinned model and approved prices');
   if (Boolean(candidate.WEB_PUSH_PUBLIC_KEY) !== Boolean(candidate.WEB_PUSH_PRIVATE_KEY))
     throw new Error('Web Push needs both its public and private key');
   if (candidate.NODE_ENV === 'production' && candidate.ASSISTANT_PROVIDER === 'simulation')
@@ -216,13 +296,13 @@ export function getConfig(): Config {
   }
   if (
     candidate.NODE_ENV === 'production' &&
-    (candidate.OTP_PROVIDER === 'mock' ||
+    ((candidate.OTP_PROVIDER === 'mock' && !candidate.DEMO_MODE) ||
       candidate.CORS_ORIGINS.split(',').some((o) => !o.startsWith('https://')) ||
       /development|change-me|replace|example|placeholder/i.test(candidate.OTP_HASH_SECRET))
   )
     throw new Error('Production requires real OTP, HTTPS origins, and a unique OTP hash secret');
   // Mock OTP displays codes on screen; it must never sit behind a proxy or tunnel.
-  if (candidate.OTP_PROVIDER === 'mock' && candidate.TRUST_PROXY_HOPS > 0)
+  if (candidate.OTP_PROVIDER === 'mock' && !candidate.DEMO_MODE && candidate.TRUST_PROXY_HOPS > 0)
     throw new Error('Mock OTP cannot run behind a trusted proxy (TRUST_PROXY_HOPS must be 0)');
   if (
     candidate.OTP_PROVIDER === 'twilio' &&
@@ -233,6 +313,25 @@ export function getConfig(): Config {
     )
   )
     throw new Error('Twilio Verify configuration is incomplete');
+  // Demo mode exposes sign-in codes, so it must never hold real payments, messages or SMS.
+  if (
+    candidate.DEMO_MODE &&
+    (candidate.OTP_PROVIDER !== 'mock' ||
+      !candidate.DEMO_STAFF_CODE ||
+      candidate.RAZORPAY_KEY_ID ||
+      candidate.RAZORPAY_KEY_SECRET ||
+      candidate.RAZORPAY_WEBHOOK_SECRET ||
+      candidate.WHATSAPP_PROVIDER === 'meta' ||
+      candidate.WA_MODE !== 'off')
+  )
+    throw new Error(
+      'DEMO_MODE requires mock OTP and DEMO_STAFF_CODE, and forbids Razorpay and real WhatsApp',
+    );
+  if (
+    candidate.DEMO_MODE &&
+    new URL(candidate.DATABASE_URL).hostname !== candidate.DEMO_DATABASE_HOST
+  )
+    throw new Error('DEMO_MODE requires DEMO_DATABASE_HOST to name the database it runs against');
   config = candidate;
   return config;
 }

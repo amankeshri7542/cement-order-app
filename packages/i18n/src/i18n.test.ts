@@ -12,8 +12,22 @@ test('every English key has nonempty Hindi text and matching interpolation param
     );
   }
 });
-test('Hindi is the default and parameters are plain text', () => {
+test('Hinglish is the default and parameters are plain text', () => {
   assert.match(t('owner.orderNumber', { number: 'SC-1' }), /SC-1/);
-  assert.match(t('owner.today'), /[\u0900-\u097f]/);
+  assert.equal(t('owner.today'), 'Aaj');
   assert.equal(t('owner.today', {}, 'en'), 'Today');
+});
+
+test('everything the desk says is in Roman script, spelled the shop’s way', () => {
+  const unused = /[\u0900-\u097f]/;
+  const misspelt = /\b(udhar|baki|paka|nahin|bhaada|dukan|hisab|wasooli|manjoori|gadi)\b/i;
+  for (const [key, value] of Object.entries(hi)) {
+    assert.doesNotMatch(value, unused, key);
+    assert.doesNotMatch(value, misspelt, key);
+  }
+});
+
+test('the word pakka on a customer’s message only ever follows a person’s tap', () => {
+  assert.doesNotMatch(en['push.orderPlaced.title'], /confirmed/i);
+  assert.doesNotMatch(hi['push.orderPlaced.title'], /pakka/i);
 });

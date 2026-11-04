@@ -50,13 +50,13 @@ async function review(page: Page) {
   await expect(page.getByRole('button', { name: /^Place order/ })).toBeEnabled();
 }
 
-const confirmed = (page: Page) => page.getByRole('heading', { name: 'Confirmed', exact: true });
+const confirmed = (page: Page) => page.getByRole('heading', { name: 'Waiting for the shop', exact: true });
 
 async function staffHeaders(request: APIRequestContext) {
-  const otp = await request.post(`${api}/auth/otp/request`, { data: { phone: '+919297513709' } });
+  const otp = await request.post(`${api}/auth/otp/request`, { data: { phone: '+919999997009' } });
   expect(otp.ok()).toBe(true);
   const result = await request.post(`${api}/auth/otp/verify`, {
-    data: { phone: '+919297513709', code: (await otp.json()).devCode },
+    data: { phone: '+919999997009', code: (await otp.json()).devCode },
   });
   expect(result.ok()).toBe(true);
   return { Authorization: `Bearer ${(await result.json()).accessToken}` };
@@ -98,7 +98,7 @@ test('created COD order remains confirmed when optional refresh and detail reads
   await expect(page.getByRole('alert').filter({ hasText: 'last confirmed details' })).toBeVisible();
   const saved = await page.request.get(`${api}/orders/${created!.id}`);
   expect(saved.ok()).toBe(true);
-  expect((await saved.json()).status).toBe('CONFIRMED');
+  expect((await saved.json()).status).toBe('AWAITING_CONFIRMATION');
   expect(errors).toEqual([]);
   await page.screenshot({ path: 'test-results/recovery-confirmed-offline.png', fullPage: true });
 });

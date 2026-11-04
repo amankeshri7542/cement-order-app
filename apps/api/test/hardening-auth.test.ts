@@ -11,6 +11,7 @@ import type { INestApplication } from '@nestjs/common';
 import { Db } from '../src/db';
 import { hash } from '../src/http';
 import { hashPassword } from '../src/security';
+import { grantOwners } from './staff-helper';
 
 // Regression tests for the 15 October 2026 audit: authentication, privacy and request hardening
 // (F01, F02, F07, F09, F20, F31, F33). Fixtures follow integration.test.ts.
@@ -91,6 +92,7 @@ beforeEach(async () => {
         },
       },
     });
+  await grantOwners(db);
   await db.category.create({ data: { id: 'cement-category', name: 'Cement', slug: 'cement' } });
   await db.product.create({
     data: {

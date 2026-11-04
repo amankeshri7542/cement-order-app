@@ -280,7 +280,7 @@ test('each order can be shared on WhatsApp without the delivery address', async 
   expect(href).toContain(encodeURIComponent(number));
   const text = decodeURIComponent(href.slice('https://wa.me/?text='.length));
   expect(text).toContain('TEST WEB Account Cement × 2 bag');
-  expect(text).toContain('Status: Confirmed');
+  expect(text).toContain('Status: Waiting for the shop');
   expect(text).toMatch(/Total: ₹/);
   expect(text).not.toContain('Plot 18');
   expect(text).not.toContain(phone);

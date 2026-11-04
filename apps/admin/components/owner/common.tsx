@@ -1,14 +1,38 @@
 'use client';
+import { rupeesToPaise } from '../../lib/money';
+import { useState } from 'react';
 import Link from 'next/link';
 import { useInfiniteQuery, type InfiniteData, type QueryKey } from '@tanstack/react-query';
-import { Button, Skeleton, StatusPill } from '@shiv/design';
-import { dayLabel, istToday, money, unitLabel, type Page } from '@shiv/shared';
+import { Button, Field, Skeleton, StatusPill } from '@shiv/design';
+import { dayLabel, istToday, money, type Page, type Permission } from '@shiv/shared';
 import { isMessageKey, type Language } from '@shiv/i18n';
 import { api } from '../../lib/api';
 import { useLanguage, useT, useWords } from '../../lib/i18n';
 import { useOwner } from '../../lib/owner';
 import css from './owner.module.css';
 
+/** Asks which shop this is for, only when this person can act at more than one. */
+export function useShopChoice(permission: Permission) {
+  const t = useT();
+  const { can, shops } = useOwner();
+  const choices = shops.filter((shop) => can(permission, shop.id));
+  const [chosen, setChosen] = useState(choices[0]?.id ?? '');
+  if (choices.length < 2) return { locationId: undefined, field: null };
+  return {
+    locationId: chosen,
+    field: (
+      <Field label={t('owner.whichShop')}>
+        <select value={chosen} onChange={(event) => setChosen(event.target.value)}>
+          {choices.map((shop) => (
+            <option key={shop.id} value={shop.id}>
+              {shop.name}
+            </option>
+          ))}
+        </select>
+      </Field>
+    ),
+  };
+}
 export function PageHeader({
   title,
   back,
@@ -121,15 +145,7 @@ export function OwnerDate({ value }: { value: string }) {
     </span>
   );
 }
-export function rupeesToPaise(value: string, signed = false) {
-  const pattern = signed ? /^-?\d+(?:\.\d{1,2})?$/ : /^\d+(?:\.\d{1,2})?$/;
-  if (!pattern.test(value.trim())) throw new Error('INVALID_MONEY');
-  const negative = value.startsWith('-');
-  const [whole = '', fraction = ''] = value.replace('-', '').split('.');
-  const paise = Number(whole) * 100 + Number(fraction.padEnd(2, '0'));
-  if (!Number.isSafeInteger(paise) || paise > 2_000_000_000) throw new Error('INVALID_MONEY');
-  return negative ? -paise : paise;
-}
+export { rupeesToPaise };
 export function moneyInput(value: number | null | undefined) {
   return value === null || value === undefined
     ? ''
@@ -187,7 +203,7 @@ export function orderShare(
   return t('owner.orderShare', {
     number: order.number,
     items: order.items
-      .map((item) => `${item.name} × ${item.quantity} ${unitLabel(item.unit, language)}`)
+      .map((item) => `${item.name} × ${item.quantity} ${(item.unit)}`)
       .join('\n'),
     total: money(order.totalPaise),
     date: dayLabel(order.deliveryDate, language),

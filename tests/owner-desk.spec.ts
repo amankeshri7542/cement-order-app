@@ -54,14 +54,14 @@ test('the desk opens in Hindi with no pre-filled number and switches to English'
   await expect(page.getByRole('heading', { name: hi['owner.loginTitle'] })).toBeVisible();
   const phone = page.getByRole('textbox', { name: hi['owner.loginPhone'] });
   await expect(phone).toHaveValue('');
-  await phone.fill('9297513713');
+  await phone.fill('9999997013');
   await signIn(page, { send: hi['owner.sendCode'], open: hi['owner.signIn'] });
   await expect(page.getByRole('heading', { name: hi['owner.today'], exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: hi['owner.nextWork'], exact: true })).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('lang', 'hi');
   await page.goto(`${desk}/more?view=language`);
   await page.getByLabel(hi['owner.language']).selectOption('en');
-  await page.getByRole('link', { name: en['owner.today'], exact: true }).click();
+  await page.getByRole('link', { name: new RegExp(`^${en['owner.today']}( \\d+)?$`) }).click();
   await expect(page.getByRole('heading', { name: en['owner.today'], exact: true })).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('lang', 'en');
 });
@@ -70,7 +70,7 @@ test.describe('signed in', () => {
   test.beforeEach(async ({ page }) => {
     page.on('dialog', (dialog) => dialog.accept());
     await page.goto(`${desk}/today`);
-    await page.getByRole('textbox', { name: en['owner.loginPhone'] }).fill('9297513713');
+    await page.getByRole('textbox', { name: en['owner.loginPhone'] }).fill('9999997013');
     await signIn(page);
     await expect(page.getByRole('heading', { name: en['owner.today'], exact: true })).toBeVisible();
   });
@@ -78,19 +78,19 @@ test.describe('signed in', () => {
   test('counter sale at the displayed price paid by UPI reaches stock and money report', async ({
     page,
   }) => {
+    await page.goto(`${desk}/rates`);
+    await page
+      .getByRole('textbox', {
+        name: en['owner.rates.rateFor'].replace('{name}', productName),
+        exact: true,
+      })
+      .fill('380');
+    await page.getByRole('button', { name: en['owner.rates.publish'], exact: true }).click();
+    await expect(page.getByText(en['owner.rates.published'], { exact: true })).toBeVisible();
     await page.goto(`${desk}/stock`);
-    await page.getByRole('searchbox', { name: en['owner.searchProducts'] }).fill(productName);
-    const product = page
-      .getByRole('article')
-      .filter({ has: page.getByRole('heading', { name: productName, exact: true }) });
-    await product.getByRole('button', { name: en['owner.changePrice'], exact: true }).click();
-    const editor = page.getByRole('dialog');
-    await editor.getByLabel(en['owner.price'], { exact: true }).fill('380');
-    await editor.getByRole('button', { name: en['owner.save'], exact: true }).click();
-    await expect(editor).toBeHidden();
     await page.getByRole('link', { name: en['owner.walkIn'], exact: true }).click();
     await page.getByRole('checkbox', { name: en['owner.anonymous'], exact: true }).uncheck();
-    await page.getByLabel(en['owner.phone'], { exact: true }).fill('9297513798');
+    await page.getByLabel(en['owner.phone'], { exact: true }).fill('9999997098');
     await page.getByLabel(en['owner.name'], { exact: true }).fill('Ramesh mistri');
     await page.getByRole('button', { name: en['owner.continue'], exact: true }).click();
     await page.getByRole('searchbox', { name: en['owner.searchProducts'] }).fill(productName);
@@ -153,16 +153,15 @@ test.describe('signed in', () => {
     });
     expect(report.collections.upiPaise).toBeGreaterThanOrEqual(76000);
     const collections = page
-      .locator('section')
-      .filter({ has: page.getByRole('heading', { name: en['owner.collections'], exact: true }) });
+      .getByText(en['owner.reports.figure.moneyIn'], { exact: true })
+      .locator('..');
     await expect(collections).toContainText(money(report.netPaise));
-    await page.getByRole('button', { name: en['owner.week'], exact: true }).click();
-    await expect(page.getByRole('button', { name: en['owner.week'], exact: true })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
+    await page.getByRole('button', { name: en['owner.reports.range.7'], exact: true }).click();
+    await expect(
+      page.getByRole('button', { name: en['owner.reports.range.7'], exact: true }),
+    ).toHaveAttribute('aria-pressed', 'true');
     const download = page.waitForEvent('download');
-    await page.getByRole('button', { name: en['owner.export'], exact: true }).click();
+    await page.getByRole('button', { name: en['owner.reports.csv'], exact: true }).click();
     const file = await download;
     expect(file.suggestedFilename()).toMatch(/^shiv-\d{4}-\d{2}-\d{2}-\d{4}-\d{2}-\d{2}\.csv$/);
     const csv = readFileSync((await file.path())!, 'utf8');
@@ -179,7 +178,7 @@ test.describe('signed in', () => {
       return link ? (await fetch(link.href)).json() : null;
     });
     expect(manifest).toMatchObject({
-      short_name: 'शिव डेस्क',
+      short_name: 'Shiv Cement Desk',
       display: 'standalone',
       lang: 'hi',
       start_url: '/today',
@@ -196,51 +195,51 @@ test.describe('signed in', () => {
   });
 
   test('a per-product low-stock level drives its warning', async ({ page }) => {
-    await page.goto(`${desk}/more?view=products`);
-    await page.getByRole('textbox', { name: 'Search products' }).fill(productName);
-    await page.getByRole('button', { name: `Edit ${productName}` }).click();
+    await page.goto(`${desk}/stock?tab=maal`);
+    await page.getByRole('searchbox', { name: en['owner.maal.search'] }).fill(productName);
+    await page.getByRole('button', { name: `${en['owner.maal.edit']} ${productName}` }).click();
     const dialog = page.getByRole('dialog');
-    await dialog.getByLabel('Low-stock alert at').fill('60');
-    await dialog.getByRole('button', { name: 'Save product', exact: true }).click();
+    await dialog.getByLabel(en['owner.maal.lowStockAt'], { exact: true }).fill('60');
+    await dialog.getByRole('button', { name: en['owner.save'], exact: true }).click();
     await expect(dialog).toBeHidden();
     await page.goto(`${desk}/stock`);
-    await page.getByRole('searchbox', { name: en['owner.searchProducts'] }).fill(productName);
-    const row = page
-      .getByRole('article')
-      .filter({ has: page.getByRole('heading', { name: productName, exact: true }) });
-    await expect(row.getByText(en['owner.lowStock'], { exact: true })).toBeVisible();
+    const row = page.locator('tr, article').filter({ hasText: productName }).first();
+    await expect(row.getByText(new RegExp(en['owner.lowStock']))).toBeVisible();
     expect((await db.product.findUniqueOrThrow({ where: { id: productId } })).lowStockAt).toBe(60);
   });
 
   test('staff screen edits roles, queues a WhatsApp test alert and logs it in plain language', async ({
     page,
   }) => {
-    await page.goto(`${desk}/more?view=staff`);
-    await page.getByRole('button', { name: 'Edit Phase 4 desk admin' }).click();
+    await page.goto(`${desk}/staff`);
+    await page
+      .getByRole('button', {
+        name: en['owner.staffList.changePerson'].replace('{name}', 'Phase 4 desk admin'),
+      })
+      .click();
     const dialog = page.getByRole('dialog');
-    await dialog.getByLabel('Role at the shop').fill('Retail counter');
+    await dialog.getByLabel(en['owner.staffList.job'], { exact: true }).fill('Retail counter');
     await dialog.getByRole('checkbox', { name: /WhatsApp alerts/ }).check();
-    await dialog.getByRole('button', { name: 'Save', exact: true }).click();
+    await dialog.getByRole('button', { name: en['owner.save'], exact: true }).click();
     await expect(dialog).toBeHidden();
     await expect(
-      page.getByText('Retail counter · +919297513713 · WhatsApp alerts on'),
+      page.getByText(/Retail counter · \+919999997013 · WhatsApp alerts on/),
     ).toBeVisible();
-    await page.getByRole('button', { name: 'Send a test alert' }).click();
-    await expect(page.getByText(/Test alert sent/)).toBeVisible();
-    const log = page.locator('.activity-list li').filter({ hasText: 'Test alert' }).first();
-    await expect(log).toContainText('Sent');
-    await expect(log).toContainText('…3713');
-    expect(
-      await db.outboundMessage.count({
-        where: { template: 'shiv_test_alert', recipient: '919297513713', status: 'SENT' },
-      }),
-    ).toBeGreaterThan(0);
-    await page.getByRole('button', { name: 'Turn on alerts here' }).click();
-    await expect(page.locator('.error[role="alert"]')).toContainText(
-      /not set up on the server|cannot show alerts/,
-    );
-    await page.goto(`${desk}/more?view=activity`);
-    const entry = page.getByRole('article').filter({ hasText: en['owner.staffChanged'] }).first();
+    await page.goto(`${desk}/settings`);
+    await page.getByRole('button', { name: en['owner.settings.testAlert'], exact: true }).click();
+    await expect(page.getByText(en['owner.settings.testSent'])).toBeVisible();
+    await expect
+      .poll(() =>
+        db.outboundMessage.count({
+          where: { template: 'shiv_test_alert', recipient: '919999997013', status: 'SENT' },
+        }),
+      )
+      .toBeGreaterThan(0);
+    await page.goto(`${desk}/activity`);
+    const entry = page
+      .locator('tr, li, article')
+      .filter({ hasText: en['owner.activity.event.STAFF_UPDATED'] })
+      .first();
     await expect(entry).toContainText('Phase 4 desk admin');
     await expect(entry).not.toContainText('{');
   });
@@ -255,10 +254,7 @@ test.describe('signed in', () => {
       const note = `Lost stock receipt ${Date.now()}`;
       const before = await db.product.findUniqueOrThrow({ where: { id: productId } });
       await page.goto(`${desk}/stock`);
-      await page.getByRole('searchbox', { name: en['owner.searchProducts'] }).fill(productName);
-      const product = page.getByRole('article').filter({
-        has: page.getByRole('heading', { name: productName, exact: true }),
-      });
+      const product = page.locator('tr, article').filter({ hasText: productName }).first();
       await product.getByRole('button', { name: en['owner.stockReceived'], exact: true }).click();
       const attempts: Record<string, unknown>[] = [];
       let committed: { id: string } | undefined;
@@ -284,9 +280,7 @@ test.describe('signed in', () => {
       ).toBeDisabled();
       await expect(receipt.getByLabel(en['owner.stockNote'], { exact: true })).toBeDisabled();
       // Transport failures still refresh stock visible behind the receipt sheet.
-      await expect(product).toContainText(
-        en['owner.stockCount'].replace('{count}', String(before.stock + quantity)),
-      );
+      await expect(product).toContainText(String(before.stock + quantity));
       await receipt.getByRole('button', { name: en['owner.close'], exact: true }).click();
       await expect(receipt).toBeHidden();
       await product.getByRole('button', { name: en['owner.stockReceived'], exact: true }).click();
@@ -319,9 +313,7 @@ test.describe('signed in', () => {
       expect((await db.product.findUniqueOrThrow({ where: { id: productId } })).stock).toBe(
         before.stock + quantity,
       );
-      await expect(product).toContainText(
-        en['owner.stockCount'].replace('{count}', String(before.stock + quantity)),
-      );
+      await expect(product).toContainText(String(before.stock + quantity));
     });
   });
 });

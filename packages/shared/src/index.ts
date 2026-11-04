@@ -1,9 +1,11 @@
 import { z } from 'zod';
+import { staffRoles } from './permissions';
 import { t as translate, isMessageKey } from '@shiv/i18n';
 
 export const roles = ['CUSTOMER', 'CONTRACTOR', 'ADMIN'] as const;
 export const orderStatuses = [
   'PENDING_PAYMENT',
+  'AWAITING_CONFIRMATION',
   'CONFIRMED',
   'PREPARING',
   'OUT_FOR_DELIVERY',
@@ -16,7 +18,9 @@ export const orderStatuses = [
 export type Role = (typeof roles)[number];
 export type OrderStatus = (typeof orderStatuses)[number];
 export const transitions: Record<OrderStatus, readonly OrderStatus[]> = {
-  PENDING_PAYMENT: ['CONFIRMED', 'CANCELLED'],
+  PENDING_PAYMENT: ['AWAITING_CONFIRMATION', 'CANCELLED'],
+  // Only Pakka karo moves an order on from here, and that is its own route.
+  AWAITING_CONFIRMATION: ['CANCELLED'],
   CONFIRMED: ['PREPARING', 'CANCELLED'],
   PREPARING: ['OUT_FOR_DELIVERY', 'CANCELLED'],
   OUT_FOR_DELIVERY: ['DELIVERED', 'DELIVERY_EXCEPTION'],
@@ -46,6 +50,20 @@ export function phoneDigits(value: string) {
   return localPhone(value).replace(/\D/g, '').slice(0, 10);
 }
 const text = (max = 200) => z.string().trim().min(1).max(max);
+// Letters, digits, punctuation, spaces (and new lines and tabs where asked) only: no control,
+// direction-override or zero-width characters that could disguise a name or number on the owner's
+// screen. The zero-width joiner and non-joiner (U+200C, U+200D) stay allowed: Hindi keyboards type
+// them to choose a half-letter form, as in क्या (क्, U+200D, या).
+const plainText = (max: number, lines = false) =>
+  z
+    .string()
+    .trim()
+    .min(1)
+    .max(max)
+    .refine(
+      (value) => !(lines ? /[^\P{C}\n\t\u200C\u200D]/u : /[^\P{C}\u200C\u200D]/u).test(value),
+      'Remove special characters',
+    );
 const paise = z.number().int().min(0).max(100_000_000);
 const id = z.string().min(1).max(100);
 // An optional translation: blank clears it (null), leaving the field out keeps the saved text.
@@ -60,25 +78,34 @@ export const otpVerifySchema = z.strictObject({
   phone: phoneSchema,
   code: z.string().regex(/^\d{6}$/),
   adminPassword: z.string().min(12).max(200).optional(),
+  // Staff rights apply only to desk sessions, so the customer apps say which they are.
+  surface: z.enum(['CUSTOMER', 'DESK']).optional(),
 });
 export const refreshSchema = z.strictObject({
   refreshToken: z.string().min(32).max(200).optional(),
 });
 export const profileSchema = z.strictObject({
-  name: text(100).optional(),
+  name: plainText(100).optional(),
   language: z.enum(['en', 'hi']),
   contractor: z.boolean().optional(),
 });
+// Address text is shown to the owner and goes into the shop's WhatsApp alerts, so it is held to
+// plain text like an enquiry.
 export const addressSchema = z.strictObject({
-  label: text(40),
-  name: text(100),
+  label: plainText(40),
+  name: plainText(100),
   phone: phoneSchema,
-  line1: text(250),
-  area: text(120),
-  city: text(100),
+  line1: plainText(250),
+  area: plainText(120),
+  city: plainText(100),
   state: z.literal('Bihar'),
   pincode: z.string().regex(/^\d{6}$/),
-  landmark: z.string().trim().max(200).default(''),
+  landmark: z
+    .string()
+    .trim()
+    .max(200)
+    .refine((value) => !/[^\P{C}\u200C\u200D]/u.test(value), 'Remove special characters')
+    .default(''),
 });
 export const cartItemSchema = z.strictObject({
   productId: id,
@@ -238,6 +265,9 @@ export type ReviewLine = {
   unit: string;
   quantity: number;
   pricePaise: number;
+  listPricePaise?: number;
+  ruleId?: string | null;
+  ruleKind?: string | null;
   priceVersion: number;
   lineTotalPaise: number;
 };
@@ -266,6 +296,10 @@ export type Payment = {
   razorpayPaymentId: string | null;
 };
 export type Order = {
+  locationId?: string;
+  version?: number;
+  confirmedAt?: string | null;
+  decisionHoldUntil?: string | null;
   source?: OrderSource;
   createdById?: string | null;
   quoteId?: string | null;
@@ -289,6 +323,7 @@ export type Order = {
   user?: User;
 };
 export type Quote = {
+  locationId?: string;
   work?: OwnerWork | null;
   deliveryConfirmed?: boolean;
   order?: { id: string; number: string } | null;
@@ -402,6 +437,7 @@ export const deliveryActionSchema = z.strictObject({
   idempotencyKey: z.string().uuid(),
 });
 export const inventorySchema = z.strictObject({
+  locationId: z.string().min(1).max(60).optional(),
   kind: z.enum(['PURCHASE_IN', 'WALK_IN_SALE', 'RETURN', 'DAMAGE', 'MANUAL_ADJUSTMENT']),
   quantity: z
     .number()
@@ -519,6 +555,7 @@ export type SessionInfo = {
   deviceCount: number;
 };
 
+export * from './pricing';
 export * from './rate-studio';
 export * from './i18n';
 export * from './labels';
@@ -550,8 +587,15 @@ const occurredAt = z.union([z.iso.date(), z.iso.datetime({ offset: true })]);
 
 export const phoneOrderSchema = z
   .strictObject({
+    locationId: z.string().min(1).max(60).optional(),
     customerPhone: phoneSchema.optional(),
-    customerName: z.string().trim().min(1).max(100).optional(),
+    customerName: z
+      .string()
+      .trim()
+      .min(1)
+      .max(100)
+      .regex(/^[^\r\n]*$/, 'A name is one line.')
+      .optional(),
     source: z.enum(['PHONE', 'WALK_IN']).default('PHONE'),
     items: z
       .array(
@@ -595,6 +639,8 @@ export const ledgerEntrySchema = z.strictObject({
 export const khataPaymentSchema = ledgerEntrySchema.extend({
   amountPaise: amount.refine((value) => value > 0, 'Payment must be positive.'),
   channel: z.enum(['CASH', 'UPI']).default('CASH'),
+  // Whose drawer took the cash. Needed from anyone working at more than one shop.
+  locationId: z.string().min(1).max(60).optional(),
 });
 export const ledgerReverseSchema = z.strictObject({ note, idempotencyKey: z.string().uuid() });
 export const customerUpdateSchema = z
@@ -615,6 +661,21 @@ export const customerContactSchema = z.strictObject({
   purpose: z.string().trim().min(1).max(500),
 });
 
+/** A question from the website's Contact page. `website` is a honeypot that people never fill. */
+export const webEnquirySchema = z.strictObject({
+  name: plainText(80),
+  phone: phoneSchema,
+  pincode: z
+    .string()
+    .regex(/^[1-9]\d{5}$/, 'Enter a 6-digit pincode')
+    .optional(),
+  interest: plainText(200).optional(),
+  message: plainText(1000, true),
+  language: z.enum(['hi', 'en']).default('hi'),
+  website: z.string().max(500).optional(),
+});
+export type WebEnquiryInput = z.infer<typeof webEnquirySchema>;
+
 export function khataBalance(balancePaise: number, amountPaise: number): number {
   const next = balancePaise + amountPaise;
   if (
@@ -624,3 +685,372 @@ export function khataBalance(balancePaise: number, amountPaise: number): number 
     throw new Error('Khata balance exceeds the supported range.');
   return next;
 }
+
+export * from './permissions';
+
+const personName = z
+  .string()
+  .trim()
+  .min(2)
+  .max(80)
+  .refine((value) => !/[<>]/.test(value), 'Use letters only.');
+const shopIds = z.array(z.string().min(1).max(60)).max(20);
+const stepUpPassphrase = z.string().min(1).max(200).optional();
+export const staffUserCreateSchema = z.strictObject({
+  name: personName,
+  phone: phoneSchema,
+  role: z.enum(staffRoles),
+  locationIds: shopIds.default([]),
+  passphrase: stepUpPassphrase,
+});
+export const staffUserUpdateSchema = z.strictObject({
+  name: personName.optional(),
+  role: z.enum(staffRoles).optional(),
+  locationIds: shopIds.optional(),
+  passphrase: stepUpPassphrase,
+});
+export const staffActionSchema = z.strictObject({ passphrase: stepUpPassphrase });
+export const passphraseSetSchema = z.strictObject({
+  current: z.string().min(1).max(200).optional(),
+  next: z.string().min(12).max(200),
+});
+const shopName = z
+  .string()
+  .trim()
+  .min(2)
+  .max(60)
+  .refine((value) => !/[<>]/.test(value), 'Use letters and numbers only.');
+export const locationCreateSchema = z.strictObject({ name: shopName });
+export const locationUpdateSchema = z.strictObject({
+  name: shopName.optional(),
+  active: z.boolean().optional(),
+  managerRateCapPercent: z.number().int().min(0).max(50).optional(),
+});
+export const pushAckSchema = z.strictObject({ token: z.string().min(20).max(100) });
+
+/** One word for customers, never a count or a shop. */
+export type Availability = 'IN_STOCK' | 'ON_REQUEST' | 'ASK_SHOP';
+export function availabilityOf(product: {
+  stock: number;
+  sourcing?: string;
+  stockMode?: string;
+  stockLevels?: { isOn: boolean }[];
+}): Availability {
+  if (product.sourcing === 'ON_REQUEST') return 'ON_REQUEST';
+  if (product.stockMode === 'AVAILABILITY')
+    return product.stockLevels?.some((level) => level.isOn) ? 'IN_STOCK' : 'ASK_SHOP';
+  return product.stock > 0 ? 'IN_STOCK' : 'ASK_SHOP';
+}
+
+// ---- Pakka karo ------------------------------------------------------------------------------
+const orderLineChange = z.strictObject({
+  productId: id,
+  quantity: z.number().int().min(1).max(10000),
+  // Left out means the rate stays as it is.
+  pricePaise: paise.refine((value) => value > 0).optional(),
+});
+export const rateChangeReasons = [
+  'REGULAR_CUSTOMER',
+  'BIG_ORDER',
+  'MATCHING_RATE',
+  'GOODS_ISSUE',
+  'OTHER',
+] as const;
+export const orderChangesSchema = z.strictObject({
+  lines: z
+    .array(orderLineChange)
+    .min(1)
+    .max(50)
+    .refine(
+      (lines) => new Set(lines.map((line) => line.productId)).size === lines.length,
+      'Each product must appear only once.',
+    ),
+  deliveryFeePaise: paise.optional(),
+  deliveryDate: z.iso.date().optional(),
+  paymentMethod: z.enum(['COD', 'CREDIT']).optional(),
+  locationId: z.string().min(1).max(60).optional(),
+  // "Maal hai, stock theek karo": an owner saying the goods are there though the count is short.
+  stockFixes: z.array(id).max(50).default([]),
+  overrideLimit: z.boolean().default(false),
+  // From a short list, as the activity log can never be edited and must hold no one's words.
+  reason: z.enum(rateChangeReasons).optional(),
+});
+export type OrderChanges = z.infer<typeof orderChangesSchema>;
+const decisionFields = {
+  expectedVersion: z.number().int().min(1),
+  decisionKey: z.string().uuid(),
+};
+export const orderConfirmSchema = z.strictObject({
+  ...decisionFields,
+  changes: orderChangesSchema.optional(),
+});
+export const refusalReasons = [
+  'OUT_OF_STOCK',
+  'NO_DELIVERY',
+  'RATE_DIFFERENT',
+  'NO_CREDIT',
+  'OTHER',
+] as const;
+export type RefusalReason = (typeof refusalReasons)[number];
+const refusalNote = z.string().trim().max(200);
+export const orderRefuseSchema = z
+  .strictObject({
+    ...decisionFields,
+    reason: z.enum(refusalReasons),
+    note: refusalNote.optional(),
+  })
+  .refine((input) => input.reason !== 'OTHER' || !!input.note, {
+    path: ['note'],
+    message: 'Write what to tell the customer.',
+  });
+export const orderUndoSchema = z.strictObject({ expectedVersion: z.number().int().min(1) });
+export const orderPreviewSchema = z.strictObject({
+  decision: z.enum(['CONFIRM', 'REFUSE']),
+  reason: z.enum(refusalReasons).optional(),
+  note: refusalNote.optional(),
+  changes: orderChangesSchema.optional(),
+});
+export const pushActionSchema = z.strictObject({ token: z.string().min(20).max(100) });
+
+// ---- Daam aur offer -------------------------------------------------------------------------
+const rupeeRate = paise.refine((value) => value > 0);
+export const ratesPublishSchema = z.strictObject({
+  rates: z
+    .array(
+      z.strictObject({
+        productId: id,
+        expectedVersion: z.number().int().min(1),
+        pricePaise: rupeeRate,
+      }),
+    )
+    .min(1)
+    .max(500)
+    .refine(
+      (rates) => new Set(rates.map((rate) => rate.productId)).size === rates.length,
+      'Each product must appear only once.',
+    ),
+  // A big jump is usually a slipped digit, so it has to be meant.
+  bigChangesChecked: z.boolean().default(false),
+  note: plainText(200).optional(),
+});
+export const ratesAskSchema = ratesPublishSchema.safeExtend({ idempotencyKey: z.string().uuid() });
+export const bigRateChangePercent = 25;
+export const customerGroupSchema = z.strictObject({
+  name: plainText(40),
+  active: z.boolean().default(true),
+});
+export const customerGroupSetSchema = z.strictObject({ groupId: id.nullable() });
+const ruleDay = z.iso.date().nullable().default(null);
+export const priceRuleSchema = z
+  .strictObject({
+    kind: z.enum(['SLAB', 'GROUP', 'SPECIAL', 'OFFER']),
+    title: z.string().trim().max(60).default(''),
+    productId: id.nullable().default(null),
+    categoryId: id.nullable().default(null),
+    minQuantity: z.number().int().min(1).max(1_000_000).default(1),
+    groupId: id.nullable().default(null),
+    customerId: id.nullable().default(null),
+    valueType: z.enum(['RATE', 'PERCENT_OFF', 'AMOUNT_OFF']),
+    value: z.number().int().min(1).max(100_000_000),
+    startsOn: ruleDay,
+    endsOn: ruleDay,
+    active: z.boolean().default(true),
+    stacks: z.boolean().default(false),
+    isPublic: z.boolean().default(false),
+    expectedVersion: z.number().int().min(1).optional(),
+  })
+  .superRefine((rule, context) => {
+    const problem = (path: string, message: string) =>
+      context.addIssue({ code: 'custom', path: [path], message });
+    if (rule.productId && rule.categoryId)
+      problem('categoryId', 'Choose a product or a category, not both.');
+    if (rule.valueType === 'RATE' && !rule.productId)
+      problem('productId', 'A fixed rate is for one product.');
+    if (rule.valueType === 'PERCENT_OFF' && rule.value > 9000)
+      problem('value', 'A discount can be at most 90%.');
+    if (rule.kind === 'SLAB' && rule.minQuantity < 2)
+      problem('minQuantity', 'A slab starts at 2 or more.');
+    if (rule.kind === 'SLAB' && !rule.productId && !rule.categoryId)
+      problem('productId', 'A slab is for a product or a category.');
+    if (rule.kind === 'GROUP' ? !rule.groupId : Boolean(rule.groupId))
+      problem('groupId', 'A group rate names a group, and nothing else does.');
+    if (rule.kind === 'SPECIAL' ? !rule.customerId : Boolean(rule.customerId))
+      problem('customerId', 'A special rate names one customer, and nothing else does.');
+    if (rule.kind === 'SPECIAL' && !rule.endsOn)
+      problem('endsOn', 'A special rate needs an end date.');
+    if (rule.kind === 'OFFER' && !(rule.startsOn && rule.endsOn))
+      problem('endsOn', 'An offer needs a start and an end date.');
+    if (rule.startsOn && rule.endsOn && rule.startsOn > rule.endsOn)
+      problem('endsOn', 'The end date is before the start date.');
+    if (rule.isPublic && rule.kind !== 'OFFER') problem('isPublic', 'Only offers can be public.');
+    if (rule.stacks && rule.kind !== 'OFFER') problem('stacks', 'Only offers can add on top.');
+  });
+export const deliveryRateSchema = z.strictObject({
+  zoneId: id,
+  vehicle: plainText(40),
+  feePaise: paise,
+  active: z.boolean().default(true),
+});
+export const personRateCapSchema = z.strictObject({
+  rateCapPercent: z.number().int().min(0).max(50).nullable(),
+});
+
+// ---- Stock between and inside shops ---------------------------------------------------------
+const stockQuantity = z.number().int().min(1).max(1_000_000);
+const shopId = z.string().min(1).max(60);
+export const stockTransferSchema = z.strictObject({
+  fromLocationId: shopId,
+  toLocationId: shopId,
+  lines: z
+    .array(z.strictObject({ productId: id, quantity: stockQuantity }))
+    .min(1)
+    .max(100)
+    .refine(
+      (lines) => new Set(lines.map((line) => line.productId)).size === lines.length,
+      'Each product must appear only once.',
+    ),
+  vehicle: plainText(40).optional(),
+  carrierName: plainText(60).optional(),
+  note: plainText(200).optional(),
+  idempotencyKey: z.string().uuid(),
+});
+export const stockReceiveSchema = z.strictObject({
+  lines: z
+    .array(z.strictObject({ productId: id, receivedQty: z.number().int().min(0).max(1_000_000) }))
+    .min(1)
+    .max(100),
+});
+export const stockCountStartSchema = z.strictObject({
+  locationId: shopId,
+  // Left out means every counted product at this shop.
+  productIds: z.array(id).min(1).max(500).optional(),
+  opening: z.boolean().default(false),
+});
+export const stockCountLineSchema = z.strictObject({
+  productId: id,
+  countedQty: z.number().int().min(0).max(1_000_000),
+});
+export const stockDamageSchema = z.strictObject({
+  locationId: shopId,
+  productId: id,
+  quantity: stockQuantity,
+  note: plainText(200),
+  idempotencyKey: z.string().uuid(),
+});
+export const approvalDecideSchema = z.strictObject({
+  decision: z.enum(['APPROVE', 'REJECT']),
+  note: plainText(200).optional(),
+  // Set only when the card said out loud that this passes a customer's udhaar limit.
+  overrideLimit: z.boolean().optional(),
+});
+export const orderAskOwnerSchema = z.strictObject({
+  expectedVersion: z.number().int().min(1),
+  changes: orderChangesSchema,
+  note: plainText(200).optional(),
+  idempotencyKey: z.string().uuid(),
+});
+const dayString = z.iso.date();
+export const gallaEntrySchema = z.strictObject({
+  locationId: shopId,
+  kind: z.enum(['PAID_IN', 'PAID_OUT']),
+  amountPaise: paise.refine((value) => value > 0),
+  reason: plainText(200),
+  idempotencyKey: z.string().uuid(),
+});
+export const gallaCloseSchema = z.strictObject({
+  locationId: shopId,
+  day: dayString,
+  countedPaise: paise,
+  reason: plainText(200).optional(),
+  // A correction names the close it replaces.
+  supersedesId: id.optional(),
+});
+/** Days a shop runs without a stock surprise before its numbers are trusted (master plan). */
+export const cleanDaysTarget = 7;
+
+// ---- Reading the shop's WhatsApp silently ----------------------------------------------------
+export const waReviews = ['RIGHT', 'WRONG_INTENT', 'WRONG_LINES', 'SHOULD_BE_SILENT'] as const;
+export const waReviewSchema = z.strictObject({ review: z.enum(waReviews) });
+export const waThreadModeSchema = z.strictObject({ aiMode: z.enum(['AUTO', 'OFF']) });
+export const waThreadCreateSchema = z.strictObject({
+  phone: phoneSchema,
+  savedName: plainText(60).optional(),
+});
+export const waPauseSchema = z.strictObject({ paused: z.boolean() });
+export const waTrySchema = z.strictObject({ text: z.string().trim().min(1).max(2000) });
+export const waAliasSchema = z.strictObject({ productId: id, alias: plainText(60) });
+/** What the reader must reach on real messages before it may answer anyone (master plan). */
+export const waGate = {
+  reviewed: 200,
+  intentPercent: 95,
+  greenPercent: 98,
+  allBandsPercent: 85,
+  silentMissPercent: 90,
+  personalWindow: 100,
+} as const;
+
+/** One order as the shop sees it on the confirm card. */
+export type InboxCard = {
+  id: string;
+  number: string;
+  status: OrderStatus;
+  version: number;
+  source: string;
+  createdAt: string;
+  deliveryDate: string;
+  notes: string;
+  locationId: string;
+  shopName: string;
+  customer: {
+    id: string;
+    name: string;
+    phone: string;
+    orders: number;
+    balancePaise: number | null;
+    creditAllowed: boolean;
+    creditLimitPaise: number | null;
+  };
+  area: string;
+  addressLine: string;
+  lines: {
+    id: string;
+    productId: string;
+    name: string;
+    unit: string;
+    packSize: string;
+    quantity: number;
+    pricePaise: number;
+    listPricePaise: number;
+    lineTotalPaise: number;
+    /** What this shop holds beyond this order's own hold. */
+    /** Null while this shop is being counted and this person does not decide the count. */
+    stockHere: number | null;
+    /** What the list says today. The customer keeps the rate they ordered at. */
+    currentListPricePaise: number;
+  }[];
+  subtotalPaise: number;
+  deliveryFeePaise: number;
+  totalPaise: number;
+  paymentMethod: string;
+  paid: boolean;
+  /** Nothing needs reading: fit for one tap from a notification. */
+  clean: boolean;
+  blockers: ('DATE_PASSED' | 'PRODUCT_OFF')[];
+  can: {
+    confirm: boolean;
+    refuse: boolean;
+    change: boolean;
+    rate: boolean;
+    credit: boolean;
+    override: boolean;
+  };
+  rateCapPercent: number | null;
+  decided: {
+    status: OrderStatus;
+    byId: string | null;
+    byName: string;
+    at: string;
+    holdUntil: string | null;
+  } | null;
+  serverNow: string;
+};

@@ -1,3 +1,4 @@
+import { eraseWhatsApp } from './whatsapp/service';
 import { Controller, Get, Inject, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import { OrderStatus, QuoteStatus, type Prisma } from '@prisma/client';
 import { z } from 'zod';
@@ -8,10 +9,25 @@ import {
   inventorySchema,
 } from '@shiv/shared';
 import { Db } from './db';
-import { Admin, AuthRequest, Contract, Input, Public, fail } from './http';
+import {
+  AuthRequest,
+  Can,
+  Contract,
+  fail,
+  forbid,
+  Input,
+  Public,
+  scoped,
+  Self,
+  shopForAction,
+  shopWhere,
+} from './http';
+import { blindShops } from './blind-count';
 import { Events } from './catalog';
+import { checkHandRate } from './price-rules';
 import { moveStock, orderTotals } from './inventory';
 import { paginate } from './pagination';
+import { canDo } from '@shiv/shared';
 
 const evidenceId = z.string().regex(/^[A-Za-z0-9_:-]{1,200}$/);
 const evidenceNumber = z.number().int().safe();
@@ -33,35 +49,6 @@ function retainEvidence(value: Prisma.JsonValue, fields: Record<string, z.ZodTyp
       return parsed.success ? [[key, parsed.data]] : [];
     }),
   ]) as Prisma.InputJsonObject;
-}
-
-export function redactAuditDetails(value: Prisma.JsonValue) {
-  return retainEvidence(value, {
-    amountPaise: evidenceNumber,
-    totalPaise: evidenceNumber,
-    subtotalPaise: evidenceNumber,
-    deliveryFeePaise: evidenceNumber,
-    oldPricePaise: evidenceNumber,
-    newPricePaise: evidenceNumber,
-    quantity: evidenceNumber,
-    revision: evidenceNumber,
-    sourceQuoteRevision: evidenceNumber,
-    version: evidenceNumber,
-    from: evidenceStatus,
-    to: evidenceStatus,
-    status: evidenceStatus,
-    byStore: z.boolean(),
-    paymentId: evidenceId,
-    razorpayOrderId: evidenceId,
-    refundId: evidenceId,
-    providerId: evidenceId,
-    productId: evidenceId,
-    orderId: evidenceId,
-    quoteId: evidenceId,
-    sourceQuoteId: evidenceId,
-    inventoryMovementId: evidenceId,
-    occurredAt: evidenceTime,
-  });
 }
 
 export function redactQuoteSnapshot(value: Prisma.JsonValue) {
@@ -102,19 +89,31 @@ export class OperationsController {
     @Inject(Events) private events: Events,
   ) {}
 
-  @Admin()
+  @Can('stock.read', scoped)
   @Get('admin/products/:id/movements')
-  async movements(@Param('id') id: string, @Query() query: Record<string, string>) {
+  async movements(
+    @Param('id') id: string,
+    @Query() query: Record<string, string>,
+    @Req() req: AuthRequest,
+  ) {
     const page = paginate(query, `stock:${id}`);
+    const shops = shopWhere(req, 'stock.read');
+    // A balance here would tell the person counting what the book says.
+    const blind = await blindShops(this.db, req.access);
     return page.finish(
       await this.db.inventoryMovement.findMany({
-        where: { productId: id, ...page.after },
+        where: {
+          productId: id,
+          ...shops,
+          ...(blind.size ? { NOT: { locationId: { in: [...blind] } } } : {}),
+          ...page.after,
+        },
         orderBy: page.orderBy,
         take: page.take,
       }),
     );
   }
-  @Admin()
+  @Can('stock.read', scoped)
   @Post('admin/products/:id/movements')
   @Contract(inventorySchema)
   async movement(
@@ -124,6 +123,19 @@ export class OperationsController {
   ) {
     if (body.kind !== 'MANUAL_ADJUSTMENT' && body.quantity < 1)
       fail('INVALID_QUANTITY', 'Enter a positive quantity.');
+    // Goods coming in and counter sales are daily work. Changing the count itself is an owner's.
+    const needed =
+      (
+        {
+          PURCHASE_IN: 'stock.receive',
+          RETURN: 'stock.receive',
+          WALK_IN_SALE: 'stock.sell',
+        } as const
+      )[body.kind as 'PURCHASE_IN' | 'RETURN' | 'WALK_IN_SALE'] ?? ('stock.adjust' as const);
+    const locationId = shopForAction(req, needed, body.locationId);
+    // Agreeing a price is for those who give rates. Everyone else sells at the list price.
+    if (body.unitPricePaise && !canDo(req.access, 'quotes.price', locationId))
+      forbid(req, 'quotes.price');
     if (body.kind !== 'WALK_IN_SALE' && (body.unitPricePaise || body.channel || body.counterParty))
       fail('INVALID_INPUT', 'Price, payment and buyer apply only to counter sales.');
     const quantity = ['WALK_IN_SALE', 'DAMAGE'].includes(body.kind)
@@ -136,12 +148,28 @@ export class OperationsController {
               where: { idempotencyKey: body.idempotencyKey },
             })
           : null;
-      const { unitPricePaise, channel, counterParty, ...stock } = body;
+      const { unitPricePaise, channel, counterParty, locationId: _asked, ...stock } = body;
+      // The same limit as on the confirm sheet, or a counter sale would be the way around it.
+      if (unitPricePaise && !priorSale) {
+        const product = await tx.product.findUniqueOrThrow({
+          where: { id },
+          select: { pricePaise: true },
+        });
+        await checkHandRate(
+          tx,
+          req.access,
+          req.user.id,
+          locationId,
+          product.pricePaise,
+          unitPricePaise,
+        );
+      }
       const movement = await moveStock(tx, {
         ...stock,
         quantity,
         productId: id,
         actorId: req.user.id,
+        locationId,
       });
       if (movement.kind === 'WALK_IN_SALE' && priorSale) {
         // A replay must repeat the sale it names. An old stock-only sale has no money record,
@@ -167,11 +195,26 @@ export class OperationsController {
       // An old stock-only sale has no known original price; replay must not invent one.
       if (movement.kind === 'WALK_IN_SALE' && !priorSale) {
         const product = await tx.product.findUniqueOrThrow({ where: { id } });
+        await tx.auditLog.create({
+          data: {
+            actorId: req.user.id,
+            event: 'COUNTER_SALE_RECORDED',
+            entityId: movement.id,
+            locationId,
+            details: {
+              productId: id,
+              quantity: -movement.quantity,
+              listPricePaise: product.pricePaise,
+              ...(unitPricePaise ? { agreedPricePaise: unitPricePaise } : {}),
+            },
+          },
+        });
         // The counter price can be negotiated; the list price is used when none is given.
         await tx.financialMovement.upsert({
           where: { inventoryMovementId: movement.id },
           create: {
             inventoryMovementId: movement.id,
+            locationId,
             kind: 'COUNTER_SALE',
             amountPaise: orderTotals(
               [{ pricePaise: unitPricePaise || product.pricePaise, quantity: -movement.quantity }],
@@ -189,7 +232,10 @@ export class OperationsController {
       return movement;
     });
     this.events.publish({ type: 'CATALOG_UPDATED', productId: id });
-    return result;
+    if (!(await blindShops(this.db, req.access)).has(locationId)) return result;
+    // Goods can still come in during a count, but the answer must not say what the book now reads.
+    const { balanceAfter: _balance, ...blindResult } = result;
+    return blindResult;
   }
   @Public()
   @Get('delivery/:pincode')
@@ -204,7 +250,7 @@ export class OperationsController {
       zone: entry?.zone.active ? entry.zone : null,
     };
   }
-  @Admin()
+  @Can('delivery.read')
   @Get('admin/delivery-zones')
   zones() {
     return this.db.deliveryZone.findMany({
@@ -212,7 +258,7 @@ export class OperationsController {
       orderBy: { name: 'asc' },
     });
   }
-  @Admin()
+  @Can('delivery.edit')
   @Post('admin/delivery-zones')
   @Contract(deliveryZoneSchema)
   createZone(
@@ -221,7 +267,7 @@ export class OperationsController {
   ) {
     return this.saveZone(null, body, req.user.id);
   }
-  @Admin()
+  @Can('delivery.edit')
   @Patch('admin/delivery-zones/:id')
   @Contract(deliveryZoneSchema)
   updateZone(
@@ -264,7 +310,7 @@ export class OperationsController {
     this.events.publish({ type: 'STORE_UPDATED' });
     return zone;
   }
-  @Admin()
+  @Can('customers.edit')
   @Patch('admin/customers/:id/contractor')
   @Contract(contractorDecisionSchema)
   contractor(
@@ -284,11 +330,17 @@ export class OperationsController {
         },
       });
       await tx.auditLog.create({
-        data: { actorId: req.user.id, event: 'CONTRACTOR_REVIEWED', entityId: id, details: body },
+        data: {
+          actorId: req.user.id,
+          event: 'CONTRACTOR_REVIEWED',
+          entityId: id,
+          details: { status: body.status },
+        },
       });
       return updated;
     });
   }
+  @Self()
   @Post('me/delete')
   @Contract(deletionSchema)
   async deleteAccount(
@@ -326,26 +378,7 @@ export class OperationsController {
         where: { orderId: { in: orders.map((o) => o.id) } },
         data: { note: '' },
       });
-      const audit = await tx.auditLog.findMany({
-        where: {
-          OR: [
-            { actorId: req.user.id },
-            {
-              entityId: {
-                in: [req.user.id, ...orders.map((o) => o.id), ...quotes.map((q) => q.id)],
-              },
-            },
-            // Staff entries about this customer, e.g. a demand override and its free-text reason.
-            { details: { path: ['userId'], equals: req.user.id } },
-          ],
-        },
-        select: { id: true, details: true },
-      });
-      for (const entry of audit)
-        await tx.auditLog.update({
-          where: { id: entry.id },
-          data: { details: redactAuditDetails(entry.details) },
-        });
+      await eraseWhatsApp(tx, customer.phone, customer.id);
       await tx.session.deleteMany({ where });
       await tx.device.deleteMany({ where });
       await tx.address.deleteMany({ where });

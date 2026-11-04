@@ -6,6 +6,7 @@ node_modules/
 .next-e2e/
 .next-shots/
 .next-lighthouse/
+.next-catalyst/
 .playwright-cli/
 dist/
 .expo/
@@ -27,3 +28,5 @@ apps/mobile/ios/
 apps/mobile/play-service-account.json
 *.keystore
 *.jks
+# Server secrets. The example file stays tracked.
+infra/*.env

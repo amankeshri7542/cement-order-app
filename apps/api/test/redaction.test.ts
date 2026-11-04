@@ -1,10 +1,11 @@
 import 'reflect-metadata';
 import { describe, expect, it, vi } from 'vitest';
 import type { InventoryMovement, Prisma } from '@prisma/client';
-import { OperationsController, redactAuditDetails, redactQuoteSnapshot } from '../src/operations';
+import { OperationsController, redactQuoteSnapshot } from '../src/operations';
 import { Events } from '../src/catalog';
 import type { Db } from '../src/db';
 import type { AuthRequest } from '../src/http';
+import { accessFor } from '@shiv/shared';
 
 describe('Personal-data redaction preserves business evidence', () => {
   it('retains immutable quote prices, freight and material lines while removing contact/free text', () => {
@@ -66,33 +67,7 @@ describe('Personal-data redaction preserves business evidence', () => {
     expect(redactQuoteSnapshot(result as Prisma.JsonValue)).toEqual(result);
   });
 
-  it('retains financial audit amounts and provenance but excludes unknown and mistyped fields', () => {
-    expect(
-      redactAuditDetails({
-        amountPaise: 2000000,
-        paymentId: 'pay_test',
-        refundId: 'rfnd_test',
-        revision: 2,
-        byStore: true,
-        from: 'OUT_FOR_DELIVERY',
-        to: 'DELIVERED',
-        totalPaise: { phone: '+919999999991' },
-        status: 'Private person',
-        providerId: 'private@example.com',
-        note: '+919999999991',
-        contact: { name: 'Private person' },
-      }),
-    ).toEqual({
-      personalDataRemoved: true,
-      amountPaise: 2000000,
-      paymentId: 'pay_test',
-      refundId: 'rfnd_test',
-      revision: 2,
-      byStore: true,
-      from: 'OUT_FOR_DELIVERY',
-      to: 'DELIVERED',
-    });
-    expect(redactAuditDetails(null)).toEqual({ personalDataRemoved: true });
+  it('turns anything that is not a quote snapshot into a plain removal marker', () => {
     expect(redactQuoteSnapshot(['private'])).toEqual({ personalDataRemoved: true });
   });
 
@@ -118,6 +93,14 @@ describe('Personal-data redaction preserves business evidence', () => {
         },
         findUniqueOrThrow: async () => product,
       },
+      location: { findUnique: async () => ({ active: true, stockStartedAt: occurredAt }) },
+      stockCount: { findMany: async () => [] },
+      stockLevel: {
+        updateMany: async () => ({ count: 1 }),
+        findUniqueOrThrow: async () => ({ quantity: product.stock }),
+      },
+      $executeRaw: async () => 1,
+      auditLog: { create: async () => ({}) },
       financialMovement: {
         findUnique: async ({ where }: Prisma.FinancialMovementFindUniqueArgs) =>
           moneyRows.get(where.inventoryMovementId!) ?? null,
@@ -138,7 +121,10 @@ describe('Personal-data redaction preserves business evidence', () => {
       note: '',
       idempotencyKey: 'counter-sale-test-key',
     };
-    const req = { user: { id: 'owner-1' } } as AuthRequest;
+    const req = {
+      user: { id: 'owner-1' },
+      access: accessFor([{ role: 'OWNER', locationId: null }]),
+    } as unknown as AuthRequest;
     await controller.movement('cement', input, req);
     product.pricePaise = 2_000_000_000;
     await controller.movement('cement', input, req);
@@ -147,6 +133,7 @@ describe('Personal-data redaction preserves business evidence', () => {
     expect([...moneyRows.values()]).toEqual([
       {
         inventoryMovementId: 'movement-1',
+        locationId: 'loc_main',
         kind: 'COUNTER_SALE',
         amountPaise: 1950000,
         channel: '',

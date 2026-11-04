@@ -2,6 +2,7 @@ import { type Page } from '@playwright/test';
 import { PrismaClient } from '@prisma/client';
 import { hashPassword } from '../apps/api/src/security';
 import { test, expect } from './fixtures';
+import { grantOwners } from '../apps/api/test/staff-helper';
 
 test('catalogue and material details render without View text-node warnings', async ({ page }) => {
   const warnings: string[] = [];
@@ -30,10 +31,11 @@ const password = 'qa-only-owner-passphrase';
 
 test.beforeAll(async () => {
   const owner = await db.user.upsert({
-    where: { phone: '+919297513760' },
+    where: { phone: '+919999997060' },
     update: {},
-    create: { phone: '+919297513760', name: 'QA Father', role: 'ADMIN' },
+    create: { phone: '+919999997060', name: 'QA Father', role: 'ADMIN' },
   });
+  await grantOwners(db);
   await db.adminCredential.upsert({
     where: { userId: owner.id },
     update: {},
@@ -54,7 +56,7 @@ async function requestOwnerCode(page: Page, phone: string) {
 }
 
 test('owner signs in using OTP without requiring a stored passphrase', async ({ page }) => {
-  const code = await requestOwnerCode(page, '9297513760');
+  const code = await requestOwnerCode(page, '9999997060');
   await expect(page.getByLabel('Staff passphrase', { exact: true })).toHaveCount(0);
   await page
     .getByRole('textbox', { name: 'Verification code', exact: true })
@@ -62,13 +64,13 @@ test('owner signs in using OTP without requiring a stored passphrase', async ({ 
   await page.getByRole('button', { name: 'Open store desk' }).click();
   await expect(page.locator('form [role=alert]')).toBeVisible();
   expect(
-    (await db.otpChallenge.findUniqueOrThrow({ where: { phone: '+919297513760' } })).consumed,
+    (await db.otpChallenge.findUniqueOrThrow({ where: { phone: '+919999997060' } })).consumed,
   ).toBe(false);
   await page.getByRole('textbox', { name: 'Verification code', exact: true }).fill(code);
   await page.getByRole('button', { name: 'Open store desk' }).click();
   await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
   expect(
-    (await db.otpChallenge.findUniqueOrThrow({ where: { phone: '+919297513760' } })).consumed,
+    (await db.otpChallenge.findUniqueOrThrow({ where: { phone: '+919999997060' } })).consumed,
   ).toBe(true);
 });
 test('invalid and expired OTPs reject login and a customer cannot open the owner desk', async ({
@@ -99,34 +101,38 @@ test('invalid and expired OTPs reject login and a customer cannot open the owner
 
 test('revoked owner session returns to OTP login without a page reload', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  const code = await requestOwnerCode(page, '9297513760');
+  const code = await requestOwnerCode(page, '9999997060');
   await page.getByRole('textbox', { name: 'Verification code', exact: true }).fill(code);
   await page.getByRole('button', { name: 'Open store desk' }).click();
   await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
   await page.goto('http://localhost:3001/stock');
-  await expect(page.getByRole('heading', { name: 'Stock & prices', exact: true })).toBeVisible();
-  await db.session.deleteMany({ where: { user: { phone: '+919297513760' } } });
+  await expect(page.getByRole('heading', { name: 'Stock', exact: true })).toBeVisible();
+  await db.session.deleteMany({ where: { user: { phone: '+919999997060' } } });
   let reloads = 0;
   page.on('load', () => reloads++);
   // An authenticated action discovers the revocation and clears owner-only cached data.
-  await page.getByRole('button', { name: 'Share today’s rates on WhatsApp', exact: true }).click();
+  // The desk's background refresh may notice first and take this button away, which is as good.
+  await page
+    .getByRole('tab', { name: 'Goods list', exact: true })
+    .click({ timeout: 5000 })
+    .catch(() => {});
   await expect(
     page.getByRole('button', { name: 'Get verification code', exact: true }),
   ).toBeVisible();
   expect((await page.request.get(`${api}/admin/orders`)).status()).toBe(401);
-  await expect(page.getByRole('heading', { name: 'Stock & prices', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Stock', exact: true })).toHaveCount(0);
   await db.otpChallenge.update({
-    where: { phone: '+919297513760' },
+    where: { phone: '+919999997060' },
     data: { sentAt: new Date(Date.now() - 61000) },
   });
-  await page.getByLabel('Staff mobile number').fill('9297513760');
+  await page.getByLabel('Staff mobile number').fill('9999997060');
   const sent = page.waitForResponse((r) => r.url().endsWith('/auth/otp/request'));
   await page.getByRole('button', { name: 'Get verification code' }).click();
   await page
     .getByLabel('Verification code', { exact: true })
     .fill((await (await sent).json()).devCode);
   await page.getByRole('button', { name: 'Open store desk' }).click();
-  await expect(page.getByRole('heading', { name: 'Stock & prices', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Stock', exact: true })).toBeVisible();
   expect((await page.request.get(`${api}/admin/orders`)).status()).toBe(200);
   expect(reloads).toBe(0);
 });

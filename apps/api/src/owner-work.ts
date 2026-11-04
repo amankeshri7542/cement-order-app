@@ -1,4 +1,4 @@
-import { t } from '@shiv/i18n';
+import { t, type Language } from '@shiv/i18n';
 import { Controller, Get, Inject, Injectable, Param, Post, Req, Sse } from '@nestjs/common';
 import { Subject, concatMap, interval, map, merge, takeUntil, takeWhile } from 'rxjs';
 import { assertSession } from './security';
@@ -6,11 +6,71 @@ import { pendingCod, pendingQuote } from './abuse';
 import { z } from 'zod';
 import { Db } from './db';
 import { Lifecycle } from './lifecycle';
-import { Admin, AuthRequest, Input, fail } from './http';
+import { atOrder, atQuote, atWork, AuthRequest, Can, fail, Input, scoped, shopWhere } from './http';
 import { enqueueWhatsApp } from './alerts';
 import { money } from '@shiv/shared';
+import { accessFor } from '@shiv/shared';
 
 export const ownerSelect = { id: true, name: true, phone: true } as const;
+/**
+ * The alert for a new order. Catalogue names and amounts only, never the customer's own words, so
+ * a message cannot talk anyone into tapping.
+ */
+const alertName = (value: string) =>
+  value
+    .replace(/[^\p{L}\p{M}\s.]/gu, ' ')
+    .trim()
+    .split(/\s+/)
+    .slice(0, 3)
+    .join(' ')
+    .slice(0, 30);
+export function orderAlertWords(
+  order: {
+    totalPaise: number;
+    address: unknown;
+    items: { name: string; quantity: number; packSize: string; unit: string }[];
+    payment: { method: string } | null;
+    user: { name: string };
+    location: { name: string };
+  },
+  language: Language,
+) {
+  const [first, ...rest] = order.items;
+  const firstLine = first ? `${first.quantity} ${first.packSize || first.unit} ${first.name}` : '';
+  // A name and nothing else, as this sits beside a button that confirms the order.
+  const name =
+    alertName(order.user.name || (order.address as { name?: string } | null)?.name || '') ||
+    order.location.name;
+  return {
+    title: t(
+      'owner.alert.orderTitle',
+      {
+        name,
+        items: rest.length
+          ? t('owner.alert.moreItems', { first: firstLine, count: rest.length }, language)
+          : firstLine,
+      },
+      language,
+    ),
+    body: t(
+      'owner.alert.orderBody',
+      {
+        total: money(order.totalPaise),
+        payment: t(
+          order.payment?.method === 'CREDIT'
+            ? 'owner.pakka.paymentCredit'
+            : order.payment?.method === 'ONLINE'
+              ? 'owner.pakka.paymentPaid'
+              : 'owner.pakka.paymentCash',
+          {},
+          language,
+        ),
+        shop: order.location.name,
+      },
+      language,
+    ),
+  };
+}
 export const workInclude = {
   assignedTo: { select: ownerSelect },
   technicalOwner: { select: ownerSelect },
@@ -28,7 +88,12 @@ export class OwnerWorkService {
   // The database inbox is authoritative. SSE is only an invalidation hint; polling recovers lost hints.
   async dispatch() {
     const pending = await this.db.ownerWork.findMany({
-      where: { deliveredAt: null, nextAttemptAt: { lte: new Date() } },
+      where: {
+        deliveredAt: null,
+        nextAttemptAt: { lte: new Date() },
+        // Nothing for the shop to do until the money is in, or once the order is gone.
+        OR: [{ orderId: null }, { order: { status: { notIn: ['PENDING_PAYMENT', 'CANCELLED'] } } }],
+      },
       take: 50,
       orderBy: { createdAt: 'asc' },
     });
@@ -38,10 +103,26 @@ export class OwnerWorkService {
           const current = await tx.ownerWork.findUnique({ where: { id: work.id } });
           if (!current || current.deliveredAt || current.nextAttemptAt > new Date()) return;
           const owners = await tx.user.findMany({
-            where: { role: 'ADMIN', deletedAt: null },
-            select: { id: true, phone: true, whatsappAlerts: true },
+            where: {
+              role: 'ADMIN',
+              deletedAt: null,
+              staffPausedAt: null,
+              staffMemberships: { some: { role: 'OWNER', endedAt: null } },
+            },
+            select: { id: true, phone: true, whatsappAlerts: true, language: true },
           });
           if (!owners.length) throw new Error('NO_OWNER');
+          const alerted = work.orderId
+            ? await tx.order.findUnique({
+                where: { id: work.orderId },
+                include: {
+                  items: { orderBy: { id: 'asc' } },
+                  payment: { select: { method: true } },
+                  user: { select: { name: true } },
+                  location: { select: { name: true } },
+                },
+              })
+            : null;
           for (const owner of owners)
             await tx.notification.upsert({
               where: { dedupeKey: `owner:${work.id}:${owner.id}` },
@@ -49,14 +130,15 @@ export class OwnerWorkService {
               create: {
                 userId: owner.id,
                 dedupeKey: `owner:${work.id}:${owner.id}`,
-                title: t('owner.newWorkAlert'),
-                body: work.orderId ? t('owner.openOrderAlert') : t('owner.openQuoteAlert'),
+                ...(alerted
+                  ? orderAlertWords(alerted, owner.language === 'en' ? 'en' : 'hi')
+                  : { title: t('owner.newWorkAlert'), body: t('owner.openQuoteAlert') }),
                 orderId: work.orderId,
               },
             });
           // WhatsApp copies for owners who switched them on (sent by the outbox worker).
-          const alerted = owners.filter((owner) => owner.whatsappAlerts);
-          if (alerted.length) {
+          const onWhatsapp = owners.filter((owner) => owner.whatsappAlerts);
+          if (onWhatsapp.length) {
             const order = work.orderId
               ? await tx.order.findUnique({
                   where: { id: work.orderId },
@@ -69,7 +151,7 @@ export class OwnerWorkService {
                   select: { number: true, _count: { select: { items: true } } },
                 })
               : null;
-            for (const owner of alerted) {
+            for (const owner of onWhatsapp) {
               if (order)
                 await enqueueWhatsApp(tx, {
                   userId: owner.id,
@@ -121,7 +203,6 @@ export class OwnerWorkService {
   }
 }
 
-@Admin()
 @Controller('admin')
 export class OwnerWorkController {
   constructor(
@@ -130,22 +211,42 @@ export class OwnerWorkController {
     @Inject(Lifecycle) private lifecycle: Lifecycle,
   ) {}
 
-  @Get('owners') owners() {
+  @Can('orders.confirm', scoped) @Get('owners') owners(@Req() req: AuthRequest) {
+    const shops = shopWhere(req, 'orders.confirm');
     return this.db.user.findMany({
-      where: { role: 'ADMIN', deletedAt: null },
-      select: ownerSelect,
+      where: {
+        role: 'ADMIN',
+        deletedAt: null,
+        staffPausedAt: null,
+        staffMemberships: {
+          some: {
+            endedAt: null,
+            role: { in: ['OWNER', 'MANAGER', 'CASHIER'] },
+            // People at this person's shops, and those who cover every shop.
+            ...('locationId' in shops ? { OR: [{ locationId: null }, shops] } : {}),
+          },
+        },
+      },
+      // Enough to choose someone. Their number is on the staff page for those who may see it.
+      select: { id: true, name: true },
       orderBy: { name: 'asc' },
     });
   }
 
-  @Get('work') queue() {
+  @Can('orders.confirm', scoped) @Get('work') queue(@Req() req: AuthRequest) {
+    const shops = shopWhere(req, 'orders.confirm');
     return this.db.ownerWork.findMany({
       where: {
-        OR: [
-          { order: { status: { notIn: ['DELIVERED', 'CANCELLED', 'REFUNDED'] } } },
-          { quote: { status: { in: ['REQUESTED', 'SENT', 'ACCEPTED'] }, order: null } },
-          { lastError: { not: null } },
-        ],
+        ...('locationId' in shops
+          ? { OR: [{ order: shops }, { quote: { ...shops, order: null } }] }
+          : {}),
+        AND: {
+          OR: [
+            { order: { status: { notIn: ['DELIVERED', 'CANCELLED', 'REFUNDED'] } } },
+            { quote: { status: { in: ['REQUESTED', 'SENT', 'ACCEPTED'] }, order: null } },
+            { lastError: { not: null } },
+          ],
+        },
       },
       include: workInclude,
       orderBy: { createdAt: 'asc' },
@@ -153,6 +254,7 @@ export class OwnerWorkController {
     });
   }
 
+  @Can('desk.use')
   @Sse('events')
   events(@Req() req: AuthRequest) {
     return merge(this.work.stream, interval(20000).pipe(map(() => ({ type: 'HEARTBEAT' })))).pipe(
@@ -161,13 +263,25 @@ export class OwnerWorkController {
       concatMap(async (data) => {
         const session = await this.db.session.findUnique({
           where: { id: req.sessionId },
-          include: { user: true },
+          include: {
+            user: {
+              include: {
+                staffMemberships: {
+                  where: { endedAt: null },
+                  select: { role: true, locationId: true },
+                },
+              },
+            },
+          },
         });
         if (
           !session ||
           session.accessHash !== req.sessionAccessHash ||
           session.expiresAt <= new Date() ||
-          session.user.role !== 'ADMIN'
+          session.surface === 'CUSTOMER' ||
+          session.user.role !== 'ADMIN' ||
+          session.user.staffPausedAt ||
+          !accessFor(session.user.staffMemberships)['desk.use']
         )
           return null;
         try {
@@ -181,11 +295,13 @@ export class OwnerWorkController {
       map((data) => ({ data })),
     );
   }
+  @Can('system.ops')
   @Get('security-status')
   async securityStatus() {
     return {
       pendingCod: await this.db.order.count({ where: pendingCod }),
       pendingQuotes: await this.db.quote.count({ where: pendingQuote }),
+      workers: await this.db.workerHeartbeat.findMany({ orderBy: { lane: 'asc' } }),
       overdueCod: await this.db.order.count({
         where: { ...pendingCod, createdAt: { lt: new Date(Date.now() - 2 * 3600000) } },
       }),
@@ -200,6 +316,7 @@ export class OwnerWorkController {
       }),
     };
   }
+  @Can('orders.override')
   @Post('demand-overrides')
   async allowDemand(
     @Input(
@@ -239,21 +356,20 @@ export class OwnerWorkController {
             userId: user.id,
             kind: body.kind,
             maxTotalPaise: body.maxTotalPaise,
-            reason: body.reason,
           },
         },
       });
       return override;
     });
   }
-  @Post('quotes/:id/acknowledge') async acknowledgeQuote(
+  @Can('orders.confirm', atQuote()) @Post('quotes/:id/acknowledge') async acknowledgeQuote(
     @Param('id') id: string,
     @Req() req: AuthRequest,
   ) {
     return this.acknowledgeEntity({ quoteId: id }, req);
   }
 
-  @Post('orders/:id/acknowledge') async acknowledge(
+  @Can('orders.confirm', atOrder()) @Post('orders/:id/acknowledge') async acknowledge(
     @Param('id') id: string,
     @Req() req: AuthRequest,
   ) {
@@ -288,14 +404,22 @@ export class OwnerWorkController {
     return result;
   }
 
-  @Post('work/:id/assign') async assign(
+  @Can('orders.confirm', atWork()) @Post('work/:id/assign') async assign(
     @Param('id') id: string,
     @Input(assignment) body: z.infer<typeof assignment>,
     @Req() req: AuthRequest,
   ) {
     return this.db.atomic(async (tx) => {
       const owner = await tx.user.findFirst({
-        where: { id: body.ownerId, role: 'ADMIN', deletedAt: null },
+        where: {
+          id: body.ownerId,
+          role: 'ADMIN',
+          deletedAt: null,
+          staffPausedAt: null,
+          staffMemberships: {
+            some: { endedAt: null, role: { in: ['OWNER', 'MANAGER', 'CASHIER'] } },
+          },
+        },
       });
       if (!owner || !owner.name.trim())
         fail('INVALID_OWNER', 'Choose a named active staff account.');
@@ -307,13 +431,18 @@ export class OwnerWorkController {
         include: workInclude,
       });
       await tx.auditLog.create({
-        data: { actorId: req.user.id, event: 'WORK_ASSIGNED', entityId: id, details: body },
+        data: {
+          actorId: req.user.id,
+          event: 'WORK_ASSIGNED',
+          entityId: id,
+          details: { ownerId: body.ownerId, technical: body.technical },
+        },
       });
       return result;
     });
   }
 
-  @Post('work/:id/retry') async retry(@Param('id') id: string) {
+  @Can('orders.confirm', atWork()) @Post('work/:id/retry') async retry(@Param('id') id: string) {
     await this.db.ownerWork.update({
       where: { id },
       data: { deliveredAt: null, nextAttemptAt: new Date() },

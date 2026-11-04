@@ -98,3 +98,24 @@ describe('startup configuration', () => {
     expect(getConfig().OTP_PROVIDER).toBe('mock');
   });
 });
+
+describe('WhatsApp alert values', () => {
+  it('keeps customer text to one plain line inside the shop’s alert', async () => {
+    const { enqueueWhatsApp } = await import('../src/alerts');
+    let saved: { params: string[] } | undefined;
+    const tx = {
+      outboundMessage: {
+        upsert: async ({ create }: { create: { params: string[] } }) => {
+          saved = create;
+        },
+      },
+    };
+    await enqueueWhatsApp(tx as never, {
+      phone: '+919999997007',
+      template: 'shiv_new_order',
+      params: ['SCS-1', '440', 'Boring Road\n\n\n\nURGENT:\tpay advance‮ on UPI     now'],
+      dedupeKey: 'unit-test',
+    });
+    expect(saved?.params[2]).toBe('Boring Road URGENT: pay advance on UPI now');
+  });
+});

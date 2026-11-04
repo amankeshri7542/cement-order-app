@@ -194,8 +194,8 @@ test('website', async ({ browser }) => {
         await shot(page, 'storefront', `orders-${tag}`);
       });
       await attempt(`site order detail ${tag}`, async () => {
-        // The sample's confirmed order: the newest one still waiting for the shop.
-        const record = page.locator('.order-record').filter({ hasText: /Confirmed|पक्का हुआ/ });
+        // The sample's newest order, still waiting for the shop.
+        const record = page.locator('.order-record').filter({ hasText: /Waiting for the shop|Dukaan ka jawab baaki/ });
         await record.first().locator('h2 a').click();
         await expect(page.locator('.order-record')).toHaveCount(1);
         await shot(page, 'storefront', `order-detail-${tag}`);

@@ -25,15 +25,15 @@ export async function verifyPassword(password: string, encoded: string) {
   return timingSafeEqual(await derive(password, match[1]!), Buffer.from(match[2]!, 'hex'));
 }
 
+/**
+ * Owners stay signed in on their own phone. The passphrase guards the sign-in and changes of
+ * access (requireStepUp), and does not make anyone sign in again every morning.
+ */
 export const refreshLifetime = (role: string) =>
-  role === 'ADMIN'
-    ? getConfig().STAFF_PASSPHRASE_REQUIRED
-      ? 8 * 3600000
-      : getConfig().OWNER_SESSION_DAYS * 86400000
-    : 30 * 86400000;
+  role === 'ADMIN' ? getConfig().OWNER_SESSION_DAYS * 86400000 : 30 * 86400000;
 
 export async function assertSession(
-  db: Pick<Prisma.TransactionClient, 'adminCredential'>,
+  db: Pick<Prisma.TransactionClient, 'adminCredential' | 'staffMembership'>,
   session: Session & { user: User },
 ) {
   if (session.user.deletedAt || session.refreshExpiresAt <= new Date())
@@ -45,11 +45,16 @@ export async function assertSession(
   if (!getConfig().STAFF_PASSPHRASE_REQUIRED) return;
   if (session.createdAt.getTime() + refreshLifetime('ADMIN') <= Date.now())
     fail('UNAUTHORIZED', 'Your staff session expired. Sign in again.', 401);
+  // Only roles that can reach everything carry a passphrase. Other staff use OTP alone.
+  const needsPassphrase = await db.staffMembership.findFirst({
+    where: { userId: session.userId, endedAt: null, role: { in: ['OWNER', 'ACCOUNTANT'] } },
+    select: { id: true },
+  });
+  if (!needsPassphrase) return;
   const credential = await db.adminCredential.findUnique({ where: { userId: session.userId } });
-  // Local fixtures may omit credentials; production always requires verified staff authentication.
-  if (!credential && getConfig().NODE_ENV !== 'production') return;
+  // Someone added from the desk signs in by code first, then sets their passphrase.
+  if (!credential) return;
   if (
-    !credential ||
     !session.adminVerifiedAt ||
     session.adminVerifiedAt.getTime() + refreshLifetime('ADMIN') <= Date.now() ||
     credential.updatedAt > session.adminVerifiedAt
@@ -57,15 +62,31 @@ export async function assertSession(
     fail('UNAUTHORIZED', 'Verify your staff passphrase to continue.', 401);
 }
 
+/** Whose number a code is for: an owner, a customer with an account, or a number never seen. */
+export type OtpTier = 'owner' | 'known' | 'new';
+export async function otpTier(db: Pick<Prisma.TransactionClient, 'user'>, phone: string) {
+  const user = await db.user.findUnique({ where: { phone }, select: { role: true } });
+  return !user ? 'new' : user.role === 'ADMIN' ? 'owner' : 'known';
+}
+
 /**
  * Store-wide daily OTP budget. Callers charge it only after the per-IP limit (limitOtp) and the
  * per-phone checks pass, so one client's rejected requests cannot switch sign-in off for everyone.
+ * Numbers never seen before share one budget and existing customers have their own, so a flood of
+ * codes to made-up numbers cannot lock out the shop's customers. Owners' numbers are not counted
+ * at all (each is still held to five codes an hour), so the shop can always sign in. The worst-case
+ * SMS spend is therefore about twice the configured daily figure.
  */
-export async function otpBudget(tx: Prisma.TransactionClient, action: 'send' | 'verify') {
+export async function otpBudget(
+  tx: Prisma.TransactionClient,
+  action: 'send' | 'verify',
+  tier: OtpTier,
+) {
+  if (tier === 'owner') return;
   const c = getConfig();
   await budget(
     tx,
-    `otp:${action}:global`,
+    tier === 'known' ? `otp:${action}:known` : `otp:${action}:global`,
     'store',
     action === 'send' ? c.OTP_SENDS_PER_DAY : c.OTP_CHECKS_PER_DAY,
     86400000,
@@ -100,6 +121,37 @@ export async function recordStaffFailure(db: Db, userId: string, ip: string) {
       },
     });
   });
+}
+
+/**
+ * Changing who can do what asks again for the passphrase of anyone who has one, so a stolen
+ * signed-in phone cannot quietly give itself a second way in.
+ */
+export async function requireStepUp(db: Db, userId: string, passphrase?: string) {
+  const credential = await db.adminCredential.findUnique({ where: { userId } });
+  if (!credential) {
+    const c = getConfig();
+    // A live shop never lets a phone change access on its session alone.
+    if (c.NODE_ENV === 'production' && !c.DEMO_MODE)
+      fail('STEP_UP_SETUP', 'Set your own passphrase before changing access.', 403);
+    return;
+  }
+  await checkPassphrase(db, userId, passphrase, credential.passwordHash);
+}
+/** A session is already signed in, so guesses count per person, whichever address they come from. */
+export async function checkPassphrase(
+  db: Db,
+  userId: string,
+  passphrase: string | undefined,
+  passwordHash: string,
+) {
+  const subject = 'step-up';
+  await assertStaffAttempts(db, userId, subject);
+  if (!passphrase) fail('STEP_UP_REQUIRED', 'Enter your passphrase to change access.', 403);
+  if (!(await verifyPassword(passphrase, passwordHash))) {
+    await recordStaffFailure(db, userId, subject);
+    fail('STEP_UP_FAILED', 'That passphrase is not right.', 403);
+  }
 }
 
 /** Per-IP OTP limits. The store-wide budget is charged separately (otpBudget). */

@@ -124,9 +124,12 @@ export function stopManaged(record, root) {
   }
 }
 
+// The desk's root only redirects to /today, so its identity is read from the page itself.
+const identityPaths = { api: '/api/v1/health', admin: '/today' };
+
 export async function applicationIdentity(name, origin) {
   try {
-    const response = await fetch(`${origin}${name === 'api' ? '/api/v1/health' : '/'}`, {
+    const response = await fetch(`${origin}${identityPaths[name] ?? '/'}`, {
       signal: globalThis.AbortSignal.timeout(5000),
       redirect: 'manual',
     });
@@ -140,7 +143,7 @@ export async function applicationIdentity(name, origin) {
         matches = docs.ok && (await docs.json()).info?.title === 'Shiv Cement Store API';
       } else if (name === 'admin')
         matches =
-          /<title>(?:Shiv Cement Store · Store desk|शिव सीमेंट स्टोर · दुकान का काम)<\/title>/.test(
+          /<title>(?:Shiv Cement · Dukaan ka kaam|Shiv Cement Store · Store desk|शिव सीमेंट स्टोर · दुकान का काम)<\/title>/.test(
             body,
           );
       else if (name === 'customer') matches = /<title>Shiv Cement Store<\/title>/.test(body);

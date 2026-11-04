@@ -90,13 +90,23 @@ async function main() {
         update: {},
         create: { phone, name, role, language: role === 'ADMIN' ? 'hi' : 'en' },
       });
-      if (role === 'ADMIN')
+      if (role === 'ADMIN') {
         await tx.adminCredential.upsert({
           where: { userId: user.id },
           update: {},
           create: { userId: user.id, passwordHash },
         });
-      else if (!(await tx.address.count({ where: { userId: user.id } })))
+        if (!(await tx.staffMembership.count({ where: { userId: user.id, endedAt: null } })))
+          await tx.staffMembership.create({
+            data: {
+              userId: user.id,
+              locationId: null,
+              // The technical operator keeps the system healthy and reaches nothing else.
+              role: phone === '+919900000004' ? 'TECH_OPERATOR' : 'OWNER',
+              grantedById: 'local-fixtures',
+            },
+          });
+      } else if (!(await tx.address.count({ where: { userId: user.id } })))
         await tx.address.create({
           data: {
             userId: user.id,

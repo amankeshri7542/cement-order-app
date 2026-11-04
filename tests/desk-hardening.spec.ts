@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures';
 import { en } from '@shiv/i18n';
+import { grantOwners } from '../apps/api/test/staff-helper';
 
 // Owner-desk hardening from the October 2026 audit: the order search must not reload the desk on
 // every keystroke (F03), an outage at load is not a sign-out (F15), the money report shows the
@@ -9,7 +10,7 @@ import { en } from '@shiv/i18n';
 const db = new PrismaClient({ datasourceUrl: process.env.TEST_DATABASE_URL });
 const desk = 'http://localhost:3001';
 const api = 'http://localhost:4010/api/v1';
-const phone = '9297513751';
+const phone = '9999997051';
 const categoryPrefix = 'जाँच श्रेणी';
 // Routed requests must reach the page, not the desk's alert worker.
 test.use({ actionTimeout: 15000, serviceWorkers: 'block' });
@@ -24,6 +25,7 @@ test.beforeAll(async () => {
     skipDuplicates: true,
     data: [{ phone: `+91${phone}`, name: 'Desk hardening owner', role: 'ADMIN' as const }],
   });
+  await grantOwners(db);
 });
 test.afterAll(async () => {
   await db.category.deleteMany({
@@ -92,17 +94,17 @@ test.describe('signed in', () => {
     page,
   }) => {
     await page.clock.install({ time: new Date('2026-10-20T06:00:00Z') });
-    await open(page, '/more?view=reports', en['owner.reports']);
-    const net = page.locator('section').filter({
-      has: page.getByRole('heading', { name: en['owner.collections'], exact: true }),
-    });
+    await open(page, '/reports', en['owner.reports.title']);
+    const net = page.getByText(en['owner.reports.figure.moneyIn'], { exact: true }).locator('..');
     await expect(net).toBeVisible();
     const todayFigures = await net.textContent();
-    // Every range longer than one day answers slowly, with a figure Today cannot have.
+    // The longer range answers slowly, with a figure the range picked last cannot have.
     await page.route(
       (url) =>
         url.pathname.endsWith('/admin/reports/money') &&
-        url.searchParams.get('from') !== url.searchParams.get('to'),
+        Date.parse(url.searchParams.get('to') ?? '') -
+          Date.parse(url.searchParams.get('from') ?? '') <
+          10 * 86400000,
       async (route) => {
         const response = await route.fetch();
         const body = await response.json();
@@ -110,17 +112,19 @@ test.describe('signed in', () => {
         await route.fulfill({ response, json: { ...body, netPaise: 987654321 } });
       },
     );
-    const slow = page.waitForResponse(
-      (r) =>
-        r.url().includes('/admin/reports/money?') &&
-        new URL(r.url()).searchParams.get('from') !== new URL(r.url()).searchParams.get('to'),
-    );
-    await page.getByRole('button', { name: en['owner.month'], exact: true }).click();
-    await page.getByRole('button', { name: en['owner.today'], exact: true }).click();
+    const slow = page.waitForResponse((r) => {
+      if (!r.url().includes('/admin/reports/money?')) return false;
+      const asked = new URL(r.url()).searchParams;
+      return (
+        Date.parse(asked.get('to') ?? '') - Date.parse(asked.get('from') ?? '') < 10 * 86400000
+      );
+    });
+    await page.getByRole('button', { name: en['owner.reports.range.7'], exact: true }).click();
+    await page.getByRole('button', { name: en['owner.reports.range.30'], exact: true }).click();
     await slow;
     await page.waitForTimeout(500);
     await expect(
-      page.getByRole('button', { name: en['owner.today'], exact: true }),
+      page.getByRole('button', { name: en['owner.reports.range.30'], exact: true }),
     ).toHaveAttribute('aria-pressed', 'true');
     await expect(net).not.toContainText('98,76,543');
     await expect(net).toHaveText(todayFigures!);
@@ -129,7 +133,7 @@ test.describe('signed in', () => {
   test('a Hindi-only category is added and a failure is shown as an alert (F35)', async ({
     page,
   }) => {
-    await open(page, '/more?view=products', en['owner.materials']);
+    await open(page, '/stock?tab=maal', en['owner.stock']);
     const name = `${categoryPrefix} ${String(Date.now() % 100000).replace(/\d/g, (d) => '०१२३४५६७८९'[Number(d)]!)}`;
     await page.getByRole('textbox', { name: 'New category name' }).fill(name);
     await page.getByRole('button', { name: 'Add category' }).click();
@@ -153,14 +157,18 @@ test.describe('signed in', () => {
     );
     await page.getByRole('textbox', { name: 'New category name' }).fill(`${categoryPrefix} दो`);
     await page.getByRole('button', { name: 'Add category' }).click();
-    await expect(page.getByRole('alert').filter({ hasText: en['error.CONFLICT'] })).toBeVisible();
-    await expect(page.getByRole('status').filter({ hasText: en['error.CONFLICT'] })).toHaveCount(0);
+    await expect(
+      page.getByRole('alert').filter({ hasText: en['owner.maal.categoryExists'] }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('status').filter({ hasText: en['owner.maal.categoryExists'] }),
+    ).toHaveCount(0);
   });
 
   test('settings edits survive another owner saving, with a reload notice (F35)', async ({
     page,
   }) => {
-    await open(page, '/more?view=store', en['owner.storeDetails']);
+    await open(page, '/settings', en['owner.settings.title']);
     const message = page.getByLabel(en['owner.deliveryMessage'], { exact: true });
     const original = await message.inputValue();
     await message.fill('Edited while another owner saves');
@@ -221,7 +229,7 @@ test('a malformed reply shows a query error and Try again restores the dashboard
   page,
 }) => {
   let broken = true;
-  await page.route('**/api/v1/admin/dashboard', async (route) => {
+  await page.route(/\/api\/v1\/admin\/dashboard(\?.*)?$/, async (route) => {
     if (!broken) return route.continue();
     const response = await route.fetch();
     await route.fulfill({ response, contentType: 'application/json', body: '{ invalid JSON' });
@@ -239,8 +247,8 @@ test('a pasted +91 or 91 number keeps the right ten digits on the desk sign-in',
 }) => {
   await page.goto(`${desk}/today`);
   const field = page.getByRole('textbox', { name: en['owner.loginPhone'] });
-  // Before the fix, "919297513751" became "9192975137", a different valid mobile.
-  for (const pasted of [`91${phone}`, '+91 92975 13751', '092975-13751']) {
+  // Before the fix, "919999997051" became "9199999970", a different valid mobile.
+  for (const pasted of [`91${phone}`, '+91 99999 97051', '099999-97051']) {
     await field.fill(pasted);
     await expect(field).toHaveValue(phone);
   }

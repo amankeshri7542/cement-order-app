@@ -7,14 +7,14 @@
     "build": "next build --webpack",
     "start": "next start --port 3003",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test lib/catalog.test.ts lib/account.test.ts lib/paging.test.ts"
+    "test": "node --import tsx --test lib/catalog.test.ts lib/account.test.ts lib/paging.test.ts lib/site.test.ts lib/redirects.test.ts lib/play.test.ts"
   },
   "dependencies": {
     "@shiv/shared": "1.0.0",
-    "next": "^16.2.9",
+    "next": "^16.4.5",
     "react": "19.2.0",
     "react-dom": "19.2.0",
-    "zod": "^4.3.5"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/react": "~19.2.0",

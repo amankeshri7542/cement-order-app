@@ -31,6 +31,8 @@ import {
   stepUp,
   toMergePayload,
   guestIntentSchema,
+  addressSchema,
+  webEnquirySchema,
 } from './index';
 
 const steel = { minQuantity: 50, quantityStep: 10 };
@@ -59,18 +61,19 @@ test('dates are Patna calendar days in both languages', () => {
     '2026-10-15',
   ]);
   assert.equal(dayLabel('2026-10-12', 'en'), '12 Oct 2026');
-  assert.ok(hasDevanagari(dayLabel('2026-10-12', 'hi')));
+  assert.ok(!hasDevanagari(dayLabel('2026-10-12', 'hi')));
+  assert.equal(dayLabel('2026-10-12', 'hi'), '12 Oct 2026');
   assert.equal(dayLabel('not-a-date', 'hi'), 'not-a-date');
   const now = new Date('2026-10-12T12:00:00Z');
   assert.equal(ageLabel('2026-10-12T11:45:00Z', 'en', now), '15 min');
-  assert.equal(ageLabel('2026-10-12T09:00:00Z', 'hi', now), '3 घंटे');
-  assert.equal(ageLabel('2026-10-09T12:00:00Z', 'hi', now), '3 दिन');
+  assert.equal(ageLabel('2026-10-12T09:00:00Z', 'hi', now), '3 ghante');
+  assert.equal(ageLabel('2026-10-09T12:00:00Z', 'hi', now), '3 din');
   assert.equal(ageLabel('2026-10-09T12:00:00Z', 'en', now), '3d');
 });
 
 test('every label, glossary word and customer error has real Hindi text', () => {
   for (const status of orderStatuses)
-    assert.ok(hasDevanagari(orderStatusLabels[status][1]), status);
+    assert.ok(orderStatusLabels[status][1].trim(), status);
   for (const [status, [, hi]] of Object.entries(quoteStatusLabels))
     assert.ok(hasDevanagari(hi), status);
   for (const [status, [, hi]] of Object.entries(paymentStatusLabels))
@@ -122,7 +125,7 @@ test('app versions compare numerically, not as text', () => {
 test('delivery chips name the weekday and short date in Patna time', () => {
   assert.equal(weekdayLabel('2026-10-15', 'en'), 'Thu');
   assert.equal(shortDayLabel('2026-10-15', 'en'), '15 Oct');
-  assert.ok(hasDevanagari(weekdayLabel('2026-10-15', 'hi')));
+  assert.equal(weekdayLabel('2026-10-15', 'hi'), 'Guruvar');
 });
 
 test('order history notes hide status codes and show server notes in Hindi', () => {
@@ -168,4 +171,28 @@ test('phone fields keep the right ten digits from pasted and autofilled numbers'
     readFileSync(resolve(root, 'apps/mobile/src/account.tsx'), 'utf8'),
     /maxLength=\{10\}/,
   );
+});
+
+test('addresses and enquiries refuse hidden characters but keep Hindi half-letters', () => {
+  const address = {
+    label: 'Site',
+    name: 'रमेश',
+    phone: '+919876543210',
+    line1: 'Plot 12',
+    area: 'Boring Road',
+    city: 'Patna',
+    state: 'Bihar',
+    pincode: '800001',
+  };
+  assert.equal(addressSchema.safeParse(address).success, true);
+  assert.equal(addressSchema.safeParse({ ...address, landmark: '   ' }).data?.landmark, '');
+  assert.equal(
+    addressSchema.safeParse({ ...address, area: 'Boring Road\n\nURGENT: pay on UPI' }).success,
+    false,
+  );
+  assert.equal(addressSchema.safeParse({ ...address, name: 'Ram\u202Eesh' }).success, false);
+  assert.equal(addressSchema.safeParse({ ...address, name: 'क्\u200Dया' }).success, true);
+  const enquiry = { name: 'क्\u200Cष', phone: '+919876543210', message: 'एक\nदो\tतीन' };
+  assert.equal(webEnquirySchema.safeParse(enquiry).success, true);
+  assert.equal(webEnquirySchema.safeParse({ ...enquiry, message: 'a\u200Bb' }).success, false);
 });

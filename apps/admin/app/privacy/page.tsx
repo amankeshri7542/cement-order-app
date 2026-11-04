@@ -1,11 +1,12 @@
 export const metadata = { title: 'Privacy · Shiv Cement Store' };
+const whatsappPartner = process.env.NEXT_PUBLIC_WHATSAPP_PARTNER;
 export default function Privacy() {
   return (
     <main className="policy-page">
       <a href="/">SHIV CEMENT STORE</a>
       <h1>Privacy, in plain language.</h1>
       <p>
-        Last updated 2 October 2026. Shiv Cement Store operates this ordering service for its
+        Last updated 4 November 2026. Shiv Cement Store operates this ordering service for its
         customers in Patna and Bihar.
       </p>
       <h2>What we collect and why</h2>
@@ -28,6 +29,27 @@ export default function Privacy() {
         operate the service. We do not collect card numbers or UPI PINs. Delivery details are shared
         with the store and people fulfilling your delivery. We do not sell customer data or use
         advertising trackers in this app.
+      </p>
+      <h2>WhatsApp messages to the shop</h2>
+      <p>
+        {whatsappPartner
+          ? `Messages sent to the shop's WhatsApp number pass through Meta (WhatsApp) and our WhatsApp partner, ${whatsappPartner}, to our server.`
+          : "The shop's WhatsApp number is not connected to this service yet. Before it is, this page will name the WhatsApp partner the messages pass through, along with Meta (WhatsApp)."}{' '}
+        Once connected, a computer program reads messages about orders and rates and prepares a
+        draft for a person at the shop. At this stage it sends you nothing and cannot confirm an
+        order. Only a person at the shop confirms orders.
+      </p>
+      <p>
+        Plain typed orders are read by our own rules. Other messages about the shop&apos;s business
+        may go to Google&apos;s Gemini model, on a paid plan that does not use them to improve
+        Google&apos;s products. Google receives the words of the message and our product list, not
+        your name, number or account.
+      </p>
+      <p>
+        We keep the words of these messages for 30 days and then delete them. We do not keep voice
+        notes or photos. Messages that are not about the shop&apos;s business are not kept, and
+        numbers the shop marks as family or personal are never read. Write STOP on WhatsApp to stop
+        your messages being read, or ask the shop.
       </p>
       <h2>Your choices</h2>
       <p>
@@ -52,7 +74,7 @@ export default function Privacy() {
       <h2>Contact</h2>
       <p>
         For privacy questions or help with an unavailable phone number, use the store contact shown
-        in the app. The current setup contact is <a href="tel:+919297513707">9297513707</a>.
+        in the app.
       </p>
       <p>
         <a className="primary" href="/delete-account">

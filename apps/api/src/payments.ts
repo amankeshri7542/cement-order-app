@@ -6,7 +6,7 @@ import { collectionSchema, paymentVerifySchema } from '@shiv/shared';
 import { Db } from './db';
 import { notifyCustomer, pushText } from './notify';
 import { getConfig, onlineReady } from './config';
-import { Admin, AuthRequest, Contract, Input, Public, fail, hash, safeEqual } from './http';
+import { atOrder, AuthRequest, Can, Contract, fail, hash, Input, Public, safeEqual, Self } from './http';
 
 const capturedSchema = z.object({
   id: z.string(),
@@ -178,6 +178,7 @@ export class PaymentsService {
       await tx.financialMovement.create({
         data: {
           paymentId: payment.id,
+          locationId: payment.order.locationId,
           kind: 'COLLECTION',
           channel: 'ONLINE',
           amountPaise: payment.amountPaise,
@@ -194,11 +195,12 @@ export class PaymentsService {
       await tx.order.update({
         where: { id: payment.orderId },
         data: {
-          status: late ? 'REFUND_PENDING' : 'CONFIRMED',
+          status: late ? 'REFUND_PENDING' : 'AWAITING_CONFIRMATION',
+          version: { increment: 1 },
           reservedUntil: null,
           history: {
             create: {
-              status: late ? 'REFUND_PENDING' : 'CONFIRMED',
+              status: late ? 'REFUND_PENDING' : 'AWAITING_CONFIRMATION',
               actorId: 'razorpay',
               note: late
                 ? 'Payment arrived after cancellation. Refund required; stock was not re-reserved.'
@@ -278,6 +280,7 @@ export class PaymentsService {
         await tx.financialMovement.create({
           data: {
             paymentId: p.id,
+            locationId: p.order.locationId,
             kind: 'REFUND',
             channel: 'ONLINE',
             amountPaise: p.amountPaise,
@@ -354,6 +357,7 @@ export class PaymentsService {
       await tx.financialMovement.create({
         data: {
           paymentId: p.id,
+          locationId: p.order.locationId,
           kind: refund ? 'REFUND' : 'COLLECTION',
           channel,
           amountPaise: p.amountPaise,
@@ -422,10 +426,10 @@ export class PaymentsService {
 @Controller()
 export class PaymentsController {
   constructor(@Inject(PaymentsService) private payments: PaymentsService) {}
-  @Post('payments/orders/:id') initialize(@Param('id') id: string, @Req() req: AuthRequest) {
+  @Self() @Post('payments/orders/:id') initialize(@Param('id') id: string, @Req() req: AuthRequest) {
     return this.payments.initialize(id, req.user.id);
   }
-  @Post('payments/verify') @Contract(paymentVerifySchema) verify(
+  @Self() @Post('payments/verify') @Contract(paymentVerifySchema) verify(
     @Input(paymentVerifySchema) body: z.infer<typeof paymentVerifySchema>,
     @Req() req: AuthRequest,
   ) {
@@ -439,7 +443,7 @@ export class PaymentsController {
       String(req.headers['x-razorpay-event-id'] || ''),
     );
   }
-  @Admin() @Post('admin/orders/:id/cod-received') @Contract(collectionSchema) cod(
+  @Can('money.receive', atOrder()) @Post('admin/orders/:id/cod-received') @Contract(collectionSchema) cod(
     @Param('id') id: string,
     @Input(collectionSchema.optional()) body: z.infer<typeof collectionSchema> | undefined,
     @Req() req: AuthRequest,
@@ -447,14 +451,14 @@ export class PaymentsController {
     return this.payments.cod(id, req.user.id, false, body?.channel || '');
   }
   // The channel defaults to how the money was collected; the desk sends no body.
-  @Admin() @Post('admin/orders/:id/cash-refunded') @Contract(collectionSchema) refund(
+  @Can('money.refund', atOrder()) @Post('admin/orders/:id/cash-refunded') @Contract(collectionSchema) refund(
     @Param('id') id: string,
     @Input(collectionSchema.optional()) body: z.infer<typeof collectionSchema> | undefined,
     @Req() req: AuthRequest,
   ) {
     return this.payments.cod(id, req.user.id, true, body?.channel || '');
   }
-  @Admin() @Post('admin/orders/:id/reconcile-payment') @Contract(reconcileSchema) reconcile(
+  @Can('money.refund', atOrder()) @Post('admin/orders/:id/reconcile-payment') @Contract(reconcileSchema) reconcile(
     @Param('id') id: string,
     @Input(reconcileSchema) body: z.infer<typeof reconcileSchema>,
     @Req() req: AuthRequest,

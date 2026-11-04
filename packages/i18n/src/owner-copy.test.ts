@@ -1,41 +1,59 @@
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { test } from 'node:test';
-import ts from 'typescript';
+import { en, hi } from './index';
 
-test('owner screens route visible static copy through the message catalogue', () => {
-  const root = resolve(import.meta.dirname, '../../..');
-  const directory = resolve(root, 'apps/admin/components/owner');
-  const files = readdirSync(directory)
-    .filter((name) => name.endsWith('.tsx'))
-    .map((name) => resolve(directory, name));
-  files.push(resolve(root, 'apps/admin/lib/owner.tsx'));
-  const violations: string[] = [];
-  for (const file of files) {
-    const source = ts.createSourceFile(
-      file,
-      readFileSync(file, 'utf8'),
-      ts.ScriptTarget.Latest,
-      true,
-      ts.ScriptKind.TSX,
-    );
-    const inspect = (node: ts.Node) => {
-      const literal = ts.isJsxText(node)
-        ? node.text.trim()
-        : ts.isJsxAttribute(node) &&
-            ['title', 'alt', 'aria-label', 'placeholder'].includes(node.name.getText(source)) &&
-            node.initializer &&
-            ts.isStringLiteral(node.initializer)
-          ? node.initializer.text
-          : '';
-      if (/[\p{L}]/u.test(literal)) {
-        const { line } = source.getLineAndCharacterOfPosition(node.getStart(source));
-        violations.push(`${file}:${line + 1}: ${literal}`);
-      }
-      ts.forEachChild(node, inspect);
-    };
-    inspect(source);
+const root = join(__dirname, '../../..');
+const hindiScript = new RegExp('[\\u0900-\\u097F]');
+function sources(dir: string): string[] {
+  return readdirSync(dir).flatMap((name) => {
+    if (name === 'node_modules' || name.startsWith('.next')) return [];
+    const path = join(dir, name);
+    if (statSync(path).isDirectory()) return sources(path);
+    return /\.(tsx?|css|js)$/.test(name) && !name.includes('.test.') ? [path] : [];
+  });
+}
+
+test('the desk’s own screens hold no Hindi script', () => {
+  const found = ['apps/admin/app', 'apps/admin/components', 'apps/admin/lib', 'apps/admin/public']
+    .flatMap((dir) => sources(join(root, dir)))
+    .filter((file) => hindiScript.test(readFileSync(file, 'utf8')));
+  assert.deepEqual(found, []);
+});
+test('the desk never asks a browser to print Hindi dates', () => {
+  const found = ['apps/admin/app', 'apps/admin/components', 'apps/admin/lib']
+    .flatMap((dir) => sources(join(root, dir)))
+    .filter((file) => readFileSync(file, 'utf8').includes('hi-IN'));
+  assert.deepEqual(found, []);
+});
+test('no screen falls back on the old pair of words', () => {
+  const found = ['apps/admin/components', 'apps/admin/lib', 'apps/admin/app']
+    .flatMap((dir) => sources(join(root, dir)))
+    .filter((file) => /\bt\('[^']*',\s*'[^']*'\)/.test(readFileSync(file, 'utf8')));
+  assert.deepEqual(found, []);
+});
+test('every desk word exists in both catalogues, in Roman script', () => {
+  const words = hi as Record<string, string>;
+  for (const key of Object.keys(en)) {
+    assert.ok(words[key], `missing: ${key}`);
+    if (key.startsWith('owner.')) assert.ok(!hindiScript.test(words[key]!), key);
   }
-  assert.deepEqual(violations, []);
+  assert.deepEqual(
+    Object.keys(hi).filter((key) => !(key in en)),
+    [],
+  );
+});
+test('none of the old hashed words remain', () => {
+  assert.deepEqual(
+    Object.keys(en).filter((key) => key.startsWith('owner.legacy')),
+    [],
+  );
+});
+test('fixed spellings', () => {
+  const banned = /\b(udhar|baki|paka|dukan|nahin|maal-|kripya)\b/i;
+  const found = Object.entries(hi as Record<string, string>)
+    .filter(([key, value]) => key.startsWith('owner.') && banned.test(value))
+    .map(([key]) => key);
+  assert.deepEqual(found, []);
 });

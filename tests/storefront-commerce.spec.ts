@@ -57,7 +57,7 @@ test.beforeAll(async () => {
     await db.$disconnect();
   }
 });
-async function token(request: APIRequestContext, phone = '+919297513709') {
+async function token(request: APIRequestContext, phone = '+919999997009') {
   const response = await request.post(`${api}/auth/otp/request`, { data: { phone } });
   expect(response.ok()).toBe(true);
   const verified = await request.post(`${api}/auth/otp/verify`, {
@@ -270,7 +270,7 @@ test('COD lost success recovers exactly one owner task and inventory movement af
   await page.reload();
   await page.getByRole('button', { name: 'Recover order result' }).click();
   await expect(page).toHaveURL(new RegExp(`/orders/${orderId}`));
-  await expect(page.getByText('Confirmed', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Waiting for the shop', { exact: true }).first()).toBeVisible();
   const db = database();
   try {
     const order = await db.order.findUniqueOrThrow({ where: { id: orderId } });
@@ -295,7 +295,7 @@ test('double-tapping Place COD order creates one order; removing the last basket
   // Two taps in quick succession, as on a slow phone: one order, one owner task.
   await page.getByRole('button', { name: 'Place COD order', exact: true }).dblclick();
   await expect(page).toHaveURL(/\/orders\//);
-  await expect(page.getByText('Confirmed', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Waiting for the shop', { exact: true }).first()).toBeVisible();
   const db = database();
   try {
     const user = await db.user.findUniqueOrThrow({ where: { phone: `+91${phone}` } });
@@ -350,7 +350,7 @@ test('successful COD remains visible when ancillary cart refresh fails; terms ch
   });
   await page.getByRole('button', { name: 'Place COD order', exact: true }).click();
   await expect(page).toHaveURL(/\/orders\/[^?]+\?confirmed=1/);
-  await expect(page.getByText('Confirmed', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Waiting for the shop', { exact: true }).first()).toBeVisible();
 });
 
 test('saved address editing works; account switches and revocation clear private forms', async ({

@@ -16,19 +16,29 @@ import { getMessaging } from 'firebase-admin/messaging';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { deviceSchema } from '@shiv/shared';
-import { Admin, AuthRequest, Contract, Input, errorCause, fail } from './http';
+import { AuthRequest, Can, Contract, errorCause, fail, Input, Self } from './http';
 import { getConfig } from './config';
+import { WaService } from './whatsapp/service';
 import { Db } from './db';
 import { OrdersService } from './orders';
 import { OwnerWorkService } from './owner-work';
 import { AlertsService } from './alerts';
 import { istToday } from '@shiv/shared';
 import { KhataService } from './khata';
+import { purgeEnquiries } from './web-enquiries';
 
+const laneNames = ['fast', 'release', 'timers', 'reader'] as const;
+type LaneName = (typeof laneNames)[number];
+const laneEveryMs: Record<LaneName, number> = { reader: 3000, fast: 20000, release: 30000, timers: 5 * 60000 };
 @Injectable()
 export class Maintenance implements OnModuleInit, OnModuleDestroy {
-  private timer?: ReturnType<typeof setInterval>;
-  private busy = false;
+  private timers: ReturnType<typeof setInterval>[] = [];
+  private busy: Record<LaneName, boolean> = {
+    fast: false,
+    release: false,
+    timers: false,
+    reader: false,
+  };
   private khataCheckedDay = '';
   constructor(
     @Inject(Db) private db: Db,
@@ -36,10 +46,11 @@ export class Maintenance implements OnModuleInit, OnModuleDestroy {
     @Inject(OwnerWorkService) private ownerWork: OwnerWorkService,
     @Inject(AlertsService) private alerts: AlertsService,
     @Inject(KhataService) private khata: KhataService,
+    @Inject(WaService) private wa: WaService,
   ) {}
   onModuleInit() {
-    if (getConfig().NODE_ENV === 'test') return;
     const c = getConfig();
+    if (c.NODE_ENV === 'test' || c.SHIV_ROLE === 'web') return;
     if (
       c.FIREBASE_PROJECT_ID &&
       c.FIREBASE_CLIENT_EMAIL &&
@@ -53,27 +64,40 @@ export class Maintenance implements OnModuleInit, OnModuleDestroy {
           privateKey: c.FIREBASE_PRIVATE_KEY.replaceAll('\\n', '\n'),
         }),
       });
-    this.timer = setInterval(() => {
-      void this.run();
-    }, 30000);
-    this.timer.unref();
+    for (const lane of laneNames) {
+      const timer = setInterval(() => {
+        void this.runLane(lane);
+      }, laneEveryMs[lane]);
+      timer.unref();
+      this.timers.push(timer);
+    }
   }
   onModuleDestroy() {
-    if (this.timer) clearInterval(this.timer);
+    for (const timer of this.timers) clearInterval(timer);
   }
+  /** One pass of every lane, in order. */
   async run() {
-    // ponytail: one API instance owns this worker; claim rows transactionally before scaling out.
-    if (this.busy) return;
-    this.busy = true;
+    for (const lane of laneNames) await this.runLane(lane);
+  }
+  /**
+   * Each lane has its own busy flag, so a slow provider holding up alerts cannot stop stock being
+   * released or old sessions being cleared. Each step stands alone: one failing step (or a
+   * missing grant) must not stop the rest.
+   */
+  async runLane(lane: LaneName) {
+    if (this.busy[lane]) return;
+    this.busy[lane] = true;
+    let failed = '';
     try {
-      // Each step stands alone: one failing step (or a missing grant) must not stop the rest.
-      for (const [step, task] of this.steps()) {
+      for (const [step, task] of this.steps()[lane]) {
         try {
           await task();
         } catch (error) {
+          failed = step;
           console.error(
             JSON.stringify({
               event: 'MAINTENANCE_FAILED',
+              lane,
               step,
               ...errorCause(error),
               timestamp: new Date().toISOString(),
@@ -81,72 +105,120 @@ export class Maintenance implements OnModuleInit, OnModuleDestroy {
           );
         }
       }
+      await this.heartbeat(lane, failed);
     } finally {
-      this.busy = false;
+      this.busy[lane] = false;
     }
   }
-  private steps(): [string, () => Promise<unknown>][] {
-    return [
-      [
-        'authRateLimits',
-        async () => {
-          const expired = await this.db.authRateLimit.findMany({
-            where: { expiresAt: { lt: new Date() } },
-            select: { key: true },
-            take: 200,
-          });
-          if (expired.length)
-            await this.db.authRateLimit.deleteMany({
-              where: { key: { in: expired.map((row) => row.key) }, expiresAt: { lt: new Date() } },
+  /** Lets the system page show a stalled lane. It can never stop the work it reports on. */
+  private async heartbeat(lane: LaneName, failed: string) {
+    const now = new Date();
+    const ok = failed ? {} : { lastOkAt: now };
+    await this.db.workerHeartbeat
+      .upsert({
+        where: { lane },
+        create: { lane, lastRunAt: now, lastStep: failed, ...ok },
+        update: { lastRunAt: now, lastStep: failed, ...ok },
+      })
+      .catch((error) =>
+        console.error(
+          JSON.stringify({
+            event: 'MAINTENANCE_FAILED',
+            lane,
+            step: 'heartbeat',
+            ...errorCause(error),
+            timestamp: new Date().toISOString(),
+          }),
+        ),
+      );
+  }
+  private steps(): Record<LaneName, [string, () => Promise<unknown>][]> {
+    return {
+      // People are waiting on these, and each depends on an outside service.
+      fast: [
+        ['ownerWork', () => this.ownerWork.dispatch()],
+        ['alerts', () => this.alerts.deliver()],
+        ['devicePush', () => this.devicePush()],
+      ],
+      // Held stock goes back on time, even with every messaging service down.
+      release: [['reservations', () => this.orders.expireReservations()]],
+      // A slow model must not hold up anything else.
+      reader: [['waRead', () => this.wa.runDue()]],
+      // Housekeeping. Nobody notices a few minutes here.
+      timers: [
+        ['waPurge', () => this.wa.purge()],
+        [
+          'authRateLimits',
+          async () => {
+            const expired = await this.db.authRateLimit.findMany({
+              where: { expiresAt: { lt: new Date() } },
+              select: { key: true },
+              take: 200,
             });
-        },
+            if (expired.length)
+              await this.db.authRateLimit.deleteMany({
+                where: {
+                  key: { in: expired.map((row) => row.key) },
+                  expiresAt: { lt: new Date() },
+                },
+              });
+          },
+        ],
+        [
+          'demandOverrides',
+          () =>
+            this.db.demandOverride.deleteMany({
+              where: { expiresAt: { lt: new Date(Date.now() - 30 * 86400000) } },
+            }),
+        ],
+        [
+          'khata',
+          async () => {
+            const today = istToday();
+            if (this.khataCheckedDay === today) return;
+            const result = await this.khata.checkBalances();
+            this.khataCheckedDay = today;
+            return result;
+          },
+        ],
+        [
+          'quotes',
+          () =>
+            this.db.quote.updateMany({
+              where: { status: 'SENT', validUntil: { lt: new Date() } },
+              data: { status: 'EXPIRED' },
+            }),
+        ],
+        ['enquiries', () => purgeEnquiries(this.db)],
+        [
+          'sessions',
+          () => this.db.session.deleteMany({ where: { refreshExpiresAt: { lt: new Date() } } }),
+        ],
+        [
+          'checkoutReviews',
+          () =>
+            this.db.checkoutReview.deleteMany({
+              where: { expiresAt: { lt: new Date(Date.now() - 86400000) }, order: null },
+            }),
+        ],
+        [
+          'pushTokens',
+          () =>
+            this.db.pushActionToken.deleteMany({
+              where: { expiresAt: { lt: new Date(Date.now() - 86400000) } },
+            }),
+        ],
       ],
-      [
-        'demandOverrides',
-        () =>
-          this.db.demandOverride.deleteMany({
-            where: { expiresAt: { lt: new Date(Date.now() - 30 * 86400000) } },
-          }),
-      ],
-      ['ownerWork', () => this.ownerWork.dispatch()],
-      ['alerts', () => this.alerts.deliver()],
-      ['reservations', () => this.orders.expireReservations()],
-      [
-        'khata',
-        async () => {
-          const today = istToday();
-          if (this.khataCheckedDay === today) return;
-          const result = await this.khata.checkBalances();
-          this.khataCheckedDay = today;
-          return result;
-        },
-      ],
-      [
-        'quotes',
-        () =>
-          this.db.quote.updateMany({
-            where: { status: 'SENT', validUntil: { lt: new Date() } },
-            data: { status: 'EXPIRED' },
-          }),
-      ],
-      [
-        'sessions',
-        () => this.db.session.deleteMany({ where: { refreshExpiresAt: { lt: new Date() } } }),
-      ],
-      [
-        'checkoutReviews',
-        () =>
-          this.db.checkoutReview.deleteMany({
-            where: { expiresAt: { lt: new Date(Date.now() - 86400000) }, order: null },
-          }),
-      ],
-      ['devicePush', () => this.devicePush()],
-    ];
+    };
   }
   private async devicePush() {
     if (!getApps().length) return;
     const pending = await this.db.notification.findMany({
-      where: { sentAt: null, attempts: { lt: 5 } },
+      where: {
+        sentAt: null,
+        attempts: { lt: 5 },
+        OR: [{ sendAfter: null }, { sendAfter: { lte: new Date() } }],
+      },
       take: 20,
       include: { user: { include: { devices: true } } },
     });
@@ -195,6 +267,7 @@ export class Maintenance implements OnModuleInit, OnModuleDestroy {
 @Controller()
 export class IntegrationsController {
   constructor(@Inject(Db) private db: Db) {}
+  @Self()
   @Post('me/devices')
   @Contract(deviceSchema)
   device(@Input(deviceSchema) body: z.infer<typeof deviceSchema>, @Req() req: AuthRequest) {
@@ -206,7 +279,7 @@ export class IntegrationsController {
       })
       .then(() => ({ ok: true }));
   }
-  @Admin()
+  @Can('products.edit')
   @Post('admin/uploads')
   async upload(@Req() req: AuthRequest) {
     const c = getConfig();

@@ -1,6 +1,6 @@
 import { InventoryKind, Prisma } from '@prisma/client';
 import { totals } from '@shiv/shared';
-import { fail } from './http';
+import { fail, MAIN_LOCATION } from './http';
 
 // Stock is the available balance; online reservations leave it immediately. A movement leaves
 // Product.version alone: stock has its own ledger, and owner edits or Rate Studio reviews taken
@@ -15,14 +15,17 @@ export async function moveStock(
     reference: string;
     note: string;
     idempotencyKey: string;
+    locationId?: string;
   },
 ) {
+  const locationId = input.locationId ?? MAIN_LOCATION;
   const prior = await tx.inventoryMovement.findUnique({
     where: { idempotencyKey: input.idempotencyKey },
   });
   if (prior) {
     if (
       prior.productId !== input.productId ||
+      prior.locationId !== locationId ||
       prior.kind !== input.kind ||
       prior.quantity !== input.quantity ||
       prior.actorId !== input.actorId ||
@@ -36,6 +39,39 @@ export async function moveStock(
       );
     return prior;
   }
+  const shop = await tx.location.findUnique({
+    where: { id: locationId },
+    select: { active: true },
+  });
+  if (!shop?.active) fail('INVALID_SHOP', 'That shop is not open on this system.', 400);
+  // The Product row's total and this shop's level move together; the bridge trigger stands aside.
+  await tx.$executeRaw`SELECT set_config('shiv.stock_direct', 'on', true)`;
+  const conflict = () =>
+    fail(
+      'STOCK_CONFLICT',
+      'Insufficient stock or stock exceeds the supported balance. Refresh and try again.',
+      409,
+    );
+  const level = await tx.stockLevel.updateMany({
+    where: {
+      productId: input.productId,
+      locationId,
+      quantity: input.quantity < 0 ? { gte: -input.quantity } : { lte: 1_000_000 - input.quantity },
+    },
+    data: { quantity: { increment: input.quantity } },
+  });
+  if (!level.count) {
+    // A product first stocked here has no level yet.
+    if (input.quantity < 0) conflict();
+    const exists = await tx.stockLevel.findUnique({
+      where: { productId_locationId: { productId: input.productId, locationId } },
+      select: { quantity: true },
+    });
+    if (exists) conflict();
+    await tx.stockLevel.create({
+      data: { productId: input.productId, locationId, quantity: input.quantity },
+    });
+  }
   const changed = await tx.product.updateMany({
     where: {
       id: input.productId,
@@ -43,14 +79,15 @@ export async function moveStock(
     },
     data: { stock: { increment: input.quantity } },
   });
-  if (!changed.count)
-    fail(
-      'STOCK_CONFLICT',
-      'Insufficient stock or stock exceeds the supported balance. Refresh and try again.',
-      409,
-    );
-  const product = await tx.product.findUniqueOrThrow({ where: { id: input.productId } });
-  return tx.inventoryMovement.create({ data: { ...input, balanceAfter: product.stock } });
+  await tx.$executeRaw`SELECT set_config('shiv.stock_direct', 'off', true)`;
+  if (!changed.count) conflict();
+  const after = await tx.stockLevel.findUniqueOrThrow({
+    where: { productId_locationId: { productId: input.productId, locationId } },
+    select: { quantity: true },
+  });
+  return tx.inventoryMovement.create({
+    data: { ...input, locationId, balanceAfter: after.quantity },
+  });
 }
 
 /** Whether the product's stock ever stood at this balance, before or after a ledger entry. */

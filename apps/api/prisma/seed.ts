@@ -10,7 +10,6 @@ async function main() {
       { name: 'Sand', slug: 'sand' },
       { name: 'Bricks & blocks', slug: 'bricks' },
       { name: 'Aggregates', slug: 'aggregates' },
-      { name: 'Tiles', slug: 'tiles' },
       { name: 'Pipes', slug: 'pipes' },
       { name: 'Hardware', slug: 'hardware' },
     ];
@@ -155,7 +154,8 @@ async function main() {
       where: { id: 'store' },
       create: {
         id: 'store',
-        phone: '+919297513707',
+        // Stays empty until the family approves the number; the owner sets it in Settings.
+        phone: '',
         deliveryFeePaise: 50000,
         freeDeliveryAbovePaise: 5000000,
       },

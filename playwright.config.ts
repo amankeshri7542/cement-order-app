@@ -45,7 +45,6 @@ export default defineConfig({
       env: {
         NEXT_PUBLIC_API_URL: 'http://localhost:4010/api/v1',
         NEXT_DIST_DIR: '.next-e2e',
-        NEXT_PUBLIC_FEATURE_RATE_STUDIO: 'true',
         NEXT_PUBLIC_ASSET_ORIGIN: 'https://assets.example.invalid',
       },
     },
@@ -54,9 +53,9 @@ export default defineConfig({
       url: 'http://localhost:3004',
       timeout: 120000,
       env: {
+        SITE_URL: 'http://localhost:3004',
         NEXT_PUBLIC_API_URL: 'http://localhost:4010/api/v1',
         NEXT_DIST_DIR: '.next-e2e',
-        NEXT_PUBLIC_FEATURE_RATE_STUDIO: 'true',
         NEXT_PUBLIC_ASSET_ORIGIN: 'https://assets.example.invalid',
       },
     },

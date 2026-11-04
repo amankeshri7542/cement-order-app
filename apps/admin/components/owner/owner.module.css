@@ -242,20 +242,6 @@
   margin-block-start: 1rem;
   z-index: 5;
 }
-.fab {
-  position: fixed;
-  inset-inline-end: max(1rem, calc((100vw - 65rem) / 2));
-  inset-block-end: 5.5rem;
-  z-index: 15;
-  background: var(--shiv-brand);
-  color: var(--shiv-brand-ink);
-  border: 0.0625rem solid var(--shiv-ink);
-  border-radius: var(--shiv-radius-pill);
-  font-weight: 700;
-  min-block-size: 3.5rem;
-  padding: 1rem 1.25rem;
-  text-decoration: none;
-}
 .check {
   display: flex;
   gap: 0.75rem;
@@ -405,4 +391,261 @@
 }
 .topbar {
   flex-wrap: wrap;
+}
+
+/* The ledger look: the double rule always sits before the money, so every screen reads like one
+   book. Totals are double ruled, as on a page of the shop's bahi. */
+.ledger {
+  margin-block: 0.5rem;
+}
+.ledgerLine {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0 0.75rem;
+  padding-block-start: 0.5rem;
+  border-block-start: 0.0625rem solid var(--shiv-line);
+}
+.ledgerLine > :first-child {
+  padding-block-end: 0.5rem;
+}
+.amount {
+  align-self: stretch;
+  min-inline-size: 6.5rem;
+  padding: 0 0 0.5rem 0.75rem;
+  border-inline-start: 0.1875rem double var(--shiv-ink2);
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+.summary .total {
+  border-block-start: 0.0625rem solid var(--shiv-ink);
+  border-block-end: 0.1875rem double var(--shiv-ink);
+}
+.table td + td,
+.table th + th {
+  border-inline-start: 0.0625rem solid var(--shiv-line);
+}
+
+.pakkaCard {
+  padding: 1rem 1rem 0;
+  background: var(--shiv-card);
+  border: 0.0625rem solid var(--shiv-line);
+  border-radius: var(--shiv-radius-md);
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+.pakkaCard h3 {
+  font: 600 1.125rem/1.6 var(--shiv-font-display);
+  margin: 0;
+}
+.said {
+  margin: 0.5rem 0;
+  padding: 0.5rem 0.75rem;
+  background: var(--shiv-paper);
+  border-inline-start: 0.1875rem solid var(--shiv-line);
+}
+.factsLine {
+  margin-block: 0.5rem;
+  color: var(--shiv-ink2);
+  font-size: var(--shiv-small);
+}
+.warnText {
+  color: var(--shiv-red);
+  font-size: var(--shiv-small);
+}
+.warnBlock {
+  margin-block: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-inline-start: 0.25rem solid var(--shiv-red);
+  background: var(--shiv-paper);
+}
+/* The main action never leaves the screen while its card is in view. It rests on the tabs, whose
+   measured height allows for large text. */
+.payBar {
+  position: sticky;
+  inset-block-end: calc(var(--owner-tabs, 4.25rem) + env(safe-area-inset-bottom));
+  z-index: 5;
+  display: grid;
+  gap: 0.5rem;
+  margin: 0.5rem -1rem 0;
+  padding: 0.5rem 1rem 0.75rem;
+  background: var(--shiv-card);
+  border-block-start: 0.0625rem solid var(--shiv-ink);
+}
+.barTotal {
+  padding-inline-start: 0.75rem;
+  border-inline-start: 0.1875rem double var(--shiv-ink2);
+  font-size: var(--shiv-h2);
+  font-weight: 700;
+}
+.payBar button {
+  min-block-size: 3.25rem;
+}
+.lamp {
+  background: var(--shiv-brand) !important;
+  color: var(--shiv-brand-ink) !important;
+}
+.underBar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  padding-block: 0.25rem 0.75rem;
+}
+.undoLine {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  padding: 0.75rem 1rem;
+  border-inline-start: 0.25rem solid var(--shiv-green);
+  background: var(--shiv-card);
+  border-radius: var(--shiv-radius-sm);
+  font-weight: 600;
+}
+.decidedLine {
+  padding: 0.75rem 1rem;
+  background: var(--shiv-card);
+  border: 0.0625rem solid var(--shiv-line);
+  border-radius: var(--shiv-radius-sm);
+}
+.changeLine {
+  display: grid;
+  gap: 0.5rem;
+  padding-block-end: 0.75rem;
+  border-block-end: 0.0625rem solid var(--shiv-line);
+}
+.customerGets {
+  padding: 0.75rem;
+  background: var(--shiv-paper);
+  border: 0.0625rem solid var(--shiv-line);
+  border-radius: var(--shiv-radius-sm);
+}
+.sheetBar {
+  position: sticky;
+  inset-block-end: 0;
+  padding-block: 0.5rem;
+  background: var(--shiv-card);
+}
+.testBand {
+  margin: 0;
+  padding: 0.25rem 1rem;
+  background: var(--shiv-red);
+  color: var(--shiv-card);
+  text-align: center;
+  font-weight: 700;
+}
+.tabCount {
+  min-inline-size: 1.25rem;
+  padding-inline: 0.25rem;
+  border-radius: var(--shiv-radius-pill);
+  background: var(--shiv-brand);
+  color: var(--shiv-brand-ink);
+  font-size: var(--shiv-small);
+  font-weight: 700;
+  line-height: 1.25rem;
+  text-align: center;
+}
+
+/* WhatsApp reading. A customer's words keep their own line breaks and are never linked. */
+.waWords {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.waLines {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.25rem;
+  font-variant-numeric: tabular-nums;
+}
+.waCard h4 {
+  margin-block: 0.875rem 0.25rem;
+  font-size: 0.875rem;
+}
+
+/* The shell. A phone has five tabs at the bottom; from 64rem the same nav is the side bar. */
+.sideOnly {
+  display: none !important;
+}
+.shopSwitch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-inline-start: auto;
+  font-size: var(--shiv-small);
+}
+.shopSwitch select {
+  min-block-size: 2.75rem;
+  max-inline-size: 11rem;
+  font: inherit;
+  border: 0.0625rem solid var(--shiv-line);
+  border-radius: var(--shiv-radius-sm);
+  background: var(--shiv-card);
+  color: var(--shiv-ink);
+  padding-inline: 0.5rem;
+}
+.linkButton {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-align: start;
+  text-decoration: underline;
+  cursor: pointer;
+  min-block-size: 2.75rem;
+}
+.rateRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(6.5rem, 9rem);
+  gap: 0.75rem;
+  align-items: start;
+  padding-block: 0.75rem;
+  border-block-start: 0.0625rem solid var(--shiv-line);
+}
+.totalRow th,
+.totalRow td {
+  border-block-start: 0.1875rem double var(--shiv-ink);
+  font-weight: 700;
+}
+@media (min-width: 64rem) {
+  .sideOnly {
+    display: flex !important;
+  }
+  .shell {
+    padding-inline-start: 15rem;
+  }
+  .shell nav[data-owner-tabs] {
+    inset-block: 0;
+    inset-inline: 0 auto;
+    margin: 0;
+    max-inline-size: none;
+    inline-size: 15rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    padding: 1rem 0.5rem;
+    overflow-y: auto;
+  }
+  .shell nav[data-owner-tabs] a {
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 0.625rem;
+    min-block-size: 2.75rem;
+    padding-inline: 0.75rem;
+    text-align: start;
+  }
+  .stockLink {
+    display: none;
+  }
+  .topbar,
+  .main {
+    max-inline-size: 90rem;
+  }
+  .main {
+    padding-block-end: 3rem;
+  }
 }

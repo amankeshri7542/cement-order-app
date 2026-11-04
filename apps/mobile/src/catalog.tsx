@@ -575,7 +575,7 @@ function LatestOrder() {
 }
 
 export function OrderStatusTag({ status, language }: { status: string; language: Language }) {
-  const good = ['DELIVERED', 'CONFIRMED', 'PREPARING', 'OUT_FOR_DELIVERY', 'PAID'].includes(status);
+  const good = ['DELIVERED', 'AWAITING_CONFIRMATION', 'CONFIRMED', 'PREPARING', 'OUT_FOR_DELIVERY', 'PAID'].includes(status);
   const bad = ['CANCELLED', 'DELIVERY_EXCEPTION', 'REFUND_PENDING'].includes(status);
   return (
     <Tag tone={bad ? 'clay' : good ? 'green' : 'grey'}>{orderStatusText(status, language)}</Tag>

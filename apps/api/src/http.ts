@@ -13,17 +13,128 @@ import { ApiBody } from '@nestjs/swagger';
 import type { SchemaObject } from '@nestjs/swagger/dist/interfaces/open-api-spec.interface';
 import type { Request, Response } from 'express';
 import { z } from 'zod';
+import { canDo, type Access, type Permission } from '@shiv/shared';
 import { createHash, timingSafeEqual } from 'node:crypto';
 
 export type AuthRequest = Request & {
   user: User;
   sessionId: string;
   sessionAccessHash: string;
+  // What this person may do now, worked out from their memberships on every request.
+  access: Access;
+  deniedPermission?: string;
   requestId: string;
   rawBody?: Buffer;
 };
+/**
+ * What a signed-in person may see of their own account. The User row also holds the owner's own
+ * notes about a customer (tags, area, credit limit, khata balance, how many private notes), which
+ * customers must never receive, so no response returns the row itself.
+ */
+export function accountView(user: User) {
+  return {
+    id: user.id,
+    phone: user.phone,
+    name: user.name,
+    role: user.role,
+    language: user.language,
+    contractorStatus: user.contractorStatus,
+    deletedAt: user.deletedAt,
+    ...(user.role === 'ADMIN'
+      ? { staffTitle: user.staffTitle, whatsappAlerts: user.whatsappAlerts }
+      : {}),
+  };
+}
 export const Public = () => SetMetadata('public', true);
-export const Admin = () => SetMetadata('admin', true);
+/** A signed-in person acting on their own records only. The handler must filter by req.user.id. */
+export const Self = () => SetMetadata('self', true);
+/** The handler limits its own results to the shops this person holds the permission at. */
+export const scoped = 'scoped' as const;
+export type ShopLookup = (
+  db: {
+    order: { findUnique(args: object): Promise<{ locationId: string } | null> };
+    quote: { findUnique(args: object): Promise<{ locationId: string } | null> };
+    ownerWork: {
+      findUnique(args: object): Promise<{
+        order: { locationId: string } | null;
+        quote: { locationId: string } | null;
+      } | null>;
+    };
+  },
+  req: AuthRequest,
+) => Promise<string | undefined>;
+export type CanRule = { permission: Permission; shop?: ShopLookup | typeof scoped };
+/**
+ * Needs this permission, at the shop the second argument finds. A permission some role holds for
+ * only certain shops must say how to find the shop, or a test fails the build.
+ */
+export const Can = (permission: Permission, shop?: CanRule['shop']) =>
+  SetMetadata('can', { permission, shop } satisfies CanRule);
+const paramOf = (req: AuthRequest, param: string) => String(req.params[param] ?? '');
+export const atOrder =
+  (param = 'id'): ShopLookup =>
+  async (db, req) =>
+    (
+      await db.order.findUnique({
+        where: { id: paramOf(req, param) },
+        select: { locationId: true },
+      })
+    )?.locationId;
+export const atQuote =
+  (param = 'id'): ShopLookup =>
+  async (db, req) =>
+    (
+      await db.quote.findUnique({
+        where: { id: paramOf(req, param) },
+        select: { locationId: true },
+      })
+    )?.locationId;
+export const atWork =
+  (param = 'id'): ShopLookup =>
+  async (db, req) => {
+    const work = await db.ownerWork.findUnique({
+      where: { id: paramOf(req, param) },
+      select: { order: { select: { locationId: true } }, quote: { select: { locationId: true } } },
+    });
+    return work?.order?.locationId ?? work?.quote?.locationId;
+  };
+export const MAIN_LOCATION = 'loc_main';
+/** Limits a query to this person's shops. Empty for anyone who holds it at every shop. */
+export function shopWhere(req: AuthRequest, permission: Permission) {
+  const scope = req.access?.[permission];
+  return scope && scope !== 'ALL' ? { locationId: { in: scope } } : {};
+}
+/** One shop if asked for, which must be one of this person's. Otherwise all of theirs. */
+export function shopAsked(req: AuthRequest, permission: Permission, asked?: unknown) {
+  if (typeof asked !== 'string' || !asked) return shopWhere(req, permission);
+  requireAt(req, permission, asked);
+  return { locationId: asked };
+}
+/** The shop an action happens at: the one asked for, or this person's only shop. */
+export function shopForAction(req: AuthRequest, permission: Permission, asked?: string) {
+  const scope = req.access?.[permission];
+  if (!scope) forbid(req, permission);
+  if (asked) {
+    if (!canDo(req.access, permission, asked)) forbid(req, permission);
+    return asked;
+  }
+  if (scope === 'ALL') return MAIN_LOCATION;
+  if (scope.length === 1) return scope[0]!;
+  fail('SHOP_REQUIRED', 'Choose which shop this is for.', 400);
+}
+/** The shop firm-wide money is counted at: the person's own, or the main shop for all-shop roles. */
+export function homeShop(req: AuthRequest) {
+  const scope = req.access?.['money.receive'];
+  return Array.isArray(scope) && scope.length ? [...scope].sort()[0]! : MAIN_LOCATION;
+}
+/** Refuses unless this person holds the permission at this shop. */
+export function requireAt(req: AuthRequest, permission: Permission, locationId?: string) {
+  if (!canDo(req.access, permission, locationId)) forbid(req, permission);
+}
+export function forbid(req: AuthRequest, permission: string): never {
+  req.deniedPermission = permission;
+  fail('FORBIDDEN', 'You do not have access to this.', 403);
+}
 export function fail(code: string, message: string, status = 400, details?: unknown): never {
   throw new HttpException({ code, message, ...(details === undefined ? {} : { details }) }, status);
 }
@@ -49,7 +160,10 @@ class SchemaPipe implements PipeTransform {
         'INVALID_INPUT',
         'Check the highlighted fields.',
         400,
-        parsed.error.issues.map((i) => ({ field: i.path.join('.'), message: i.message })),
+        // A huge invalid body (thousands of bad list items) must not produce a huge answer.
+        parsed.error.issues
+          .slice(0, 20)
+          .map((i) => ({ field: i.path.join('.'), message: i.message })),
       );
     return parsed.data;
   }
@@ -96,6 +210,13 @@ export class Errors implements ExceptionFilter {
       status = error.getStatus();
       const detail = error.getResponse();
       body = typeof detail === 'object' ? { ...detail } : { message: detail };
+      // Nest turns unreadable JSON into its own 400 carrying the parser's message (positions,
+      // the character it choked on). Every 400 of ours has a code, so one without is Nest's.
+      if (status === 400 && !body.code)
+        body = {
+          code: 'INVALID_BODY',
+          message: 'The request could not be read. Please try again.',
+        };
       if (!body.code)
         body.code = status === 429 ? 'RATE_LIMITED' : HttpStatus[status] || 'REQUEST_FAILED';
     } else if (
@@ -147,6 +268,7 @@ export class Errors implements ExceptionFilter {
           event: 'SECURITY_REQUEST_REJECTED',
           requestId: req.requestId,
           status,
+          ...(req.deniedPermission ? { permission: req.deniedPermission } : {}),
           timestamp: new Date().toISOString(),
         }),
       );

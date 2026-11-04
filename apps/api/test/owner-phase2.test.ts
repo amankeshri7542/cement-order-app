@@ -11,6 +11,7 @@ import { istToday } from '@shiv/shared';
 import { Db } from '../src/db';
 import { hash } from '../src/http';
 import * as config from '../src/config';
+import { grantOwners } from './staff-helper';
 
 if (existsSync('.env.test')) loadEnvFile('.env.test');
 process.env.NODE_ENV = 'test';
@@ -111,6 +112,7 @@ beforeEach(async () => {
         },
       },
     });
+  await grantOwners(db);
   await db.category.create({ data: { id: 'category', name: 'Cement', slug: 'cement' } });
   await db.product.create({
     data: {
@@ -138,7 +140,7 @@ beforeEach(async () => {
       pincodes: { create: { pincode: '800020' } },
     },
   });
-  await db.storeSettings.create({ data: { id: 'store' } });
+  await db.storeSettings.create({ data: { id: 'store', phone: '+919999999000' } });
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -284,6 +286,19 @@ describe('Owner Phase 2 APIs against PostgreSQL', () => {
     expect(mismatched.body.error.code).toBe('INVALID_CURSOR');
   });
 
+  it('a name with a stray line break cannot start a new spreadsheet row', async () => {
+    await phoneOrder({ customerPhone: '+919999999984', customerName: 'Ramesh' }).expect(201);
+    await db.user.update({
+      where: { phone: '+919999999984' },
+      data: { name: 'Ramesh\r=1+1' },
+    });
+    const day = istToday();
+    const csv = await request(server)
+      .get(`/api/v1/admin/reports/money.csv?from=${day}&to=${day}`)
+      .set(auth())
+      .expect(200);
+    expect(csv.text).toContain('"Ramesh\r=1+1"');
+  });
   it('nets credit reversals and repayments and exports the same top customers', async () => {
     const first = await phoneOrder({
       paymentMethod: 'CREDIT',

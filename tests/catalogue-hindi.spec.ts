@@ -55,7 +55,7 @@ test.beforeAll(async () => {
 async function deskLogin(page: Page) {
   await page.addInitScript(() => localStorage.setItem('shiv-owner-language', 'en'));
   await page.goto(desk);
-  await page.getByRole('textbox', { name: 'Staff mobile number' }).fill('9297513707');
+  await page.getByRole('textbox', { name: 'Staff mobile number' }).fill('9999997007');
   const sent = page.waitForResponse((r) => r.url().endsWith('/auth/otp/request'));
   await page.getByRole('button', { name: 'Get verification code' }).click();
   await page
@@ -69,18 +69,18 @@ test('a Hindi name saved on the desk reaches Hindi readers; English is unchanged
   page,
 }) => {
   await deskLogin(page);
-  await page.goto('http://localhost:3001/more?view=products');
-  await page.getByRole('textbox', { name: 'Search products', exact: true }).fill(name);
-  await page.getByRole('button', { name: `Edit ${name}`, exact: true }).click();
+  await page.goto('http://localhost:3001/stock?tab=maal');
+  await page.getByRole('searchbox', { name: 'Find goods or brand', exact: true }).fill(name);
+  await page.getByRole('button', { name: `Change goods ${name}`, exact: true }).click();
   const dialog = page.getByRole('dialog');
-  await dialog.getByLabel('Hindi name / हिन्दी नाम', { exact: true }).fill(nameHi);
-  await dialog.getByLabel('Hindi description / हिन्दी विवरण', { exact: true }).fill(descriptionHi);
-  await dialog.getByRole('button', { name: 'Save product', exact: true }).click();
+  await dialog.getByLabel('Name in Hindi (if any)', { exact: true }).fill(nameHi);
+  await dialog.getByLabel('About this item in Hindi (if any)', { exact: true }).fill(descriptionHi);
+  await dialog.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(dialog).toBeHidden();
-  // The desk list shows the Hindi name under the English one; the Edit button keeps its name.
-  const row = page.getByRole('row').filter({ hasText: name });
-  await expect(row).toContainText(nameHi);
-  await expect(row.getByRole('button', { name: `Edit ${name}`, exact: true })).toBeVisible();
+  // The desk keeps the name staff read off the bag; the Hindi name is stored beside it.
+  await expect(
+    page.getByRole('button', { name: `Change goods ${name}`, exact: true }),
+  ).toBeVisible();
 
   // English readers see the stored English name and unit, with no Hindi text.
   await page.goto(`${site}/products/${productId}`);

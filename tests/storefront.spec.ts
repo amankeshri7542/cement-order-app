@@ -489,10 +489,10 @@ test('storefront delivery rechecks owner zone changes and rejects an older delay
   page,
   request,
 }) => {
-  const otp = await request.post(`${api}/auth/otp/request`, { data: { phone: '+919297513708' } });
+  const otp = await request.post(`${api}/auth/otp/request`, { data: { phone: '+919999997008' } });
   expect(otp.status()).toBe(201);
   const login = await request.post(`${api}/auth/otp/verify`, {
-    data: { phone: '+919297513708', code: (await otp.json()).devCode },
+    data: { phone: '+919999997008', code: (await otp.json()).devCode },
   });
   expect(login.status()).toBe(201);
   const headers = { Authorization: `Bearer ${(await login.json()).accessToken}` };
@@ -719,7 +719,7 @@ test('owner price publication reaches storefront and existing customer app', asy
     await expect(customer.getByRole('button', { name: 'View TEST V2 Material 00' })).toBeVisible();
     await owner.addInitScript(() => localStorage.setItem('shiv-owner-language', 'en'));
     await owner.goto('http://localhost:3001');
-    await owner.getByRole('textbox', { name: 'Staff mobile number' }).fill('9297513708');
+    await owner.getByRole('textbox', { name: 'Staff mobile number' }).fill('9999997008');
     const otp = owner.waitForResponse(
       (r) => r.url().endsWith('/auth/otp/request') && r.status() === 201,
     );
@@ -729,12 +729,12 @@ test('owner price publication reaches storefront and existing customer app', asy
       .fill((await (await otp).json()).devCode);
     await owner.getByRole('button', { name: 'Open store desk' }).click();
     await expect(owner.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
-    await owner.goto('http://localhost:3001/more?view=products');
-    await owner.getByRole('textbox', { name: 'Search products' }).fill('TEST V2 Material 00');
-    await owner.getByRole('button', { name: 'Edit TEST V2 Material 00' }).click();
-    await owner.getByLabel('Selling price (₹)').fill('137.45');
+    await owner.goto('http://localhost:3001/stock?tab=maal');
+    await owner.getByRole('searchbox', { name: 'Find goods or brand' }).fill('TEST V2 Material 00');
+    await owner.getByRole('button', { name: /^Change goods TEST V2 Material 00/ }).click();
+    await owner.getByLabel('Selling rate (₹)').fill('137.45');
     await owner.getByLabel('Brand', { exact: true }).fill('TEST Brand Published');
-    await owner.getByRole('button', { name: 'Save product', exact: true }).click();
+    await owner.getByRole('dialog').getByRole('button', { name: 'Save', exact: true }).click();
     await expect(owner.getByText('₹137.45', { exact: true })).toBeVisible();
     await expect(page.getByRole('main').getByText('₹137.45', { exact: true })).toBeVisible();
     await expect(customer.getByText('₹137.45', { exact: true })).toBeVisible();
@@ -780,9 +780,8 @@ test('storefront public requests omit credentials, enforce CSP and never reserve
   try {
     const response = await page.goto(catalogue);
     const headers = response!.headers();
-    // Next dev enforces revalidation; the production header check requires no-store.
-    expect(headers['cache-control']).toContain('no-cache');
-    expect(headers['cache-control']).toContain('must-revalidate');
+    // Next 16.4 dev keeps the proxy's header, and the production header check requires it too.
+    expect(headers['cache-control']).toContain('no-store');
     expect(headers['cache-control']).not.toContain('s-maxage');
     expect(headers['content-security-policy']).toContain("frame-ancestors 'none'");
     expect(headers['content-security-policy']).toContain("object-src 'none'");

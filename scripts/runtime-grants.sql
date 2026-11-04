@@ -22,11 +22,16 @@ GRANT DELETE ON TABLE
   public."DemandOverride",
   public."Device",
   public."Notification",
+  public."OrderItem",
   public."OtpChallenge",
   public."OutboundMessage",
   public."PriceUpdateBatchItem",
+  public."PushActionToken",
   public."PushSubscription",
-  public."Session"
+  public."Session",
+  public."WaMessage",
+  public."WaThread",
+  public."WebEnquiry"
   TO :"runtime_role";
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO :"runtime_role";
 REVOKE ALL ON TABLE public."_prisma_migrations" FROM :"runtime_role";

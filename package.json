@@ -33,6 +33,7 @@
     "test:workflows": "npm run test:workflows -w @shiv/api",
     "test:bootstrap": "npm run test:bootstrap -w @shiv/api",
     "test:restore": "npm exec -w @shiv/api -- tsx scripts/restore-rehearsal.ts",
+    "test:backup": "node --test scripts/backup.test.mjs",
     "security:scan": "node scripts/security-scan.mjs",
     "serve:customer": "node scripts/serve-customer.mjs",
     "dev:storefront": "npm run dev -w @shiv/storefront",
@@ -44,6 +45,12 @@
     "i18n:check": "npm test -w @shiv/i18n"
   },
   "overrides": {
+    "@nestjs/platform-express": {
+      "multer": "^2.5.0"
+    },
+    "google-gax": {
+      "rimraf": "^6.1.4"
+    },
     "@prisma/config": {
       "deepmerge-ts": "^8.0.0",
       "effect": "^3.20.0"
@@ -52,7 +59,8 @@
       "js-yaml": "^5.4.1"
     },
     "gaxios": {
-      "uuid": "^11.1.1"
+      "uuid": "^11.1.1",
+      "rimraf": "^6.1.4"
     },
     "xcode": {
       "uuid": "^11.1.1"

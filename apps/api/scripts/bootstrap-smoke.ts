@@ -67,6 +67,7 @@ async function main() {
       assert.equal(await db.storeSettings.count(), 1);
       assert.equal(await db.user.count({ where: { role: 'ADMIN' } }), 1);
       assert.equal(await db.adminCredential.count(), 1);
+      assert.equal(await db.staffMembership.count({ where: { role: 'OWNER', endedAt: null } }), 1);
       assert.equal(await db.product.count(), 0);
       assert.equal(await db.deliveryZone.count(), 0);
       const after = await db.storeSettings.findUniqueOrThrow({ where: { id: 'store' } });

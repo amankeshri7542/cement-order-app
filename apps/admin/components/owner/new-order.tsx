@@ -18,7 +18,6 @@ import {
   money,
   phoneOrderSchema,
   productName,
-  unitLabel,
   totals,
   type AddressInput,
   type Order,
@@ -29,7 +28,7 @@ import { ApiError, api } from '../../lib/api';
 import { useLanguage, useT } from '../../lib/i18n';
 import { useAction, useDebounced, useOwner, useUnsavedGuard } from '../../lib/owner';
 import type { Customer, DeliveryCheck } from '../../lib/owner-types';
-import { MoreRows, PageHeader, Problem, QueryStatus, usePaged } from './common';
+import { MoreRows, PageHeader, Problem, QueryStatus, usePaged, useShopChoice } from './common';
 import css from './owner.module.css';
 
 type Input = z.infer<typeof phoneOrderSchema>;
@@ -240,11 +239,13 @@ export function NewOrder() {
   }
   const subtotal = amounts.subtotalPaise;
   const creditAllowed = !!customer?.creditAllowed && !draft.anonymous;
+  const shopChoice = useShopChoice('orders.create');
   const action = useAction(
     async () => {
       const input =
         frozen.current ??
         phoneOrderSchema.parse({
+          ...(shopChoice.locationId ? { locationId: shopChoice.locationId } : {}),
           customerPhone: draft.anonymous ? undefined : '+91' + draft.phone,
           customerName: draft.anonymous ? undefined : draft.name,
           source: draft.source,
@@ -315,6 +316,7 @@ export function NewOrder() {
         back="/orders"
       />
       <Problem error={amountError || selectedProducts.error} />
+      {shopChoice.field}
       <ol className={css.steps}>
         {[1, 2, 3].map((value) => (
           <li key={value} aria-current={stage === value ? 'step' : undefined}>
@@ -423,17 +425,20 @@ export function NewOrder() {
                   <div>
                     <h3>{productName(product, language)}</h3>
                     <p>
-                      {unitLabel(product.packSize || product.unit, language)} ·{' '}
-                      <MoneyText value={product.pricePaise} />
+                      {product.packSize || product.unit} · <MoneyText value={product.pricePaise} />
                     </p>
-                    <p className={css.hint}>{t('owner.stockCount', { count: product.stock })}</p>
+                    <p className={css.hint}>
+                      {product.stock === null
+                        ? t('owner.stockHidden')
+                        : t('owner.stockCount', { count: product.stock })}
+                    </p>
                   </div>
                   <QuantityStepper
                     label={`${t('owner.quantity')} ${productName(product, language)}`}
                     value={draft.quantities[product.id] || 0}
                     min={product.minQuantity}
                     step={product.quantityStep}
-                    max={product.stock}
+                    max={product.stock ?? undefined}
                     decreaseLabel={t('owner.decrease', { name: productName(product, language) })}
                     increaseLabel={t('owner.increase', { name: productName(product, language) })}
                     onChange={(quantity) =>

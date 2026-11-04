@@ -55,7 +55,7 @@ test.beforeAll(async () => {
       name: 'फ़ोन परीक्षण इलाका',
       deliveryFeePaise,
       minimumOrderPaise: 0,
-      estimate: 'आज',
+      estimate: 'Aaj',
       pincodes: { create: [{ pincode: '800071' }] },
     },
   });
@@ -71,16 +71,18 @@ async function signInHindi(page: Page) {
     }
   });
   await page.goto(desk + '/today');
-  await expect(page.getByRole('heading', { name: 'नमस्ते।' })).toBeVisible();
-  await page.getByRole('textbox', { name: 'मालिक का मोबाइल नंबर', exact: true }).fill('9297513707');
+  await expect(page.getByRole('heading', { name: 'Namaste.' })).toBeVisible();
+  await page
+    .getByRole('textbox', { name: 'Staff ka mobile number', exact: true })
+    .fill('9999997007');
   const sent = page.waitForResponse(
     (response) => response.url().endsWith('/auth/otp/request') && response.status() === 201,
   );
-  await page.getByRole('button', { name: 'कोड भेजें', exact: true }).click();
+  await page.getByRole('button', { name: 'Code mangao', exact: true }).click();
   const challenge = (await (await sent).json()) as { devCode: string };
-  await page.getByRole('textbox', { name: 'साइन इन कोड', exact: true }).fill(challenge.devCode);
-  await page.getByRole('button', { name: 'दुकान डेस्क खोलें', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'आज', exact: true })).toBeVisible();
+  await page.getByRole('textbox', { name: 'Code', exact: true }).fill(challenge.devCode);
+  await page.getByRole('button', { name: 'Desk kholo', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Aaj', exact: true })).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('lang', 'hi');
 }
 
@@ -114,32 +116,35 @@ test('Hindi phone order survives a lost receipt and completes cash delivery once
 }) => {
   test.setTimeout(120000);
   await signInHindi(page);
-  await expect(page.getByText('आज की वसूली', { exact: true })).toBeVisible();
-  await accessibleAtLargeText(page, 'आज');
-  await page.getByRole('link', { name: '+ नया ऑर्डर', exact: true }).click();
+  await expect(page.getByText('Aaj ki vasooli', { exact: true })).toBeVisible();
+  await accessibleAtLargeText(page, 'Aaj');
+  await page
+    .getByRole('navigation', { name: hi['owner.desk'], exact: true })
+    .getByRole('link', { name: hi['owner.newOrder'], exact: true })
+    .click();
   await expect(page).toHaveURL(/\/orders\/new$/);
-  await expect(page.getByRole('heading', { name: 'नया ऑर्डर', exact: true })).toBeVisible();
-  await accessibleAtLargeText(page, 'नया ऑर्डर');
+  await expect(page.getByRole('heading', { name: 'Naya order', exact: true })).toBeVisible();
+  await accessibleAtLargeText(page, 'Naya order');
 
   await page
-    .getByRole('textbox', { name: 'मोबाइल नंबर', exact: true })
+    .getByRole('textbox', { name: 'Mobile number', exact: true })
     .fill(customerPhone.slice(3));
-  await page.getByRole('textbox', { name: 'ग्राहक का नाम', exact: true }).fill(customerName);
-  await page.getByRole('button', { name: 'आगे बढ़ें', exact: true }).click();
-  await page.getByRole('searchbox', { name: 'सामग्री खोजें', exact: true }).fill(productName);
+  await page.getByRole('textbox', { name: 'Grahak ka naam', exact: true }).fill(customerName);
+  await page.getByRole('button', { name: 'Aage badho', exact: true }).click();
+  await page.getByRole('searchbox', { name: 'Maal dhoondo', exact: true }).fill(productName);
   await expect(page.getByRole('heading', { name: productNameHi, exact: true })).toBeVisible();
   await page
-    .getByRole('textbox', { name: `मात्रा ${productNameHi}`, exact: true })
+    .getByRole('textbox', { name: `${hi['owner.quantity']} ${productNameHi}`, exact: true })
     .fill(String(quantity));
-  await page.getByRole('button', { name: 'आगे बढ़ें', exact: true }).click();
+  await page.getByRole('button', { name: 'Aage badho', exact: true }).click();
   await page
-    .getByRole('textbox', { name: 'घर, प्लॉट या साइट का पता', exact: true })
+    .getByRole('textbox', { name: 'Ghar, plot ya site ka pata', exact: true })
     .fill('प्लॉट ७१, मुख्य सड़क');
-  await page.getByRole('textbox', { name: 'इलाका', exact: true }).fill('फ़ोन अभ्यास इलाका');
-  await page.getByRole('textbox', { name: 'पिनकोड', exact: true }).fill('800071');
-  await expect(page.getByRole('button', { name: 'उधार', exact: true })).toBeDisabled();
-  await page.getByRole('button', { name: 'ऑर्डर जाँचें', exact: true }).click();
-  const review = page.getByRole('dialog', { name: 'ऑर्डर जाँचें', exact: true });
+  await page.getByRole('textbox', { name: 'Area', exact: true }).fill('फ़ोन अभ्यास इलाका');
+  await page.getByRole('textbox', { name: 'Pincode', exact: true }).fill('800071');
+  await expect(page.getByRole('button', { name: 'Udhaar', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Order dekho', exact: true }).click();
+  const review = page.getByRole('dialog', { name: 'Order dekho', exact: true });
   await expect(review.getByRole('heading', { name: customerName, exact: true })).toBeVisible();
 
   const attempts: Record<string, unknown>[] = [];
@@ -158,13 +163,13 @@ test('Hindi phone order survives a lost receipt and completes cash delivery once
       await route.abort('failed');
     } else await route.continue();
   });
-  await review.getByRole('button', { name: 'ऑर्डर पक्का करें', exact: true }).click();
-  await expect(review.getByRole('alert')).toContainText('दुकान से संपर्क नहीं हुआ');
+  await review.getByRole('button', { name: 'Order pakka karo', exact: true }).click();
+  await expect(review.getByRole('alert')).toContainText('Dukaan tak nahi pahunch paye');
   await expect(
-    page.getByRole('textbox', { name: 'घर, प्लॉट या साइट का पता', exact: true }),
+    page.getByRole('textbox', { name: 'Ghar, plot ya site ka pata', exact: true }),
   ).toBeDisabled();
-  await review.getByRole('button', { name: 'ऑर्डर पक्का करें', exact: true }).click();
-  const success = page.getByRole('dialog', { name: 'ऑर्डर दर्ज हो गया', exact: true });
+  await review.getByRole('button', { name: 'Order pakka karo', exact: true }).click();
+  const success = page.getByRole('dialog', { name: 'Order ban gaya', exact: true });
   await expect(success).toBeVisible();
   expect(committed).toBeDefined();
   expect(attempts).toHaveLength(2);
@@ -175,30 +180,30 @@ test('Hindi phone order survives a lost receipt and completes cash delivery once
     new RegExp(customerPhone.slice(1)),
   );
   await expect(success.locator('a[href^="tel:"]')).toHaveAttribute('href', `tel:${customerPhone}`);
-  await success.getByRole('button', { name: 'ऑर्डर देखें', exact: true }).click();
+  await success.getByRole('button', { name: 'Order dekho', exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/orders/${committed!.id}(?:\\?.*)?$`));
   await expect(
-    page.getByRole('heading', { name: `ऑर्डर ${committed!.number}`, exact: true }),
+    page.getByRole('heading', { name: `Order ${committed!.number}`, exact: true }),
   ).toBeVisible();
-  await accessibleAtLargeText(page, 'ऑर्डर की जानकारी');
+  await accessibleAtLargeText(page, 'Order ka haal');
 
-  await page.getByRole('button', { name: 'माल तैयार करें', exact: true }).click();
-  await expect(page.getByText('तैयार हो रहा है', { exact: true }).first()).toBeVisible();
-  await page.getByRole('button', { name: 'माल भेजें', exact: true }).click();
-  await expect(page.getByText('माल भेज दिया', { exact: true }).first()).toBeVisible();
-  await page.getByRole('button', { name: 'डिलीवरी पूरी करें', exact: true }).click();
-  const receipt = page.getByRole('dialog', { name: 'पैसा मिला', exact: true });
-  await receipt.getByLabel('भुगतान का तरीका', { exact: true }).selectOption('CASH');
+  await page.getByRole('button', { name: 'Taiyaari shuru karo', exact: true }).click();
+  await expect(page.getByText('Taiyaari ho rahi hai', { exact: true }).first()).toBeVisible();
+  await page.getByRole('button', { name: 'Maal nikal gaya', exact: true }).click();
+  await expect(page.getByText('Raaste mein', { exact: true }).first()).toBeVisible();
+  await page.getByRole('button', { name: 'Maal pahunch gaya', exact: true }).click();
+  const receipt = page.getByRole('dialog', { name: 'Paisa mil gaya', exact: true });
+  await receipt.getByLabel('Paisa kaise', { exact: true }).selectOption('CASH');
   await receipt
-    .getByRole('button', { name: 'पैसा दर्ज करके डिलीवरी पूरी करें', exact: true })
+    .getByRole('button', { name: 'Paisa likho aur delivery poori karo', exact: true })
     .click();
-  await expect(page.getByText('डिलीवरी पूरी', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Pahunch gaya', { exact: true }).first()).toBeVisible();
 
   const order = await db.order.findUniqueOrThrow({
     where: { id: committed!.id },
     include: { items: true, payment: true },
   });
-  const owner = await db.user.findUniqueOrThrow({ where: { phone: '+919297513707' } });
+  const owner = await db.user.findUniqueOrThrow({ where: { phone: '+919999997007' } });
   expect(order).toMatchObject({
     source: 'PHONE',
     status: 'DELIVERED',
@@ -233,7 +238,10 @@ test('Hindi phone order survives a lost receipt and completes cash delivery once
 
 async function draftPhoneOrder(page: Page, phone: string, name: string) {
   await signInHindi(page);
-  await page.getByRole('link', { name: hi['owner.newOrderAction'], exact: true }).click();
+  await page
+    .getByRole('navigation', { name: hi['owner.desk'], exact: true })
+    .getByRole('link', { name: hi['owner.newOrder'], exact: true })
+    .click();
   await page.getByRole('textbox', { name: hi['owner.phone'], exact: true }).fill(phone.slice(3));
   await page.getByRole('textbox', { name: hi['owner.name'], exact: true }).fill(name);
   await page.getByRole('button', { name: hi['owner.continue'], exact: true }).click();
@@ -404,12 +412,12 @@ test('a loaded delivery minimum does not block switching a phone draft to counte
   }
 });
 
-test('the new-order button is one tap away on every desk screen except the order form', async ({
-  page,
-}) => {
+test('the new-order tab is one tap away on every desk screen', async ({ page }) => {
   await signInHindi(page);
-  const newOrder = page.getByRole('link', { name: hi['owner.newOrderAction'], exact: true });
-  for (const route of ['/today', '/orders', '/customers', '/khata', '/stock', '/more']) {
+  const newOrder = page
+    .getByRole('navigation', { name: hi['owner.desk'], exact: true })
+    .getByRole('link', { name: hi['owner.newOrder'], exact: true });
+  for (const route of ['/today', '/orders', '/customers', '/udhaar', '/stock', '/more']) {
     await page.goto(desk + route);
     await expect(newOrder, route).toBeVisible();
   }
@@ -418,5 +426,5 @@ test('the new-order button is one tap away on every desk screen except the order
   await expect(
     page.getByRole('heading', { name: hi['owner.newOrder'], exact: true }),
   ).toBeVisible();
-  await expect(newOrder).toHaveCount(0);
+  await expect(newOrder).toHaveAttribute('aria-current', 'page');
 });

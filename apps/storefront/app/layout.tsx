@@ -3,8 +3,10 @@ import { Kalam, Teko } from 'next/font/google';
 import { connection } from 'next/server';
 import type { ReactNode } from 'react';
 import { LanguageProvider } from '../components/language';
+import { requestLanguage } from '../lib/language';
 import { Header, Footer } from '../components/shell';
 import { CommerceAlert, CommerceProvider, CommerceFeedback } from '../components/commerce';
+import { indexingOn, siteName, siteUrl } from '../lib/site';
 import './theme.css';
 import './globals.css';
 
@@ -26,26 +28,36 @@ const hand = Kalam({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
   title: {
-    default: 'Shiv Cement Store | Building materials in Patna',
-    template: '%s | Shiv Cement Store',
+    default: `${siteName}, Patna | सीमेंट, सरिया, बालू के भाव`,
+    template: `%s | ${siteName}`,
   },
   description:
-    'Browse cement and building materials at Shiv Cement Store, Patna. Compare prices, grades, pack sizes and selling units, and check delivery by pincode.',
-  robots: { index: false, follow: false },
+    'Cement, steel, bricks, sand and stone chips at Shiv Cement Store, Patna: current rates with the selling unit beside every price, delivery by pincode, cash on delivery and written bulk quotes. पटना में सीमेंट, सरिया, ईंट, बालू और गिट्टी के भाव।',
+  applicationName: siteName,
+  openGraph: { siteName, type: 'website', locale: 'en_IN', alternateLocale: ['hi_IN'] },
+  // Kept out of search results until the owner switches indexing on for the real address.
+  robots: indexingOn ? { index: true, follow: true } : { index: false, follow: false },
 };
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
   // Request-time rendering lets Next attach the per-request CSP nonce to its scripts.
   await connection();
+  // The first page is written in the visitor's language (lib/language.ts), so a Hindi reader is
+  // not shown English until scripts have run.
+  const { language, fromAddress } = await requestLanguage();
   return (
+    // translate="no": the site has its own Hindi/English switch, and Chrome's page translation
+    // rewrites text React keeps updating, which flickers or breaks it.
     <html
-      lang="en"
+      lang={language}
+      translate="no"
       data-scroll-behavior="smooth"
       className={`${display.variable} ${hand.variable}`}
     >
       <body>
-        <LanguageProvider>
+        <LanguageProvider initial={language} chosen={fromAddress}>
           <CommerceProvider>
             <Header />
             <CommerceAlert />

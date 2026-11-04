@@ -34,6 +34,7 @@ export async function saveSession(session: Session) {
     accessToken = session.accessToken;
     refreshToken = session.refreshToken;
     await SecureStore.setItemAsync('shiv_refresh', refreshToken);
+    void retryPendingLogout();
   }
   return session.user;
 }
@@ -106,7 +107,26 @@ export async function logout() {
   // them if it can be reached (an unrevoked session still expires on its own).
   const token = refreshToken;
   await clearLocalSession();
-  if (token) void api('/auth/logout', 'POST', { refreshToken: token }).catch(() => {});
+  if (token) void revoke(token);
+}
+// A sign-out made with no signal is kept and sent again at the next sign-in on this phone, so the
+// previous customer's session (and the order notifications tied to it) does not stay alive for
+// the next person.
+const pendingLogout = 'shiv_pending_logout';
+async function revoke(token: string) {
+  try {
+    await api('/auth/logout', 'POST', { refreshToken: token });
+    await SecureStore.deleteItemAsync(pendingLogout).catch(() => {});
+  } catch (error) {
+    // Refused means the store has already ended it; anything else is tried again later.
+    if (error instanceof ApiError && error.status !== undefined && error.status < 500)
+      await SecureStore.deleteItemAsync(pendingLogout).catch(() => {});
+    else await SecureStore.setItemAsync(pendingLogout, token).catch(() => {});
+  }
+}
+async function retryPendingLogout() {
+  const token = await SecureStore.getItemAsync(pendingLogout).catch(() => null);
+  if (token) await revoke(token);
 }
 export async function api<T>(
   path: string,

@@ -7,7 +7,7 @@
     "build": "next build --webpack",
     "start": "next start --port 3000",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test lib/api.test.ts"
+    "test": "node --import tsx --test lib/api.test.ts lib/refresh.test.ts lib/nav.test.ts lib/sw.test.ts lib/money.test.ts components/owner/report-helpers.test.ts"
   },
   "dependencies": {
     "@shiv/design": "1.0.0",
@@ -15,7 +15,7 @@
     "@shiv/shared": "1.0.0",
     "@tanstack/react-query": "^5.104.5",
     "lucide-react": "^0.468.0",
-    "next": "^16.2.9",
+    "next": "^16.4.5",
     "react": "19.2.0",
     "react-dom": "19.2.0"
   },

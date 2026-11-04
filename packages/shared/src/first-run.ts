@@ -46,15 +46,22 @@ export type NextStepState = 'done' | 'current' | 'todo';
 export type NextStep = { key: string; state: NextStepState; title: Bilingual; body: Bilingual };
 
 /**
- * "What happens next" after an order, mirroring the real order statuses. The shop's own process
- * (confirmed by the family): someone from the shop calls to confirm the order and delivery day
- * before it is prepared. No times are promised. Returns null for orders off the normal path
+ * "What happens next" after an order, mirroring the real order statuses. The shop looks at each
+ * order and confirms it, and the customer gets a message here. Nobody needs to call, and no times
+ * are promised. Returns null for orders off the normal path
  * (cancelled, refunds, payment pending, a delivery problem): those screens explain themselves.
  */
 export function nextSteps(order: Pick<Order, 'status' | 'number'>): NextStep[] | null {
-  const path = ['CONFIRMED', 'PREPARING', 'OUT_FOR_DELIVERY', 'DELIVERED'] as const;
-  const at = path.indexOf(order.status as (typeof path)[number]);
-  if (at < 0) return null;
+  // Which step each status is on. Once confirmed, preparing is what comes next.
+  const stepOf: Partial<Record<Order['status'], number>> = {
+    AWAITING_CONFIRMATION: 1,
+    CONFIRMED: 2,
+    PREPARING: 2,
+    OUT_FOR_DELIVERY: 3,
+    DELIVERED: 5,
+  };
+  const now = stepOf[order.status];
+  if (now === undefined) return null;
   const steps: Omit<NextStep, 'state'>[] = [
     {
       key: 'received',
@@ -65,11 +72,11 @@ export function nextSteps(order: Pick<Order, 'status' | 'number'>): NextStep[] |
       ],
     },
     {
-      key: 'call',
-      title: ['The shop calls you', 'दुकान आपको फ़ोन करेगी'],
+      key: 'confirm',
+      title: ['The shop confirms', 'Dukaan pakka karegi'],
       body: [
-        'Someone from the shop calls to confirm your order and delivery day before preparing it.',
-        'तैयारी से पहले दुकान से कोई आपको फ़ोन करके ऑर्डर और डिलीवरी का दिन पक्का करेगा।',
+        'You get a message here when your order and day are confirmed. No need to call.',
+        'Order aur din pakka hote hi yahan message aayega. Call karne ki zaroorat nahi.',
       ],
     },
     {
@@ -97,9 +104,6 @@ export function nextSteps(order: Pick<Order, 'status' | 'number'>): NextStep[] |
       ],
     },
   ];
-  // The current step: a confirmed order waits for the shop's call (1); then preparing (2), on the
-  // way (3) and delivered (all done). "Received" is always done once the order exists.
-  const now = at + 1;
   return steps.map((step, index) => ({
     ...step,
     state:

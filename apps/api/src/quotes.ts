@@ -15,7 +15,19 @@ import { Db } from './db';
 import { notifyCustomer, pushText } from './notify';
 import { workInclude } from './owner-work';
 import { Events } from './catalog';
-import { Admin, AuthRequest, Contract, Input, fail, hash } from './http';
+import { checkHandRate } from './price-rules';
+import {
+  atQuote,
+  AuthRequest,
+  Can,
+  Contract,
+  fail,
+  hash,
+  Input,
+  scoped,
+  Self,
+  shopWhere,
+} from './http';
 import { customerWork, orderInclude, reference, validDelivery } from './orders';
 
 @ApiTags('Bulk quotations')
@@ -25,7 +37,10 @@ export class QuotesController {
     @Inject(Db) private db: Db,
     @Inject(Events) private events: Events,
   ) {}
-  @Get('quotes') async list(@Req() req: AuthRequest, @Query() query: Record<string, string>) {
+  @Self() @Get('quotes') async list(
+    @Req() req: AuthRequest,
+    @Query() query: Record<string, string>,
+  ) {
     const page = paginate(query, `quotes:${req.user.id}`);
     const quotes = await this.db.quote.findMany({
       where: { userId: req.user.id, ...page.after },
@@ -45,6 +60,7 @@ export class QuotesController {
       })),
     );
   }
+  @Self()
   @Post('quotes')
   @Contract(quoteRequestSchema)
   request(
@@ -88,8 +104,14 @@ export class QuotesController {
       });
       if (products.length !== body.items.length)
         fail('NOT_FOUND', 'One or more products are unavailable.', 404);
+      // The shop serving this delivery area handles the request.
+      const area = await tx.deliveryPincode.findUnique({
+        where: { pincode: address.pincode },
+        select: { zone: { select: { locationId: true } } },
+      });
       return tx.quote.create({
         data: {
+          ...(area ? { locationId: area.zone.locationId } : {}),
           number: reference('QT'),
           idempotencyKey: body.idempotencyKey,
           requestHash,
@@ -116,7 +138,10 @@ export class QuotesController {
       });
     });
   }
-  @Admin() @Get('admin/quotes') async all(@Query() query: Record<string, string>) {
+  @Can('quotes.read', scoped) @Get('admin/quotes') async all(
+    @Query() query: Record<string, string>,
+    @Req() req: AuthRequest,
+  ) {
     const parsed = z
       .enum(['REQUESTED', 'SENT', 'ACCEPTED', 'REJECTED', 'EXPIRED'])
       .optional()
@@ -125,11 +150,12 @@ export class QuotesController {
     const status = parsed.data;
     const page = paginate(query, `admin-quotes:${status || ''}`);
     const quotes = await this.db.quote.findMany({
-      where: { ...page.after, ...(status ? { status } : {}) },
+      where: { ...page.after, ...shopWhere(req, 'quotes.read'), ...(status ? { status } : {}) },
       include: {
         work: { include: workInclude },
         items: true,
-        user: true,
+        // Not their balance or limit: that is the udhaar list's.
+        user: { select: { id: true, name: true, phone: true } },
         order: { select: { id: true, number: true } },
       },
       orderBy: page.orderBy,
@@ -143,7 +169,7 @@ export class QuotesController {
       })),
     );
   }
-  @Admin()
+  @Can('quotes.price', atQuote())
   @Post('admin/quotes/:id/offer')
   @Contract(quoteOfferSchema)
   offer(
@@ -181,6 +207,16 @@ export class QuotesController {
       const currentProducts = await tx.product.findMany({
         where: { id: { in: quote.items.map((i) => i.productId) } },
       });
+      // The same limit as on the confirm sheet, or a quote would be the way around it.
+      for (const offered of body.items)
+        await checkHandRate(
+          tx,
+          req.access,
+          req.user.id,
+          quote.locationId,
+          currentProducts.find((p) => p.id === offered.productId)!.pricePaise,
+          offered.unitPricePaise,
+        );
       const lines = quote.items.map((i) => ({
         ...i,
         packSize: currentProducts.find((p) => p.id === i.productId)!.packSize,
@@ -242,7 +278,7 @@ export class QuotesController {
       return updated;
     });
   }
-  @Admin()
+  @Can('quotes.price', atQuote())
   @Post('admin/quotes/:id/convert')
   async convert(
     @Param('id') id: string,
@@ -301,6 +337,12 @@ export class QuotesController {
       if (customer.deletedAt)
         fail('CUSTOMER_DELETED', 'This customer account has been removed.', 409);
       const lines = [];
+      // Who agreed this rate stays on the line, as for one changed at confirm.
+      const offer = await tx.auditLog.findFirst({
+        where: { event: 'QUOTE_SENT', entityId: id },
+        orderBy: { createdAt: 'desc' },
+        select: { actorId: true },
+      });
       for (const line of quote.items) {
         const product = await tx.product.findUniqueOrThrow({ where: { id: line.productId } });
         if (
@@ -327,8 +369,12 @@ export class QuotesController {
           packSize: line.packSize,
           quantity: line.quantity,
           pricePaise: line.unitPricePaise,
+          listPricePaise: product.pricePaise,
           priceVersion: product.priceVersion,
           lineTotalPaise: line.unitPricePaise * line.quantity,
+          ...(line.unitPricePaise !== product.pricePaise
+            ? { ruleKind: 'BY_HAND', rateChangedById: offer?.actorId ?? req.user.id }
+            : {}),
         });
       }
       const amounts = orderTotals(lines, quote.deliveryFeePaise, null);
@@ -352,6 +398,7 @@ export class QuotesController {
       const order = await tx.order.create({
         data: {
           number: reference('SC'),
+          locationId: quote.locationId,
           userId: quote.userId,
           quoteId: id,
           quoteRevision: quote.revision,
@@ -359,7 +406,10 @@ export class QuotesController {
           createdById: req.user.id,
           reviewId: review.id,
           idempotencyKey: `quote:${id}:${quote.revision}`,
+          // A person agreed these rates with the customer, so it is confirmed from the start.
           status: 'CONFIRMED',
+          confirmedAt: new Date(),
+          confirmedById: req.user.id,
           address: quote.address as Prisma.InputJsonValue,
           deliveryDate,
           notes: quote.notes,
@@ -387,6 +437,7 @@ export class QuotesController {
           reference: order.id,
           note: `Accepted quotation ${quote.number}`,
           idempotencyKey: `quote:${id}:${line.productId}`,
+          locationId: quote.locationId,
         });
       await tx.auditLog.create({
         data: {
@@ -414,6 +465,7 @@ export class QuotesController {
     return result;
   }
 
+  @Self()
   @Post('quotes/:id/respond')
   @Contract(quoteRespondSchema)
   respond(
@@ -423,7 +475,7 @@ export class QuotesController {
   ) {
     return this.decide(id, body, req.user.id, req.user.id);
   }
-  @Admin()
+  @Can('quotes.price', atQuote())
   @Post('admin/quotes/:id/respond')
   @Contract(storeQuoteRespondSchema)
   adminRespond(
@@ -478,7 +530,7 @@ export class QuotesController {
           actorId,
           event: `QUOTE_${body.status}`,
           entityId: id,
-          details: { revision: body.revision, byStore: !ownerId, note },
+          details: { revision: body.revision, byStore: !ownerId },
         },
       });
       return updated;

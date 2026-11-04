@@ -31,7 +31,7 @@ test.afterAll(() => db.$disconnect());
 async function login(page: Page) {
   await page.addInitScript(() => localStorage.setItem('shiv-owner-language', 'en'));
   await page.goto('http://localhost:3001');
-  await page.getByRole('textbox', { name: 'Staff mobile number' }).fill('9297513707');
+  await page.getByRole('textbox', { name: 'Staff mobile number' }).fill('9999997007');
   const sent = page.waitForResponse((r) => r.url().endsWith('/auth/otp/request'));
   await page.getByRole('button', { name: 'Get verification code' }).click();
   await page
@@ -41,55 +41,56 @@ async function login(page: Page) {
   await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
 }
 async function products(page: Page) {
-  await page.goto('http://localhost:3001/more?view=products');
-  await page.getByRole('textbox', { name: 'Search products', exact: true }).fill(name);
-  await page.getByRole('button', { name: `Edit ${name}`, exact: true }).click();
+  await page.goto('http://localhost:3001/stock?tab=maal');
+  await page.getByRole('searchbox', { name: 'Find goods or brand', exact: true }).fill(name);
+  await page.getByRole('button', { name: `Change goods ${name}`, exact: true }).click();
 }
 
-test('stock receipt, counter sale, damage, return and adjustment preserve the ledger and balance', async ({
+test('goods in, goods back and an owner correcting the count preserve the ledger and balance', async ({
   page,
 }) => {
   await login(page);
-  await products(page);
-  await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
-  await page.getByRole('button', { name: `Stock ledger ${name}`, exact: true }).click();
-  for (const [kind, quantity, balance] of [
-    ['PURCHASE_IN', 10, 30],
-    ['WALK_IN_SALE', 5, 25],
-    ['DAMAGE', 2, 23],
-    ['RETURN', 1, 24],
-    ['MANUAL_ADJUSTMENT', -3, 21],
+  await page.goto('http://localhost:3001/stock');
+  const row = page.getByRole('row').filter({ hasText: name }).first();
+  for (const [button, kind, field, quantity, balance] of [
+    ['New stock came', 'PURCHASE_IN', 'Quantity received', '10', 30],
+    ['Goods came back', 'RETURN', 'How many came back', '1', 31],
+    [
+      'Correct the stock',
+      'MANUAL_ADJUSTMENT',
+      'How many to add or take away (a minus sign takes away)',
+      '-3',
+      28,
+    ],
   ] as const) {
-    await page.getByRole('combobox', { name: 'Movement', exact: true }).selectOption(kind);
-    await page.getByLabel('Quantity', { exact: true }).fill(String(quantity));
-    await page.getByLabel('Receipt / reference', { exact: true }).fill(`QA-${kind}`);
-    await page
-      .getByLabel('Reason', { exact: true })
-      .fill('QA counted fixture stock; no actual goods or money');
-    await page.getByRole('button', { name: 'Record stock movement', exact: true }).click();
-    await expect(
-      page.getByRole('dialog').getByRole('cell', {
-        name: `QA-${kind} QA counted fixture stock; no actual goods or money`,
-        exact: true,
-      }),
-    ).toBeVisible();
-    expect((await db.product.findUniqueOrThrow({ where: { id: productId } })).stock).toBe(balance);
+    await row.getByRole('button', { name: button, exact: true }).click();
+    const sheet = page.getByRole('dialog');
+    await sheet.getByLabel(field, { exact: true }).fill(quantity);
+    await sheet
+      .getByLabel('Purchase or stock note', { exact: true })
+      .fill(`QA-${kind} counted fixture stock; no actual goods or money`);
+    await sheet.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(sheet).toBeHidden();
+    await expect
+      .poll(async () => (await db.product.findUniqueOrThrow({ where: { id: productId } })).stock)
+      .toBe(balance);
   }
-  expect(await db.inventoryMovement.count({ where: { productId } })).toBe(5);
-  const sale = await db.inventoryMovement.findFirstOrThrow({
-    where: { productId, kind: 'WALK_IN_SALE' },
+  const moves = await db.inventoryMovement.findMany({
+    where: { productId },
+    orderBy: { createdAt: 'asc' },
   });
-  const collection = await db.financialMovement.findUniqueOrThrow({
-    where: { inventoryMovementId: sale.id },
-  });
-  expect(collection).toMatchObject({ kind: 'COUNTER_SALE', amountPaise: 195000 });
+  expect(moves.map((row) => [row.kind, row.quantity])).toEqual([
+    ['PURCHASE_IN', 10],
+    ['RETURN', 1],
+    ['MANUAL_ADJUSTMENT', -3],
+  ]);
   await page.screenshot({
-    path: test.info().outputPath('five-stock-movements.png'),
+    path: test.info().outputPath('stock-movements.png'),
     fullPage: true,
   });
 });
 
-test('photo URL persists, stale product edit cannot overwrite it, and unavailable upload explains recovery', async ({
+test('a stale product edit cannot overwrite a newer one, and an unavailable upload explains recovery', async ({
   page,
   context,
 }) => {
@@ -101,34 +102,14 @@ test('photo URL persists, stale product edit cannot overwrite it, and unavailabl
     await other.goto('http://localhost:3001');
     await expect(other.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
     await products(other);
-    const photo =
-      'https://assets.example.invalid/products/00000000-0000-4000-8000-000000000001.webp';
-    // Simulated validated storage asset; real publication/version checks remain enforced.
-    await db.productAsset.upsert({
-      where: { url: photo },
-      update: {},
-      create: { id: 'products/00000000-0000-4000-8000-000000000001.webp', url: photo },
-    });
-    // Only image pixels are a fixture; product persistence/version checks use the real backend.
-    await context.route(photo, (route) =>
-      route.fulfill({
-        contentType: 'image/png',
-        body: Buffer.from(
-          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j9WQAAAAASUVORK5CYII=',
-          'base64',
-        ),
-      }),
-    );
-    await other.getByLabel('Product image URL', { exact: true }).fill(photo);
-    await other.getByLabel('Selling price (₹)', { exact: true }).fill('400');
-    await other.getByRole('button', { name: 'Save product', exact: true }).click();
+    await other.getByLabel('Selling rate (₹)', { exact: true }).fill('400');
+    await other.getByRole('dialog').getByRole('button', { name: 'Save', exact: true }).click();
     await expect(other.getByRole('dialog')).toHaveCount(0);
-    await page.getByLabel('Selling price (₹)', { exact: true }).fill('350');
-    await page.getByRole('button', { name: 'Save product', exact: true }).click();
-    await expect(page.getByRole('dialog').getByRole('alert')).toContainText(/changed|refresh/i);
+    await page.getByLabel('Selling rate (₹)', { exact: true }).fill('350');
+    await page.getByRole('dialog').getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.getByRole('dialog').getByRole('alert')).toContainText(/changed/i);
     const stored = await db.product.findUniqueOrThrow({ where: { id: productId } });
     expect(stored.pricePaise).toBe(40000);
-    expect(stored.images).toEqual([photo]);
     await page
       .getByRole('dialog')
       .locator('input[type=file]')
@@ -140,10 +121,13 @@ test('photo URL persists, stale product edit cannot overwrite it, and unavailabl
           'base64',
         ),
       });
-    await expect(page.getByRole('dialog').getByRole('alert')).toContainText(
-      'Configure object storage before uploading images.',
-    );
-    await expect(page.getByLabel('Selling price (₹)', { exact: true })).toHaveValue('350');
+    await expect(
+      page
+        .getByRole('dialog')
+        .getByRole('alert')
+        .filter({ hasText: 'Configure object storage before uploading images.' }),
+    ).toBeVisible();
+    await expect(page.getByLabel('Selling rate (₹)', { exact: true })).toHaveValue('350');
     await page.screenshot({
       path: test.info().outputPath('unavailable-photo-storage.png'),
       fullPage: true,

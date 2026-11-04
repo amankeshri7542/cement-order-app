@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { languageHeader } from './lib/site';
 
 export function proxy(request: NextRequest) {
   const nonce = Buffer.from(crypto.randomUUID()).toString('base64');
@@ -12,6 +13,10 @@ export function proxy(request: NextRequest) {
   const csp = `default-src 'self'; script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${dev ? " 'unsafe-eval'" : ''}; style-src 'self' 'unsafe-inline'; img-src 'self' ${asset}; font-src 'self'; connect-src 'self' ${api}${dev ? ' ws://localhost:* ws://127.0.0.1:*' : ''}; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; frame-src 'none'${dev ? '' : '; upgrade-insecure-requests'}`;
   const headers = new Headers(request.headers);
   headers.set('Content-Security-Policy', csp);
+  // ?lang=hi or ?lang=en chooses the page's language (lib/language.ts). Only this proxy sets it.
+  headers.delete(languageHeader);
+  const lang = request.nextUrl.searchParams.get('lang');
+  if (lang === 'hi' || lang === 'en') headers.set(languageHeader, lang);
   const response = NextResponse.next({ request: { headers } });
   response.headers.set('Content-Security-Policy', csp);
   response.headers.set('X-Content-Type-Options', 'nosniff');

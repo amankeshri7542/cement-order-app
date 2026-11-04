@@ -7,12 +7,20 @@ const states = (status: string) =>
   nextSteps({ status: status as never, number: 'SCS-1' })?.map((step) => step.state);
 
 test('what happens next follows the real order statuses', () => {
-  assert.deepEqual(states('CONFIRMED'), ['done', 'current', 'todo', 'todo', 'todo']);
+  assert.deepEqual(states('AWAITING_CONFIRMATION'), ['done', 'current', 'todo', 'todo', 'todo']);
+  assert.deepEqual(states('CONFIRMED'), ['done', 'done', 'current', 'todo', 'todo']);
   assert.deepEqual(states('PREPARING'), ['done', 'done', 'current', 'todo', 'todo']);
   assert.deepEqual(states('OUT_FOR_DELIVERY'), ['done', 'done', 'done', 'current', 'todo']);
   assert.deepEqual(states('DELIVERED'), ['done', 'done', 'done', 'done', 'done']);
   for (const off of ['CANCELLED', 'PENDING_PAYMENT', 'DELIVERY_EXCEPTION', 'REFUNDED'])
     assert.equal(nextSteps({ status: off as never, number: 'SCS-1' }), null);
+});
+
+test('nothing tells the customer to wait for a call', () => {
+  const steps = nextSteps({ status: 'AWAITING_CONFIRMATION', number: 'SCS-1' })!;
+  const words = steps.flatMap((step) => [step.title, step.body].flat()).join(' ');
+  assert.doesNotMatch(words, /calls you|phone karegi/i);
+  assert.match(words, /No need to call/);
 });
 
 test('first-run text is complete in both languages and promises no times', () => {
@@ -23,7 +31,7 @@ test('first-run text is complete in both languages and promises no times', () =>
   ];
   for (const [en, hi] of texts) {
     assert.ok(en.trim() && !hasDevanagari(en), `English text: ${en}`);
-    assert.ok(hasDevanagari(hi), `Hindi text: ${hi}`);
+    assert.ok(hi.trim() && hi !== en, `Second language: ${hi}`);
     // No delivery-time promises: no hours, minutes or "same day" claims.
     assert.doesNotMatch(`${en} ${hi}`, /\b\d+\s*(hours?|hrs?|minutes?|mins?)\b|same[- ]day|घंटे/i);
   }

@@ -1,0 +1,28 @@
+/* One list: who asked on one side, the lines to price on the other. A stack on a phone. */
+.split {
+  display: grid;
+  gap: 1rem;
+  align-items: start;
+}
+.split > * {
+  min-inline-size: 0;
+}
+.lineTotal {
+  color: var(--shiv-ink2);
+  font-size: var(--shiv-small);
+  font-variant-numeric: tabular-nums;
+}
+.lines {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: 0 1rem;
+}
+.words {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+@media (min-width: 64rem) {
+  .split {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+  }
+}

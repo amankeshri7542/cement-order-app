@@ -8,12 +8,13 @@ const log = (event: string, details: Record<string, unknown>) =>
 async function main() {
   const app = await createApp();
   const c = getConfig();
-  // Mock OTP never listens beyond this computer.
-  await app.listen(c.PORT, c.OTP_PROVIDER === 'mock' ? '127.0.0.1' : '0.0.0.0');
+  // Mock OTP never listens beyond this computer, except in an explicit fake-data demo.
+  await app.listen(c.PORT, c.OTP_PROVIDER === 'mock' && !c.DEMO_MODE ? '127.0.0.1' : '0.0.0.0');
   log('API_STARTED', {
     port: c.PORT,
     nodeEnv: c.NODE_ENV,
     otpProvider: c.OTP_PROVIDER,
+    demoMode: c.DEMO_MODE,
     assistantProvider: c.ASSISTANT_PROVIDER,
     release: process.env.RELEASE_SHA?.slice(0, 40) || 'unset',
   });

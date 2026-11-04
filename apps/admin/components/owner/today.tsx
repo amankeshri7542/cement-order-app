@@ -7,27 +7,43 @@ import { api } from '../../lib/api';
 import { useT } from '../../lib/i18n';
 import type { Dashboard } from '../../lib/owner-types';
 import { PageHeader, QueryStatus } from './common';
+import { EnquiryCards, useNewEnquiries } from './enquiries';
 import { NextOrderAction } from './orders';
+import { PakkaQueue } from './inbox';
+import { useApprovals } from './manzoori';
 import css from './owner.module.css';
+import { useOwner } from '../../lib/owner';
 
 export function Today() {
   const t = useT();
+  const { can, shopId } = useOwner();
+  const shopQuery = shopId ? `&locationId=${shopId}` : '';
   const dashboard = useQuery({
-    queryKey: ['dashboard'],
-    queryFn: () => api<Dashboard>('/admin/dashboard'),
+    queryKey: ['dashboard', shopId],
+    queryFn: () => api<Dashboard>(`/admin/dashboard${shopId ? `?locationId=${shopId}` : ''}`),
   });
   const work = useQuery({
-    queryKey: ['orders', 'list', 'work'],
+    queryKey: ['orders', 'list', 'work', shopId],
     queryFn: async () => {
-      const queues = ['new', 'dispatch', 'payments', 'issues'] as const;
+      // New orders are on the queue above, so they are not listed twice.
+      const queues = ['dispatch', 'payments', 'issues'] as const;
       return Promise.all(
         queues.map(async (queue) => ({
           queue,
-          page: await api<Page<Order>>(`/admin/orders?queue=${queue}&limit=20`),
+          page: await api<Page<Order>>(`/admin/orders?queue=${queue}&limit=20${shopQuery}`),
         })),
       );
     },
   });
+  const enquiries = useNewEnquiries();
+  const asks = useApprovals();
+  const rates = useQuery({
+    enabled: can('rates.publish'),
+    queryKey: ['rates'],
+    queryFn: () => api<{ checkedAt: string | null }>('/admin/rates'),
+  });
+  const checkedAt = rates.data?.checkedAt;
+  const staleRates = !!checkedAt && Date.now() - new Date(checkedAt).getTime() > 3 * 86400000;
   const seen = new Set<string>();
   const rows =
     work.data?.flatMap(({ queue, page }) =>
@@ -44,6 +60,19 @@ export function Today() {
   return (
     <>
       <PageHeader title={t('owner.today')} />
+      {/* Papa's phone opens on the queue, with nothing above it. */}
+      <PakkaQueue limit={3} />
+      {can('approvals.decide') && !!asks.data?.items.length && (
+        <Link href="/manzoori" className={`${css.card} ${css.cardLink}`}>
+          {t('owner.stockPage.waiting', { count: asks.data.items.length })}{' '}
+          <span aria-hidden="true">→</span>
+        </Link>
+      )}
+      {staleRates && can('rates.publish') && (
+        <Link href="/rates" className={`${css.card} ${css.cardLink}`}>
+          {t('owner.rates.staleToday')} <span aria-hidden="true">→</span>
+        </Link>
+      )}
       <QueryStatus query={dashboard} />
       {dashboard.data && (
         <div className={css.columns}>
@@ -55,19 +84,23 @@ export function Today() {
               dashboard.data.todayRefundsPaise
             }
           />
-          <Link href="/khata" className={css.cardLink}>
-            <BigNumberCard
-              label={t('owner.totalDue')}
-              value={dashboard.data.khataDuePaise}
-              tone="red"
-            />
-          </Link>
+          {can('khata.read.list') && (
+            <Link href="/khata" className={css.cardLink}>
+              <BigNumberCard
+                label={t('owner.totalDue')}
+                value={dashboard.data.khataDuePaise}
+                tone="red"
+              />
+            </Link>
+          )}
         </div>
       )}
+      {/* Questions sent from the website's Contact page; nothing shows while there are none. */}
+      <EnquiryCards items={enquiries.data?.items ?? []} />
       <section className={css.stack} aria-label={t('owner.nextWork')}>
         <h2>{t('owner.nextWork')}</h2>
         <QueryStatus query={work} />
-        {!work.isPending && !rows.length && !work.error && (
+        {!work.isPending && !rows.length && !work.error && !enquiries.data?.items.length && (
           <EmptyState title={t('owner.emptyWork')} action={<p>{t('owner.emptyWorkBody')}</p>} />
         )}
         {rows.map(({ queue, order }) => (
@@ -86,13 +119,11 @@ export function Today() {
             ) : (
               <Link className={`${css.inlineLink} ${css.wide}`} href={`/orders/${order.id}`}>
                 {t(
-                  queue === 'new'
-                    ? 'owner.workNew'
-                    : queue === 'dispatch'
-                      ? 'owner.workDispatch'
-                      : queue === 'payments'
-                        ? 'owner.workPayment'
-                        : 'owner.workIssue',
+                  queue === 'dispatch'
+                    ? 'owner.workDispatch'
+                    : queue === 'payments'
+                      ? 'owner.workPayment'
+                      : 'owner.workIssue',
                 )}{' '}
                 <span aria-hidden="true">→</span>
               </Link>

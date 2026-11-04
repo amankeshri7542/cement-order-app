@@ -9,6 +9,7 @@ export default ts.config(
       '**/.next-e2e/**',
       '**/.next-security/**',
       '**/.next-shots/**',
+      '**/.next-catalyst/**',
       '**/.next-lighthouse/**',
       '**/.expo/**',
       '**/next-env.d.ts',

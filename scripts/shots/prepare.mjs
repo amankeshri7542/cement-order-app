@@ -50,6 +50,11 @@ if (set === 'demo')
 // One desk owner without a passphrase: test mode lets staff in with the shown code only.
 const { PrismaClient } = await import('@prisma/client');
 const db = new PrismaClient({ datasourceUrl: target.toString() });
-await db.user.create({ data: { phone: '+919900090199', name: 'Screenshot owner', role: 'ADMIN' } });
+const owner = await db.user.create({
+  data: { phone: '+919900090199', name: 'Screenshot owner', role: 'ADMIN' },
+});
+await db.staffMembership.create({
+  data: { userId: owner.id, locationId: null, role: 'OWNER', grantedById: owner.id },
+});
 await db.$disconnect();
 console.log(`Prepared ${name} (${set}).`);

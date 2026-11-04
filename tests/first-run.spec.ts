@@ -3,6 +3,7 @@ import type { Browser, Page } from '@playwright/test';
 import { test, expect } from './fixtures';
 import { appUrl } from './app';
 import { hi } from '@shiv/i18n';
+import { grantOwners } from '../apps/api/test/staff-helper';
 
 // Phase 11 first run. A brand-new customer on the app and on the website, from a fresh install
 // (nothing stored) to "what happens next" after their first order; and a new store's owner
@@ -77,13 +78,13 @@ test('app first run: language, pincode, basket, sign-in with name, order, what h
     await page.getByRole('button', { name: 'Save address', exact: true }).click();
     await page.getByRole('button', { name: 'Place order · ₹4,600.00', exact: true }).click();
 
-    // What happens next mirrors the real status: received, then the shop's call.
-    await expect(page.getByRole('heading', { name: 'Confirmed', exact: true })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'What happens next' })).toBeVisible();
-    await expect(page.getByLabel(/^The shop calls you\. Now\./)).toBeVisible();
+    // What happens next mirrors the real status: received, then the shop confirms, with no call.
     await expect(
-      page.getByText('Someone from the shop calls to confirm', { exact: false }),
+      page.getByRole('heading', { name: 'Waiting for the shop', exact: true }),
     ).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'What happens next' })).toBeVisible();
+    await expect(page.getByLabel(/^The shop confirms\. Now\./)).toBeVisible();
+    await expect(page.getByText('No need to call', { exact: false })).toBeVisible();
     // No call or WhatsApp buttons while the shop's number is not approved (C2).
     await expect(page.getByRole('button', { name: 'Call the shop' })).toHaveCount(0);
 
@@ -190,7 +191,7 @@ test('website first run: language, pincode, basket, sign-in with name, order, wh
     ).toBeVisible();
     const next = page.getByRole('region', { name: 'What happens next' });
     await expect(next).toBeVisible();
-    await expect(next.locator('[aria-current="step"]')).toContainText('The shop calls you');
+    await expect(next.locator('[aria-current="step"]')).toContainText('The shop confirms');
     await expect(next.getByRole('link', { name: /Call the shop|WhatsApp/ })).toHaveCount(0);
 
     // Back home: the first-order card stays away once an order exists.
@@ -229,19 +230,14 @@ test('owner first run: Hindi setup routes save store information on the server',
   const owner = await db.user.create({
     data: { phone: `+91${phone}`, name: 'First-run owner', role: 'ADMIN' },
   });
+  await grantOwners(db);
   await deskSignIn(page, phone);
   expect(await db.adminCredential.count({ where: { userId: owner.id } })).toBe(0);
   const navigation = page.getByRole('navigation', { name: hi['owner.desk'], exact: true });
   await navigation.getByRole('link', { name: hi['owner.more'], exact: true }).click();
-  for (const key of ['owner.zones', 'owner.storeDetails', 'owner.staff'] as const)
-    await expect(page.getByRole('link', { name: hi[key], exact: true })).toBeVisible();
-  await page.getByRole('link', { name: hi['owner.zones'], exact: true }).click();
-  await expect(page).toHaveURL(/\/more\?view=zones$/);
-  await expect(page.getByRole('heading', { name: hi['owner.zones'], exact: true })).toBeVisible();
-  await expect(page.getByRole('article').filter({ hasText: '800020' }).first()).toBeVisible();
-  await navigation.getByRole('link', { name: hi['owner.more'], exact: true }).click();
-  await page.getByRole('link', { name: hi['owner.storeDetails'], exact: true }).click();
-  await expect(page).toHaveURL(/\/more\?view=store$/);
+  await page.getByRole('link', { name: hi['owner.settings.title'], exact: true }).click();
+  await expect(page).toHaveURL(/\/settings$/);
+  await expect(page.getByRole('listitem').filter({ hasText: '800020' }).first()).toBeVisible();
   const before = await db.storeSettings.findUniqueOrThrow({ where: { id: 'store' } });
   const information = page.getByLabel(hi['owner.deliveryMessage'], { exact: true });
   await expect(information).toHaveValue(before.deliveryMessage);
@@ -265,6 +261,6 @@ test('owner first run: Hindi setup routes save store information on the server',
   await expect(page.locator('html')).toHaveAttribute('lang', 'hi');
   await navigation.getByRole('link', { name: hi['owner.more'], exact: true }).click();
   await page.getByRole('link', { name: hi['owner.staff'], exact: true }).click();
-  await expect(page).toHaveURL(/\/more\?view=staff$/);
-  await expect(page.getByText(/^First-run owner · /)).toBeVisible();
+  await expect(page).toHaveURL(/\/staff$/);
+  await expect(page.getByText(/First-run owner/).first()).toBeVisible();
 });

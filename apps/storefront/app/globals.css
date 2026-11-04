@@ -405,7 +405,9 @@ textarea {
 .site-header nav a {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
+  min-width: var(--touch);
   min-height: var(--touch);
   padding: 10px 12px;
   border-radius: var(--r);
@@ -2421,7 +2423,7 @@ a.rate-row:hover .rate-name strong {
     align-items: start;
   }
   .footer-inner {
-    grid-template-columns: 1.4fr 0.8fr 0.8fr 1.2fr;
+    grid-template-columns: 1.4fr 0.8fr 0.8fr 0.8fr 1.2fr;
   }
   .footer-sign,
   .footer-terms {
@@ -2644,8 +2646,13 @@ a.rate-row:hover .rate-name strong {
 }
 @media (max-width: 420px) {
   .site-header nav a {
-    padding-inline: 6px;
+    /* Five links (with Contact) fit one row at 360px in English and in Hindi, with about ten
+       pixels to spare for phones whose system font runs wider. Each stays over 44px wide. */
+    padding-inline: 3px;
     font-size: var(--t-small);
+  }
+  .header-basket {
+    gap: 4px;
   }
 }
 @media (max-width: 480px) {
@@ -2923,4 +2930,50 @@ a.rate-row:hover .rate-name strong {
   .button:active {
     transform: none;
   }
+}
+
+/* Information pages: about, delivery, contact, privacy, terms and account deletion. */
+.info-page {
+  display: grid;
+  /* minmax(0, 1fr): a long unbroken word (a file path in a review note) wraps instead of
+     widening the page past the screen at large text sizes. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  padding-bottom: 56px;
+  overflow-wrap: anywhere;
+}
+.info-page > p {
+  max-width: 48rem;
+  margin-bottom: 18px;
+}
+.info-block {
+  max-width: 48rem;
+  padding: 14px 0 8px;
+}
+.info-block h2 {
+  margin-bottom: 10px;
+}
+.info-block p + p {
+  margin-top: 12px;
+}
+.steps {
+  display: grid;
+  gap: 12px;
+  max-width: 48rem;
+  padding-left: 1.4em;
+}
+.error-text {
+  color: var(--danger);
+}
+.form-note {
+  font-size: var(--t-small);
+  color: var(--muted);
+}
+/* The robots' field: out of sight and out of the tab order, never display:none (some robots skip those). */
+.hp {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
 }

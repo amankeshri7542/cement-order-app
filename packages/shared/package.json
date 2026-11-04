@@ -11,8 +11,8 @@
     "prebuild": "npm run build -w @shiv/i18n"
   },
   "dependencies": {
-    "zod": "^4.3.5",
-    "@shiv/i18n": "1.0.0"
+    "@shiv/i18n": "1.0.0",
+    "zod": "^4.6.7"
   },
   "react-native": "src/index.ts"
 }

@@ -1,4 +1,6 @@
-import { Khata } from '../../../components/owner/customers';
+import { redirect } from 'next/navigation';
+
+/** Its old address, kept for saved links. */
 export default function KhataPage() {
-  return <Khata />;
+  redirect('/udhaar');
 }

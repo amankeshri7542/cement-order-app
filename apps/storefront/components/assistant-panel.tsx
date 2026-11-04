@@ -18,7 +18,7 @@ const assistantProduct = z.object({
   quantityStep: z.number().int().positive(),
   pricePaise: z.number().int().nonnegative(),
   priceVersion: z.number().int().positive(),
-  stock: z.number().int().nonnegative(),
+  availability: z.enum(['IN_STOCK', 'ON_REQUEST', 'ASK_SHOP']),
 });
 const answerSchema = z.object({
   mode: z.enum(['fallback', 'live', 'simulation']),
@@ -454,7 +454,7 @@ export default function AssistantPanel({
                 <div>
                   <button
                     onClick={() => void productAction(p.id)}
-                    disabled={c.busy || p.stock < p.minQuantity}
+                    disabled={c.busy || p.availability !== 'IN_STOCK'}
                   >
                     {t('Add minimum to basket', 'न्यूनतम मात्रा जोड़ें')}
                   </button>

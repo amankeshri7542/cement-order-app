@@ -8,20 +8,16 @@ import {
   paymentStatusText,
   quoteStatusText,
 } from '@shiv/shared';
-import { en, isMessageKey, t as translate, type Language, type MessageKey } from '@shiv/i18n';
+import { isMessageKey, t as translate, type Language, type MessageKey } from '@shiv/i18n';
 import { ApiError } from './api';
-
-// Existing screen errors retain their Hindi wording while catalogue coverage grows.
 
 // The owner desk speaks Hindi by default; the top bar switches every screen to English.
 type LanguageValue = {
   language: Language;
   setLanguage: (language: Language) => void;
-  t: (en: string, hi: string) => string;
 };
 const LanguageContext = createContext<LanguageValue | null>(null);
 const key = 'shiv-owner-language';
-const legacyKeys = new Map(Object.entries(en).map(([key, value]) => [value, key as MessageKey]));
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const [language, setState] = useState<Language>('hi');
@@ -43,19 +39,8 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
       /* Keep this visit usable when browser storage is disabled. */
     }
   }, []);
-  const t = useCallback(
-    (english: string, hindi: string) => {
-      const messageKey = legacyKeys.get(english);
-      return messageKey
-        ? translate(messageKey, undefined, language)
-        : language === 'hi'
-          ? hindi
-          : english;
-    },
-    [language],
-  );
   return (
-    <LanguageContext.Provider value={{ language, setLanguage, t }}>
+    <LanguageContext.Provider value={{ language, setLanguage }}>
       {children}
     </LanguageContext.Provider>
   );
@@ -67,7 +52,7 @@ export function useLanguage() {
   return value;
 }
 
-/** Typed catalogue messages for the owner routes; paired t() remains for existing screens. */
+/** Typed catalogue messages for the desk. Every word on it comes through here. */
 export function useT() {
   const { language } = useLanguage();
   return useCallback(
@@ -78,9 +63,8 @@ export function useT() {
 
 /** Words the desk shows for statuses, ages and errors, in the chosen language. */
 export function useWords() {
-  const { language, t } = useLanguage();
+  const { language } = useLanguage();
   return {
-    t,
     language,
     status: (value: string) => {
       const key = `status.${value}`;
@@ -104,7 +88,7 @@ export function useWords() {
         return errorText(e.code, language);
       }
       if (e instanceof Error && e.message && !(e instanceof TypeError)) {
-        if (language === 'en' || /[\u0900-\u097F]/.test(e.message)) return e.message;
+        if (language === 'en') return e.message;
         return translate('error.invalid', undefined, language);
       }
       return translate('error.network', undefined, language);

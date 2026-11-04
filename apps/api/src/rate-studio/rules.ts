@@ -1,14 +1,7 @@
 import type { ExtractedRate, RateIssue } from '@shiv/shared';
 import type { Prisma, Product, PriceUpdateBatchItem } from '@prisma/client';
-export function normalizeAlias(value: string) {
-  return value
-    .normalize('NFKC')
-    .toLowerCase()
-    .replace(/neo\s*steel/g, 'neosteel')
-    .replace(/(\d)\s*(mm|kg)\b/g, '$1$2')
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
-    .trim();
-}
+import { normalizeAlias } from '../catalog-match';
+export { normalizeAlias };
 export function extractionAlias(
   row: Pick<ExtractedRate, 'brand' | 'product' | 'size' | 'specification'>,
 ) {

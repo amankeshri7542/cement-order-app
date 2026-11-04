@@ -65,3 +65,63 @@ describe('Android version policy', () => {
     expect(getConfig().ANDROID_MINIMUM_VERSION).toBe(minimum);
   });
 });
+
+describe('DEMO_MODE', () => {
+  const demo = {
+    NODE_ENV: 'production',
+    OTP_PROVIDER: 'mock',
+    DEMO_MODE: 'true',
+    DEMO_DATABASE_HOST: 'localhost',
+    DEMO_STAFF_CODE: '482913',
+    TRUST_PROXY_HOPS: '1',
+    CORS_ORIGINS: 'https://admin.demo.test',
+    OTP_HASH_SECRET: 'f'.repeat(48),
+  };
+  it('lets mock OTP run in production behind a proxy only when switched on', async () => {
+    const getConfig = await load(demo);
+    expect(getConfig()).toMatchObject({ DEMO_MODE: true, OTP_PROVIDER: 'mock' });
+    vi.resetModules();
+    expect(await load({ ...demo, DEMO_MODE: undefined }).then((get) => () => get())).toThrow(
+      /Production requires real OTP/,
+    );
+  });
+  it.each([
+    [
+      'real OTP',
+      {
+        OTP_PROVIDER: 'twilio',
+        TWILIO_ACCOUNT_SID: 'a',
+        TWILIO_AUTH_TOKEN: 'b',
+        TWILIO_VERIFY_SERVICE_SID: 'c',
+      },
+    ],
+    ['no staff code', { DEMO_STAFF_CODE: undefined }],
+    ['Razorpay keys', { RAZORPAY_KEY_ID: 'rzp_test_x' }],
+    [
+      'real WhatsApp',
+      {
+        WHATSAPP_PROVIDER: 'meta',
+        WHATSAPP_ACCESS_TOKEN: 'w'.repeat(24),
+        WHATSAPP_PHONE_NUMBER_ID: '123456789012345',
+      },
+    ],
+  ])('refuses %s', async (_name, env) => {
+    const getConfig = await load({ ...demo, ...env });
+    expect(() => getConfig()).toThrow(/DEMO_MODE requires/);
+  });
+  it.each([
+    ['no named database', { DEMO_DATABASE_HOST: undefined }],
+    ['a different database', { DEMO_DATABASE_HOST: 'demo.example.test' }],
+    [
+      'a copied setting pointing at the real database',
+      { DATABASE_URL: 'postgresql://user:pass@real.example.test:5432/shiv_cement' },
+    ],
+  ])('refuses %s', async (_name, env) => {
+    const getConfig = await load({ ...demo, ...env });
+    expect(() => getConfig()).toThrow(/DEMO_DATABASE_HOST/);
+  });
+  it('rejects a staff code that is not six digits', async () => {
+    const getConfig = await load({ ...demo, DEMO_STAFF_CODE: '1234' });
+    expect(() => getConfig()).toThrow(/Invalid configuration: DEMO_STAFF_CODE/);
+  });
+});
