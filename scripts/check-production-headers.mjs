@@ -25,7 +25,15 @@ import { applicationIdentity, assertPortFree } from './local-services.mjs';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
 const frontends = [
-  { name: 'owner', identity: 'admin', directory: 'apps/admin', port: 43120, tls: 43123 },
+  // The desk's root only redirects, so its document checks use the page it lands on.
+  {
+    name: 'owner',
+    identity: 'admin',
+    directory: 'apps/admin',
+    port: 43120,
+    tls: 43123,
+    path: '/today',
+  },
   { name: 'customer', identity: 'customer', directory: 'apps/mobile', port: 43121, tls: 43124 },
   {
     name: 'storefront',
@@ -94,11 +102,11 @@ function scriptSizes(scripts, excluded = new Set()) {
   };
 }
 
-function isInjectionDocument(request, url) {
+function isInjectionDocument(request, url, path = '/') {
   return (
     request.resourceType() === 'document' &&
     request.method() === 'GET' &&
-    request.url() === `${url}/`
+    request.url() === `${url}${path}`
   );
 }
 
@@ -153,6 +161,8 @@ if (process.argv.includes('--self-test')) {
   assert(!isInjectionDocument(requestFixture('fetch', `${origin}/?_rsc=fixture`), origin));
   assert(!isInjectionDocument(requestFixture('document', `${origin}/?_rsc=fixture`), origin));
   assert(!isInjectionDocument(requestFixture('document', `${origin}/`, 'POST'), origin));
+  assert(isInjectionDocument(requestFixture('document', `${origin}/today`), origin, '/today'));
+  assert(!isInjectionDocument(requestFixture('document', `${origin}/`), origin, '/today'));
   console.log(
     'PASS: production header/nonce, incremental script-size and document-routing regression self-checks',
   );
@@ -429,7 +439,7 @@ try {
     const browser = await browserType.launch(engine === 'chrome' ? { channel: 'chrome' } : {});
     browsers.push(browser);
     try {
-      for (const { name: frontend, tls } of frontends) {
+      for (const { name: frontend, tls, path = '/' } of frontends) {
         const url = `https://localhost:${tls}`;
         const context = await browser.newContext({ ignoreHTTPSErrors: true });
         const tracePath = join(evidenceDir, `production-${engine}-${frontend}-trace.zip`);
@@ -500,7 +510,7 @@ try {
               }),
             }),
           );
-          const response = await page.goto(url);
+          const response = await page.goto(`${url}${path}`);
           assert.equal(response.status(), 200);
           const headers = response.headers();
           const nonce = checkHeaders(headers, frontend);
@@ -571,8 +581,8 @@ try {
             if (/Content Security Policy|script-src/i.test(message.text()))
               violations.push(message.text());
           });
-          await page.route(`${url}/`, async (route) => {
-            if (!isInjectionDocument(route.request(), url)) return route.continue();
+          await page.route(`${url}${path}`, async (route) => {
+            if (!isInjectionDocument(route.request(), url, path)) return route.continue();
             const original = await route.fetch();
             assert(
               original.headers()['content-type']?.includes('text/html'),
