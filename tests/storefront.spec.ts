@@ -780,9 +780,8 @@ test('storefront public requests omit credentials, enforce CSP and never reserve
   try {
     const response = await page.goto(catalogue);
     const headers = response!.headers();
-    // Next dev enforces revalidation; the production header check requires no-store.
-    expect(headers['cache-control']).toContain('no-cache');
-    expect(headers['cache-control']).toContain('must-revalidate');
+    // Next 16.4 dev keeps the proxy's header, and the production header check requires it too.
+    expect(headers['cache-control']).toContain('no-store');
     expect(headers['cache-control']).not.toContain('s-maxage');
     expect(headers['content-security-policy']).toContain("frame-ancestors 'none'");
     expect(headers['content-security-policy']).toContain("object-src 'none'");
