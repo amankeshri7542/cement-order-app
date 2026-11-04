@@ -122,7 +122,10 @@ const capture = {
 beforeAll(async () => {
   const { createApp } = await import('../src/app');
   app = await createApp();
-  await app.init();
+  // Listen once on 127.0.0.1. Given an idle server, supertest calls listen(0) per request on the
+  // wildcard address; on macOS another local process bound to 127.0.0.1 on that same port then
+  // receives the request, producing random 401/200/400 failures.
+  await app.listen(0, '127.0.0.1');
   server = app.getHttpServer();
   db = app.get(Db);
 }, 30000);
@@ -181,7 +184,35 @@ afterAll(async () => {
   await app?.close();
 });
 
+describe('App update policy', () => {
+  it('serves the Android version policy publicly with safe defaults', async () => {
+    const result = await request(server).get('/api/v1/client-config').expect(200);
+    expect(result.body).toEqual({
+      android: {
+        minimumVersion: '1.0.0',
+        latestVersion: '1.0.0',
+        storeUrl: 'https://play.google.com/store/apps/details?id=in.shivcement.store',
+      },
+    });
+  });
+});
+
 describe('Authentication and authorization over HTTP', () => {
+  it('rejects a stale account binding before reading or modifying the active account', async () => {
+    const result = await request(server)
+      .get('/api/v1/cart')
+      .set(auth())
+      .set('X-Shiv-Account', 'other')
+      .expect(409);
+    expect(result.body.error.code).toBe('ACCOUNT_CHANGED');
+    await request(server)
+      .put('/api/v1/cart/items')
+      .set(auth())
+      .set('X-Shiv-Account', 'other')
+      .send({ productId: 'cement', quantity: 5 })
+      .expect(409);
+    expect(await db.cartItem.count({ where: { userId: 'customer' } })).toBe(0);
+  });
   it('blocks unauthenticated access, customer admin access and role injection', async () => {
     await request(server).get('/api/v1/orders').expect(401);
     await request(server).get('/api/v1/admin/products').set(auth()).expect(403);
@@ -243,14 +274,17 @@ describe('Authentication and authorization over HTTP', () => {
       .get('/api/v1/me')
       .set('Authorization', `Bearer ${v.body.accessToken}`)
       .expect(401);
-    await request(server)
+    // Within the grace window a retry with the rotated-out token (its reply was lost) repeats the
+    // same pair, so both copies keep working.
+    const retried = await request(server)
       .post('/api/v1/auth/refresh')
       .send({ refreshToken: v.body.refreshToken })
-      .expect(401);
+      .expect(201);
     await request(server)
       .get('/api/v1/me')
-      .set('Authorization', `Bearer ${refreshed.body.accessToken}`)
+      .set('Authorization', `Bearer ${retried.body.accessToken}`)
       .expect(200);
+    expect(retried.body.refreshToken).toBe(refreshed.body.refreshToken);
     const p = '+918888888883';
     const c = await request(server).post('/api/v1/auth/otp/request').send({ phone: p });
     for (let i = 0; i < 5; i++)
@@ -275,6 +309,90 @@ describe('Authentication and authorization over HTTP', () => {
     await request(server).get('/api/v1/me').set(auth()).expect(401);
   });
 });
+describe('Durable guest cart merge', () => {
+  const merge = (
+    idempotencyKey: string,
+    items = [{ productId: 'cement', quantity: 5 }],
+    who: keyof typeof tokens = 'customer',
+  ) => request(server).post('/api/v1/cart/merge').set(auth(who)).send({ idempotencyKey, items });
+
+  it('merges concurrent retries once and replays the current cart after subsequent edits', async () => {
+    await cart('customer', 10);
+    const key = randomUUID();
+    const [first, retry] = await Promise.all([merge(key).expect(201), merge(key).expect(201)]);
+    expect(first.body[0]).toMatchObject({ productId: 'cement', quantity: 15 });
+    expect(retry.body).toEqual(first.body);
+    expect(await db.auditLog.count({ where: { event: 'CART_MERGED' } })).toBe(1);
+    await cart('customer', 7);
+    const replay = await merge(key).expect(201);
+    expect(replay.body[0].quantity).toBe(7);
+    const nextIntent = await merge(randomUUID()).expect(201);
+    expect(nextIntent.body[0].quantity).toBe(12);
+    expect((await db.product.findUniqueOrThrow({ where: { id: 'cement' } })).stock).toBe(100);
+  });
+
+  it('rejects an altered payload for a used key without changing the cart', async () => {
+    const key = randomUUID();
+    await merge(key).expect(201);
+    const conflict = await merge(key, [{ productId: 'cement', quantity: 6 }]).expect(409);
+    expect(conflict.body.error.code).toBe('IDEMPOTENCY_CONFLICT');
+    expect(await db.cartItem.findFirstOrThrow()).toMatchObject({ quantity: 5 });
+  });
+
+  it('rolls back all lines and the receipt when one requested product exceeds stock', async () => {
+    await cart('customer', 10);
+    await db.product.create({ data: { ...product, id: 'steel', name: 'Test steel', stock: 2 } });
+    const key = randomUUID();
+    const result = await merge(key, [
+      { productId: 'cement', quantity: 5 },
+      { productId: 'steel', quantity: 3 },
+    ]).expect(409);
+    expect(result.body.error.code).toBe('OUT_OF_STOCK');
+    expect(await db.cartItem.findMany()).toMatchObject([{ productId: 'cement', quantity: 10 }]);
+    expect(await db.auditLog.count({ where: { event: 'CART_MERGED' } })).toBe(0);
+    await merge(key, [{ productId: 'cement', quantity: 5 }]).expect(201);
+    expect(await db.cartItem.findFirstOrThrow()).toMatchObject({ quantity: 15 });
+  });
+
+  it('scopes identical guest keys and quantities to the authenticated customer', async () => {
+    await cart('customer', 10);
+    const key = randomUUID();
+    await merge(key).expect(201);
+    const other = await merge(key, [{ productId: 'cement', quantity: 2 }], 'other').expect(201);
+    expect(other.body).toHaveLength(1);
+    expect(other.body[0]).toMatchObject({ userId: 'other', quantity: 2 });
+    expect(await db.cartItem.findFirstOrThrow({ where: { userId: 'customer' } })).toMatchObject({
+      quantity: 15,
+    });
+    await request(server)
+      .post('/api/v1/cart/merge')
+      .send({ idempotencyKey: randomUUID(), items: [{ productId: 'cement', quantity: 1 }] })
+      .expect(401);
+  });
+
+  it('validates unique positive lines and current selling multiples before persisting', async () => {
+    for (const items of [
+      [],
+      [{ productId: 'cement', quantity: 0 }],
+      [{ productId: 'cement', quantity: 1.5 }],
+      [{ productId: 'cement', quantity: 10001 }],
+      [
+        { productId: 'cement', quantity: 1 },
+        { productId: 'cement', quantity: 1 },
+      ],
+    ])
+      await merge(randomUUID(), items).expect(400);
+    await db.product.update({
+      where: { id: 'cement' },
+      data: { minQuantity: 10, quantityStep: 5 },
+    });
+    const invalid = await merge(randomUUID(), [{ productId: 'cement', quantity: 11 }]).expect(400);
+    expect(invalid.body.error.code).toBe('INVALID_QUANTITY');
+    expect(await db.cartItem.count()).toBe(0);
+    expect(await db.auditLog.count({ where: { event: 'CART_MERGED' } })).toBe(0);
+  });
+});
+
 describe('Checkout and stock transaction integrity', () => {
   it('calculates server totals and rejects money injection', async () => {
     await request(server)
@@ -1861,5 +1979,236 @@ describe('security hardening extraction provider budget (simulated OCR/AI)', () 
       c.EXTRACTIONS_PER_DAY = old;
       c.EXTRACTION_PAUSED = false;
     }
+  });
+});
+
+describe('Owner desk operations (Phase 4)', () => {
+  const admin = () => auth('admin');
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+
+  it('records how cash-on-delivery money was paid and reports cash, UPI and net', async () => {
+    const o = await order();
+    await request(server)
+      .post(`/api/v1/admin/orders/${o.id}/cod-received`)
+      .set(admin())
+      .send({ channel: 'UPI' })
+      .expect(201);
+    const sale = await request(server)
+      .post('/api/v1/admin/products/cement/movements')
+      .set(admin())
+      .send({
+        kind: 'WALK_IN_SALE',
+        quantity: 2,
+        note: 'Counter',
+        idempotencyKey: randomUUID(),
+        unitPricePaise: 39000,
+        channel: 'CASH',
+        counterParty: 'Ramesh, mason',
+      })
+      .expect(201);
+    expect(sale.body.quantity).toBe(-2);
+    const report = await request(server)
+      .get(`/api/v1/admin/reports/money?from=${today}&to=${today}`)
+      .set(admin())
+      .expect(200);
+    expect(report.body.collections).toMatchObject({ upiPaise: o.totalPaise, cashPaise: 0 });
+    // The negotiated counter price is used, not the ₹410 list price.
+    expect(report.body.counter).toMatchObject({ sales: 1, cashPaise: 78000 });
+    expect(report.body.netPaise).toBe(o.totalPaise + 78000);
+    expect(report.body.orders).toMatchObject({ placed: 1, valuePaise: o.totalPaise });
+    expect(report.body.days).toEqual([
+      {
+        date: today,
+        orders: 1,
+        collectedPaise: o.totalPaise,
+        counterPaise: 78000,
+        refundsPaise: 0,
+      },
+    ]);
+    const csv = await request(server)
+      .get(`/api/v1/admin/reports/money.csv?from=${today}&to=${today}`)
+      .set(admin())
+      .expect(200);
+    expect(csv.headers['content-type']).toContain('text/csv');
+    expect(csv.text.startsWith('\uFEFFतारीख / Date')).toBe(true);
+    expect(csv.text).toContain(`UPI collected,${(o.totalPaise / 100).toFixed(2)}`);
+    await request(server)
+      .get('/api/v1/admin/reports/money?from=2026-02-01&to=2026-01-01')
+      .set(admin())
+      .expect(400);
+    await request(server)
+      .get(`/api/v1/admin/reports/money?from=${today}&to=${today}`)
+      .set(auth())
+      .expect(403);
+  });
+
+  it('counts cash still to collect and refuses counter details on other stock movements', async () => {
+    const o = await order();
+    const report = await request(server)
+      .get(`/api/v1/admin/reports/money?from=${today}&to=${today}`)
+      .set(admin())
+      .expect(200);
+    expect(report.body.pendingCash).toEqual({ orders: 1, amountPaise: o.totalPaise });
+    await request(server)
+      .post('/api/v1/admin/products/cement/movements')
+      .set(admin())
+      .send({
+        kind: 'PURCHASE_IN',
+        quantity: 5,
+        note: 'Truck',
+        idempotencyKey: randomUUID(),
+        unitPricePaise: 30000,
+      })
+      .expect(400);
+  });
+
+  it('uses each product’s own low-stock level and keeps staff out of the customer list', async () => {
+    let dashboard = await request(server).get('/api/v1/admin/dashboard').set(admin()).expect(200);
+    expect(dashboard.body.lowStock).toEqual([]);
+    await db.product.update({ where: { id: 'cement' }, data: { lowStockAt: 150 } });
+    dashboard = await request(server).get('/api/v1/admin/dashboard').set(admin()).expect(200);
+    expect(dashboard.body.lowStock.map((p: { id: string }) => p.id)).toEqual(['cement']);
+    const low = await request(server)
+      .get('/api/v1/admin/products?lowStock=true')
+      .set(admin())
+      .expect(200);
+    expect(low.body.items.map((p: { id: string }) => p.id)).toEqual(['cement']);
+    expect(low.body.items[0].lowStockAt).toBe(150);
+    // The level is an owner setting: customers never receive it.
+    const publicList = await request(server).get('/api/v1/products').expect(200);
+    expect(publicList.body.items.length).toBeGreaterThan(0);
+    for (const item of publicList.body.items) expect(item).not.toHaveProperty('lowStockAt');
+    const publicItem = await request(server).get('/api/v1/products/cement').expect(200);
+    expect(publicItem.body).not.toHaveProperty('lowStockAt');
+    const customers = await request(server).get('/api/v1/admin/customers').set(admin()).expect(200);
+    expect(customers.body.items.map((u: { id: string }) => u.id).sort()).toEqual([
+      'customer',
+      'other',
+    ]);
+  });
+
+  it('shows delivery terms for a zone and a quote to the customer', async () => {
+    const zone = await db.deliveryZone.findUniqueOrThrow({ where: { id: 'test-zone' } });
+    await request(server)
+      .patch('/api/v1/admin/delivery-zones/test-zone')
+      .set(admin())
+      .send({
+        name: zone.name,
+        active: true,
+        deliveryFeePaise: 50000,
+        minimumOrderPaise: 0,
+        freeDeliveryAbovePaise: null,
+        estimate: zone.estimate,
+        terms: 'Unloading at ground level; tractor for narrow lanes.',
+        pincodes: ['800020', '800001'],
+        expectedVersion: zone.version,
+      })
+      .expect(200);
+    const check = await request(server).get('/api/v1/delivery/800020').expect(200);
+    expect(check.body.zone.terms).toBe('Unloading at ground level; tractor for narrow lanes.');
+    const quote = await request(server)
+      .post('/api/v1/quotes')
+      .set(auth())
+      .send({
+        items: [{ productId: 'cement', quantity: 200 }],
+        addressId: 'customer-address',
+        deliveryDate: date,
+        idempotencyKey: randomUUID(),
+      })
+      .expect(201);
+    await request(server)
+      .post(`/api/v1/admin/quotes/${quote.body.id}/offer`)
+      .set(admin())
+      .send({
+        expectedRevision: 0,
+        items: [{ productId: 'cement', unitPricePaise: 38000 }],
+        deliveryFeePaise: 120000,
+        validUntil: new Date(Date.now() + 3 * 86400000).toISOString(),
+        deliveryTerms: 'Two trips; unloading to first floor included.',
+      })
+      .expect(201);
+    const mine = await request(server).get('/api/v1/quotes').set(auth()).expect(200);
+    expect(mine.body.items[0].deliveryTerms).toBe('Two trips; unloading to first floor included.');
+  });
+
+  it('lets staff set names, roles and WhatsApp alerts, then queues one alert per new order', async () => {
+    const staff = await request(server).get('/api/v1/admin/staff').set(admin()).expect(200);
+    expect(staff.body.map((s: { id: string }) => s.id)).toEqual(['admin']);
+    await request(server)
+      .patch('/api/v1/admin/staff/admin')
+      .set(admin())
+      .send({ name: 'Papa', staffTitle: 'Retail counter', whatsappAlerts: true })
+      .expect(200);
+    await request(server)
+      .patch('/api/v1/admin/staff/customer')
+      .set(admin())
+      .send({ name: 'Not staff' })
+      .expect(404);
+    const o = await order();
+    const work = app.get((await import('../src/owner-work')).OwnerWorkService);
+    await work.dispatch();
+    await work.dispatch();
+    const messages = await db.outboundMessage.findMany();
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      template: 'shiv_new_order',
+      recipient: '919999999993',
+      status: 'PENDING',
+      userId: 'admin',
+    });
+    expect(messages[0]!.params).toEqual([o.number, '4,600.00', 'Kankarbagh']);
+    const alerts = app.get((await import('../src/alerts')).AlertsService);
+    const logs = vi.spyOn(console, 'log').mockImplementation(() => {});
+    let logged = '';
+    try {
+      await alerts.deliver();
+      logged = logs.mock.calls.map(([line]) => String(line)).join('\n');
+    } finally {
+      logs.mockRestore();
+    }
+    // The fake provider never contacts Meta; it records the message as sent and logs a masked number.
+    expect(logged).toContain('"to":"…9993"');
+    expect(logged).not.toContain('9999999993');
+    expect(await db.outboundMessage.findFirstOrThrow()).toMatchObject({ status: 'SENT' });
+    const list = await request(server)
+      .get('/api/v1/admin/alerts/messages')
+      .set(admin())
+      .expect(200);
+    expect(list.body.items[0]).toMatchObject({ recipient: '…9993', status: 'SENT' });
+  });
+
+  it('skips WhatsApp messages past the daily limit and refuses push without server keys', async () => {
+    process.env.WHATSAPP_DAILY_LIMIT = '1';
+    const { resetConfigForTests } = await import('../src/config');
+    resetConfigForTests();
+    try {
+      await db.user.update({ where: { id: 'admin' }, data: { whatsappAlerts: true } });
+      await order();
+      await order();
+      const work = app.get((await import('../src/owner-work')).OwnerWorkService);
+      await work.dispatch();
+      const alerts = app.get((await import('../src/alerts')).AlertsService);
+      const logs = vi.spyOn(console, 'log').mockImplementation(() => {});
+      try {
+        await alerts.deliver();
+      } finally {
+        logs.mockRestore();
+      }
+      const statuses = (await db.outboundMessage.findMany()).map((m) => m.status).sort();
+      expect(statuses).toEqual(['SENT', 'SKIPPED']);
+    } finally {
+      delete process.env.WHATSAPP_DAILY_LIMIT;
+      resetConfigForTests();
+    }
+    await request(server)
+      .post('/api/v1/admin/push/subscriptions')
+      .set(admin())
+      .send({
+        endpoint: 'https://push.example.invalid/abc',
+        keys: { p256dh: 'p'.repeat(40), auth: 'a'.repeat(16) },
+      })
+      .expect(503);
+    const key = await request(server).get('/api/v1/admin/push/key').set(admin()).expect(200);
+    expect(key.body).toEqual({ publicKey: null });
   });
 });

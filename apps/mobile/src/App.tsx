@@ -1,33 +1,100 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   BackHandler,
+  Keyboard,
+  KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
-  RefreshControl,
-  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
-  View,
   useWindowDimensions,
+  View,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
-import { StoreProvider, useStore } from './store';
-import { C, Icon, Notice, Button, s } from './ui';
+import Constants from 'expo-constants';
+import { radius, space, textSize } from '@shiv/shared';
+import { StoreProvider, tabs, useStore, type Route, type Tab } from './store';
+import {
+  Button,
+  C,
+  displaySize,
+  headingScale,
+  Icon,
+  IconButton,
+  Stamp,
+  teko,
+  type IconName,
+} from './ui';
 import { Home, Catalogue, ProductDetail } from './catalog';
 import { Cart, Checkout } from './checkout';
 import { Account, Addresses, Login } from './account';
 import { Orders, OrderDetail } from './orders';
 import { Quotes, QuoteRequest } from './quotes';
+import { Compare } from './compare';
+import { Assistant } from './assistant';
+import { UpdateGate } from './update';
+import { ErrorBoundary } from './boundary';
+
+// Staging, preview and development builds say so, so a test install is never mistaken for the
+// real shop (and a closed-test build promoted by mistake is noticed at once).
+const testBuild = Constants.expoConfig?.extra?.appEnv !== 'production';
+
 export default function App() {
   return (
     <SafeAreaProvider>
-      <StoreProvider>
-        <Shell />
-      </StoreProvider>
+      <ErrorBoundary>
+        <StoreProvider>
+          <UpdateGate>
+            <Shell />
+          </UpdateGate>
+        </StoreProvider>
+      </ErrorBoundary>
     </SafeAreaProvider>
   );
 }
+
+function TabScreen({ route }: { route: Route }) {
+  switch (route.screen) {
+    case 'Products':
+      return <Catalogue />;
+    case 'Cart':
+      return <Cart />;
+    case 'Orders':
+      return <Orders />;
+    case 'Account':
+      return <Account />;
+    default:
+      return <Home />;
+  }
+}
+function DetailScreen({ route }: { route: Route }) {
+  switch (route.screen) {
+    case 'Product':
+      return <ProductDetail key={route.id} />;
+    case 'Checkout':
+      return <Checkout />;
+    case 'Order':
+      return <OrderDetail key={route.id} />;
+    case 'Addresses':
+      return <Addresses key={route.id || 'all'} />;
+    case 'Quotes':
+      return <Quotes />;
+    case 'QuoteRequest':
+      return <QuoteRequest key={route.id || 'new'} />;
+    case 'Compare':
+      return <Compare />;
+    case 'Assistant':
+      return <Assistant />;
+    default:
+      return null;
+  }
+}
+
+const isTab = (route: Route) => (tabs as readonly string[]).includes(route.screen);
+
 function Shell() {
   const {
     route,
@@ -35,329 +102,443 @@ function Shell() {
     goBack,
     t,
     language,
+    languageState,
     setLanguage,
-    cart,
-    user,
-    error,
-    refreshCatalog,
-    refreshCurrent,
-    refreshing,
-    pendingCheckout,
+    basket,
+    settings,
     toast,
     setToast,
-    setLoginVisible,
+    pendingCheckout,
+    refreshCurrent,
+    refreshing,
+    error,
+    refreshCatalog,
   } = useStore();
-  const scroll = useRef<ScrollView>(null);
-  const { width } = useWindowDimensions();
-  const cartQuantity = cart.reduce((total, line) => total + line.quantity, 0);
-  const primary = ['Home', 'Products', 'Orders', 'Account'].includes(route.screen);
+  // The last tab stays mounted under detail screens, so Back keeps search and scroll.
+  const [tabRoute, setTabRoute] = useState<Route>({ screen: 'Home' });
   useEffect(() => {
-    scroll.current?.scrollTo({ y: 0, animated: false });
+    if (isTab(route)) setTabRoute(route);
   }, [route]);
   useEffect(() => {
     if (Platform.OS === 'web') return;
-    const listener = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (route.screen === 'Home') return false;
-      goBack();
-      return true;
-    });
+    const listener = BackHandler.addEventListener('hardwareBackPress', () => goBack());
     return () => listener.remove();
-  }, [route, goBack]);
+  }, [goBack]);
   useEffect(() => {
-    if (Platform.OS === 'web') document.title = 'Shiv Cement Store · Build with confidence';
+    if (Platform.OS === 'web')
+      document.title = t('Shiv Cement Store · Patna', 'शिव सीमेंट स्टोर · पटना');
+  }, [t]);
+  // Edge-to-edge Android does not resize for the keyboard, so the content avoids it itself and
+  // the tab bar steps aside while typing.
+  const [typing, setTyping] = useState(false);
+  useEffect(() => {
+    const shown = Keyboard.addListener('keyboardDidShow', () => setTyping(true));
+    const hidden = Keyboard.addListener('keyboardDidHide', () => setTyping(false));
+    return () => {
+      shown.remove();
+      hidden.remove();
+    };
   }, []);
-  const screen =
-    route.screen === 'Home' ? (
-      <Home />
-    ) : route.screen === 'Products' ? (
-      <Catalogue key={route.category || 'all'} />
-    ) : route.screen === 'Product' ? (
-      <ProductDetail key={route.id} />
-    ) : route.screen === 'Cart' ? (
-      <Cart />
-    ) : route.screen === 'Checkout' ? (
-      <Checkout />
-    ) : route.screen === 'Orders' ? (
-      <Orders />
-    ) : route.screen === 'Order' ? (
-      <OrderDetail key={route.id} />
-    ) : route.screen === 'Addresses' ? (
-      <Addresses key={route.id || 'all'} />
-    ) : route.screen === 'Quotes' ? (
-      <Quotes />
-    ) : route.screen === 'QuoteRequest' ? (
-      <QuoteRequest key={route.id || 'new'} />
-    ) : (
-      <Account />
+  // The top bar gives the shop's name the room left by the buttons; on a narrow phone (or a large
+  // font scale) the place line steps aside so the name stays readable.
+  const viewport = useWindowDimensions();
+  const room = viewport.width / Math.min(viewport.fontScale || 1, 1.15);
+  const roomy = room >= 420;
+  const basketCount = basket.reduce((total, line) => total + line.quantity, 0);
+  const activeTab: Tab = isTab(route) ? (route.screen as Tab) : (tabRoute.screen as Tab);
+  const detail = isTab(route) ? null : route;
+  function open(url: string) {
+    void Linking.openURL(url).catch(() =>
+      setToast(
+        t(
+          'Could not open this. Please call the store directly.',
+          'यह खुल नहीं सका। कृपया दुकान पर सीधे फ़ोन करें।',
+        ),
+      ),
     );
+  }
+  if (languageState === 'loading')
+    return (
+      <SafeAreaView style={[a.app, a.center]}>
+        <Stamp size={64} />
+        <ActivityIndicator color={C.accent} style={{ marginTop: space.xl }} />
+      </SafeAreaView>
+    );
+  if (languageState === 'unset') return <LanguageChooser choose={setLanguage} />;
+  const phone = settings?.phone.replace(/\D/g, '');
   return (
-    <SafeAreaView edges={['top', 'left', 'right', 'bottom']} style={a.app}>
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+    <SafeAreaView
+      edges={['top', 'left', 'right', 'bottom']}
+      style={[a.app, { backgroundColor: C.ink }]}
+    >
+      <StatusBar barStyle="light-content" backgroundColor={C.ink} />
       <View style={a.header}>
-        <View style={[a.headerInner, width < 600 && { paddingHorizontal: 20 }]}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Shiv Cement Store home"
-            style={s.row}
-            onPress={() => navigate({ screen: 'Home' })}
-          >
-            <View style={a.logo}>
-              <Icon name="business-outline" color={C.navy} size={26} />
-            </View>
-            <View>
-              <Text style={a.brand}>SHIV</Text>
-              <Text style={a.brandSmall}>CEMENT STORE</Text>
-            </View>
-          </Pressable>
-          <View style={[a.headerActions, width < 400 && { gap: 5 }]}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Refresh current screen"
-              accessibilityState={{ busy: refreshing }}
-              disabled={refreshing}
-              onPress={() => void refreshCurrent()}
-              style={a.cartButton}
-            >
-              <Icon name="refresh-outline" size={21} />
-            </Pressable>
-            {width > 650 && (
-              <View style={[s.row, { marginRight: 15 }]}>
-                <Icon name="location-outline" color="#7e94a5" size={20} />
-                <View>
-                  <Text style={{ color: '#93a1ab', fontSize: 9 }}>BUILDING MATERIALS</Text>
-                  <Text style={{ fontSize: 12, fontWeight: '600', color: C.ink, marginTop: 4 }}>
-                    Patna & Bihar
-                  </Text>
-                </View>
-              </View>
-            )}
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Switch language"
-              onPress={() => setLanguage(language === 'en' ? 'hi' : 'en')}
-              style={a.language}
-            >
-              <Text style={{ color: C.ink, fontSize: 12 }}>
-                {language === 'en' ? 'हिंदी' : 'EN'}
-              </Text>
-            </Pressable>
-            {width > 600 && !user && (
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => setLoginVisible(true)}
-                style={{ padding: 10 }}
-              >
-                <Text style={s.link}>{t('signin')}</Text>
-              </Pressable>
-            )}
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`${t('cart')}, ${cartQuantity} ${cartQuantity === 1 ? 'item' : 'items'}, ${cart.length} ${cart.length === 1 ? 'product' : 'products'}`}
-              onPress={() => navigate({ screen: 'Cart' })}
-              style={a.cartButton}
-            >
-              <Icon name="bag-outline" size={23} />
-              {cartQuantity > 0 && (
-                <View style={a.cartCount}>
-                  <Text style={{ fontSize: 11, fontWeight: '800', color: C.navy }}>
-                    {cartQuantity}
-                  </Text>
-                </View>
-              )}
-            </Pressable>
-          </View>
-        </View>
-      </View>
-      <ScrollView
-        ref={scroll}
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ flexGrow: 1 }}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => void refreshCurrent()} />
-        }
-      >
-        <View
-          style={[
-            a.content,
-            {
-              maxWidth: ['Home', 'Products'].includes(route.screen) ? 1110 : 720,
-              paddingHorizontal: width < 550 ? 19 : 32,
-            },
-          ]}
-        >
-          {!primary && (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t('back')}
-              onPress={goBack}
-              style={a.back}
-            >
-              <Icon name="arrow-back" size={19} />
-              <Text style={s.link}>{t('back')}</Text>
-            </Pressable>
-          )}
-          {Boolean(error) && (
-            <View style={[s.stack, { marginBottom: 20 }]}>
-              <Notice error>{error}</Notice>
-              <Button secondary onPress={() => void refreshCatalog()}>
-                {t('retry')}
-              </Button>
-            </View>
-          )}
-          {pendingCheckout && !['Checkout', 'Order'].includes(route.screen) && (
-            <View style={[s.stack, { marginBottom: 20 }]}>
-              <Notice>Your previous checkout still needs its result checked.</Notice>
-              <Button secondary onPress={() => navigate({ screen: 'Checkout' })}>
-                Check previous order request
-              </Button>
-            </View>
-          )}
-          {screen}
-        </View>
-      </ScrollView>
-      <View style={a.nav}>
-        <View style={a.navInner}>
-          {[
-            { name: 'Home', label: 'home', icon: 'home-outline', selectedIcon: 'home' },
-            { name: 'Products', label: 'products', icon: 'grid-outline', selectedIcon: 'grid' },
-            { name: 'Orders', label: 'orders', icon: 'receipt-outline', selectedIcon: 'receipt' },
-            { name: 'Account', label: 'account', icon: 'person-outline', selectedIcon: 'person' },
-          ].map((x) => {
-            const selected = x.name === route.screen;
-            return (
-              <Pressable
-                key={x.name}
-                accessibilityRole="tab"
-                accessibilityState={{ selected }}
-                onPress={() =>
-                  navigate({ screen: x.name as 'Home' | 'Products' | 'Orders' | 'Account' })
-                }
-                style={a.navItem}
-              >
-                <View style={[a.navIcon, selected && { backgroundColor: '#fcf1cf' }]}>
-                  <Icon
-                    name={(selected ? x.selectedIcon : x.icon) as 'home'}
-                    size={21}
-                    color={selected ? C.navy : '#8c9daa'}
-                  />
-                </View>
-                <Text
-                  style={{
-                    color: selected ? C.navy : '#8c9daa',
-                    fontSize: 10,
-                    fontWeight: selected ? '700' : '400',
-                  }}
-                >
-                  {t(x.label as 'home')}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </View>
-      {toast ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Dismiss notification"
-          onPress={() => setToast('')}
-          style={a.toast}
+          accessibilityLabel={t('Shiv Cement Store home', 'शिव सीमेंट स्टोर होम')}
+          style={a.brand}
+          onPress={() => navigate({ screen: 'Home' })}
         >
-          <Text
-            accessibilityLiveRegion="polite"
-            style={{ color: '#fff', fontSize: 12, lineHeight: 18 }}
-          >
-            {toast}
-          </Text>
-          <Icon name="close" color="#fff" size={16} />
+          <Stamp size={36} />
+          <View style={a.brandText}>
+            <Text
+              style={[a.brandName, room < 375 && a.brandNameNarrow]}
+              numberOfLines={1}
+              maxFontSizeMultiplier={1.15}
+            >
+              {t('Shiv Cement', 'शिव सीमेंट')}
+            </Text>
+            {roomy || testBuild ? (
+              <View style={a.brandLine}>
+                {testBuild ? (
+                  <View style={a.testMark}>
+                    <Text style={a.testMarkText} maxFontSizeMultiplier={1}>
+                      TEST
+                    </Text>
+                  </View>
+                ) : null}
+                {roomy ? (
+                  <Text style={a.brandPlace} numberOfLines={1} maxFontSizeMultiplier={1.15}>
+                    {t('Store · Patna, Bihar', 'स्टोर · पटना, बिहार')}
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
+          </View>
         </Pressable>
-      ) : null}
+        {Platform.OS === 'web' && (
+          <IconButton
+            icon="refresh"
+            color={C.onInk}
+            label={t('Refresh current screen', 'यह पेज रीफ़्रेश करें')}
+            disabled={refreshing}
+            onPress={() => void refreshCurrent()}
+          />
+        )}
+        {phone ? (
+          <>
+            <IconButton
+              icon="call"
+              color={C.onInk}
+              label={t('Call the store', 'दुकान पर फ़ोन करें')}
+              onPress={() => open(`tel:+${phone}`)}
+            />
+            <IconButton
+              icon="logo-whatsapp"
+              color={C.onInk}
+              label={t('WhatsApp the store', 'दुकान को WhatsApp करें')}
+              onPress={() => open(`https://wa.me/${phone}`)}
+            />
+          </>
+        ) : null}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t('Switch language to Hindi', 'भाषा अंग्रेज़ी में बदलें')}
+          onPress={() => setLanguage(language === 'en' ? 'hi' : 'en')}
+          style={a.languageTarget}
+        >
+          <View style={a.language}>
+            <Text style={a.languageText}>{language === 'en' ? 'हिं' : 'EN'}</Text>
+          </View>
+        </Pressable>
+      </View>
+      {detail && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t('Back', 'वापस')}
+          onPress={goBack}
+          style={a.back}
+        >
+          <Icon name="arrow-back" size={22} />
+          <Text style={a.backText}>{t('Back', 'वापस')}</Text>
+        </Pressable>
+      )}
+      {Boolean(error) && (
+        <View accessibilityRole="alert" style={a.offline}>
+          <Icon name="cloud-offline-outline" color={C.danger} />
+          <Text style={a.offlineText}>{error}</Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => void refreshCatalog()}
+            style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: space.sm }}
+          >
+            <Text style={[a.offlineText, { fontWeight: '800', textDecorationLine: 'underline' }]}>
+              {t('Retry', 'फिर से')}
+            </Text>
+          </Pressable>
+        </View>
+      )}
+      {pendingCheckout && route.screen !== 'Checkout' && route.screen !== 'Order' && (
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => navigate({ screen: 'Checkout' })}
+          style={a.pending}
+        >
+          <Icon name="time-outline" color={C.warn} />
+          <Text style={a.pendingText}>
+            {t(
+              'Your last order request needs its result checked. Tap to check.',
+              'आपके पिछले ऑर्डर का परिणाम जाँचना बाकी है। जाँचने के लिए दबाएँ।',
+            )}
+          </Text>
+        </Pressable>
+      )}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'web' ? undefined : 'padding'}
+        style={{ flex: 1, backgroundColor: C.ground }}
+      >
+        <View style={[{ flex: 1 }, detail ? a.hidden : null]}>
+          <TabScreen route={tabRoute} />
+        </View>
+        {detail && (
+          <View style={{ flex: 1 }}>
+            <DetailScreen route={detail} />
+          </View>
+        )}
+        {toast ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('Dismiss message', 'संदेश हटाएँ')}
+            onPress={() => setToast('')}
+            style={a.toast}
+          >
+            <Text accessibilityLiveRegion="polite" style={a.toastText}>
+              {toast}
+            </Text>
+            <Icon name="close" color={C.onInk} size={18} />
+          </Pressable>
+        ) : null}
+      </KeyboardAvoidingView>
+      <View style={[a.nav, typing && a.hidden]} accessibilityRole="tablist">
+        {(
+          [
+            ['Home', t('Home', 'होम'), 'home'],
+            ['Products', t('Materials', 'सामग्री'), 'grid'],
+            ['Cart', t('Basket', 'टोकरी'), 'basket'],
+            ['Orders', t('Orders', 'ऑर्डर'), 'receipt'],
+            ['Account', t('Account', 'खाता'), 'person'],
+          ] as [Tab, string, string][]
+        ).map(([name, label, icon]) => {
+          const selected = !detail && activeTab === name;
+          return (
+            <Pressable
+              key={name}
+              accessibilityRole="tab"
+              accessibilityLabel={
+                name === 'Cart' && basketCount ? `${label}, ${basketCount}` : label
+              }
+              accessibilityState={{ selected }}
+              onPress={() => navigate({ screen: name })}
+              style={a.navItem}
+            >
+              <View style={[a.navMark, selected && { backgroundColor: C.accent }]} />
+              <View style={a.navIcon}>
+                <Icon
+                  name={(selected ? icon : `${icon}-outline`) as IconName}
+                  size={24}
+                  color={selected ? C.ink : C.muted}
+                />
+                {name === 'Cart' && basketCount > 0 && (
+                  <View style={a.navBadge}>
+                    <Text style={a.navBadgeText}>{basketCount > 999 ? '999+' : basketCount}</Text>
+                  </View>
+                )}
+              </View>
+              <Text
+                numberOfLines={1}
+                maxFontSizeMultiplier={1.3}
+                style={[a.navLabel, selected && { color: C.ink, fontWeight: '800' }]}
+              >
+                {label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
       <Login />
     </SafeAreaView>
   );
 }
+
+/** Asked once, on first launch: the whole app follows this choice. */
+function LanguageChooser({ choose }: { choose: (language: 'hi' | 'en') => void }) {
+  return (
+    <SafeAreaView style={[a.app, a.center, { backgroundColor: C.ink, padding: space.xl }]}>
+      <StatusBar barStyle="light-content" backgroundColor={C.ink} />
+      <Stamp size={72} />
+      <Text style={a.chooserTitle} maxFontSizeMultiplier={headingScale}>
+        शिव सीमेंट स्टोर
+      </Text>
+      <Text style={a.chooserSub}>Shiv Cement Store · पटना</Text>
+      <Text style={a.chooserAsk}>अपनी भाषा चुनें · Choose your language</Text>
+      <View style={{ alignSelf: 'stretch', gap: space.md, marginTop: space.xl }}>
+        <Button onPress={() => choose('hi')} label="हिंदी चुनें" style={{ minHeight: 64 }}>
+          हिंदी
+        </Button>
+        <Button
+          kind="paper"
+          onPress={() => choose('en')}
+          label="Choose English"
+          style={{ minHeight: 64 }}
+        >
+          English
+        </Button>
+      </View>
+      <Text style={a.chooserNote}>
+        आप इसे कभी भी ऊपर से बदल सकते हैं · You can change this anytime from the top bar
+      </Text>
+    </SafeAreaView>
+  );
+}
+
 const a = StyleSheet.create({
-  app: { flex: 1, backgroundColor: C.paper },
-  header: { backgroundColor: C.white, borderBottomWidth: 1, borderBottomColor: C.line },
-  headerInner: {
-    width: '100%',
-    maxWidth: 1110,
-    marginHorizontal: 'auto',
-    height: 83,
-    paddingHorizontal: 32,
+  app: { flex: 1, backgroundColor: C.ground },
+  center: { alignItems: 'center', justifyContent: 'center' },
+  hidden: { display: 'none' },
+  header: {
+    backgroundColor: C.ink,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    paddingLeft: space.md,
+    paddingRight: space.sm,
+    paddingVertical: space.sm,
+    gap: 0,
   },
-  logo: {
-    height: 43,
-    width: 43,
-    borderRadius: 7,
-    backgroundColor: C.yellow,
+  brand: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: space.sm,
+    minHeight: 48,
+    paddingRight: space.xs,
   },
-  brand: { fontSize: 25, fontWeight: '900', letterSpacing: 1.8, color: C.navy, lineHeight: 28 },
-  brandSmall: {
-    fontSize: 8,
-    letterSpacing: 1.7,
-    color: '#8494a0',
+  brandText: { flex: 1, minWidth: 0 },
+  brandName: { color: C.onInk, ...teko(displaySize.figure) },
+  brandNameNarrow: teko(displaySize.small),
+  brandLine: { flexDirection: 'row', alignItems: 'center', gap: space.xs, minWidth: 0 },
+  brandPlace: { flexShrink: 1, color: C.onInkMuted, fontSize: textSize.small, lineHeight: 18 },
+  testMark: {
+    borderRadius: radius.control,
+    borderWidth: 1,
+    borderColor: C.onInkMuted,
+    paddingHorizontal: 3,
+  },
+  testMarkText: {
+    color: C.onInkMuted,
+    fontSize: textSize.small,
+    lineHeight: 16,
     fontWeight: '700',
-    marginTop: 2,
+    letterSpacing: 0.5,
   },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 13 },
-  language: { minWidth: 39, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
-  cartButton: { position: 'relative', padding: 10, minWidth: 44, minHeight: 44 },
-  cartCount: {
-    position: 'absolute',
-    top: 3,
-    right: 0,
-    minWidth: 20,
-    paddingHorizontal: 4,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: C.yellow,
+  languageTarget: { minWidth: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
+  language: {
+    minWidth: 44,
+    height: 44,
+    borderRadius: radius.control,
+    borderWidth: 1,
+    borderColor: C.muted,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 8,
   },
-  content: { width: '100%', alignSelf: 'center', paddingTop: 25, paddingBottom: 35 },
-  nav: { backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: C.line },
-  navInner: {
-    width: '100%',
-    maxWidth: 620,
-    alignSelf: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingVertical: 7,
-  },
-  navItem: { alignItems: 'center', justifyContent: 'center', gap: 5, minWidth: 70, minHeight: 53 },
-  navIcon: {
-    width: 45,
-    height: 29,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 8,
-  },
+  languageText: { color: C.onInk, fontSize: textSize.body, fontWeight: '800' },
   back: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 20,
-    minHeight: 35,
-    alignSelf: 'flex-start',
+    gap: space.sm,
+    minHeight: 48,
+    paddingHorizontal: space.lg,
+    backgroundColor: C.surface,
   },
-  loading: { paddingVertical: 100, alignItems: 'center', gap: 20 },
-  toast: {
-    position: 'absolute',
-    bottom: 85,
-    alignSelf: 'center',
-    width: '88%',
-    maxWidth: 550,
-    backgroundColor: C.navy,
-    padding: 16,
-    borderRadius: 8,
+  backText: { color: C.ink, fontSize: textSize.body, fontWeight: '700' },
+  pending: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
+    gap: space.sm,
+    padding: space.md,
+    backgroundColor: C.paper,
+  },
+  offline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    paddingHorizontal: space.md,
+    paddingVertical: space.xs,
+    backgroundColor: C.dangerSoft,
+  },
+  offlineText: { flex: 1, color: C.danger, fontSize: textSize.small, lineHeight: 20 },
+  pendingText: {
+    flex: 1,
+    color: C.warn,
+    fontSize: textSize.small,
+    lineHeight: 20,
+    fontWeight: '700',
+  },
+  // Paper tabs on the cement ground; the open tab is ink with a sindoor mark.
+  nav: { flexDirection: 'row', backgroundColor: C.paper, paddingBottom: 6 },
+  navItem: { flex: 1, alignItems: 'center', gap: 2, minHeight: 60 },
+  navMark: { alignSelf: 'stretch', height: 3, marginHorizontal: space.md, marginBottom: 5 },
+  navIcon: { width: 52, height: 28, alignItems: 'center', justifyContent: 'center' },
+  navLabel: { fontSize: textSize.small, color: C.muted, fontWeight: '600' },
+  navBadge: {
+    position: 'absolute',
+    top: -6,
+    right: 0,
+    minWidth: 20,
+    height: 20,
+    borderRadius: radius.pill,
+    paddingHorizontal: 4,
+    backgroundColor: C.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  navBadgeText: {
+    color: C.onAccent,
+    fontSize: textSize.small,
+    lineHeight: 18,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+  },
+  // Messages appear at the top of the screen so they never cover a screen's main button.
+  toast: {
+    position: 'absolute',
+    top: space.sm,
+    alignSelf: 'center',
+    width: '92%',
+    maxWidth: 560,
+    backgroundColor: C.ink,
+    padding: space.lg,
+    borderRadius: radius.control,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    // Toasts, menus and dialogs are the only raised objects.
+    elevation: 6,
+    shadowColor: C.ink,
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+  },
+  toastText: { flex: 1, color: C.onInk, fontSize: textSize.body, lineHeight: 24 },
+  chooserTitle: {
+    color: C.onInk,
+    ...teko(displaySize.head),
+    marginTop: space.xl,
+    textAlign: 'center',
+  },
+  chooserSub: { color: C.onInkMuted, fontSize: textSize.body, marginTop: 4, textAlign: 'center' },
+  chooserAsk: {
+    color: C.onInk,
+    ...teko(displaySize.figure),
+    marginTop: space.xxl,
+    textAlign: 'center',
+  },
+  chooserNote: {
+    color: C.onInkMuted,
+    fontSize: textSize.small,
+    textAlign: 'center',
+    marginTop: space.xl,
+    lineHeight: 21,
   },
 });

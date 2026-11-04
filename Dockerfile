@@ -23,5 +23,8 @@ COPY --from=build /app/packages/shared/dist packages/shared/dist
 COPY --from=build /app/apps/api/dist apps/api/dist
 USER node
 EXPOSE 4000
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||4000)+'/api/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+# Liveness only: a database outage must not make the orchestrator restart a healthy process.
+# Point load-balancer/readiness checks at /api/v1/health/ready instead.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||4000)+'/api/v1/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+STOPSIGNAL SIGTERM
 CMD ["node", "apps/api/dist/main.js"]

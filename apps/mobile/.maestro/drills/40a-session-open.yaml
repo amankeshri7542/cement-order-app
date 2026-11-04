@@ -1,0 +1,10 @@
+# Signed in and looking at orders before the session is ended on the server.
+appId: in.shivcement.store
+---
+- launchApp
+- tapOn:
+    text: Orders
+    index: 0
+- extendedWaitUntil:
+    visible: Bulk quotes
+    timeout: 30000

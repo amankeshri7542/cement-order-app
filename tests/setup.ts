@@ -47,6 +47,9 @@ export default async function setup() {
     await db.user.create({
       data: { phone: '+919297513708', name: 'Price test admin', role: 'ADMIN' },
     });
+    await db.user.create({
+      data: { phone: '+919297513713', name: 'Phase 4 desk admin', role: 'ADMIN' },
+    });
   } finally {
     await db.$disconnect();
   }

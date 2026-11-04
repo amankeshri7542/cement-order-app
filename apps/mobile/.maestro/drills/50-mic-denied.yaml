@@ -1,0 +1,26 @@
+# Microphone permission refused: the assistant says so and typing still works.
+appId: in.shivcement.store
+---
+# Maestro grants every permission on launch unless told otherwise.
+- launchApp:
+    permissions:
+      microphone: deny
+- extendedWaitUntil:
+    visible: Current rates
+    timeout: 30000
+- scrollUntilVisible:
+    element: Ask Shiv Sahayak
+- tapOn: Ask Shiv Sahayak
+- tapOn: Speak your question
+- tapOn:
+    text: (?i)deny.*
+    optional: true
+- extendedWaitUntil:
+    visible: Microphone permission is off.*
+    timeout: 15000
+- tapOn: Your question
+- inputText: Do you deliver to 800001?
+- tapOn: Send question
+- extendedWaitUntil:
+    notVisible: Thinking…
+    timeout: 30000

@@ -1,0 +1,24 @@
+# On a 2G-like connection the app still loads, shows progress and takes the order path.
+appId: in.shivcement.store
+---
+- launchApp
+- extendedWaitUntil:
+    visible: Current rates
+    timeout: 60000
+- extendedWaitUntil:
+    visible: .*/ 50 kg bag
+    timeout: 60000
+- tapOn:
+    text: Materials
+    index: 0
+- tapOn: Search materials
+- inputText: UltraTech
+- hideKeyboard
+- extendedWaitUntil:
+    visible: View UltraTech Super
+    timeout: 60000
+- tapOn: View UltraTech Super
+- extendedWaitUntil:
+    visible: Add to basket
+    timeout: 60000
+- assertNotVisible: .*Cannot reach.*

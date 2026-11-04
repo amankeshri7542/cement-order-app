@@ -1,0 +1,62 @@
+# A new customer: basket as a guest, sign in at checkout (the basket follows), add a site
+# address once, place a cash-on-delivery order. Local API only (reads the mock code).
+appId: in.shivcement.store
+tags: [smoke, order]
+---
+- evalScript: ${output.phone = '98888' + String(Math.floor(10000 + Math.random() * 89999))}
+- launchApp:
+    clearState: true
+- tapOn: English
+- extendedWaitUntil:
+    visible: Current rates
+    timeout: 15000
+- tapOn:
+    text: Materials
+    index: 0
+- tapOn: Search materials
+- inputText: UltraTech
+- hideKeyboard
+- extendedWaitUntil:
+    visible: View UltraTech Super
+    timeout: 10000
+- tapOn: Add to basket
+- tapOn: Basket.*
+- assertVisible: UltraTech Super
+- tapOn: Sign in to order
+- tapOn: 10-digit mobile number
+- inputText: ${output.phone}
+- tapOn: Get verification code
+# The local-only code notice sits under the keyboard; on a phone the code arrives by SMS.
+- hideKeyboard
+- extendedWaitUntil:
+    visible: Local development code.*
+    timeout: 10000
+- copyTextFrom:
+    text: Local development code.*
+- evalScript: ${output.code = maestro.copiedText.match(/\d{6}/)[0]}
+- tapOn: 6-digit code
+- inputText: ${output.code}
+# The keyboard's done key submits the code (no extra tap on the button).
+- pressKey: Enter
+- extendedWaitUntil:
+    visible: Add address
+    timeout: 15000
+- tapOn: Add address
+# The keyboard's next key walks through the form; nothing hides behind the keyboard.
+- tapOn: House, plot or street
+- inputText: Plot 7, Road 2
+- pressKey: Enter
+- inputText: Boring Road
+- pressKey: Enter
+- inputText: '800001'
+- pressKey: Enter
+- inputText: Maestro Test
+- hideKeyboard
+- tapOn: Save address
+- extendedWaitUntil:
+    visible: Place order.*
+    timeout: 15000
+- tapOn: Place order.*
+- extendedWaitUntil:
+    visible: Confirmed
+    timeout: 15000

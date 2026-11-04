@@ -6,7 +6,7 @@ Create a production database and a separate staging database. Configure `DATABAS
 
 ## NestJS / Render
 
-Deploy the repository Dockerfile as one web service. Configure `PORT`, `DATABASE_URL`, `NODE_ENV=production`, a random `OTP_HASH_SECRET`, exact HTTPS `CORS_ORIGINS`, and the providers below. Use `TRUST_PROXY_HOPS=1` only if traffic reaches the app through exactly one trusted reverse proxy. Local default is zero. Set Render’s health check to `/api/v1/health`. Supply secrets in provider configuration, never build arguments or public environment variables. Grant the owner role with the explicit admin CLI against the intended database.
+Deploy the repository Dockerfile as one web service. Configure `PORT`, `DATABASE_URL`, `NODE_ENV=production`, a random `OTP_HASH_SECRET`, exact HTTPS `CORS_ORIGINS`, and the providers below. Use `TRUST_PROXY_HOPS=1` only if traffic reaches the app through exactly one trusted reverse proxy. Local default is zero. Set the platform health check to `/api/v1/health/ready` (database reachable, not draining); the container `HEALTHCHECK` uses `/api/v1/health/live`. `/api/v1/health` remains for existing settings. Give the platform a stop timeout of at least 10 seconds: on SIGTERM the API drains for up to 8 seconds. See [STAGING_RUNBOOK.md](STAGING_RUNBOOK.md). Supply secrets in provider configuration, never build arguments or public environment variables. Grant the owner role with the explicit admin CLI against the intended database.
 
 V1 is deliberately **one API instance**: SSE fanout, request throttling, and the scheduled reservation/notification worker run in-process. PostgreSQL still protects financial operations. Multiple API instances require shared event delivery/rate limiting and database work claiming before scaling. No Redis is used. Free hosts that sleep delay notification delivery and reservation expiry; use an always-on instance for commerce.
 
@@ -34,7 +34,7 @@ If creating a gateway order times out, the backend intentionally blocks blind re
 
 ## Cloudflare R2
 
-Configure `R2_ENDPOINT`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_PUBLIC_URL`. Use credentials restricted to the product-image bucket. Configure bucket CORS for the exact admin origin with PUT and Content-Type, and a public/custom asset domain. Admin gets a short-lived URL for a random object key, approved raster content type and declared size (max 5 MiB). SVG/HTML uploads are not supported. Use a separate asset domain so untrusted image bytes never share the API/admin cookie origin. Verify the storage provider enforces the signed headers in your deployment.
+Configure `R2_ENDPOINT`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_PUBLIC_URL`. Use credentials restricted to the product-image bucket and a public/custom asset domain. Staff upload photos through the API itself: the owner desk sends the image bytes to `POST /api/v1/admin/uploads` (staff session required before the body is read, 5 MiB limit). The API checks the PNG/JPEG/WebP signature, re-encodes the photo as WebP (at most 1600 px, under 20 megapixels), writes it to R2 and records it as an approved asset; only recorded assets can be published on a product. The browser never receives a presigned URL, so the bucket needs no CORS rule for the admin. `UPLOADS_PAUSED=true` stops uploads. SVG/HTML uploads are not supported. Use a separate asset domain so image bytes never share the API/admin cookie origin, and set `NEXT_PUBLIC_ASSET_ORIGIN` (Next apps) and `EXPO_PUBLIC_ASSET_ORIGIN` (app) to it.
 
 ## Firebase / Android
 

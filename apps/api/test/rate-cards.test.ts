@@ -1,5 +1,7 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import sharp from 'sharp';
+import { palette } from '@shiv/shared';
 import { renderRateCardPages, rateCardPng, type CardSnapshot } from '../src/rate-studio/cards';
 
 const snapshot: CardSnapshot = {
@@ -52,6 +54,22 @@ describe('Approved rate-card rendering', () => {
         expect(await sharp(png).metadata()).toMatchObject({ format: 'png', width, height });
       }
     }
+  });
+
+  it('draws Direction A: theme tokens, Teko for display text and prices, and the शिव stamp', async () => {
+    for (const template of ['COUNTER', 'BULLETIN'] as const) {
+      const [svg] = renderRateCardPages(snapshot, 'SQUARE', template);
+      for (const token of [palette.ink, palette.paper, palette.accent])
+        expect(svg).toContain(`"${token}"`);
+      // The pre-Direction A graphite, amber and safety green are gone.
+      for (const old of ['#252C2B', '#E9AD32', '#386451']) expect(svg).not.toContain(old);
+      expect(svg).toMatch(/font-family="Teko[^"]*"[^>]*data-price-paise="42550">₹425\.50</);
+      expect(svg).toMatch(/font-family="Teko[^"]*"[^>]*>शिव</);
+      await rateCardPng(svg!);
+    }
+    // The renderer adds Teko's folder to the fonts librsvg can see.
+    const config = readFileSync(process.env.FONTCONFIG_FILE!, 'utf8');
+    expect(config).toMatch(/<dir>[^<]*@expo-google-fonts\/teko\/600SemiBold<\/dir>/);
   });
 
   it('paginates maximum-length fields without truncating, losing rows, or mutating the snapshot', () => {

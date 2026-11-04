@@ -13,7 +13,7 @@ import {
   Sse,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { Subject, interval, map, merge } from 'rxjs';
+import { Subject, finalize, interval, map, merge, takeUntil } from 'rxjs';
 import { z } from 'zod';
 import {
   addressSchema,
@@ -23,17 +23,41 @@ import {
   profileSchema,
   settingsSchema,
 } from '@shiv/shared';
+import { clientIp } from './abuse';
 import { Db } from './db';
+import { Lifecycle } from './lifecycle';
 import { Admin, AuthRequest, Contract, Input, Public, fail } from './http';
 import { paginate } from './pagination';
-import { moveStock } from './inventory';
-import { onlineReady } from './config';
+import { moveStock, pastBalance } from './inventory';
+import { getConfig, onlineReady } from './config';
 
 @Injectable()
 export class Events {
   readonly stream = new Subject<{ type: string; productId?: string; priceVersion?: number }>();
   publish(event: { type: string; productId?: string; priceVersion?: number }) {
     this.stream.next(event);
+  }
+  // Open public streams in this process. Each idle stream holds a socket and memory, and the
+  // request throttle only counts opens, so connections are capped per client IP and in total.
+  private open = new Map<string, number>();
+  private total = 0;
+  /** Counts a new stream, or refuses it with 429. The returned release is safe to call twice. */
+  admit(ip: string) {
+    const c = getConfig();
+    const mine = this.open.get(ip) || 0;
+    if (mine >= c.EVENT_STREAMS_PER_IP || this.total >= c.EVENT_STREAMS_TOTAL)
+      fail('RATE_LIMITED', 'Too many live connections. Close other tabs and try again.', 429);
+    this.open.set(ip, mine + 1);
+    this.total++;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.total--;
+      const left = (this.open.get(ip) || 1) - 1;
+      if (left) this.open.set(ip, left);
+      else this.open.delete(ip);
+    };
   }
 }
 @ApiTags('Catalogue')
@@ -42,6 +66,7 @@ export class CatalogController {
   constructor(
     @Inject(Db) private db: Db,
     @Inject(Events) private events: Events,
+    @Inject(Lifecycle) private lifecycle: Lifecycle,
   ) {}
   @Public()
   @Get('products')
@@ -72,12 +97,15 @@ export class CatalogController {
         where: {
           AND: [
             admin ? {} : { active: true },
-            admin && f.lowStock === 'true' ? { active: true, stock: { lt: 25 } } : {},
+            admin && f.lowStock === 'true'
+              ? { active: true, stock: { lte: this.db.product.fields.lowStockAt } }
+              : {},
             page.after,
             f.q
               ? {
                   OR: [
                     { name: { contains: f.q, mode: 'insensitive' } },
+                    { nameHi: { contains: f.q, mode: 'insensitive' } },
                     { brand: { contains: f.q, mode: 'insensitive' } },
                     { grade: { contains: f.q, mode: 'insensitive' } },
                   ],
@@ -93,6 +121,7 @@ export class CatalogController {
           ],
         },
         include: { category: true },
+        ...(admin ? { omit: { lowStockAt: false } } : {}),
         orderBy: page.orderBy,
         take: page.take,
       }),
@@ -117,6 +146,16 @@ export class CatalogController {
   @Public() @Get('categories') categories() {
     return this.db.category.findMany({ orderBy: { name: 'asc' } });
   }
+  @Public() @Get('client-config') clientConfig() {
+    const c = getConfig();
+    return {
+      android: {
+        minimumVersion: c.ANDROID_MINIMUM_VERSION,
+        latestVersion: c.ANDROID_LATEST_VERSION,
+        storeUrl: c.ANDROID_STORE_URL,
+      },
+    };
+  }
   @Public() @Get('store') async store() {
     const settings = await this.db.storeSettings.findUniqueOrThrow({ where: { id: 'store' } });
     return {
@@ -125,9 +164,15 @@ export class CatalogController {
       onlinePaymentsAvailable: settings.onlinePaymentsEnabled && onlineReady(),
     };
   }
-  @Public() @Sse('events') eventsStream() {
+  @Public() @Sse('events') eventsStream(@Req() req: AuthRequest) {
+    const release = this.events.admit(clientIp(req));
+    // The response closes on disconnect, completion and shutdown alike.
+    req.res?.once('close', release);
     return merge(this.events.stream, interval(25000).pipe(map(() => ({ type: 'HEARTBEAT' })))).pipe(
+      // Ends open streams on shutdown so the server can drain; browsers reconnect automatically.
+      takeUntil(this.lifecycle.closing),
       map((data) => ({ data })),
+      finalize(release),
     );
   }
 
@@ -164,7 +209,11 @@ export class CatalogController {
           details: { pricePaise: p.pricePaise, stock: p.stock },
         },
       });
-      return tx.product.findUniqueOrThrow({ where: { id: p.id }, include: { category: true } });
+      return tx.product.findUniqueOrThrow({
+        where: { id: p.id },
+        include: { category: true },
+        omit: { lowStockAt: false },
+      });
     });
     this.events.publish({ type: 'CATALOG_UPDATED', productId: product.id });
     return product;
@@ -177,7 +226,10 @@ export class CatalogController {
     @Input(productUpdateSchema) input: z.infer<typeof productUpdateSchema>,
     @Req() req: AuthRequest,
   ) {
-    const { expectedVersion, ...data } = input;
+    // Stock is never written here: it changes only through the ledger. The editor still sends
+    // the balance it loaded, which orders may have moved since; a balance the product never had
+    // is an attempt to replace stock and is refused.
+    const { expectedVersion, stock, ...data } = input;
     if (data.minQuantity % data.quantityStep)
       fail('INVALID_QUANTITY', 'Minimum quantity must be a multiple of the quantity step.');
     const product = await this.db.atomic(async (tx) => {
@@ -185,7 +237,7 @@ export class CatalogController {
       const old = await tx.product.findUniqueOrThrow({ where: { id } });
       if (old.version !== expectedVersion)
         fail('CONFLICT', 'Product changed. Refresh before saving.', 409);
-      if (old.stock !== data.stock)
+      if (stock !== old.stock && !(await pastBalance(tx, id, stock)))
         fail(
           'USE_INVENTORY_MOVEMENT',
           'Record a stock movement instead of replacing the balance.',
@@ -206,6 +258,7 @@ export class CatalogController {
           ...(changed ? { priceVersion: { increment: 1 }, priceUpdatedAt: new Date() } : {}),
         },
         include: { category: true },
+        omit: { lowStockAt: false },
       });
       if (monetaryChanged)
         await tx.productPriceHistory.create({

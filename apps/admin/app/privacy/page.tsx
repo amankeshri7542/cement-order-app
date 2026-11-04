@@ -3,7 +3,6 @@ export default function Privacy() {
   return (
     <main className="policy-page">
       <a href="/">SHIV CEMENT STORE</a>
-      <p className="eyebrow">YOUR DATA</p>
       <h1>Privacy, in plain language.</h1>
       <p>
         Last updated 2 October 2026. Shiv Cement Store operates this ordering service for its

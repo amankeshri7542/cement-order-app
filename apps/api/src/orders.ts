@@ -17,19 +17,21 @@ import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import {
   cartItemSchema,
+  cartMergeSchema,
   deliveryActionSchema,
   checkoutSchema,
   CheckoutReview,
   orderStatusSchema,
+  orderStatusText,
   placeOrderSchema,
-  totals,
   transitions,
 } from '@shiv/shared';
 import { Db } from './db';
-import { Admin, AuthRequest, Contract, Input, fail } from './http';
+import { Admin, AuthRequest, Contract, Input, errorCause, fail } from './http';
 import { paginate } from './pagination';
-import { deliveryFor, moveStock, validateQuantity } from './inventory';
-import { onlineReady } from './config';
+import { deliveryFor, moveStock, orderTotals, validateQuantity } from './inventory';
+import { getConfig, onlineReady } from './config';
+import { enqueueWhatsApp } from './alerts';
 import { workInclude } from './owner-work';
 import { Events } from './catalog';
 
@@ -40,6 +42,12 @@ export const orderInclude = {
   payment: true,
   history: { orderBy: { createdAt: 'asc' as const } },
 };
+// Customers see who is handling their request by name only. Staff phones (also their sign-in
+// identifiers), technical owners and alert retries stay on the owner desk.
+export const customerWork = {
+  select: { acknowledgedAt: true, assignedTo: { select: { name: true } } },
+} as const;
+export const customerOrderInclude = { ...orderInclude, work: customerWork };
 const reorderSchema = z.strictObject({ idempotencyKey: z.string().uuid().optional() }).default({});
 const normalizeReturns = (items: unknown) =>
   Array.isArray(items)
@@ -109,6 +117,71 @@ export class OrdersService {
     });
     return this.cart(userId);
   }
+  async mergeCart(userId: string, input: z.infer<typeof cartMergeSchema>) {
+    const items = input.items
+      .map(({ productId, quantity }) => ({ productId, quantity }))
+      .sort((a, b) => a.productId.localeCompare(b.productId));
+    return this.db.atomic(async (tx) => {
+      // Serialize retries even when the receipt returns without changing cart rows.
+      await tx.user.update({ where: { id: userId }, data: { updatedAt: new Date() } });
+      const receiptId = `cart-merge:${userId}:${input.idempotencyKey}`;
+      const previous = await tx.auditLog.findUnique({ where: { id: receiptId } });
+      if (previous) {
+        if (
+          JSON.stringify(
+            (previous.details as { items: typeof items }).items.map((item) => [
+              item.productId,
+              item.quantity,
+            ]),
+          ) !== JSON.stringify(items.map((item) => [item.productId, item.quantity]))
+        )
+          fail('IDEMPOTENCY_CONFLICT', 'This merge key was already used for another cart.', 409);
+        return this.cart(userId, tx);
+      }
+      const cart = await this.cart(userId, tx);
+      const quantities = new Map(cart.map((line) => [line.productId, line.quantity]));
+      for (const item of items)
+        quantities.set(item.productId, (quantities.get(item.productId) || 0) + item.quantity);
+      if (quantities.size > 50) fail('CART_LIMIT', 'A cart can contain up to 50 products.');
+      const products = new Map(
+        (await tx.product.findMany({ where: { id: { in: [...quantities.keys()] } } })).map(
+          (product) => [product.id, product],
+        ),
+      );
+      for (const [productId, quantity] of quantities) {
+        if (quantity > 10000) fail('INVALID_QUANTITY', 'A cart quantity cannot exceed 10000.');
+        const product = products.get(productId);
+        if (!product?.active || product.stock < quantity)
+          fail('OUT_OF_STOCK', 'That quantity is not available.', 409);
+        validateQuantity(product, quantity);
+      }
+      for (const item of items) {
+        const product = products.get(item.productId)!;
+        const quantity = quantities.get(item.productId)!;
+        await tx.cartItem.upsert({
+          where: { userId_productId: { userId, productId: item.productId } },
+          create: {
+            userId,
+            productId: item.productId,
+            quantity,
+            seenPricePaise: product.pricePaise,
+            seenPriceVersion: product.priceVersion,
+          },
+          update: { quantity },
+        });
+      }
+      await tx.auditLog.create({
+        data: {
+          id: receiptId,
+          actorId: userId,
+          event: 'CART_MERGED',
+          entityId: userId,
+          details: { items },
+        },
+      });
+      return this.cart(userId, tx);
+    });
+  }
   async review(userId: string, input: z.infer<typeof checkoutSchema>, ip = 'internal') {
     validDelivery(input.deliveryDate);
     return this.db.atomic(async (tx) => {
@@ -139,12 +212,16 @@ export class OrdersService {
           lineTotalPaise: product.pricePaise * quantity,
         };
       });
-      const zone = await deliveryFor(tx, address.pincode, totals(items, 0, null).subtotalPaise);
+      const zone = await deliveryFor(
+        tx,
+        address.pincode,
+        orderTotals(items, 0, null).subtotalPaise,
+      );
       const snapshot = {
         ...input,
         address,
         items,
-        ...totals(items, zone.deliveryFeePaise, zone.freeDeliveryAbovePaise),
+        ...orderTotals(items, zone.deliveryFeePaise, zone.freeDeliveryAbovePaise),
         deliveryZoneId: zone.id,
         deliveryZoneVersion: zone.version,
         deliveryEstimate: zone.estimate,
@@ -171,7 +248,7 @@ export class OrdersService {
     const result = await this.db.atomic(async (tx) => {
       const existing = await tx.order.findUnique({
         where: { userId_idempotencyKey: { userId, idempotencyKey: input.idempotencyKey } },
-        include: orderInclude,
+        include: customerOrderInclude,
       });
       if (existing) {
         if (existing.reviewId !== input.reviewId)
@@ -187,7 +264,7 @@ export class OrdersService {
       if (review.order)
         return tx.order.findUniqueOrThrow({
           where: { id: review.order.id },
-          include: orderInclude,
+          include: customerOrderInclude,
         });
       const snapshot = review.snapshot as unknown as CheckoutReview;
       await requestBudget(tx, 'order', userId, ip);
@@ -234,7 +311,11 @@ export class OrdersService {
           idempotencyKey: `order:${review.id}:${product.id}`,
         });
       }
-      const amounts = totals(snapshot.items, zone.deliveryFeePaise, zone.freeDeliveryAbovePaise);
+      const amounts = orderTotals(
+        snapshot.items,
+        zone.deliveryFeePaise,
+        zone.freeDeliveryAbovePaise,
+      );
       const online = snapshot.paymentMethod === 'ONLINE';
       const order = await tx.order.create({
         data: {
@@ -261,7 +342,7 @@ export class OrdersService {
             },
           },
         },
-        include: orderInclude,
+        include: customerOrderInclude,
       });
       await tx.cartItem.deleteMany({ where: { userId } });
       await tx.auditLog.create({
@@ -358,9 +439,7 @@ export class OrdersService {
               actorId,
               note:
                 note ||
-                (next === 'REFUND_PENDING'
-                  ? 'Cancelled; refund requires store action.'
-                  : `Order ${status.toLowerCase()}.`),
+                (next === 'REFUND_PENDING' ? 'Cancelled; refund requires store action.' : ''),
             },
           },
         },
@@ -376,11 +455,25 @@ export class OrdersService {
       await tx.notification.create({
         data: {
           userId: order.userId,
-          title: 'Order updated',
-          body: `${order.number}: ${next.toLowerCase().replaceAll('_', ' ')}`,
+          title: 'ऑर्डर अपडेट / Order updated',
+          body: `${order.number}: ${orderStatusText(next, 'hi')} / ${orderStatusText(next, 'en')}`,
           orderId: id,
         },
       });
+      // Optional WhatsApp updates to the customer at the moments that matter to them.
+      const phone = (order.address as { phone?: string } | null)?.phone || '';
+      if (
+        getConfig().WHATSAPP_CUSTOMER_UPDATES &&
+        phone &&
+        ['OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED', 'REFUND_PENDING'].includes(next)
+      )
+        await enqueueWhatsApp(tx, {
+          userId: order.userId,
+          phone,
+          template: 'shiv_order_status',
+          params: [order.number, orderStatusText(next, 'hi')],
+          dedupeKey: `wa:status:${id}:${next}`,
+        });
       return tx.order.findUniqueOrThrow({ where: { id }, include: orderInclude });
     });
     this.events.publish({ type: 'CATALOG_UPDATED' });
@@ -391,16 +484,30 @@ export class OrdersService {
       where: { status: 'PENDING_PAYMENT', reservedUntil: { lt: new Date() } },
       take: 100,
     });
+    let failed = 0;
+    // One order that cannot be cancelled must not hold back the others.
     for (const order of expired)
-      await this.changeStatus(
-        order.id,
-        'CANCELLED',
-        'system',
-        'Payment reservation expired.',
-        undefined,
-        true,
-      );
-    return { processed: expired.length };
+      try {
+        await this.changeStatus(
+          order.id,
+          'CANCELLED',
+          'system',
+          'Payment reservation expired.',
+          undefined,
+          true,
+        );
+      } catch (error) {
+        failed++;
+        console.error(
+          JSON.stringify({
+            event: 'RESERVATION_EXPIRY_FAILED',
+            orderId: order.id,
+            ...errorCause(error),
+            timestamp: new Date().toISOString(),
+          }),
+        );
+      }
+    return { processed: expired.length - failed, failed };
   }
 
   async delivery(id: string, input: z.infer<typeof deliveryActionSchema>, actorId: string) {
@@ -421,6 +528,18 @@ export class OrdersService {
           fail(
             'IDEMPOTENCY_CONFLICT',
             'This delivery action was already used with different details.',
+            409,
+          );
+        // Only a repeat of the latest step is a retry; after a newer step it would do nothing.
+        const latest = await tx.deliveryAttempt.findFirst({
+          where: { orderId: id },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          select: { id: true },
+        });
+        if (latest?.id !== previous.id)
+          fail(
+            'IDEMPOTENCY_CONFLICT',
+            'This delivery update was recorded before a newer one. Refresh the order and record it again.',
             409,
           );
         return order;
@@ -595,6 +714,12 @@ export class OrdersController {
   ) {
     return this.orders.setCart(req.user.id, body);
   }
+  @Post('cart/merge') @Contract(cartMergeSchema) mergeCart(
+    @Input(cartMergeSchema) body: z.infer<typeof cartMergeSchema>,
+    @Req() req: AuthRequest,
+  ) {
+    return this.orders.mergeCart(req.user.id, body);
+  }
   @Post('checkout/review') @Contract(checkoutSchema) review(
     @Input(checkoutSchema) body: z.infer<typeof checkoutSchema>,
     @Req() req: AuthRequest,
@@ -612,7 +737,7 @@ export class OrdersController {
     return page.finish(
       await this.db.order.findMany({
         where: { userId: req.user.id, ...page.after },
-        include: orderInclude,
+        include: customerOrderInclude,
         orderBy: page.orderBy,
         take: page.take,
       }),
@@ -621,7 +746,7 @@ export class OrdersController {
   @Get('orders/:id') async detail(@Param('id') id: string, @Req() req: AuthRequest) {
     const order = await this.db.order.findFirst({
       where: { id, userId: req.user.id },
-      include: orderInclude,
+      include: customerOrderInclude,
     });
     if (!order) fail('ORDER_NOT_FOUND', 'Order not found.', 404);
     return order;
@@ -641,14 +766,16 @@ export class OrdersController {
   ) {
     return this.orders.reorder(id, req.user.id, body.idempotencyKey);
   }
-  @Post('orders/:id/cancel') cancel(@Param('id') id: string, @Req() req: AuthRequest) {
-    return this.orders.changeStatus(
+  @Post('orders/:id/cancel') async cancel(@Param('id') id: string, @Req() req: AuthRequest) {
+    await this.orders.changeStatus(
       id,
       'CANCELLED',
       req.user.id,
       'Cancelled by customer.',
       req.user.id,
     );
+    // Re-read through the customer view: changeStatus returns the desk view.
+    return this.detail(id, req);
   }
   @Admin() @Get('admin/orders') async all(@Query() query: Record<string, string>) {
     const parsed = z

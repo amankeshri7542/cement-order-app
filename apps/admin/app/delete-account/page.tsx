@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api, errorMessage } from '../../lib/api';
 import { User } from '@shiv/shared';
 export default function DeleteAccount() {
@@ -12,6 +12,8 @@ export default function DeleteAccount() {
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false),
     [done, setDone] = useState(false);
+  const [ready, setReady] = useState(false);
+  useEffect(() => setReady(true), []);
   return (
     <main className="policy-page">
       <a href="/privacy">SHIV CEMENT STORE · PRIVACY</a>
@@ -67,7 +69,7 @@ export default function DeleteAccount() {
                   aria-label="Mobile number"
                   type="tel"
                   value={phone}
-                  disabled={sent}
+                  disabled={!ready || sent}
                   pattern="[6-9][0-9]{9}"
                   maxLength={10}
                   required
@@ -112,7 +114,7 @@ export default function DeleteAccount() {
               {error}
             </p>
           )}
-          <button className="primary" disabled={busy}>
+          <button className="primary" disabled={!ready || busy}>
             {busy
               ? 'Please wait…'
               : user

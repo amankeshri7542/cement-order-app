@@ -7,8 +7,8 @@
     "start": "node dist/main.js",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run test/domain.test.ts test/rate-cards.test.ts test/rate-rules.test.ts test/rate-providers.test.ts test/auth-recovery.test.ts test/redaction.test.ts test/security.test.ts",
-    "test:integration": "vitest run test/integration.test.ts",
+    "test": "vitest run test/domain.test.ts test/rate-cards.test.ts test/rate-rules.test.ts test/rate-providers.test.ts test/auth-recovery.test.ts test/redaction.test.ts test/security.test.ts test/assistant.test.ts test/runtime-unit.test.ts test/env-templates.test.ts test/error-codes.test.ts test/config-guards.test.ts",
+    "test:integration": "vitest run --no-file-parallelism test/integration.test.ts test/runtime.test.ts test/hardening-auth.test.ts test/hardening-money.test.ts test/hardening-infra.test.ts test/catalogue-hindi.test.ts",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "db:seed": "tsx --env-file=.env prisma/seed.ts",
@@ -20,6 +20,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.980.0",
     "@aws-sdk/s3-request-presigner": "^3.980.0",
+    "@expo-google-fonts/teko": "^0.4.1",
     "@nestjs/common": "^11.1.11",
     "@nestjs/core": "^11.1.11",
     "@nestjs/platform-express": "^11.1.11",
@@ -32,11 +33,13 @@
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
     "sharp": "^0.35.5",
+    "web-push": "^3.6.7",
     "zod": "^4.3.5"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
     "@types/supertest": "^6.0.3",
+    "@types/web-push": "^3.6.4",
     "prisma": "6.19.2",
     "supertest": "^7.2.2",
     "tsx": "^4.21.0",

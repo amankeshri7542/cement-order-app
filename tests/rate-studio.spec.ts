@@ -253,6 +253,7 @@ test('reopening and revising a quotation preserves its agreed expiry', async ({ 
       response.url().endsWith(`/admin/quotes/${quote.id}/offer`) &&
       response.request().method() === 'POST',
   );
+  page.once('dialog', (confirmation) => confirmation.accept());
   await page.getByRole('button', { name: 'Send revised quote', exact: true }).click();
   const response = await saved;
   expect(response.ok(), await response.text()).toBe(true);

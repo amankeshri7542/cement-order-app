@@ -11,18 +11,16 @@ test('catalogue and material details render without View text-node warnings', as
   });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('http://localhost:8082');
-  await page.getByRole('tab', { name: 'Products', exact: true }).click();
+  await page.getByRole('tab', { name: 'Materials', exact: true }).click();
   await page
-    .getByRole('textbox', { name: 'Search cement, steel, sand…', exact: true })
+    .getByRole('textbox', { name: 'Search materials', exact: true })
     .fill('UltraTech Super');
   await page.getByRole('button', { name: 'View UltraTech Super', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Quantity', exact: true })).toBeVisible();
-  await test
-    .info()
-    .attach('view-child-warnings', {
-      body: JSON.stringify(warnings),
-      contentType: 'application/json',
-    });
+  await test.info().attach('view-child-warnings', {
+    body: JSON.stringify(warnings),
+    contentType: 'application/json',
+  });
   expect(warnings).toEqual([]);
 });
 
@@ -67,7 +65,7 @@ test('staff can correct a wrong passphrase using the same OTP', async ({ page })
   ).toBe(false);
   await page.getByLabel('Staff passphrase', { exact: true }).fill(password);
   await page.getByRole('button', { name: 'Open store desk' }).click();
-  await expect(page.getByRole('heading', { name: 'आज / Today', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
   expect(
     (await db.otpChallenge.findUniqueOrThrow({ where: { phone: '+919297513760' } })).consumed,
   ).toBe(true);
@@ -110,10 +108,10 @@ test('revoked staff session offers sign-in recovery without a page reload', asyn
   await page.getByRole('textbox', { name: 'Verification code', exact: true }).fill(code);
   await page.getByLabel('Staff passphrase', { exact: true }).fill(password);
   await page.getByRole('button', { name: 'Open store desk' }).click();
-  await expect(page.getByRole('heading', { name: 'आज / Today', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
   await page
     .getByRole('navigation', { name: 'Phone navigation' })
-    .getByRole('button', { name: 'और', exact: true })
+    .getByRole('button', { name: 'More', exact: true })
     .click();
   await page.getByRole('button', { name: /Rate Studio$/ }).click();
   await page.getByRole('button', { name: /Enter prices manually/ }).click();

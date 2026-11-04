@@ -40,7 +40,8 @@ export class AdminController {
       this.db.order.count({ where: { status: 'OUT_FOR_DELIVERY' } }),
       this.db.quote.count({ where: { status: 'REQUESTED' } }),
       this.db.product.findMany({
-        where: { active: true, stock: { lt: 25 } },
+        // Each product has its own "running low" level.
+        where: { active: true, stock: { lte: this.db.product.fields.lowStockAt } },
         orderBy: { stock: 'asc' },
         take: 20,
       }),
@@ -87,7 +88,8 @@ export class AdminController {
     const page = paginate(query, 'customers');
     return page.finish(
       await this.db.user.findMany({
-        where: { deletedAt: null, ...page.after },
+        // Shop staff are listed on the Staff screen, not as customers.
+        where: { deletedAt: null, role: { not: 'ADMIN' }, ...page.after },
         select: {
           id: true,
           name: true,
@@ -116,12 +118,34 @@ export class AdminController {
   }
   @Get('audit') async audit(@Query() query: Record<string, string>) {
     const page = paginate(query, 'audit');
-    return page.finish(
-      await this.db.auditLog.findMany({
-        where: page.after,
-        orderBy: page.orderBy,
-        take: page.take,
+    const rows = await this.db.auditLog.findMany({
+      where: page.after,
+      orderBy: page.orderBy,
+      take: page.take,
+    });
+    // Names instead of IDs, so the activity log reads in plain language.
+    const ids = [...new Set(rows.flatMap((row) => [row.actorId, row.entityId]))];
+    const [users, orders, quotes, products] = await Promise.all([
+      this.db.user.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, name: true, role: true },
       }),
+      this.db.order.findMany({ where: { id: { in: ids } }, select: { id: true, number: true } }),
+      this.db.quote.findMany({ where: { id: { in: ids } }, select: { id: true, number: true } }),
+      this.db.product.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } }),
+    ]);
+    const labels = new Map<string, string>([
+      ...users.map((u) => [u.id, u.name || (u.role === 'ADMIN' ? 'Staff' : 'Customer')] as const),
+      ...orders.map((o) => [o.id, o.number] as const),
+      ...quotes.map((q) => [q.id, q.number] as const),
+      ...products.map((p) => [p.id, p.name] as const),
+    ]);
+    return page.finish(
+      rows.map((row) => ({
+        ...row,
+        actorName: labels.get(row.actorId) || (row.actorId === 'seed' ? 'Setup' : ''),
+        entityLabel: labels.get(row.entityId) || '',
+      })),
     );
   }
 }

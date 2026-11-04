@@ -41,3 +41,8 @@ Customer and admin screens now share graphite/concrete/sand/amber styling. Home 
 6. Rehearse one complete production COD order, cancellation, delivery, and cash reconciliation; run a representative concurrent checkout test and train the operator. No production capacity guarantee for 50–100 customers is claimed from local correctness tests. Expand from 10–20 known customers only after real fulfilment is reliable.
 
 Bulk quote conversion, partial refunds, statutory invoices, fractional/multiwarehouse stock, and contractor credit/pricing remain intentionally outside this pilot scope. Customer deletion retains de-identified financial records; historical backups follow the owner's disclosed retention process.
+
+> **Update (16 October 2026):** bulk quote conversion was implemented after this plan. Staff
+> convert an accepted current revision into one COD order at the agreed prices and freight
+> (owner desk **Create supply order**, `apps/api/src/quotes.ts`). The other items in that
+> sentence remain out of scope.

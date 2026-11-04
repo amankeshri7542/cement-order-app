@@ -1,0 +1,102 @@
+# Preparation only. Importing this Blueprint creates paid resources; obtain approval first.
+# Deploys from main: merge the launch-prep PR first. autoDeployTrigger is off, so a push
+# never deploys; confirm the region before import.
+databases:
+  - name: shiv-staging-db
+    region: singapore
+    plan: 0.1c-256mb
+    postgresMajorVersion: '16'
+    databaseName: shiv_staging
+    user: shiv_migration
+    ipAllowList: []
+
+services:
+  - type: web
+    name: shiv-staging-api
+    runtime: docker
+    region: singapore
+    plan: starter
+    branch: main
+    autoDeployTrigger: off
+    numInstances: 1
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/v1/health/ready
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: '4000'
+      # Verify the provider's proxy chain before enabling real traffic.
+      - key: TRUST_PROXY_HOPS
+        value: '1'
+      # Deliberately NOT fromDatabase: that URL uses the schema-owning migration role.
+      - key: DATABASE_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: OTP_PROVIDER
+        value: twilio
+      - key: OTP_HASH_SECRET
+        generateValue: true
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_VERIFY_SERVICE_SID
+        sync: false
+      - key: RELEASE_SHA
+        sync: false
+      - key: ASSISTANT_PROVIDER
+        value: fallback
+      - key: WHATSAPP_PROVIDER
+        value: fake
+      - key: WHATSAPP_CUSTOMER_UPDATES
+        value: 'false'
+      # Keep sign-in and ordering paused until DNS, roles and tester access are verified.
+      - key: OTP_PAUSED
+        value: 'true'
+      - key: DEMAND_PAUSED
+        value: 'true'
+
+  - type: web
+    name: shiv-staging-admin
+    runtime: node
+    region: singapore
+    plan: starter
+    branch: main
+    autoDeployTrigger: off
+    numInstances: 1
+    buildCommand: npm ci --include=dev --workspace @shiv/admin --workspace @shiv/shared --include-workspace-root && npm run build -w @shiv/shared && npm run build -w @shiv/admin
+    startCommand: node node_modules/next/dist/bin/next start apps/admin --hostname 0.0.0.0 --port "$PORT"
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: 22.22.0
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_TELEMETRY_DISABLED
+        value: '1'
+      - key: NEXT_PUBLIC_API_URL
+        sync: false
+
+  - type: web
+    name: shiv-staging-shop
+    runtime: node
+    region: singapore
+    plan: starter
+    branch: main
+    autoDeployTrigger: off
+    numInstances: 1
+    buildCommand: npm ci --include=dev --workspace @shiv/storefront --workspace @shiv/shared --include-workspace-root && npm run build -w @shiv/shared && npm run build -w @shiv/storefront
+    startCommand: node node_modules/next/dist/bin/next start apps/storefront --hostname 0.0.0.0 --port "$PORT"
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: 22.22.0
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_TELEMETRY_DISABLED
+        value: '1'
+      - key: NEXT_PUBLIC_API_URL
+        sync: false

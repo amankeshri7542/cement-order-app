@@ -1,0 +1,7 @@
+# Back online: checking the same request confirms the one order.
+appId: in.shivcement.store
+---
+- tapOn: Check order result
+- extendedWaitUntil:
+    visible: Confirmed
+    timeout: 30000

@@ -1,0 +1,20 @@
+# Android Back walks back through screens, keeps the search, and leaves the app from Home.
+appId: in.shivcement.store
+---
+- launchApp
+- extendedWaitUntil:
+    visible: Current rates
+    timeout: 30000
+- tapOn:
+    text: Materials
+    index: 0
+- tapOn: Search materials
+- inputText: UltraTech
+- hideKeyboard
+- tapOn: View UltraTech Super
+- back
+- assertVisible: View UltraTech Super
+- back
+- assertVisible: Current rates
+- back
+- assertNotVisible: Current rates

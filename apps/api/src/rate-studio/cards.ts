@@ -1,5 +1,6 @@
 import sharp from 'sharp';
-import type { RateCardItem } from '@shiv/shared';
+import { palette, type RateCardItem } from '@shiv/shared';
+import { displayFamily, registerCardFonts } from './fonts';
 
 export type CardSnapshot = {
   heading: string;
@@ -13,16 +14,24 @@ export type CardSnapshot = {
 };
 
 const dimensions = { STATUS: [1080, 1920], SQUARE: [1080, 1080], SHEET: [1240, 1754] } as const;
+// Direction A (packages/shared/src/theme.ts): cement ground, steel ink, slip paper, and sindoor
+// only for the शिव stamp and the counter's signboard rule. Teko 600 sets the shop name, the
+// heading, item names and prices, as on the website; the fixed-width face keeps labels,
+// specifications and contact lines easy to check digit by digit.
 const colors = {
-  ink: '#252C2B',
-  concrete: '#E7E6E1',
-  paper: '#F7F6F1',
-  sand: '#D9C9A8',
-  amber: '#E9AD32',
-  green: '#386451',
+  ink: palette.ink,
+  ground: palette.ground,
+  surface: palette.surface,
+  paper: palette.paper,
+  rule: palette.rule,
+  muted: palette.muted,
+  onInk: palette.onInk,
+  onInkMuted: palette.onInkMuted,
+  accent: palette.accent,
+  onAccent: palette.onAccent,
 };
 const mono = 'DejaVu Sans Mono, monospace';
-const sans = 'DejaVu Sans, sans-serif';
+const display = displayFamily;
 const invalid = () => new Error('Rate card could not be rendered. Check the approved content.');
 
 function escape(value: string): string {
@@ -41,25 +50,33 @@ function money(paise: number): string {
   return `₹${Math.floor(paise / 100).toLocaleString('en-IN')}.${String(paise % 100).padStart(2, '0')}`;
 }
 
-// Conservative character widths for the fixed-width detail font. Split long tokens,
-// never truncate a specification; oversized rows continue on the following page.
-function wrap(value: string, width: number, size: number): string[] {
+// Conservative character widths: the fixed-width detail font, or condensed Teko (its widest
+// Latin letters are listed, every other Latin letter is at most half an em, and no Devanagari
+// letter is wider than 0.92 em). Split long tokens, never truncate a specification; oversized
+// rows continue on the following page.
+function wrap(value: string, width: number, size: number, family = mono): string[] {
+  const teko = family === display;
+  const latin = (letter: string) => (!teko ? 0.69 : /[%@Wm~w^M#&]/.test(letter) ? 0.81 : 0.5);
+  const other = (letter: string) => (teko && /[\u0900-\u097F]/u.test(letter) ? 0.92 : 1.2);
+  const space = teko ? 0.5 : 0.69;
   const lines: string[] = [];
   let line = '';
   let occupied = 0;
   for (const word of value.trim().split(/\s+/u).filter(Boolean)) {
     const letters = Array.from(word);
     const measure = (letter: string) =>
-      /\p{Mark}/u.test(letter) ? 0 : size * (/^[\x20-\x7E]$/.test(letter) ? 0.69 : 1.2);
+      /\p{Mark}/u.test(letter)
+        ? 0
+        : size * (/^[\x20-\x7E]$/.test(letter) ? latin(letter) : other(letter));
     const wordWidth = letters.reduce((sum, letter) => sum + measure(letter), 0);
-    if (line && occupied + size * 0.69 + wordWidth > width) {
+    if (line && occupied + size * space + wordWidth > width) {
       lines.push(line);
       line = '';
       occupied = 0;
     }
     if (line) {
       line += ' ';
-      occupied += size * 0.69;
+      occupied += size * space;
     }
     for (const letter of letters) {
       const amount = measure(letter);
@@ -76,7 +93,14 @@ function wrap(value: string, width: number, size: number): string[] {
   return lines;
 }
 
-type Line = { value: string; size: number; color: string; weight: number; height: number };
+type Line = {
+  value: string;
+  size: number;
+  color: string;
+  weight: number;
+  height: number;
+  family: string;
+};
 type Segment = { index: number; continued: boolean; lines: Line[]; height: number };
 const text = (
   value: string,
@@ -129,16 +153,18 @@ export function renderRateCardPages(
   const [width, height] = dimensions[format];
   const margin = 56;
   const inner = width - margin * 2;
-  const heading = wrap(snapshot.heading, inner, 40);
-  const headerEnd = 174 + heading.length * 48;
+  // Teko's Devanagari vowel signs rise 0.85 em and its lower signs drop 0.27 em, so heading
+  // lines sit 1.15 em apart.
+  const heading = wrap(snapshot.heading, inner, 48, display);
+  const headerEnd = 166 + heading.length * 56;
   const footerLines: Line[] = [];
   const addFooter = (value: string, color: string, weight = 400) => {
     for (const line of wrap(value, inner - 40, 22))
-      footerLines.push({ value: line, size: 22, height: 30, color, weight });
+      footerLines.push({ value: line, size: 22, height: 30, color, weight, family: mono });
   };
   addFooter(snapshot.promotionalCopy, colors.ink, 700);
   addFooter(snapshot.deliveryMessage, colors.ink);
-  addFooter(snapshot.contactLabel, colors.green, 700);
+  addFooter(snapshot.contactLabel, colors.accent, 700);
   // These values come only from the persisted, server-owned store snapshot.
   addFooter(`CALL ${snapshot.phone}`, colors.ink, 700);
   addFooter(`WHATSAPP ${snapshot.whatsapp}`, colors.ink, 700);
@@ -153,14 +179,14 @@ export function renderRateCardPages(
     money(item.pricePaise);
     if (!item.name.trim() || !item.unit.trim()) throw invalid();
     const lines: Line[] = [];
-    for (const [value, size, color, weight] of [
-      [item.brand, 22, colors.green, 700],
-      [item.name, 30, colors.ink, 700],
-      [item.specification, 22, colors.ink, 400],
-      [`PER ${item.unit}`, 22, colors.ink, 700],
+    for (const [value, size, color, weight, family, height] of [
+      [item.brand, 22, colors.muted, 700, mono, 31],
+      [item.name, 38, colors.ink, 600, display, 44],
+      [item.specification, 22, colors.ink, 400, mono, 31],
+      [`PER ${item.unit}`, 22, colors.ink, 700, mono, 31],
     ] as const) {
-      for (const line of wrap(value, inner - 48, size))
-        lines.push({ value: line, size, color, weight, height: size + 9 });
+      for (const line of wrap(value, inner - 48, size, family))
+        lines.push({ value: line, size, color, weight, height, family });
     }
     let continued = false;
     while (lines.length) {
@@ -186,8 +212,9 @@ export function renderRateCardPages(
   }
   return pages.map((segments, pageIndex) => {
     const counter = template === 'COUNTER';
-    const pageColor = counter ? colors.concrete : colors.paper;
-    const headingColor = counter ? colors.paper : colors.ink;
+    const pageColor = counter ? colors.ground : colors.paper;
+    const headingColor = counter ? colors.onInk : colors.ink;
+    const stamp = 104;
     const parts = [
       `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="title description">`,
       `<title id="title">${escape(`Shiv Cement Store — ${snapshot.heading} — ${pageIndex + 1}/${pages.length}`)}</title>`,
@@ -195,14 +222,24 @@ export function renderRateCardPages(
       `<metadata>${escape(JSON.stringify({ format, template, page: pageIndex + 1, pages: pages.length, publishedAt: snapshot.publishedAt, phone: snapshot.phone, whatsapp: snapshot.whatsapp, items: segments.map(({ index }) => ({ ...snapshot.items[index], formattedPrice: money(snapshot.items[index]!.pricePaise) })) }))}</metadata>`,
       `<rect width="${width}" height="${height}" fill="${pageColor}"/>`,
       counter
-        ? `<rect width="${width}" height="${headerEnd}" fill="${colors.ink}"/><rect y="${headerEnd - 8}" width="${width}" height="8" fill="${colors.amber}"/>`
-        : `<rect x="0" width="16" height="${height}" fill="${colors.amber}"/><path d="M${margin} ${headerEnd - 8}H${width - margin}" stroke="${colors.ink}" stroke-width="3"/>`,
-      text('SHIV', margin, 90, 62, headingColor, 900, sans),
-      text('CEMENT STORE', margin + 200, 89, 29, headingColor, 700, sans),
-      text('MATERIAL RATE BULLETIN', margin, 126, 18, counter ? colors.sand : colors.green, 700),
+        ? `<rect width="${width}" height="${headerEnd}" fill="${colors.ink}"/><rect y="${headerEnd - 8}" width="${width}" height="8" fill="${colors.accent}"/>`
+        : `<rect x="0" width="16" height="${height}" fill="${colors.ink}"/><path d="M${margin} ${headerEnd - 8}H${width - margin}" stroke="${colors.ink}" stroke-width="3"/>`,
+      // The shop's stamp: a sindoor square with शिव, as on the signboard, the app and the website.
+      `<rect x="${width - margin - stamp}" y="36" width="${stamp}" height="${stamp}" fill="${colors.accent}"/>`,
+      `<text x="${width - margin - stamp / 2}" y="${36 + stamp / 2 + 24}" text-anchor="middle" font-family="${display}" font-size="62" font-weight="600" fill="${colors.onAccent}">शिव</text>`,
+      text('SHIV', margin, 98, 84, headingColor, 600, display),
+      text('CEMENT STORE', margin + 146, 98, 44, headingColor, 600, display),
+      text(
+        'MATERIAL RATE BULLETIN',
+        margin,
+        130,
+        18,
+        counter ? colors.onInkMuted : colors.muted,
+        700,
+      ),
     ];
     heading.forEach((line, index) =>
-      parts.push(text(line, margin, 176 + index * 48, 40, headingColor, 700)),
+      parts.push(text(line, margin, 186 + index * 56, 48, headingColor, 600, display)),
     );
     parts.push(text(`PUBLISHED / AS OF ${date} IST`, margin, headerEnd + 27, 18, colors.ink, 700));
     let y = tableTop;
@@ -212,10 +249,10 @@ export function renderRateCardPages(
         `<g data-item-index="${segment.index}" data-continued="${segment.continued}"><title>${escape(`${item.name}: ${money(item.pricePaise)} per ${item.unit}`)}</title>`,
       );
       parts.push(
-        `<rect x="${margin}" y="${y}" width="${inner}" height="${segment.height}" fill="${colors.paper}" stroke="${counter ? colors.paper : colors.sand}" stroke-width="2"/>`,
+        `<rect x="${margin}" y="${y}" width="${inner}" height="${segment.height}" fill="${counter ? colors.paper : colors.surface}" stroke="${counter ? colors.paper : colors.rule}" stroke-width="2"/>`,
       );
       parts.push(
-        `<rect x="${margin}" y="${y}" width="6" height="${segment.height}" fill="${counter ? colors.amber : colors.green}"/>`,
+        `<rect x="${margin}" y="${y}" width="6" height="${segment.height}" fill="${colors.ink}"/>`,
       );
       parts.push(
         text(
@@ -223,18 +260,20 @@ export function renderRateCardPages(
           margin + 24,
           y + 37,
           18,
-          colors.green,
+          colors.muted,
           700,
         ),
       );
       const amount = money(item.pricePaise);
       parts.push(
-        `<text x="${width - margin - 24}" y="${y + 43}" text-anchor="end" font-family="${mono}" font-size="34" font-weight="700" fill="${colors.ink}" data-price-paise="${item.pricePaise}">${escape(amount)}</text>`,
+        `<text x="${width - margin - 24}" y="${y + 50}" text-anchor="end" font-family="${display}" font-size="52" font-weight="600" fill="${colors.ink}" data-price-paise="${item.pricePaise}">${escape(amount)}</text>`,
       );
       let lineY = y + 64;
       for (const line of segment.lines) {
         lineY += line.height;
-        parts.push(text(line.value, margin + 24, lineY, line.size, line.color, line.weight));
+        parts.push(
+          text(line.value, margin + 24, lineY, line.size, line.color, line.weight, line.family),
+        );
       }
       parts.push('</g>');
       y += segment.height + 14;
@@ -247,7 +286,7 @@ export function renderRateCardPages(
         text(line.value, margin, footerTop + 34 + index * 30, line.size, line.color, line.weight),
       ),
     );
-    parts.push(text('SHIV / RATE STUDIO', margin, height - margin, 17, colors.green, 700));
+    parts.push(text('SHIV / RATE STUDIO', margin, height - margin, 17, colors.muted, 700));
     parts.push(
       `<text x="${width - margin}" y="${height - margin}" text-anchor="end" font-family="${mono}" font-size="17" fill="${colors.ink}">PAGE ${pageIndex + 1} / ${pages.length}</text></svg>`,
     );
@@ -256,6 +295,7 @@ export function renderRateCardPages(
 }
 
 export async function rateCardPng(svg: string): Promise<Buffer> {
+  registerCardFonts();
   try {
     return await sharp(Buffer.from(svg), { limitInputPixels: 3_000_000, density: 72 })
       .png()

@@ -1,156 +1,448 @@
-import { useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { CheckoutReview, Order, money } from '@shiv/shared';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Pressable, ScrollView, Text, View } from 'react-native';
+import {
+  dayLabel,
+  deliveryDateOptions,
+  isCheckoutRefusal,
+  shortDayLabel,
+  weekdayLabel,
+  money,
+  productName,
+  space,
+  unitLabel,
+  MAX_LINE_QUANTITY,
+  type CheckoutReview,
+  type Order,
+} from '@shiv/shared';
 import { makeKey, useStore } from './store';
-import { ApiError, api, message } from './api';
-import { Button, C, Empty, Field, Icon, Notice, Section, s } from './ui';
-import { Quantity } from './catalog';
+import { ApiError, api } from './api';
+import {
+  Bone,
+  Button,
+  C,
+  Chip,
+  CodStamp,
+  Empty,
+  Field,
+  headingScale,
+  Icon,
+  Notice,
+  s,
+  Screen,
+  TornEdge,
+} from './ui';
+import { MaterialArt, Quantity } from './catalog';
 import { payOnline } from './payment';
+
+function MergeNotice() {
+  const { mergeDraft, mergeGuest, discardMerge, knownProducts, cartBusy, t } = useStore();
+  if (!mergeDraft) return null;
+  const names = mergeDraft.lines
+    .map(
+      (line) =>
+        `${knownProducts[line.productId]?.name || t('Material', 'सामग्री')} × ${line.quantity}`,
+    )
+    .join(', ');
+  return (
+    <View style={{ gap: space.sm }}>
+      <Notice error={!mergeDraft.uncertain}>
+        {mergeDraft.uncertain
+          ? t(
+              `Materials you chose before signing in (${names}) are not confirmed in your basket yet. Checking again will not add them twice.`,
+              `साइन इन से पहले चुनी सामग्री (${names}) अभी टोकरी में पक्की नहीं हुई। दोबारा जाँचने से वे दो बार नहीं जुड़ेंगी।`,
+            )
+          : t(
+              `These materials from before sign-in could not be added: ${names}. ${mergeDraft.problem || ''}`,
+              `साइन इन से पहले की यह सामग्री नहीं जुड़ सकी: ${names}। ${mergeDraft.problem || ''}`,
+            )}
+      </Notice>
+      <View style={[s.row, { gap: space.sm }]}>
+        <Button
+          secondary
+          loading={cartBusy}
+          style={{ flex: 1 }}
+          onPress={() => void mergeGuest(true)}
+        >
+          {mergeDraft.uncertain ? t('Check again', 'फिर जाँचें') : t('Try again', 'फिर कोशिश करें')}
+        </Button>
+        {!mergeDraft.uncertain && (
+          <Button kind="quiet" style={{ flex: 1 }} onPress={discardMerge}>
+            {t('Remove these', 'इन्हें हटाएँ')}
+          </Button>
+        )}
+      </View>
+    </View>
+  );
+}
+
+function DeliveryDetails() {
+  const { addresses, settings, t, language, checkoutDraft, updateCheckoutDraft, openAddresses } =
+    useStore();
+  const [choosing, setChoosing] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(Boolean(checkoutDraft.notes));
+  const addressId = addresses.some((address) => address.id === checkoutDraft.addressId)
+    ? checkoutDraft.addressId
+    : addresses[0]?.id || '';
+  const address = addresses.find((item) => item.id === addressId);
+  const dates = deliveryDateOptions(new Date(), 0, 14);
+  const today = dates[0];
+  return (
+    <View style={{ gap: space.lg }}>
+      <View style={[s.card, { gap: space.md }]}>
+        <View style={s.between}>
+          <Text style={s.h3}>{t('Deliver to', 'डिलीवरी का पता')}</Text>
+          {addresses.length > 0 && (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setChoosing((open) => !open)}
+              style={{ minHeight: 48, justifyContent: 'center' }}
+            >
+              <Text style={s.link}>{choosing ? t('Done', 'हो गया') : t('Change', 'बदलें')}</Text>
+            </Pressable>
+          )}
+        </View>
+        {!address ? (
+          <Button icon="add" secondary onPress={() => openAddresses('new')}>
+            {t('Add your site address', 'साइट का पता जोड़ें')}
+          </Button>
+        ) : choosing ? (
+          <View style={{ gap: space.sm }}>
+            {addresses.map((item) => (
+              <Pressable
+                key={item.id}
+                accessibilityRole="radio"
+                aria-checked={item.id === addressId}
+                accessibilityState={{ checked: item.id === addressId }}
+                onPress={() => {
+                  updateCheckoutDraft({ addressId: item.id });
+                  setChoosing(false);
+                }}
+                style={[s.row, { minHeight: 56 }]}
+              >
+                <Icon
+                  name={item.id === addressId ? 'radio-button-on' : 'radio-button-off'}
+                  color={C.ink}
+                />
+                <Text style={[s.body, { flex: 1, color: C.ink }]}>
+                  <Text style={{ fontWeight: '800' }}>{item.label}</Text> · {item.line1},{' '}
+                  {item.area}, {item.pincode}
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`${t('Edit', 'बदलें')} ${item.label}`}
+                  onPress={(event) => {
+                    event.stopPropagation();
+                    openAddresses(item.id);
+                  }}
+                  style={{ padding: space.md }}
+                >
+                  <Icon name="create-outline" />
+                </Pressable>
+              </Pressable>
+            ))}
+            <Button kind="quiet" icon="add" onPress={() => openAddresses('new')}>
+              {t('Add another address', 'दूसरा पता जोड़ें')}
+            </Button>
+          </View>
+        ) : (
+          <Text style={[s.body, { color: C.ink }]}>
+            <Text style={{ fontWeight: '800' }}>{address.label}</Text> · {address.name}
+            {'\n'}
+            {address.line1}, {address.area}, {address.city} {address.pincode}
+          </Text>
+        )}
+      </View>
+      <View style={{ gap: space.sm }}>
+        <Text style={s.h3}>{t('Delivery date', 'डिलीवरी की तारीख')}</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: space.sm }}
+        >
+          {dates.map((date) => (
+            <Chip
+              key={date}
+              role="radio"
+              label={
+                date === today
+                  ? t('Today', 'आज')
+                  : date === dates[1]
+                    ? t('Tomorrow', 'कल')
+                    : weekdayLabel(date, language)
+              }
+              detail={shortDayLabel(date, language)}
+              accessibilityLabel={dayLabel(date, language)}
+              selected={checkoutDraft.date === date}
+              onPress={() => updateCheckoutDraft({ date })}
+            />
+          ))}
+        </ScrollView>
+      </View>
+      <View style={{ gap: space.sm }}>
+        <Text style={s.h3}>{t('Payment', 'भुगतान')}</Text>
+        <View style={[s.row, { gap: space.sm, flexWrap: 'wrap' }]}>
+          <Chip
+            role="radio"
+            label={t('Cash on delivery', 'डिलीवरी पर भुगतान')}
+            detail={t('cash or UPI at the site', 'साइट पर नकद या UPI')}
+            selected={checkoutDraft.paymentMethod === 'COD'}
+            onPress={() => updateCheckoutDraft({ paymentMethod: 'COD' })}
+          />
+          {settings?.onlinePaymentsAvailable && (
+            <Chip
+              role="radio"
+              label={t('Pay online', 'ऑनलाइन भुगतान')}
+              detail="UPI · Razorpay"
+              selected={checkoutDraft.paymentMethod === 'ONLINE'}
+              onPress={() => updateCheckoutDraft({ paymentMethod: 'ONLINE' })}
+            />
+          )}
+        </View>
+      </View>
+      {notesOpen ? (
+        <Field
+          label={t('Delivery note (optional)', 'डिलीवरी निर्देश (वैकल्पिक)')}
+          value={checkoutDraft.notes}
+          onChangeText={(notes) => updateCheckoutDraft({ notes })}
+          multiline
+          maxLength={500}
+          placeholder={t('Landmark, unloading, floor…', 'पहचान का स्थान, उतराई, मंज़िल…')}
+        />
+      ) : (
+        <Button kind="quiet" icon="create-outline" onPress={() => setNotesOpen(true)}>
+          {t('Add a delivery note', 'डिलीवरी निर्देश जोड़ें')}
+        </Button>
+      )}
+    </View>
+  );
+}
+
 export function Cart() {
-  const { cart, cartBusy, t, navigate, setQuantity } = useStore();
+  const {
+    basket,
+    basketLoading,
+    cartBusy,
+    t,
+    language,
+    navigate,
+    setQuantity,
+    user,
+    addresses,
+    checkoutDraft,
+    mergeDraft,
+    say,
+  } = useStore();
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
-  async function change(id: string, quantity: number) {
-    setBusy(id);
+  async function change(productId: string, quantity: number) {
+    const line = basket.find((item) => item.productId === productId);
+    if (!line) return;
+    setBusy(productId);
     setError('');
     try {
-      await setQuantity(id, quantity);
+      await setQuantity(line.product, quantity);
     } catch (e) {
-      setError(message(e));
+      setError(say(e));
     } finally {
       setBusy('');
     }
   }
-  if (!cart.length)
+  const subtotal = basket.reduce(
+    (total, line) => total + line.product.pricePaise * line.quantity,
+    0,
+  );
+  const blocked = basket.some((line) => !line.product.active || line.quantity > line.product.stock);
+  const addressReady =
+    addresses.some((a) => a.id === checkoutDraft.addressId) || addresses.length > 0;
+  if (!basket.length && !basketLoading)
     return (
-      <Empty
-        icon="bag-outline"
-        title={t('emptyCart')}
-        body="Add your materials and we’ll help get them to your site."
-        action={t('browse')}
-        onAction={() => navigate({ screen: 'Products' })}
-      />
+      <Screen>
+        <MergeNotice />
+        <Empty
+          icon="basket-outline"
+          title={t('Your basket is empty', 'आपकी टोकरी खाली है')}
+          body={t(
+            'Add cement, steel or sand and order with cash on delivery.',
+            'सीमेंट, सरिया या बालू जोड़ें और डिलीवरी पर भुगतान से ऑर्डर करें।',
+          )}
+          action={t('Browse materials', 'सामग्री देखें')}
+          onAction={() => navigate({ screen: 'Products' })}
+        />
+      </Screen>
     );
   return (
-    <View style={s.stack}>
-      <Text style={s.title}>{t('cart')}</Text>
-      <Text style={s.body}>
-        {cart.reduce((total, line) => total + line.quantity, 0)} items · {cart.length}{' '}
-        {cart.length === 1 ? 'product' : 'products'} · Prices confirmed at checkout
-      </Text>
-      {cart.map((c) => (
-        <View key={c.productId} style={s.card}>
+    <Screen
+      footer={
+        <>
           <View style={s.between}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ color: C.ink, fontWeight: '700', fontSize: 16 }}>
-                {c.product.name}
-              </Text>
-              <Text style={[s.body, { marginTop: 5 }]}>
-                {c.product.unit} · {money(c.product.pricePaise)} each
-              </Text>
-            </View>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`Remove ${c.product.name}`}
-              disabled={Boolean(busy) || cartBusy}
-              onPress={() => void change(c.productId, 0)}
-              style={{ padding: 12 }}
+            <Text style={s.body}>{t('Materials total', 'सामग्री का कुल')}</Text>
+            <Text style={s.price}>{money(subtotal)}</Text>
+          </View>
+          {user ? (
+            <Button
+              icon="arrow-forward"
+              disabled={
+                Boolean(busy) || cartBusy || blocked || !addressReady || Boolean(mergeDraft)
+              }
+              onPress={() => navigate({ screen: 'Checkout' })}
             >
-              <Icon name="trash-outline" size={20} color="#8393a0" />
-            </Pressable>
-          </View>
-          <View style={[s.between, { marginTop: 18 }]}>
-            <Quantity
-              value={c.quantity}
-              min={c.product.minQuantity}
-              step={c.product.quantityStep}
-              max={Math.min(10000, c.product.stock)}
-              disabled={Boolean(busy) || cartBusy}
-              commitOnBlur
-              onInvalid={setError}
-              change={(n) => void change(c.productId, n)}
-            />
-            <Text style={s.price}>{money(c.product.pricePaise * c.quantity)}</Text>
-          </View>
-          {(!c.product.active || c.quantity > c.product.stock) && (
-            <View style={{ marginTop: 12 }}>
-              <Notice error>Update the quantity or remove this unavailable product.</Notice>
-            </View>
+              {t('Review order', 'ऑर्डर देखें')}
+            </Button>
+          ) : (
+            <Button icon="log-in-outline" onPress={() => navigate({ screen: 'Checkout' })}>
+              {t('Sign in to order', 'ऑर्डर के लिए साइन इन करें')}
+            </Button>
           )}
+        </>
+      }
+    >
+      <Text style={s.h1} maxFontSizeMultiplier={headingScale} accessibilityRole="header">
+        {t('Your basket', 'आपकी टोकरी')}
+      </Text>
+      <MergeNotice />
+      {basketLoading && <Bone height={88} />}
+      {basket.length > 0 && (
+        // The basket is the counter slip (parchi): paper, ruled lines and the COD stamp.
+        <View>
+          <View style={[s.paper, { paddingVertical: space.sm }]}>
+            {basket.map((line) => (
+              <View
+                key={line.productId}
+                style={[s.ruled, { gap: space.md, paddingVertical: space.md }]}
+              >
+                <View style={[s.row, { alignItems: 'flex-start' }]}>
+                  <MaterialArt product={line.product} size={44} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.h3}>{productName(line.product, language)}</Text>
+                    <Text style={s.small}>
+                      {money(line.product.pricePaise)} / {unitLabel(line.product.unit, language)}
+                    </Text>
+                  </View>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`${t('Remove', 'हटाएँ')} ${productName(line.product, language)}`}
+                    disabled={Boolean(busy) || cartBusy}
+                    onPress={() => void change(line.productId, 0)}
+                    style={{
+                      padding: space.sm,
+                      minWidth: 48,
+                      minHeight: 48,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Icon name="trash-outline" color={C.muted} />
+                  </Pressable>
+                </View>
+                <View style={s.between}>
+                  <Quantity
+                    label={`${productName(line.product, language)} ${t('quantity', 'मात्रा')}`}
+                    value={line.quantity}
+                    min={line.product.minQuantity}
+                    step={line.product.quantityStep}
+                    max={Math.min(MAX_LINE_QUANTITY, line.product.stock)}
+                    disabled={Boolean(busy) || cartBusy}
+                    commitOnBlur
+                    allowRemove
+                    onInvalid={setError}
+                    change={(n) => void change(line.productId, n)}
+                  />
+                  <Text style={s.price}>{money(line.product.pricePaise * line.quantity)}</Text>
+                </View>
+                {(!line.product.active || line.quantity > line.product.stock) && (
+                  <Notice error>
+                    {t(
+                      'Only part of this is in stock now. Lower the quantity or remove it.',
+                      'अभी इतना स्टॉक नहीं है। मात्रा कम करें या हटाएँ।',
+                    )}
+                  </Notice>
+                )}
+              </View>
+            ))}
+            {checkoutDraft.paymentMethod === 'COD' && (
+              <View style={{ alignItems: 'flex-end', paddingTop: space.md }}>
+                <CodStamp
+                  label={t('Payment: cash on delivery', 'भुगतान: पहुँचने पर नकद')}
+                  text={t('Cash on\ndelivery', 'नकद\nपहुँचने पर')}
+                />
+              </View>
+            )}
+          </View>
+          <TornEdge />
         </View>
-      ))}
+      )}
       {Boolean(error) && <Notice error>{error}</Notice>}
-      <Notice>
-        The store will confirm today’s prices, stock and delivery fee before you place your order.
-      </Notice>
-      <Button
-        disabled={Boolean(busy) || cartBusy}
-        onPress={() => navigate({ screen: 'Checkout' })}
-        icon="arrow-forward"
-      >
-        {t('checkout')}
-      </Button>
-    </View>
+      {user ? (
+        <DeliveryDetails />
+      ) : (
+        <Notice>
+          {t(
+            'Your basket is saved on this phone. Sign in with your mobile number when you are ready to order.',
+            'आपकी टोकरी इस फ़ोन पर सहेजी है। ऑर्डर करने के लिए मोबाइल नंबर से साइन इन करें।',
+          )}
+        </Notice>
+      )}
+    </Screen>
   );
 }
+
 export function Checkout() {
   const {
     addresses,
     cart,
-    settings,
     user,
     t,
+    language,
     navigate,
     refreshAccount,
     refreshCatalog,
     setToast,
     checkoutDraft,
-    updateCheckoutDraft,
     pendingCheckout,
     savePendingCheckout,
     rememberOrder,
     draftsLoading,
-    openAddresses,
+    say,
   } = useStore();
   const { date, notes, paymentMethod } = checkoutDraft;
   const addressId = addresses.some((address) => address.id === checkoutDraft.addressId)
     ? checkoutDraft.addressId
     : addresses[0]?.id || '';
-  const setAddressId = (value: string) => updateCheckoutDraft({ addressId: value });
-  const setDate = (value: string) => updateCheckoutDraft({ date: value });
-  const setNotes = (value: string) => updateCheckoutDraft({ notes: value });
-  const setPayment = (value: 'COD' | 'ONLINE') => updateCheckoutDraft({ paymentMethod: value });
   const [review, setReview] = useState<CheckoutReview | null>(null);
   const [accepted, setAccepted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const submitting = useRef(false);
-  const reviewing = useRef(false);
-  async function getReview() {
-    if (reviewing.current || submitting.current) return;
-    reviewing.current = true;
+  const reviewing = useRef(0);
+  const getReview = useCallback(async () => {
+    if (submitting.current || !addressId) return;
+    const current = ++reviewing.current;
     setBusy(true);
     setError('');
     setAccepted(false);
     try {
-      setReview(
-        await api<CheckoutReview>('/checkout/review', 'POST', {
-          addressId,
-          deliveryDate: date,
-          notes,
-          paymentMethod,
-        }),
-      );
+      const next = await api<CheckoutReview>('/checkout/review', 'POST', {
+        addressId,
+        deliveryDate: date,
+        notes,
+        paymentMethod,
+      });
+      if (current === reviewing.current) setReview(next);
     } catch (e) {
-      setReview(null);
-      setError(message(e));
+      if (current === reviewing.current) {
+        setReview(null);
+        setError(say(e));
+      }
     } finally {
-      reviewing.current = false;
-      setBusy(false);
+      if (current === reviewing.current) setBusy(false);
     }
-  }
+  }, [addressId, date, notes, paymentMethod, say]);
+  useEffect(() => {
+    if (!draftsLoading && !pendingCheckout && cart.length) void getReview();
+  }, [draftsLoading, pendingCheckout, getReview, cart.length]);
   async function place() {
-    if (submitting.current || (!pendingCheckout && (!review || !accepted))) return;
+    if (submitting.current || (!pendingCheckout && !review)) return;
+    if (!pendingCheckout && review!.changes.length && !accepted) return;
     submitting.current = true;
     setBusy(true);
     setError('');
@@ -171,41 +463,34 @@ export function Checkout() {
       navigate({ screen: 'Order', id: order.id });
       void savePendingCheckout(null).catch(() =>
         setToast(
-          'Order received. The saved request could not be cleared; retrying it returns this same order.',
+          t(
+            'Order received. Retrying the saved request returns this same order.',
+            'ऑर्डर मिल गया। सहेजा अनुरोध दोबारा भेजने पर यही ऑर्डर लौटेगा।',
+          ),
         ),
       );
-      void refreshAccount().catch(() =>
-        setToast('Order received. Cart refresh is temporarily unavailable.'),
-      );
+      void refreshAccount().catch(() => {});
       void refreshCatalog();
       if (submission.paymentMethod === 'ONLINE' && order.status === 'PENDING_PAYMENT') {
         try {
           const result = await payOnline(order.id, user!.phone);
           setToast(result.message);
         } catch (e) {
-          setToast(message(e));
+          setToast(say(e));
         }
       }
     } catch (e) {
-      if (
-        e instanceof ApiError &&
-        [
-          'PRICE_CHANGED',
-          'OUT_OF_STOCK',
-          'REVIEW_EXPIRED',
-          'CART_CHANGED',
-          'PAYMENTS_UNAVAILABLE',
-          'INVALID_DELIVERY_DATE',
-          'EMPTY_CART',
-        ].includes(e.code)
-      ) {
+      if (e instanceof ApiError && isCheckoutRefusal(e.code)) {
         await savePendingCheckout(null).catch(() => {});
         setReview(null);
         setAccepted(false);
-        setError(message(e));
+        setError(say(e));
       } else {
         setError(
-          `We could not confirm the result. Check this same request before placing another order. ${message(e)}`,
+          t(
+            `We could not confirm the result. Check this same request before placing another order. ${say(e)}`,
+            `परिणाम पक्का नहीं हो सका। दूसरा ऑर्डर देने से पहले यही अनुरोध जाँचें। ${say(e)}`,
+          ),
         );
       }
     } finally {
@@ -213,257 +498,210 @@ export function Checkout() {
       setBusy(false);
     }
   }
-  if (draftsLoading) return <Text style={s.body}>Restoring your checkout…</Text>;
+  if (draftsLoading)
+    return (
+      <Screen>
+        <Text style={s.body}>
+          {t('Restoring your checkout…', 'आपका चेकआउट वापस लाया जा रहा है…')}
+        </Text>
+      </Screen>
+    );
   if (pendingCheckout)
     return (
-      <View style={s.stack}>
-        <Text style={s.title}>Check your order request</Text>
+      <Screen
+        footer={
+          <Button loading={busy} onPress={() => void place()}>
+            {t('Check order result', 'ऑर्डर का परिणाम जाँचें')}
+          </Button>
+        }
+      >
+        <Text style={s.h1} maxFontSizeMultiplier={headingScale}>
+          {t('Check your order request', 'अपना ऑर्डर अनुरोध जाँचें')}
+        </Text>
         <Notice>
-          This checkout is for {money(pendingCheckout.totalPaise)}. Its result is not confirmed on
-          this device yet. Retrying checks the same request and will not create a second order.
+          {t(
+            `This request is for ${money(pendingCheckout.totalPaise)}. Its result is not confirmed on this phone yet. Checking sends the same request and will not create a second order.`,
+            `यह अनुरोध ${money(pendingCheckout.totalPaise)} का है। इसका परिणाम इस फ़ोन पर अभी पक्का नहीं है। जाँचने पर वही अनुरोध जाता है, दूसरा ऑर्डर नहीं बनेगा।`,
+          )}
         </Notice>
         {Boolean(error) && <Notice error>{error}</Notice>}
-        <Button loading={busy} onPress={() => void place()}>
-          Check order result
-        </Button>
         <Button secondary disabled={busy} onPress={() => navigate({ screen: 'Orders' })}>
-          View my orders
+          {t('View my orders', 'मेरे ऑर्डर देखें')}
         </Button>
-      </View>
+      </Screen>
     );
   if (!cart.length && !review)
     return (
-      <Empty
-        title={t('emptyCart')}
-        body="Add materials before checkout."
-        action={t('browse')}
-        onAction={() => navigate({ screen: 'Products' })}
-      />
+      <Screen>
+        <Empty
+          icon="basket-outline"
+          title={t('Your basket is empty', 'आपकी टोकरी खाली है')}
+          action={t('Browse materials', 'सामग्री देखें')}
+          onAction={() => navigate({ screen: 'Products' })}
+        />
+      </Screen>
     );
+  if (!addressId)
+    return (
+      <Screen>
+        <Notice>
+          {t('Add your site address to continue.', 'आगे बढ़ने के लिए साइट का पता जोड़ें।')}
+        </Notice>
+        <Button onPress={() => navigate({ screen: 'Addresses', id: 'new' })}>
+          {t('Add address', 'पता जोड़ें')}
+        </Button>
+      </Screen>
+    );
+  const needsConsent = Boolean(review?.changes.length);
   return (
-    <View style={s.stack}>
-      <Text style={s.title}>{review ? t('review') : t('checkout')}</Text>
-      <View style={ch.steps}>
-        {['Address', 'Delivery', 'Review & pay'].map((x, i) => (
-          <View key={x} style={s.row}>
-            <View style={[ch.stepDot, { backgroundColor: review || i < 2 ? C.navy : '#dce4eb' }]}>
-              <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>{i + 1}</Text>
-            </View>
-            <Text style={{ color: C.muted, fontSize: 11 }}>{x}</Text>
-          </View>
-        ))}
-      </View>
-      {!review ? (
-        <>
-          <Section
-            title={t('address')}
-            action={busy ? undefined : '+ Add new'}
-            onAction={() => openAddresses()}
-          />
-          {!addresses.length ? (
-            <Notice>Save your site or delivery address to continue.</Notice>
-          ) : (
-            addresses.map((a) => (
-              <Pressable
-                key={a.id}
-                accessibilityRole="radio"
-                aria-checked={addressId === a.id}
-                accessibilityState={{ checked: addressId === a.id, disabled: busy }}
-                disabled={busy}
-                onPress={() => setAddressId(a.id)}
-                style={[
-                  s.card,
-                  s.row,
-                  addressId === a.id && { borderColor: C.navy, borderWidth: 2 },
-                ]}
-              >
-                <Icon
-                  name={addressId === a.id ? 'radio-button-on' : 'radio-button-off'}
-                  color={C.navy}
-                />
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontWeight: '700', color: C.ink, marginBottom: 5 }}>
-                    {a.label} · {a.name}
-                  </Text>
-                  <Text style={s.body}>
-                    {a.line1}, {a.area}, {a.city} {a.pincode}
-                  </Text>
-                </View>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`Edit ${a.label} address`}
-                  disabled={busy}
-                  onPress={() => openAddresses(a.id)}
-                  style={{ padding: 12 }}
-                >
-                  <Icon name="create-outline" />
-                </Pressable>
-              </Pressable>
-            ))
-          )}
-          <Field
-            label={`${t('deliveryDate')} (YYYY-MM-DD)`}
-            value={date}
-            editable={!busy}
-            onChangeText={setDate}
-            placeholder="2026-10-03"
-            maxLength={10}
-          />
-          <Field
-            label={t('notes')}
-            value={notes}
-            editable={!busy}
-            onChangeText={setNotes}
-            multiline
-            maxLength={500}
-            placeholder="Site access, unloading instructions, landmark…"
-          />
-          <Text style={s.h2}>Payment method</Text>
-          <Pressable
-            accessibilityRole="radio"
-            aria-checked={paymentMethod === 'COD'}
-            accessibilityState={{ checked: paymentMethod === 'COD', disabled: busy }}
-            disabled={busy}
-            onPress={() => {
-              if (!reviewing.current && !submitting.current) setPayment('COD');
-            }}
-            style={[s.card, s.row]}
-          >
-            <Icon name={paymentMethod === 'COD' ? 'radio-button-on' : 'radio-button-off'} />
-            <View>
-              <Text style={{ fontWeight: '600', color: C.ink }}>{t('cod')}</Text>
-              <Text style={s.body}>Pay when your materials arrive.</Text>
-            </View>
-          </Pressable>
-          {settings?.onlinePaymentsAvailable && (
-            <Pressable
-              accessibilityRole="radio"
-              aria-checked={paymentMethod === 'ONLINE'}
-              accessibilityState={{ checked: paymentMethod === 'ONLINE', disabled: busy }}
-              disabled={busy}
-              onPress={() => {
-                if (!reviewing.current && !submitting.current) setPayment('ONLINE');
-              }}
-              style={[s.card, s.row]}
+    <Screen
+      footer={
+        review ? (
+          <>
+            <Text style={[s.small, { textAlign: 'center' }]}>
+              {review.paymentMethod === 'COD'
+                ? t(
+                    `You agree to pay ${money(review.totalPaise)} on delivery, including delivery charge.`,
+                    `आप डिलीवरी पर ${money(review.totalPaise)} (डिलीवरी शुल्क सहित) देने को राज़ी हैं।`,
+                  )
+                : t(
+                    `You will pay ${money(review.totalPaise)} online, including delivery.`,
+                    `आप ${money(review.totalPaise)} (डिलीवरी सहित) ऑनलाइन देंगे।`,
+                  )}
+            </Text>
+            <Button
+              loading={busy}
+              disabled={needsConsent && !accepted}
+              onPress={() => void place()}
+              icon="checkmark-circle"
             >
-              <Icon name={paymentMethod === 'ONLINE' ? 'radio-button-on' : 'radio-button-off'} />
-              <View>
-                <Text style={{ fontWeight: '600', color: C.ink }}>UPI, cards & netbanking</Text>
-                <Text style={s.body}>Secure checkout by Razorpay</Text>
-              </View>
-            </Pressable>
-          )}
-          {Boolean(error) && <Notice error>{error}</Notice>}
-          <Button
-            disabled={!addressId}
-            loading={busy}
-            onPress={() => void getReview()}
-            icon="arrow-forward"
-          >
-            {t('review')}
+              {review.paymentMethod === 'COD'
+                ? `${t('Place order', 'ऑर्डर करें')} · ${money(review.totalPaise)}`
+                : `${t('Pay online', 'ऑनलाइन भुगतान')} · ${money(review.totalPaise)}`}
+            </Button>
+          </>
+        ) : (
+          <Button loading={busy} onPress={() => void getReview()}>
+            {t('Check prices again', 'भाव फिर जाँचें')}
           </Button>
-        </>
+        )
+      }
+    >
+      <Text style={s.h1} maxFontSizeMultiplier={headingScale} accessibilityRole="header">
+        {t('Review your order', 'अपना ऑर्डर जाँचें')}
+      </Text>
+      {Boolean(error) && <Notice error>{error}</Notice>}
+      {!review ? (
+        busy ? (
+          <View
+            style={{ gap: space.sm }}
+            accessibilityLabel={t('Checking prices', 'भाव जाँचे जा रहे हैं')}
+          >
+            <Bone height={120} />
+            <Bone height={80} />
+          </View>
+        ) : null
       ) : (
         <>
-          {!!review.changes.length && (
-            <Notice>
-              Prices changed since you added these products:{'\n'}
-              {review.changes
-                .map((c) => `${c.name}: ${money(c.oldPricePaise)} → ${money(c.newPricePaise)}`)
-                .join('\n')}
-              {'\n'}Review and accept the updated total below.
-            </Notice>
+          {needsConsent && (
+            <View style={{ gap: space.sm }}>
+              <Notice error>
+                {t('Prices changed since you added these:', 'जोड़ने के बाद इनके भाव बदले हैं:')}
+                {'\n'}
+                {review.changes
+                  .map((c) => `${c.name}: ${money(c.oldPricePaise)} → ${money(c.newPricePaise)}`)
+                  .join('\n')}
+              </Notice>
+              <Pressable
+                accessibilityRole="checkbox"
+                aria-checked={accepted}
+                accessibilityState={{ checked: accepted }}
+                onPress={() => setAccepted(!accepted)}
+                style={[s.row, { minHeight: 56 }]}
+              >
+                <Icon name={accepted ? 'checkbox' : 'square-outline'} color={C.accent} size={28} />
+                <Text style={[s.body, { flex: 1, color: C.ink }]}>
+                  {t(
+                    `I accept the new prices and the total of ${money(review.totalPaise)}.`,
+                    `मैं नए भाव और कुल ${money(review.totalPaise)} स्वीकार करता/करती हूँ।`,
+                  )}
+                </Text>
+              </Pressable>
+            </View>
           )}
-          <View style={[s.card, s.stack]}>
-            {review.items.map((i) => (
-              <View style={s.between} key={i.productId}>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ color: C.ink, fontWeight: '600' }}>{i.name}</Text>
-                  <Text style={s.body}>
-                    {i.quantity} × {money(i.pricePaise)}
-                  </Text>
+          {/* The reviewed parchi: ruled lines, delivery on its own line, the total in big figures. */}
+          <View>
+            <View style={[s.paper, { paddingVertical: space.sm }]}>
+              {review.items.map((i) => (
+                <View style={[s.between, s.ruled, { paddingVertical: space.md }]} key={i.productId}>
+                  <View style={{ flex: 1, minWidth: 160 }}>
+                    <Text style={[s.body, { color: C.ink, fontWeight: '700' }]}>{i.name}</Text>
+                    <Text style={[s.small, { fontVariant: ['tabular-nums'] }]}>
+                      {i.quantity} × {money(i.pricePaise)}
+                    </Text>
+                  </View>
+                  <Text style={s.price}>{money(i.lineTotalPaise)}</Text>
                 </View>
-                <Text style={{ fontWeight: '600', color: C.ink }}>{money(i.lineTotalPaise)}</Text>
+              ))}
+              <View style={[s.between, s.ruled, { paddingVertical: space.sm }]}>
+                <Text style={s.body}>{t('Materials', 'सामग्री')}</Text>
+                <Text style={[s.body, { fontVariant: ['tabular-nums'] }]}>
+                  {money(review.subtotalPaise)}
+                </Text>
               </View>
-            ))}
-            <View style={s.divider} />
-            <View style={s.between}>
-              <Text style={s.body}>{t('subtotal')}</Text>
-              <Text style={s.body}>{money(review.subtotalPaise)}</Text>
+              <View style={[s.between, s.ruled, { paddingVertical: space.sm }]}>
+                <Text style={s.body}>{t('Delivery', 'डिलीवरी')}</Text>
+                <Text style={[s.body, { fontVariant: ['tabular-nums'] }]}>
+                  {money(review.deliveryFeePaise)}
+                </Text>
+              </View>
+              <View style={[s.between, { paddingTop: space.md }]}>
+                <Text style={s.h3}>{t('Total', 'कुल')}</Text>
+                <Text style={s.priceBig} maxFontSizeMultiplier={1.5}>
+                  {money(review.totalPaise)}
+                </Text>
+              </View>
+              {review.paymentMethod === 'COD' && (
+                <View style={{ alignItems: 'flex-end', paddingVertical: space.sm }}>
+                  <CodStamp
+                    label={t('Payment: cash on delivery', 'भुगतान: पहुँचने पर नकद')}
+                    text={t('Cash on\ndelivery', 'नकद\nपहुँचने पर')}
+                  />
+                </View>
+              )}
             </View>
-            <View style={s.between}>
-              <Text style={s.body}>{t('delivery')}</Text>
-              <Text style={s.body}>{money(review.deliveryFeePaise)}</Text>
-            </View>
-            <View style={s.divider} />
-            <View style={s.between}>
-              <Text style={s.h2}>{t('total')}</Text>
-              <Text style={s.price}>{money(review.totalPaise)}</Text>
-            </View>
+            <TornEdge />
           </View>
-          <View style={s.card}>
-            <Text style={{ color: C.ink, fontWeight: '700', marginBottom: 7 }}>
-              {review.address.name}
+          <View style={[s.card, { gap: space.xs }]}>
+            <Text style={s.h3}>
+              {dayLabel(review.deliveryDate, language)} · {review.address.label}
             </Text>
             <Text style={s.body}>
-              {review.address.line1}, {review.address.area}, {review.address.city}{' '}
-              {review.address.pincode}
-              {'\n'}Delivery: {review.deliveryDate}
+              {review.address.name} · {review.address.line1}, {review.address.area},{' '}
+              {review.address.city} {review.address.pincode}
+              {review.deliveryEstimate ? `\n${review.deliveryEstimate}` : ''}
               {'\n'}
-              {review.deliveryEstimate}
-              {'\n'}
-              {review.paymentMethod === 'COD' ? t('cod') : 'Razorpay online payment'}
+              {review.paymentMethod === 'COD'
+                ? t('Cash on delivery (cash or UPI)', 'डिलीवरी पर भुगतान (नकद या UPI)')
+                : t('Online payment', 'ऑनलाइन भुगतान')}
             </Text>
+            <Button
+              kind="quiet"
+              icon="create-outline"
+              disabled={busy}
+              onPress={() => navigate({ screen: 'Cart' })}
+            >
+              {t('Change delivery details', 'डिलीवरी विवरण बदलें')}
+            </Button>
           </View>
-          <Pressable
-            accessibilityRole="checkbox"
-            aria-checked={accepted}
-            accessibilityState={{ checked: accepted }}
-            onPress={() => setAccepted(!accepted)}
-            style={[s.row, { paddingVertical: 10 }]}
-          >
-            <Icon name={accepted ? 'checkbox' : 'square-outline'} color={C.navy} size={25} />
-            <Text style={[s.body, { flex: 1, color: C.ink }]}>
-              I have reviewed and agree to pay {money(review.totalPaise)}, including delivery.
-            </Text>
-          </Pressable>
-          {Boolean(error) && <Notice error>{error}</Notice>}
-          <Button loading={busy} disabled={!accepted} onPress={() => void place()} icon="checkmark">
-            {review.paymentMethod === 'COD'
-              ? t('place')
-              : `${t('pay')} · ${money(review.totalPaise)}`}
-          </Button>
-          <Button
-            secondary
-            disabled={busy}
-            onPress={() => {
-              setReview(null);
-              setAccepted(false);
-            }}
-          >
-            Edit delivery details
-          </Button>
-          <Text style={[s.body, { fontSize: 11, textAlign: 'center' }]}>
-            This review is valid for 5 minutes. Any new price change requires your approval again.
+          <Text style={[s.small, { textAlign: 'center' }]}>
+            {t(
+              'This review holds for 5 minutes. A new price change needs your approval again.',
+              'यह समीक्षा 5 मिनट तक मान्य है। भाव फिर बदला तो आपकी मंज़ूरी फिर लगेगी।',
+            )}
           </Text>
         </>
       )}
-    </View>
+    </Screen>
   );
 }
-const ch = StyleSheet.create({
-  steps: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 17,
-    borderBottomWidth: 1,
-    borderBottomColor: C.line,
-  },
-  stepDot: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});

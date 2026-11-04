@@ -7,9 +7,13 @@ export default ts.config(
       '**/dist/**',
       '**/.next/**',
       '**/.next-e2e/**',
+      '**/.next-security/**',
       '**/.expo/**',
       '**/next-env.d.ts',
+      'apps/mobile/android/**',
+      'apps/mobile/ios/**',
       '.local/**',
+      '.claude/**',
       '.playwright-cli/**',
       'playwright-report/**',
       'test-results/**',
@@ -39,5 +43,31 @@ export default ts.config(
       ],
       '@typescript-eslint/no-explicit-any': 'error',
     },
+  },
+  {
+    // Code that runs inside the Android/iOS app (Hermes) must avoid web-only APIs.
+    files: ['apps/mobile/**/*.{ts,tsx}', 'packages/shared/src/**/*.ts'],
+    rules: {
+      'no-restricted-properties': [
+        'error',
+        {
+          object: 'AbortSignal',
+          property: 'timeout',
+          message:
+            'React Native has no AbortSignal.timeout(); use AbortController with setTimeout.',
+        },
+        {
+          object: 'AbortSignal',
+          property: 'any',
+          message: 'React Native has no AbortSignal.any().',
+        },
+      ],
+    },
+  },
+  {
+    // Expo config plugins and Metro config are loaded with require().
+    files: ['apps/mobile/plugins/**/*.js', 'apps/mobile/metro.config.js'],
+    languageOptions: { sourceType: 'commonjs' },
+    rules: { '@typescript-eslint/no-require-imports': 'off' },
   },
 );

@@ -46,44 +46,52 @@ enum QuoteStatus {
 }
 
 model User {
-  demandOverrides DemandOverride[]
-  contractorStatus String           @default("NONE")
-  deletedAt        DateTime?
-  adminCredential  AdminCredential?
-  id               String           @id @default(cuid())
-  phone            String           @unique
-  name             String           @default("")
-  role             Role             @default(CUSTOMER)
-  language         String           @default("en")
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
-  sessions         Session[]
-  addresses        Address[]
-  cart             CartItem[]
-  reviews          CheckoutReview[]
-  orders           Order[]
-  quotes           Quote[]
-  notifications    Notification[]
-  devices          Device[]
-  assignedWork     OwnerWork[]      @relation("WorkOwner")
-  technicalWork    OwnerWork[]      @relation("TechnicalOwner")
+  demandOverrides   DemandOverride[]
+  contractorStatus  String             @default("NONE")
+  deletedAt         DateTime?
+  adminCredential   AdminCredential?
+  id                String             @id @default(cuid())
+  phone             String             @unique
+  name              String             @default("")
+  role              Role               @default(CUSTOMER)
+  language          String             @default("en")
+  staffTitle        String             @default("")
+  whatsappAlerts    Boolean            @default(false)
+  pushSubscriptions PushSubscription[]
+  outboundMessages  OutboundMessage[]
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  sessions          Session[]
+  addresses         Address[]
+  cart              CartItem[]
+  reviews           CheckoutReview[]
+  orders            Order[]
+  quotes            Quote[]
+  notifications     Notification[]
+  devices           Device[]
+  assignedWork      OwnerWork[]        @relation("WorkOwner")
+  technicalWork     OwnerWork[]        @relation("TechnicalOwner")
 
   @@index([createdAt, id])
 }
 
 model Session {
-  label            String    @default("Unknown device")
-  lastSeenAt       DateTime  @default(now())
-  adminVerifiedAt  DateTime?
-  id               String    @id @default(cuid())
-  userId           String
-  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  accessHash       String    @unique
-  refreshHash      String    @unique
-  expiresAt        DateTime
-  refreshExpiresAt DateTime
-  createdAt        DateTime  @default(now())
-  devices          Device[]
+  label                String    @default("Unknown device")
+  lastSeenAt           DateTime  @default(now())
+  adminVerifiedAt      DateTime?
+  id                   String    @id @default(cuid())
+  userId               String
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessHash           String    @unique
+  refreshHash          String    @unique
+  // The refresh token replaced by the latest rotation: a retry before previousRefreshUntil still
+  // refreshes (the reply was lost); presenting it later revokes the session (token reuse).
+  previousRefreshHash  String?   @unique
+  previousRefreshUntil DateTime?
+  expiresAt            DateTime
+  refreshExpiresAt     DateTime
+  createdAt            DateTime  @default(now())
+  devices              Device[]
 
   @@index([userId])
 }
@@ -133,6 +141,8 @@ model Product {
   movements      InventoryMovement[]
   id             String                 @id @default(cuid())
   name           String
+  // Hindi name and description; Hindi readers see the English text while these are empty.
+  nameHi         String?
   brand          String
   categoryId     String
   category       Category               @relation(fields: [categoryId], references: [id])
@@ -144,9 +154,11 @@ model Product {
   version        Int                    @default(1)
   priceUpdatedAt DateTime               @default(now())
   stock          Int                    @default(0)
+  lowStockAt     Int                    @default(25)
   active         Boolean                @default(true)
   images         String[]
   description    String
+  descriptionHi  String?
   recommendedUse String
   createdAt      DateTime               @default(now())
   updatedAt      DateTime               @updatedAt
@@ -161,6 +173,11 @@ model Product {
   @@index([active, createdAt, id])
   @@index([active, categoryId, name, id])
   @@index([active, brand, name, id])
+  // Trigram search indexes (pg_trgm is created by the 20261002120000_pilot_operations migration).
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "Product_name_search")
+  @@index([brand(ops: raw("gin_trgm_ops"))], type: Gin, map: "Product_brand_search")
+  @@index([grade(ops: raw("gin_trgm_ops"))], type: Gin, map: "Product_grade_search")
+  @@index([nameHi(ops: raw("gin_trgm_ops"))], type: Gin, map: "Product_nameHi_search")
 }
 
 model ProductPriceHistory {
@@ -315,6 +332,7 @@ model Quote {
   gstin             String
   notes             String
   adminNote         String          @default("")
+  deliveryTerms     String          @default("")
   deliveryFeePaise  Int             @default(0)
   totalPaise        Int?
   validUntil        DateTime?
@@ -378,6 +396,7 @@ model Notification {
   orderId   String?
   read      Boolean   @default(false)
   sentAt    DateTime?
+  pushedAt  DateTime?
   attempts  Int       @default(0)
   createdAt DateTime  @default(now())
 
@@ -429,6 +448,8 @@ model FinancialMovement {
   amountPaise         Int
   actorId             String
   occurredAt          DateTime @default(now())
+  channel             String   @default("")
+  counterParty        String   @default("")
 
   @@unique([paymentId, kind])
   @@index([occurredAt, kind])
@@ -494,6 +515,7 @@ model DeliveryZone {
   minimumOrderPaise      Int               @default(0)
   freeDeliveryAbovePaise Int?
   estimate               String
+  terms                  String            @default("")
   version                Int               @default(1)
   pincodes               DeliveryPincode[]
 }
@@ -621,17 +643,52 @@ model RateCard {
 }
 
 model DemandOverride {
-  id String @id @default(cuid())
-  userId String
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  kind String
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  kind          String
   maxTotalPaise Int
-  expiresAt DateTime
-  usedAt DateTime?
+  expiresAt     DateTime
+  usedAt        DateTime?
+
   @@index([userId, kind, expiresAt])
 }
+
 model ProductAsset {
-  id String @id
-  url String @unique
+  id        String   @id
+  url       String   @unique
   createdAt DateTime @default(now())
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model OutboundMessage {
+  id            String    @id @default(cuid())
+  userId        String?
+  user          User?     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  channel       String
+  recipient     String
+  template      String
+  params        Json
+  dedupeKey     String    @unique
+  status        String    @default("PENDING")
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime  @default(now())
+  lastError     String?
+  providerId    String?
+  createdAt     DateTime  @default(now())
+  sentAt        DateTime?
+
+  @@index([status, nextAttemptAt])
+  @@index([createdAt])
 }
