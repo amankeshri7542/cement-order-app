@@ -192,8 +192,8 @@ describe('server error logs', () => {
 
   it('names the Prisma code, model, route and code of a failure without its message', async () => {
     const logged = await handle(
-      new Prisma.PrismaClientKnownRequestError(`Foreign key failed for ${phone}`, {
-        code: 'P2003',
+      new Prisma.PrismaClientKnownRequestError(`Null constraint failed for ${phone}`, {
+        code: 'P2011',
         clientVersion: Prisma.prismaVersion.client,
         meta: { modelName: 'Order', field_name: phone },
       }),
@@ -205,7 +205,7 @@ describe('server error logs', () => {
       code: 'INTERNAL_ERROR',
       route: 'POST /api/v1/orders/:id',
       errorType: 'PrismaClientKnownRequestError',
-      prismaCode: 'P2003',
+      prismaCode: 'P2011',
       prismaModel: 'Order',
     });
     expect(line.stack).toEqual(expect.arrayContaining([expect.stringMatching(/:\d+$/)]));
@@ -436,5 +436,54 @@ describe('account deletion', () => {
     expect(
       await db.auditLog.findFirstOrThrow({ where: { event: 'ACCOUNT_DELETED' } }),
     ).toMatchObject({ details: { closedQuotes: 1 } });
+  });
+});
+
+describe('malformed request bodies', () => {
+  it('answers an unreadable body with 4xx INVALID_BODY and logs no server error', async () => {
+    const logged = await captured('error', async () => {
+      const charset = await request(server)
+        .post('/api/v1/cart/items')
+        .set(auth())
+        .set('Content-Type', 'application/json; charset=latin1')
+        .send('{"productId":"cement","quantity":1}');
+      expect(charset.status).toBe(415);
+      expect(charset.body.error.code).toBe('INVALID_BODY');
+      const encoding = await request(server)
+        .post('/api/v1/cart/items')
+        .set(auth())
+        .set('Content-Type', 'application/json')
+        .set('Content-Encoding', 'zstd-unknown')
+        .send('{"productId":"cement","quantity":1}');
+      expect(encoding.status).toBe(415);
+      expect(encoding.body.error.code).toBe('INVALID_BODY');
+      // Nest already answers truncated JSON itself with 400 BAD_REQUEST.
+      const broken = await request(server)
+        .post('/api/v1/cart/items')
+        .set(auth())
+        .set('Content-Type', 'application/json')
+        .send('{"productId":');
+      expect(broken.status).toBe(400);
+    });
+    expect(logged).not.toContain('REQUEST_FAILED');
+  });
+  it('refuses a staff product in an unknown category with 400, not 500', async () => {
+    const r = await request(server).post('/api/v1/admin/products').set(auth('admin')).send({
+      name: 'Test cement in no category',
+      brand: 'Test',
+      categoryId: 'no-such-category',
+      type: 'PPC',
+      grade: 'PPC',
+      unit: '50 kg bag',
+      pricePaise: 41000,
+      stock: 0,
+      active: true,
+      images: [],
+      description: 'Test material',
+      recommendedUse: 'Testing',
+    });
+    expect(r.status, JSON.stringify(r.body)).toBe(400);
+    expect(r.body.error.code).toBe('INVALID_INPUT');
+    expect(await db.product.count({ where: { categoryId: 'no-such-category' } })).toBe(0);
   });
 });

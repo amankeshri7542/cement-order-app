@@ -284,3 +284,42 @@ test('each order can be shared on WhatsApp without the delivery address', async 
   expect(text).not.toContain(phone);
   await expect(share).toHaveAttribute('target', '_blank');
 });
+
+test('signing out removes private drafts from this browser but keeps recovery records', async ({
+  page,
+}) => {
+  const phone = '9888840006';
+  await login(page, phone);
+  const db = database();
+  let id = '';
+  try {
+    ({ id } = await db.user.findUniqueOrThrow({ where: { phone: `+91${phone}` } }));
+  } finally {
+    await db.$disconnect();
+  }
+  const drafts = ['checkout', 'quote_draft', 'quote_intent', 'guest_merge'].map(
+    (key) => `shiv_${key}_${id}`,
+  );
+  const recovery = ['pending_order', 'pending_quote', 'pending_quote_intent'].map(
+    (key) => `shiv_${key}_${id}`,
+  );
+  await page.evaluate(
+    ({ drafts, recovery, id }) => {
+      for (const key of [...drafts, ...recovery])
+        localStorage.setItem(key, JSON.stringify({ notes: 'TEST private GSTIN note' }));
+      sessionStorage.setItem(`shiv_assistant_${id}`, JSON.stringify([]));
+    },
+    { drafts, recovery, id },
+  );
+  await page.goto(`${site}/account`);
+  await page.getByRole('button', { name: 'Sign out', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Signed out.' })).toBeVisible();
+  const left = await page.evaluate(
+    (id) => [
+      ...Object.keys(localStorage).filter((key) => key.includes(id)),
+      ...Object.keys(sessionStorage).filter((key) => key.includes(id)),
+    ],
+    id,
+  );
+  expect(left.sort()).toEqual([...recovery].sort());
+});

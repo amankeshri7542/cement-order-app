@@ -80,3 +80,34 @@ test('order history tracks, cancels and reorders', async ({ page }) => {
   await expect(page).toHaveURL(`${site}/cart`);
   await expect(page.getByRole('main').getByLabel('Quantity for UltraTech Super')).toHaveValue('3');
 });
+
+test('older orders loaded with "Load older orders" stay listed when focus refreshes the list', async ({
+  page,
+}) => {
+  const phone = '9888860002';
+  await login(page, phone);
+  const older = await placeOrder(page, phone);
+  const newer = await placeOrder(page, phone);
+  // Serve one order per first page, so the older one arrives through "Load older orders".
+  const firstPage = await page.request.get(`${api}/orders?limit=1`, { headers: { Origin: site } });
+  expect(firstPage.ok()).toBe(true);
+  const { nextCursor } = await firstPage.json();
+  expect(nextCursor).toBeTruthy();
+  await page.route(/\/orders\?limit=24$/, async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    await route.fulfill({ response, json: { items: body.items.slice(0, 1), nextCursor } });
+  });
+  await page.reload();
+  const record = (number: string) => page.locator('.order-record').filter({ hasText: number });
+  await expect(record(newer)).toBeVisible();
+  await page.getByRole('button', { name: 'Load older orders', exact: true }).click();
+  await expect(record(older)).toBeVisible();
+  const refresh = page.waitForResponse(
+    (r) => /\/orders\?limit=24$/.test(r.url()) && r.status() === 200,
+  );
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await refresh;
+  await expect(record(newer)).toBeVisible();
+  await expect(record(older)).toBeVisible();
+});

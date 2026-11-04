@@ -21,6 +21,7 @@ import {
   deliveryActionSchema,
   checkoutSchema,
   CheckoutReview,
+  istToday,
   orderStatusSchema,
   orderStatusText,
   placeOrderSchema,
@@ -56,8 +57,9 @@ const normalizeReturns = (items: unknown) =>
         .sort((a, b) => String(a[0]).localeCompare(String(b[0])))
     : null;
 
+// The year on order and quote numbers is Patna's, whatever the server clock's zone.
 export const reference = (prefix: string) =>
-  `${prefix}-${new Date().getFullYear()}-${randomBytes(4).toString('hex').toUpperCase()}`;
+  `${prefix}-${istToday().slice(0, 4)}-${randomBytes(4).toString('hex').toUpperCase()}`;
 export function validDelivery(date: string) {
   const today = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Kolkata',

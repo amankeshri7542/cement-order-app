@@ -6,6 +6,7 @@ import type { Order, Page } from '@shiv/shared';
 import { useCommerce, saved, persist } from './commerce';
 import { AccountRequired } from './account';
 import { customerApi, CustomerError } from '../lib/customer-api';
+import { mergePage } from '../lib/paging';
 import { dayLabel, price } from '../lib/catalog';
 import { orderShareText, whatsappShareUrl } from '../lib/share';
 import { useLanguage } from './language';
@@ -36,6 +37,7 @@ function Orders({ orderId }: { orderId?: string }) {
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const epoch = useRef(0);
+  const deeper = useRef(false);
   const mounted = useRef(false);
   useEffect(() => {
     mounted.current = true;
@@ -65,12 +67,10 @@ function Orders({ orderId }: { orderId?: string }) {
             id,
           );
           if (current === epoch.current) {
-            setOrders((old) =>
-              after
-                ? [...old, ...page.items.filter((item) => !old.some((prev) => prev.id === item.id))]
-                : page.items,
-            );
-            setCursor(page.nextCursor);
+            // Focus refreshes the first page; "Load older orders" pages stay listed.
+            setOrders((old) => mergePage(old, page.items, !after));
+            if (after || !deeper.current) setCursor(page.nextCursor);
+            if (after) deeper.current = true;
           }
         }
       } catch (e) {
@@ -85,6 +85,7 @@ function Orders({ orderId }: { orderId?: string }) {
     [id, orderId, c.showError],
   );
   useEffect(() => {
+    deeper.current = false;
     setOrders([]);
     void load();
     const focus = () => {

@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { useCommerce, Quantity, saved, persist } from './commerce';
 import { AccountRequired, AddressBook } from './account';
 import { customerApi, CustomerError } from '../lib/customer-api';
+import { mergePage } from '../lib/paging';
 import { dayLabel, momentLabel, price } from '../lib/catalog';
 import { useLanguage } from './language';
 import { quoteStatusText } from '@shiv/shared';
@@ -99,6 +100,7 @@ function QuoteAccount() {
   const [busy, setBusy] = useState(false);
   const [consents, setConsents] = useState<Record<string, number>>({});
   const epoch = useRef(0);
+  const deeper = useRef(false);
   const locked = useRef(false);
   const load = useCallback(
     async (after?: string) => {
@@ -111,13 +113,10 @@ function QuoteAccount() {
           id,
         );
         if (current === epoch.current) {
-          setQuotes((old) =>
-            after
-              ? [...old, ...data.items.filter((item) => !old.some((prev) => prev.id === item.id))]
-              : data.items,
-          );
-          setCursor(data.nextCursor);
-          setConsents({});
+          // Polls refresh the first page; ticks are per revision, so a new offer clears its own.
+          setQuotes((old) => mergePage(old, data.items, !after));
+          if (after || !deeper.current) setCursor(data.nextCursor);
+          if (after) deeper.current = true;
         }
       } catch (e) {
         if (current === epoch.current) c.showError(e);
@@ -137,6 +136,7 @@ function QuoteAccount() {
     setLoadedDraft(true);
     const found = quoteRequestSchema.safeParse(saved(`shiv_pending_quote_${id}`));
     setPending(found.success ? found.data : null);
+    deeper.current = false;
     setQuotes([]);
     void load();
     const focus = () => {
@@ -381,10 +381,10 @@ function QuoteAccount() {
                       type="checkbox"
                       checked={consents[quote.id] === quote.revision}
                       onChange={(e) =>
-                        setConsents({
-                          ...consents,
+                        setConsents((old) => ({
+                          ...old,
                           [quote.id]: e.target.checked ? quote.revision : 0,
-                        })
+                        }))
                       }
                     />
                     {t(

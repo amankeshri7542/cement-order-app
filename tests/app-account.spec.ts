@@ -127,6 +127,29 @@ test('the account can be deleted once no order is open', async ({ page, request 
   await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible();
 });
 
+test('deleting the account removes its drafts and frozen basket from the device', async ({
+  page,
+}) => {
+  const phone = '9888850005';
+  await appLogin(page, phone);
+  const { id } = await db.user.findUniqueOrThrow({ where: { phone: `+91${phone}` } });
+  // The web build keeps the phone's SecureStore records in localStorage under the same keys.
+  await page.evaluate((id) => {
+    localStorage.setItem(
+      `shiv_draft_${id}`,
+      JSON.stringify({ checkout: { notes: 'TEST private site note' }, quote: { gstin: '' } }),
+    );
+    localStorage.setItem(`shiv_merge_${id}`, JSON.stringify({ key: 'k', lines: [] }));
+  }, id);
+  await page.getByRole('button', { name: 'Delete account', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Type DELETE to confirm', exact: true }).fill('DELETE');
+  await page.getByRole('button', { name: 'Permanently delete my account', exact: true }).click();
+  await expect(page.getByText('Account deleted', { exact: true })).toBeVisible();
+  expect(
+    await page.evaluate((id) => Object.keys(localStorage).filter((key) => key.includes(id)), id),
+  ).toEqual([]);
+});
+
 test('an order summary can be shared', async ({ page, request }) => {
   const phone = '9888850004';
   await appLogin(page, phone);

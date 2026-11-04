@@ -201,6 +201,7 @@ export function Account() {
     setLanguage,
     navigate,
     signout,
+    forgetAccount,
     setLoginVisible,
     settings,
     setToast,
@@ -476,7 +477,7 @@ export function Account() {
                   try {
                     await api('/me/delete', 'POST', { confirmation });
                     await clearLocalSession();
-                    setUser(null);
+                    await forgetAccount();
                     navigate({ screen: 'Home' });
                     setToast(t('Account deleted', 'खाता हटा दिया गया'));
                   } catch (e) {

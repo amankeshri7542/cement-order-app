@@ -65,6 +65,20 @@ export function persist(key: string, value: unknown) {
       /* A stale record is replayed safely by its idempotency key. */
     }
 }
+/**
+ * Sign-out removes this account's private drafts (notes, company, GSTIN, lists, assistant chat)
+ * from the browser. The shiv_pending_* recovery records stay, so a lost order or quotation
+ * result can still be recovered after signing back in.
+ */
+function forgetDrafts(id: string) {
+  for (const key of ['checkout', 'quote_draft', 'quote_intent', 'guest_merge'])
+    persist(`shiv_${key}_${id}`, null);
+  try {
+    sessionStorage.removeItem(`shiv_assistant_${id}`);
+  } catch {
+    /* Storage blocked: nothing was kept. */
+  }
+}
 /** Cross-tab signals and other hints whose loss must never interrupt sign-in or sign-out. */
 function remember(key: string, value: unknown) {
   try {
@@ -357,7 +371,9 @@ function useCommerceValue() {
     try {
       await tail.current.catch(() => {});
       await customerApi('/auth/logout', 'POST', {});
+      const owner = identity.current?.id;
       identify(null);
+      if (owner) forgetDrafts(owner);
       persist('shiv_quote_intent_guest', null);
       quoteRef.current = fresh();
       setQuote(quoteRef.current);

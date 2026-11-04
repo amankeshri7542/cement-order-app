@@ -98,7 +98,25 @@ export class Errors implements ExceptionFilter {
       body = typeof detail === 'object' ? { ...detail } : { message: detail };
       if (!body.code)
         body.code = status === 429 ? 'RATE_LIMITED' : HttpStatus[status] || 'REQUEST_FAILED';
+    } else if (
+      // body-parser marks the client's own faults (bad JSON or charset, unknown encoding, an
+      // aborted body) with a 4xx status and expose: true. Its message is not passed on.
+      error &&
+      typeof error === 'object' &&
+      'expose' in error &&
+      error.expose === true &&
+      'status' in error &&
+      typeof error.status === 'number' &&
+      error.status >= 400 &&
+      error.status < 500
+    ) {
+      status = error.status;
+      body = { code: 'INVALID_BODY', message: 'The request could not be read. Please try again.' };
     } else if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === 'P2003') {
+        status = 400;
+        body = { code: 'INVALID_INPUT', message: 'A linked record does not exist.' };
+      }
       if (error.code === 'P2002' || error.code === 'P2034') {
         status = 409;
         body = {

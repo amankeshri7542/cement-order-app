@@ -152,6 +152,7 @@ export const customerErrorCodes = [
   'ORDER_NOT_FOUND',
   'QUOTE_CHANGED',
   'INVALID_INPUT',
+  'INVALID_BODY',
   'INVALID_TRANSITION',
   'IDEMPOTENCY_CONFLICT',
   'CONFLICT',
@@ -309,6 +310,10 @@ export const customerErrors: Record<CustomerErrorCode, Bilingual> = {
   INVALID_INPUT: [
     'Check the required fields and selling terms.',
     'ज़रूरी जानकारी और बिक्री की शर्तें जाँचें।',
+  ],
+  INVALID_BODY: [
+    'This request could not be read. Refresh the page and try again.',
+    'यह अनुरोध पढ़ा नहीं जा सका। पेज फिर लोड करके कोशिश करें।',
   ],
   INVALID_TRANSITION: [
     'This action is no longer available. Refresh the order.',

@@ -836,6 +836,18 @@ function useStoreValue() {
       setToast(say(e));
     }
   }
+  // After account deletion nothing of the account stays on the phone, as on the website:
+  // checkout and quote drafts, pending requests and the frozen guest basket go too.
+  async function forgetAccount() {
+    const id = userRef.current?.id;
+    setUser(null);
+    await storageTail.current.catch(() => {});
+    if (id)
+      await Promise.all([
+        writeSaved(`shiv_draft_${id}`, null),
+        writeSaved(mergeKey(id), null),
+      ]).catch(() => {});
+  }
   function toggleCompare(product: Product) {
     setCompare((old) =>
       old.some((item) => item.id === product.id)
@@ -894,6 +906,7 @@ function useStoreValue() {
     setQuantity,
     add,
     signout,
+    forgetAccount,
     loginVisible,
     setLoginVisible,
     toast,
