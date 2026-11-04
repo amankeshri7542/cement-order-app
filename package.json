@@ -44,6 +44,12 @@
     "i18n:check": "npm test -w @shiv/i18n"
   },
   "overrides": {
+    "@nestjs/platform-express": {
+      "multer": "^2.5.0"
+    },
+    "google-gax": {
+      "rimraf": "^6.1.4"
+    },
     "@prisma/config": {
       "deepmerge-ts": "^8.0.0",
       "effect": "^3.20.0"
@@ -52,7 +58,8 @@
       "js-yaml": "^5.4.1"
     },
     "gaxios": {
-      "uuid": "^11.1.1"
+      "uuid": "^11.1.1",
+      "rimraf": "^6.1.4"
     },
     "xcode": {
       "uuid": "^11.1.1"
