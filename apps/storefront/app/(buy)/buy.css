@@ -1,0 +1,396 @@
+@layer reset, base, components;
+/* The buying pages: plain ground, one column, the same tokens as the rest of the site. */
+@layer components {
+  .commerce-page,
+  .account-page {
+    padding: clamp(32px, 5vw, 72px) var(--m) var(--section);
+    max-width: 78rem;
+    margin-inline: auto;
+  }
+  .page-heading h1 {
+    font-size: var(--t-1);
+  }
+  .page-heading p {
+    margin-top: 1rem;
+    font-size: var(--t-3);
+    line-height: 1.45;
+    max-width: 34em;
+  }
+  .button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5em;
+    min-height: 48px;
+    padding: 0.7em 1.2em;
+    border-radius: var(--r);
+    font-weight: 500;
+    line-height: 1.1;
+    text-decoration: none;
+    text-align: center;
+    background: var(--ink);
+    color: var(--ground);
+    transition:
+      transform var(--press) var(--ease-out),
+      background-color var(--hover) ease;
+  }
+  .button:active {
+    transform: scale(0.97);
+  }
+  .button.secondary {
+    background: none;
+    color: inherit;
+    border: 1.5px solid currentColor;
+  }
+  .button[disabled] {
+    opacity: 0.45;
+    cursor: not-allowed;
+    transform: none;
+  }
+  .text-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--touch);
+    text-decoration: underline;
+    text-underline-offset: 0.22em;
+    text-decoration-thickness: 1px;
+  }
+  .text-link[disabled] {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .action-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-top: 1rem;
+  }
+  .section-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px 16px;
+  }
+  .section-heading h2 {
+    font-size: var(--t-2);
+    letter-spacing: -0.018em;
+    line-height: 1.12;
+  }
+  .loading-state {
+    margin-top: 1.5rem;
+    color: var(--ink-2);
+  }
+  .empty-state,
+  .recovery-panel,
+  .account-gate,
+  .account-panel,
+  .quote-builder,
+  .quote-request,
+  .quote-history,
+  .order-record,
+  .next-steps,
+  .name-step,
+  .address-book {
+    background: var(--ground-up);
+    padding: clamp(18px, 2.4vw, 32px);
+    border-radius: var(--r);
+    margin-top: 1.5rem;
+  }
+  .account-gate h1 {
+    font-size: var(--t-1);
+  }
+  .account-gate h2,
+  .empty-state h2,
+  .recovery-panel h2,
+  .next-steps h2,
+  .name-step h2,
+  .account-panel h2,
+  .order-summary h2 {
+    font-size: var(--t-2);
+    letter-spacing: -0.018em;
+    line-height: 1.12;
+  }
+  .account-gate p,
+  .empty-state p,
+  .recovery-panel p {
+    margin-top: 0.5rem;
+    max-width: 44em;
+  }
+  .empty-state .button,
+  .recovery-panel .button,
+  .account-gate .button {
+    margin-top: 1rem;
+  }
+  .notice {
+    background: var(--warn-soft);
+    color: var(--warn);
+    padding: 12px 16px;
+    margin-top: 1rem;
+    border-radius: var(--r);
+  }
+  .local-notice {
+    background: var(--ground-down);
+    padding: 10px 14px;
+    margin-top: 0.75rem;
+  }
+  .commerce-alert {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    background: var(--danger-soft);
+    color: var(--danger);
+    padding: 10px var(--m);
+  }
+  .commerce-alert button {
+    min-width: var(--touch);
+    min-height: var(--touch);
+    font-size: 1.25rem;
+  }
+  .feedback {
+    position: fixed;
+    left: 50%;
+    bottom: 16px;
+    transform: translateX(-50%);
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    max-width: calc(100vw - 32px);
+    background: var(--ink);
+    color: var(--ground);
+    padding: 8px 8px 8px 16px;
+    border-radius: var(--r);
+    box-shadow: 0 12px 40px rgba(18, 21, 19, 0.22);
+  }
+  .feedback button {
+    min-width: var(--touch);
+    min-height: var(--touch);
+    font-size: 1.25rem;
+  }
+  .purchase-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+    gap: clamp(24px, 4vw, 72px);
+    align-items: start;
+    margin-top: 1.5rem;
+  }
+  .order-summary {
+    background: var(--ground-up);
+    padding: clamp(18px, 2.4vw, 32px);
+    border-radius: var(--r);
+    position: sticky;
+    top: calc(var(--nav) + 16px);
+  }
+  .order-summary > * + * {
+    margin-top: 0.75rem;
+  }
+  .form-grid,
+  .address-form,
+  .account-form {
+    display: grid;
+    gap: 16px;
+    margin-top: 1rem;
+    max-width: 34rem;
+  }
+  .form-grid label,
+  .address-form label,
+  .account-form label,
+  .name-step label {
+    display: grid;
+    gap: 4px;
+    font-weight: 500;
+  }
+  .form-grid input,
+  .form-grid textarea,
+  .address-form input,
+  .account-form input,
+  .account-form select,
+  .name-step input {
+    font-weight: 400;
+    min-height: 52px;
+    padding: 10px 14px;
+    background: var(--ground);
+    border: 1.5px solid var(--ink);
+    border-radius: var(--r);
+    width: 100%;
+  }
+  .field-hint,
+  .form-note {
+    color: var(--ink-2);
+    margin-top: 0.5rem;
+  }
+  .field-problem,
+  .error-text {
+    color: var(--danger);
+    margin-top: 0.5rem;
+  }
+  .choice {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding-block: 8px;
+    line-height: 1.4;
+    font-weight: 400 !important;
+  }
+  .choice input {
+    margin-top: 0.2em;
+    width: 18px;
+    height: 18px;
+    min-height: 0;
+    flex: none;
+  }
+  .review-items li {
+    display: grid;
+    gap: 2px;
+    padding-block: 8px;
+    border-top: 1px solid var(--rule);
+  }
+  .review-items strong {
+    font-weight: 500;
+  }
+  .review-totals div {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    padding-block: 6px;
+    border-top: 1px solid var(--rule);
+    font-variant-numeric: tabular-nums;
+  }
+  .review-total {
+    font-weight: 500;
+    font-size: var(--t-3);
+  }
+  .quote-line {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 12px;
+    padding-block: 12px;
+    border-top: 1px solid var(--rule);
+  }
+  .quote-line h3,
+  .order-record h2,
+  .order-record h3 {
+    font-size: var(--t-3);
+    font-weight: 500;
+    letter-spacing: 0;
+  }
+  .order-record-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+    gap: 16px;
+    margin-top: 0.75rem;
+  }
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5em;
+    font-weight: 500;
+  }
+  .status-badge::before {
+    content: '';
+    width: 0.6em;
+    height: 0.6em;
+    background: var(--warn);
+  }
+  .status-confirmed::before,
+  .status-delivered::before,
+  .status-out_for_delivery::before {
+    background: var(--ok);
+  }
+  .status-cancelled::before,
+  .status-refund_pending::before {
+    background: var(--danger);
+  }
+  .total-price {
+    font-size: var(--t-2);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.015em;
+  }
+  .order-progress {
+    margin-top: 0.75rem;
+    display: grid;
+    gap: 6px;
+  }
+  .next-steps ol {
+    margin-top: 0.75rem;
+    display: grid;
+    gap: 12px;
+  }
+  .next-steps li {
+    display: flex;
+    gap: 12px;
+  }
+  .step-mark {
+    flex: none;
+    width: 1.75em;
+    height: 1.75em;
+    display: inline-grid;
+    place-items: center;
+    background: var(--ground-down);
+    border-radius: var(--r);
+    font-variant-numeric: tabular-nums;
+  }
+  .step-current .step-mark {
+    background: var(--ink);
+    color: var(--ground);
+  }
+  .step-done .step-mark {
+    background: var(--ok-soft);
+    color: var(--ok);
+  }
+  .next-steps-placed {
+    font-weight: 500;
+    margin-bottom: 0.75rem;
+  }
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .session-list li,
+  .address-list li {
+    padding-block: 10px;
+    border-top: 1px solid var(--rule);
+  }
+  .account-summary {
+    margin-top: 1rem;
+  }
+  @media (max-width: 899px) {
+    .purchase-layout {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .order-summary {
+      position: static;
+    }
+  }
+  .comparison {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+    gap: 16px;
+    margin-top: 1.5rem;
+  }
+  .comparison article {
+    background: var(--ground-up);
+    padding: 20px;
+    border-radius: var(--r);
+  }
+  .comparison h2 {
+    font-size: var(--t-2);
+    letter-spacing: -0.018em;
+    line-height: 1.12;
+  }
+  .comparison dl > div {
+    padding-block: 8px;
+    border-top: 1px solid var(--rule);
+  }
+  .comparison dt {
+    color: var(--ink-2);
+  }
+}

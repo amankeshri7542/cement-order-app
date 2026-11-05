@@ -1,28 +1,35 @@
-# Smoke + tap budgets: rates on the first screen (0 taps); a product's main action needs no
-# scrolling; Back from a product keeps the search.
+# A stranger: no language gate and no sign-in wall. Reads rates, searches, adds, reads a product.
 appId: in.shivcement.store
 tags: [smoke]
 ---
 - launchApp:
     clearState: true
-- tapOn: English
 - extendedWaitUntil:
-    visible: Current rates
-    timeout: 15000
-- assertVisible: .*/ 50 kg bag
-- assertNotVisible: Cannot reach the store.*
-- tapOn:
-    text: Materials
-    index: 0
-- tapOn: Search materials
-- inputText: UltraTech
+    visible: Today's rates
+    timeout: 20000
+- assertVisible: Sample rates
+- assertNotVisible: Choose your language
+- assertVisible: Home
+- assertVisible: Orders
+- assertVisible: Account
+- tapOn: Search
+- inputText: saria
 - hideKeyboard
 - extendedWaitUntil:
-    visible: View UltraTech Super
-    timeout: 10000
-- tapOn: View UltraTech Super
-- assertVisible: Add to basket
-- assertVisible: Total
-- tapOn: Back
-- assertVisible: UltraTech
-- assertVisible: View UltraTech Super
+    visible: Tata Tiscon 550SD.*
+    timeout: 5000
+- tapOn: Add Tata Tiscon 550SD to your list
+- extendedWaitUntil:
+    visible: Your list.*
+    timeout: 3000
+- back
+- tapOn:
+    text: Orders
+    index: 0
+- assertVisible: Sign in to see your orders
+- tapOn:
+    text: Account
+    index: 0
+- assertVisible: Sign in
+- assertVisible: Privacy
+- assertNotVisible: Udhaar

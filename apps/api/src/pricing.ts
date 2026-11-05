@@ -528,7 +528,8 @@ export class PricingController {
         select: { customerGroupId: true },
       }),
       this.db.product.findMany({
-        where: { active: true },
+        // An item with no public rate has none here either: it is the shop's to give.
+        where: { active: true, sourcing: { not: 'ON_REQUEST' } },
         select: { id: true, categoryId: true, pricePaise: true, minQuantity: true },
         take: 500,
       }),

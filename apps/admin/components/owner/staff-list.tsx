@@ -6,6 +6,7 @@ import { api } from '../../lib/api';
 import { useT } from '../../lib/i18n';
 import { useAction, useOwner, useUnsavedGuard } from '../../lib/owner';
 import { Problem, QueryStatus } from './common';
+import { AskAdvance } from './salary/ask';
 import css from './owner.module.css';
 import own from './settings.module.css';
 
@@ -102,6 +103,7 @@ export function StaffList() {
   return (
     <section className={`${css.card} ${own.section}`}>
       <h2>{t('owner.staffList.title')}</h2>
+      <AskAdvance />
       <QueryStatus query={staff} />
       {staff.data && !staff.data.length && <EmptyState title={t('owner.staffList.empty')} />}
       {!!staff.data?.length && (

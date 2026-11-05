@@ -1,0 +1,56 @@
+# A driver's trip on a real release build: leave, the stop card, delivered with a skip reason, cash.
+appId: in.shivcement.staff
+tags: [smoke]
+---
+- runFlow:
+    file: subflows/link.yaml
+    env:
+      NUMBER: '9000007005'
+- tapOn:
+    id: tab-kaam
+- extendedWaitUntil:
+    visible: Aaj ki trip
+    timeout: 15000
+- takeScreenshot: trip
+- tapOn:
+    id: trip-leave
+- extendedWaitUntil:
+    visible: Maal nikal gaya.*
+    timeout: 20000
+- tapOn:
+    id: flood-home
+- tapOn:
+    id: trip-next
+- extendedWaitUntil:
+    visible: Lena hai ₹18,500
+    timeout: 10000
+- takeScreenshot: stop-card
+- tapOn:
+    id: stop-reached
+- takeScreenshot: delivered-form
+# The reasons sit below the money on a small screen.
+- scrollUntilVisible:
+    element:
+      id: skip-dark
+- tapOn:
+    id: skip-dark
+- tapOn:
+    id: delivered-save
+- extendedWaitUntil:
+    visible: Maal pahunch gaya.*
+    timeout: 20000
+- takeScreenshot: delivered-flood
+- tapOn:
+    id: flood-home
+- tapOn:
+    id: trip-cash
+- extendedWaitUntil:
+    visible:
+      id: cash-figure
+    timeout: 15000
+- takeScreenshot: cash
+- tapOn:
+    id: cash-give
+- extendedWaitUntil:
+    visible: Cashier ki ginti baaki
+    timeout: 15000

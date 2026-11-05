@@ -1,19 +1,19 @@
-# The app is killed right after Place order. On reopening, any unconfirmed request is
-# checked (never sent as a second order).
+# The app is killed right after Place order. On reopening, an unconfirmed request is checked with the
+# same key, and is never sent as a second order. Start with an order ready in the panel.
 appId: in.shivcement.store
 ---
 - tapOn: Place order.*
 - stopApp
 - launchApp
 - extendedWaitUntil:
-    visible: Current rates
+    visible: Today's rates
     timeout: 30000
 - runFlow:
     when:
-      visible: Your last order request needs its result checked.*
+      visible: Not sure this reached us.*
     commands:
-      - tapOn: Your last order request needs its result checked.*
-      - tapOn: Check order result
+      - tapOn: Not sure this reached us.*
+      - tapOn: Check my order
       - extendedWaitUntil:
-          visible: Confirmed
+          visible: Waiting for the shop
           timeout: 30000

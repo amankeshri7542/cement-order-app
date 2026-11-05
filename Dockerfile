@@ -10,6 +10,7 @@ COPY tsconfig.base.json ./
 COPY packages/shared packages/shared
 COPY packages/i18n packages/i18n
 COPY apps/api apps/api
+COPY content/advisor content/advisor
 RUN npm run build -w @shiv/shared && npm run db:generate && npm run build -w @shiv/api
 
 FROM node:22-bookworm-slim AS runtime
@@ -25,6 +26,8 @@ COPY --from=build /app/node_modules/.prisma node_modules/.prisma
 COPY --from=build /app/packages/shared/dist packages/shared/dist
 COPY --from=build /app/packages/i18n/dist packages/i18n/dist
 COPY --from=build /app/apps/api/dist apps/api/dist
+# The guide and its sign-offs: the release runs apps/api/dist/advisor/sync-cli.js against them.
+COPY content/advisor content/advisor
 USER node
 EXPOSE 4000
 # Liveness only: a database outage must not make the orchestrator restart a healthy process.

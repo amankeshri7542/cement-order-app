@@ -225,7 +225,7 @@ describe('where the work runs', () => {
     const instance = worker();
     const timers = vi.spyOn(globalThis, 'setInterval');
     instance.onModuleInit();
-    expect(timers).toHaveBeenCalledTimes(4);
+    expect(timers).toHaveBeenCalledTimes(6);
     instance.onModuleDestroy();
   });
 });

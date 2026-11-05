@@ -1,0 +1,150 @@
+@layer reset, base, components;
+@layer components {
+  .shelf {
+    margin-top: clamp(32px, 5vw, 72px);
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 24rem), 1fr));
+    gap: clamp(24px, 3vw, 48px);
+  }
+  .item {
+    display: flex;
+    flex-direction: column-reverse;
+    gap: 12px;
+    text-decoration: none;
+  }
+  .art {
+    width: 100%;
+    height: auto;
+    transition: transform 500ms var(--ease-out);
+    transform-origin: 50% 100%;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .item:hover .art {
+      transform: translate3d(0, -6px, 0);
+    }
+    .item:hover .name {
+      text-decoration: underline;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 0.16em;
+    }
+  }
+  .words {
+    display: block;
+  }
+  .name {
+    display: block;
+    font-size: var(--t-2);
+    font-weight: 300;
+    letter-spacing: -0.015em;
+    line-height: 1.15;
+  }
+  .plain {
+    display: block;
+    color: var(--ink-2);
+  }
+  .rate {
+    display: block;
+    margin-top: 4px;
+    font-variant-numeric: tabular-nums;
+  }
+  .rate b {
+    font-weight: 400;
+    font-size: 1.5rem;
+    letter-spacing: -0.02em;
+  }
+  .hero {
+    display: grid;
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+    gap: clamp(24px, 4vw, 72px);
+    align-items: end;
+  }
+  .heroArt {
+    width: 100%;
+    height: auto;
+  }
+  .lowest {
+    margin-top: 1.25rem;
+    font-size: var(--t-1);
+    font-weight: 400;
+    letter-spacing: -0.03em;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .lowest small {
+    font-size: var(--t-3);
+    letter-spacing: 0;
+    color: var(--ink-2);
+  }
+  .filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 1.5rem;
+  }
+  .filters a {
+    min-height: var(--touch);
+    display: inline-flex;
+    align-items: center;
+    padding-inline: 0.9em;
+    background: var(--ground-down);
+    border-radius: var(--r);
+    text-decoration: none;
+  }
+  .filters a[aria-current='true'] {
+    background: var(--ink);
+    color: var(--ground);
+  }
+  .product {
+    display: grid;
+    grid-template-columns: minmax(0, 6fr) minmax(0, 6fr);
+    gap: clamp(24px, 4vw, 72px);
+    align-items: start;
+  }
+  .price {
+    margin-top: 1.25rem;
+    font-size: var(--t-1);
+    font-weight: 400;
+    letter-spacing: -0.03em;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .price small {
+    display: block;
+    margin-top: 6px;
+    font-size: var(--t-3);
+    letter-spacing: 0;
+    color: var(--ink-2);
+  }
+  .buy {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    margin-top: 1.25rem;
+  }
+  .word {
+    display: inline-block;
+    margin-top: 0.75rem;
+    font-weight: 500;
+  }
+  .word::before {
+    content: '';
+    display: inline-block;
+    width: 0.6em;
+    height: 0.6em;
+    margin-right: 0.5em;
+    background: var(--ok);
+  }
+  .word[data-off]::before {
+    background: var(--warn);
+  }
+  @media (max-width: 899px) {
+    .hero,
+    .product {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .hero .heroArt {
+      max-width: 26rem;
+    }
+  }
+}

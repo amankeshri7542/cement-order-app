@@ -15,6 +15,7 @@ import { ApiError, api } from '../../lib/api';
 import { useT, useWords } from '../../lib/i18n';
 import { useAction, useOwner } from '../../lib/owner';
 import { PageHeader, Problem, QueryStatus } from './common';
+import { StaffHours } from './staff-hours';
 import css from './owner.module.css';
 
 type Person = {
@@ -387,6 +388,7 @@ function PersonCard({
   const { me, confirm } = useOwner();
   const mine = person.id === me.id;
   const paused = !!person.staffPausedAt;
+  const [hours, setHours] = useState(false);
   const act = async (
     what: 'pause' | 'resume',
     title: MessageKey,
@@ -431,6 +433,16 @@ function PersonCard({
           <Button variant="secondary" onClick={onEdit}>
             {t('owner.change')}
           </Button>
+          {/* Only someone tied to a shop has a shift and hazri there. */}
+          {person.role && needsShop(person.role) && (
+            <Button
+              variant="secondary"
+              aria-label={t('owner.shift.openFor', { name: person.name })}
+              onClick={() => setHours(true)}
+            >
+              {t('owner.shift.open')}
+            </Button>
+          )}
           {paused ? (
             <Button
               variant="secondary"
@@ -459,6 +471,7 @@ function PersonCard({
           )}
         </div>
       )}
+      {hours && <StaffHours person={person} close={() => setHours(false)} />}
     </article>
   );
 }

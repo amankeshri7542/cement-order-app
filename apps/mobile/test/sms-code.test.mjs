@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { loadTs } from './load-ts.mjs';
 
-const { codeFromMessage } = loadTs('src/sms-code.ts');
+const { codeFromMessage } = loadTs('src/platform/sms-code.ts');
 
 test('finds the six-digit code in a retriever message', () => {
   assert.equal(codeFromMessage('<#> Your Shiv Cement Store code is 482913\nFA+9qCX9VSu'), '482913');

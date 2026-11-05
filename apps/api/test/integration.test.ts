@@ -202,6 +202,8 @@ describe('App update policy', () => {
         latestVersion: '1.0.0',
         storeUrl: 'https://play.google.com/store/apps/details?id=in.shivcement.store',
       },
+      askEnabled: false,
+      awardsUrl: null,
     });
   });
 });

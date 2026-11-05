@@ -33,9 +33,12 @@ test('every refusal code is one the API actually throws', () => {
 });
 
 test('the app and the website use the shared list, not their own copies', () => {
-  for (const file of ['apps/mobile/src/checkout.tsx', 'apps/storefront/components/checkout.tsx']) {
+  for (const file of [
+    'apps/mobile/src/state/checkout.ts',
+    'apps/storefront/components/buy/checkout.tsx',
+  ]) {
     const text = readFileSync(resolve(root, file), 'utf8');
-    assert.match(text, /isCheckoutRefusal\(e\.code\)/, file);
+    assert.match(text, /isCheckoutRefusal\((e|error)\.code\)/, file);
     assert.doesNotMatch(text, /'REVIEW_EXPIRED',\s*\n\s*'CART_CHANGED'/, file);
   }
 });

@@ -158,7 +158,7 @@ test('phone fields keep the right ten digits from pasted and autofilled numbers'
   assert.equal(phoneDigits('+9'), '9');
   // The app and the desk used to keep the first ten of twelve digits ("9198765432").
   const root = resolve(import.meta.dirname, '../../..');
-  for (const file of ['apps/mobile/src/account.tsx']) {
+  for (const file of ['apps/mobile/src/features/auth/SignIn.tsx']) {
     const text = readFileSync(resolve(root, file), 'utf8');
     assert.match(text, /setPhone\(phoneDigits\(/, file);
     assert.doesNotMatch(text, /setPhone\([^)]*replace\(\/\\D\/g, ''\)\.slice\(0, 10\)/, file);
@@ -168,7 +168,7 @@ test('phone fields keep the right ten digits from pasted and autofilled numbers'
     /onChange\(phoneDigits\(e.target.value\)\)/,
   );
   assert.doesNotMatch(
-    readFileSync(resolve(root, 'apps/mobile/src/account.tsx'), 'utf8'),
+    readFileSync(resolve(root, 'apps/mobile/src/features/auth/SignIn.tsx'), 'utf8'),
     /maxLength=\{10\}/,
   );
 });

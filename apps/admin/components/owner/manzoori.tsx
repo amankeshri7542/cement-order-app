@@ -7,6 +7,8 @@ import { api } from '../../lib/api';
 import { useLanguage, useT } from '../../lib/i18n';
 import { useAction, useOwner } from '../../lib/owner';
 import { PageHeader, Problem, QueryStatus } from './common';
+import { EvidencePhoto } from './hazri/common';
+import { AskAdvance } from './salary/ask';
 import css from './owner.module.css';
 
 type Request = {
@@ -29,6 +31,11 @@ type Request = {
     fromName?: string;
     toName?: string;
     stillWaiting?: boolean;
+    evidenceId?: string | null;
+    amountPaise?: number;
+    recoveryPaise?: number;
+    channel?: string;
+    paidFrom?: string;
     fromTotalPaise?: number;
     toTotalPaise?: number;
     lines?: {
@@ -112,9 +119,36 @@ function Facts({ row }: { row: Request }) {
     );
   if (row.kind === 'STOCK_DAMAGE')
     return (
-      <p>
-        {detail.quantity} {detail.unit} {detail.name}
-      </p>
+      <>
+        <p>
+          {detail.quantity} {detail.unit} {detail.name}
+        </p>
+        {/* Once decided it is history, so nobody's read goes on the record until they ask. */}
+        {detail.evidenceId && (
+          <EvidencePhoto id={detail.evidenceId} later={row.status !== 'PENDING'} />
+        )}
+      </>
+    );
+  if (row.kind === 'ADVANCE')
+    return (
+      <>
+        <p>
+          <strong>{detail.name}</strong>: {money(detail.amountPaise ?? 0)}
+        </p>
+        <p>
+          {detail.recoveryPaise
+            ? t('owner.manzoori.advanceRecovery', { amount: money(detail.recoveryPaise) })
+            : t('owner.manzoori.advanceNoRecovery')}
+        </p>
+        <p className={css.sub}>
+          {t(
+            detail.paidFrom === 'GALLA'
+              ? 'owner.manzoori.advanceFromGalla'
+              : 'owner.manzoori.advanceFromOwner',
+            { channel: t(detail.channel === 'UPI' ? 'owner.manzoori.upi' : 'owner.manzoori.cash') },
+          )}
+        </p>
+      </>
     );
   if (row.kind === 'TRANSFER_SHORTAGE')
     return (
@@ -246,7 +280,7 @@ function RequestCard({ row }: { row: Request }) {
         // Passing a limit only when this card has just said so.
         ...(decision === 'APPROVE' && row.detail?.overLimit ? { overrideLimit: true } : {}),
       }),
-    [approvalsKey, ['stock'], ['rates'], ['inbox'], ['orders', 'list']],
+    [approvalsKey, ['stock'], ['rates'], ['inbox'], ['orders', 'list'], ['salary']],
   );
   return (
     <article className={css.card}>
@@ -265,7 +299,10 @@ function RequestCard({ row }: { row: Request }) {
           .join(' · ')}
       </p>
       <Facts row={row} />
-      {row.amountPaise !== null && row.amountPaise > 0 && <p>{money(row.amountPaise)}</p>}
+      {/* An advance already says its figure in the facts above. */}
+      {row.amountPaise !== null &&
+        row.amountPaise > 0 &&
+        !(row.kind === 'ADVANCE' && row.detail) && <p>{money(row.amountPaise)}</p>}
       {/* What someone typed stays plain text. */}
       {row.note && <p>{row.note}</p>}
       {row.canDecide && (
@@ -301,6 +338,7 @@ export function Manzoori() {
     <>
       <PageHeader title={t('owner.manzoori.title')} />
       <div className={css.stack}>
+        <AskAdvance />
         <QueryStatus query={requests} />
         {requests.data && !waiting.length && <EmptyState title={t('owner.manzoori.empty')} />}
         {waiting.map((row) => (

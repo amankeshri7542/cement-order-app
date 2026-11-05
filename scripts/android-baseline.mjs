@@ -60,12 +60,10 @@ for (let run = 0; run < runs; run++) {
   await sleep(2500);
 }
 
-// Scrolling: open Products, fling through the list, read the frame statistics.
+// Scrolling: Home is one list of every rate. Fling through it and read the frame statistics.
 const { width, height } = Object.fromEntries(
   device.size.split('x').map((value, index) => [index ? 'height' : 'width', Number(value)]),
 );
-adb('shell', 'input', 'tap', String(Math.round(width * 0.375)), String(Math.round(height * 0.86)));
-await sleep(2500);
 adb('shell', 'dumpsys', 'gfxinfo', pkg, 'reset');
 for (let swipe = 0; swipe < 8; swipe++) {
   const [from, to] = swipe < 6 ? [0.72, 0.3] : [0.3, 0.72];

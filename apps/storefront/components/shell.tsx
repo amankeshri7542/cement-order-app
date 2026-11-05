@@ -1,133 +1,179 @@
-'use client';
-
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { useLanguage } from './language';
-import { useCommerce } from './commerce';
-import { AssistantLauncher } from './assistant-launcher';
+import { awardsLive } from '../lib/awards';
 import { playUrl } from '../lib/play';
+import { whatsappNumber } from '../lib/public-data';
+import { contentReview } from '../lib/review';
+import { shortName, siteName } from '../lib/site';
+import type { ClientConfig, ShopFacts } from '../lib/types';
+import { waLink, waText } from '../lib/whatsapp';
+import { Mark } from './mark';
+import { Placeholder } from './review';
+import s from './shell.module.css';
 
-export function Header() {
-  const { language, setLanguage, t } = useLanguage();
-  const pathname = usePathname();
-  const c = useCommerce();
+type Item = { href: string; label: string };
+/** The one list of top-level pages. Things not live yet are simply absent, in every build. */
+function mainLinks(shop: ShopFacts, config: ClientConfig): Item[] {
+  return [
+    { href: '/rates', label: 'Rates' },
+    { href: '/materials', label: 'Materials' },
+    config.askEnabled ? { href: '/ask', label: 'Ask' } : { href: '/guide', label: 'Guide' },
+    ...(whatsappNumber(shop) || contentReview ? [{ href: '/whatsapp', label: 'WhatsApp' }] : []),
+    { href: '/about', label: 'The shop' },
+  ];
+}
+
+export function Header({ shop, config }: { shop: ShopFacts; config: ClientConfig }) {
+  const links = mainLinks(shop, config);
   return (
     <>
-      <a className="skip-link" href="#main">
-        {t('Skip to content', 'मुख्य सामग्री पर जाएँ')}
-      </a>
-      <header className="site-header">
-        <div className="header-inner">
-          <Link className="brand" href="/" prefetch={false}>
-            <span className="brand-stamp" aria-hidden="true">
-              शिव
-            </span>
-            <span className="brand-name">
-              <strong>{t('Shiv Cement Store', 'शिव सीमेंट स्टोर')}</strong>
-              <small>
-                {t(
-                  'Patna · cement, steel, bricks, sand, stone chips',
-                  'पटना · सीमेंट, सरिया, ईंट, बालू, गिट्टी',
-                )}
-              </small>
+      <span className={s.thread} aria-hidden="true" />
+      <header className={s.nav} data-site-nav>
+        <Link className={s.word} href="/" aria-label={`${siteName}, home`} prefetch={false}>
+          <Mark className={s.mark} />
+          {shortName}
+        </Link>
+        <nav className={s.links} aria-label="Main" data-nav-links>
+          {links.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              prefetch={false}
+              {...(link.href === '/ask' ? { 'data-ask': '' } : {})}
+            >
+              {link.label}
+            </Link>
+          ))}
+        </nav>
+        <div className={s.right}>
+          <Link className={s.list} href="/list" prefetch={false}>
+            Your list
+            <span className={s.count}>
+              <span data-list-count suppressHydrationWarning>
+                0
+              </span>
+              <span className="sr"> lines</span>
             </span>
           </Link>
-          <nav aria-label={t('Main navigation', 'मुख्य नेविगेशन')}>
-            <Link href="/" prefetch={false} aria-current={pathname === '/' ? 'page' : undefined}>
-              {t('Home', 'होम')}
-            </Link>
-            <Link
-              href="/products"
-              aria-current={pathname.startsWith('/products') ? 'page' : undefined}
-            >
-              {t('Materials', 'सामग्री')}
-            </Link>
-            {/* "Quotes" here (the footer says "Bulk quotes") so five links fit one row on a phone. */}
-            <Link href="/quotes">{t('Quotes', 'थोक भाव')}</Link>
-            <Link href="/contact" aria-current={pathname === '/contact' ? 'page' : undefined}>
-              {t('Contact', 'संपर्क')}
-            </Link>
-            <Link href="/account">{c.user ? t('Account', 'खाता') : t('Sign in', 'साइन इन')}</Link>
-            <Link href="/cart" className="header-basket">
-              {t('Basket', 'टोकरी')}{' '}
-              {/* Re-keying replays a short acknowledgement whenever the line count changes. */}
-              <span key={c.lines.length} className={c.lines.length ? 'counted' : undefined}>
-                {c.lines.length}
-              </span>
-            </Link>
-          </nav>
-          {/* A header item at every width, so it never covers the rate board or basket bar. */}
-          <AssistantLauncher />
-          <button
-            className="language-button"
-            lang={language === 'en' ? 'hi' : 'en'}
-            onClick={() => setLanguage(language === 'en' ? 'hi' : 'en')}
-          >
-            {language === 'en' ? 'हिन्दी' : 'English'}
-            <span aria-hidden="true"> ⇄</span>
-          </button>
+          <details className={s.menu} data-menu>
+            <summary>Menu</summary>
+            <nav className={s.sheet} aria-label="Menu">
+              {links.map((link) => (
+                <Link key={link.href} href={link.href} prefetch={false}>
+                  {link.label}
+                </Link>
+              ))}
+              {config.askEnabled ? (
+                <Link className={s.quiet} href="/guide" prefetch={false}>
+                  Guide
+                </Link>
+              ) : null}
+              <Link className={s.quiet} href="/delivery" prefetch={false}>
+                Delivery
+              </Link>
+              <Link className={s.quiet} href="/orders" prefetch={false}>
+                My orders
+              </Link>
+              <Link className={s.quiet} href="/account" prefetch={false}>
+                Sign in or account
+              </Link>
+            </nav>
+          </details>
         </div>
       </header>
     </>
   );
 }
 
-export function Footer() {
-  const { t } = useLanguage();
-  const c = useCommerce();
+export function Footer({ shop, config }: { shop: ShopFacts; config: ClientConfig }) {
+  const whatsapp = whatsappNumber(shop);
   return (
-    <footer className="site-footer">
-      <div className="footer-inner">
-        <div className="footer-sign">
-          <span className="brand-stamp" aria-hidden="true">
-            शिव
-          </span>
-          <div>
-            <strong>{t('Shiv Cement Store', 'शिव सीमेंट स्टोर')}</strong>
-            <p>{t('Building materials · Patna, Bihar', 'निर्माण सामग्री · पटना, बिहार')}</p>
-          </div>
-        </div>
-        <nav aria-label={t('Shop', 'दुकान')}>
-          <h2>{t('Shop', 'दुकान')}</h2>
-          <Link href="/products">{t('All materials', 'सारी सामग्री')}</Link>
-          <Link href="/compare">{t('Compare materials', 'सामग्री की तुलना')}</Link>
-          <Link href="/quotes">{t('Bulk quotes', 'थोक भाव')}</Link>
-          <Link href="/#delivery" prefetch={false}>
-            {t('Check delivery', 'डिलीवरी जाँचें')}
+    <footer className={s.foot}>
+      <p className={s.name} aria-hidden="true">
+        {shortName}
+        <Mark className={s.nameMark} />
+      </p>
+      <div className={s.grid}>
+        <div>
+          <h2>Buy</h2>
+          <Link href="/rates" prefetch={false}>
+            Today&apos;s rates
           </Link>
-        </nav>
-        <nav aria-label={t('Your account', 'आपका खाता')}>
-          <h2>{t('Your account', 'आपका खाता')}</h2>
-          <Link href="/account">
-            {c.user ? t('Account & addresses', 'खाता और पते') : t('Sign in', 'साइन इन')}
+          <Link href="/materials" prefetch={false}>
+            Materials
           </Link>
-          <Link href="/cart">{t('Basket', 'टोकरी')}</Link>
-          <Link href="/orders">{t('Orders', 'ऑर्डर')}</Link>
-        </nav>
-        <nav aria-label={t('About the shop', 'दुकान के बारे में')}>
-          <h2>{t('About the shop', 'जानकारी')}</h2>
-          <Link href="/about">{t('About', 'परिचय')}</Link>
-          <Link href="/delivery">{t('Delivery', 'डिलीवरी')}</Link>
-          <Link href="/contact">{t('Contact', 'संपर्क')}</Link>
-          {playUrl ? (
-            <a href={playUrl} target="_blank" rel="noopener noreferrer">
-              {t('Get the app on Google Play', 'Google Play पर ऐप पाएँ')} ↗
+          <Link href="/list" prefetch={false}>
+            Your list
+          </Link>
+          <Link href="/delivery" prefetch={false}>
+            Delivery
+          </Link>
+          {whatsapp ? (
+            <a href={waLink(whatsapp, waText.order())} rel="noopener noreferrer" target="_blank">
+              Order on WhatsApp
             </a>
           ) : null}
-          <Link href="/privacy">{t('Privacy', 'निजता')}</Link>
-          <Link href="/terms">{t('Terms', 'शर्तें')}</Link>
-          <Link href="/delete-account">{t('Delete account', 'खाता हटाएँ')}</Link>
-        </nav>
-        <div className="footer-terms">
-          <h2>{t('How payment works', 'भुगतान कैसे होता है')}</h2>
-          <p>
-            {t(
-              'Basket orders are paid in cash on delivery. Online payment is not offered on this site.',
-              'टोकरी के ऑर्डर का भुगतान डिलीवरी पर नकद होता है। इस साइट पर ऑनलाइन भुगतान नहीं है।',
-            )}
-          </p>
+        </div>
+        <div>
+          <h2>Learn</h2>
+          <Link href="/guide" prefetch={false}>
+            The guide
+          </Link>
+          {config.askEnabled ? (
+            <Link href="/ask" prefetch={false}>
+              Ask about your home
+            </Link>
+          ) : null}
+          <Link href="/about" prefetch={false}>
+            The shop
+          </Link>
+          {awardsLive() || contentReview ? (
+            <Link href="/awards" prefetch={false}>
+              Awards
+            </Link>
+          ) : null}
+          <Link href="/contact" prefetch={false}>
+            Contact and complaints
+          </Link>
+        </div>
+        <div>
+          <h2>Your account</h2>
+          <Link href="/account" prefetch={false}>
+            Sign in or account
+          </Link>
+          <Link href="/orders" prefetch={false}>
+            My orders
+          </Link>
+          <Link href="/quotes" prefetch={false}>
+            Rates you asked for
+          </Link>
+          {playUrl ? (
+            <a href={playUrl} rel="noopener noreferrer" target="_blank">
+              Get the app on Google Play
+            </a>
+          ) : null}
+          <Link href="/delete-account" prefetch={false}>
+            Delete account
+          </Link>
+        </div>
+        <div>
+          <h2>{shop.firm?.legalName || siteName}</h2>
+          {shop.address ? <p>{shop.address}</p> : <p>{shop.city}</p>}
+          <Link href="/privacy" prefetch={false}>
+            Privacy
+          </Link>
+          <Link href="/terms" prefetch={false}>
+            Terms
+          </Link>
         </div>
       </div>
+      <Placeholder id="legal-name">
+        Legal name, address of every branch, complaint officer and GST line go here once approved
+        (Firm.approvedAt and contactApproved). Plan 03 section 4.6 lists what the law asks for.
+      </Placeholder>
+      <p className={s.end}>
+        Rates are for the unit written beside them. An order is confirmed only when a person at the
+        shop confirms it.
+      </p>
     </footer>
   );
 }

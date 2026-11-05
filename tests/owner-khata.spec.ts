@@ -34,6 +34,22 @@ test.beforeAll(async () => {
     update: { name: customerName, creditAllowed: false, creditLimitPaise: null },
     create: { id: customerId, phone: customerPhone, name: customerName, role: 'CUSTOMER' },
   });
+  // Udhaar can only be turned on over a signed opening, here a signed nothing.
+  await db.khataSignoff.createMany({
+    data: [
+      {
+        customerId,
+        firmId: 'firm_main',
+        locationId: 'loc_main',
+        asOf: '2026-01-01',
+        chosenPaise: 0,
+        enteredById: 'browser-fixture',
+        approvedById: 'browser-fixture',
+        requestHash: 'browser-fixture',
+      },
+    ],
+    skipDuplicates: true,
+  });
   await db.product.upsert({
     where: { id: productId },
     update: { stock: 50, pricePaise, active: true },
@@ -42,11 +58,11 @@ test.beforeAll(async () => {
       categoryId: 'cement',
       name: productName,
       nameHi: productNameHi,
-      brand: 'शिव',
-      type: 'सीमेंट',
-      grade: 'पीपीसी',
-      unit: 'बोरी',
-      packSize: '५० किलो',
+      brand: 'Shiv',
+      type: 'Cement',
+      grade: 'PPC',
+      unit: 'bag',
+      packSize: '50 kg',
       pricePaise,
       stock: 50,
       images: [],

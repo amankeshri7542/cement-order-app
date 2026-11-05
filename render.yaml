@@ -47,7 +47,9 @@ services:
         sync: false
       - key: RELEASE_SHA
         sync: false
-      - key: ASSISTANT_PROVIDER
+      - key: ASK_ENABLED
+        value: 'false'
+      - key: ADVISOR_PROVIDER
         value: fallback
       - key: WHATSAPP_PROVIDER
         value: fake

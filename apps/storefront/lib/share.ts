@@ -1,5 +1,6 @@
-import { orderStatusText, unitLabel, type Language, type Order } from '@shiv/shared';
-import { price } from './catalog';
+import type { Order } from '@shiv/shared';
+import { orderStatusText } from '@shiv/shared/src/labels';
+import { price } from './display';
 
 export type ShareableOrder = Pick<
   Order,
@@ -12,20 +13,16 @@ export type ShareableOrder = Pick<
  * The order summary a customer forwards on WhatsApp, as the Android app shares it. It carries
  * no address, phone number or staff details: the chat may be forwarded beyond the family.
  */
-export function orderShareText(order: ShareableOrder, language: Language): string {
-  const hi = language === 'hi';
+export function orderShareText(order: ShareableOrder): string {
   return [
-    hi
-      ? 'शिव सीमेंट स्टोर — ऑर्डर सारांश (GST बिल नहीं)'
-      : 'Shiv Cement Store — order summary (not a GST invoice)',
-    `${hi ? 'ऑर्डर' : 'Order'} ${order.number}`,
-    `${hi ? 'स्थिति' : 'Status'}: ${orderStatusText(order.status, language)}`,
+    'Shiv Cement Store: order summary (not a GST invoice)',
+    `Order ${order.number}`,
+    `Status: ${orderStatusText(order.status, 'en')}`,
     ...order.items.map(
-      (item) =>
-        `${item.name} × ${item.quantity} ${unitLabel(item.unit, language)} = ${price(item.lineTotalPaise)}`,
+      (item) => `${item.name} × ${item.quantity} ${item.unit} = ${price(item.lineTotalPaise)}`,
     ),
-    `${hi ? 'डिलीवरी' : 'Delivery'}: ${price(order.deliveryFeePaise)}`,
-    `${hi ? 'कुल' : 'Total'}: ${price(order.totalPaise)}`,
+    `Delivery: ${price(order.deliveryFeePaise)}`,
+    `Total: ${price(order.totalPaise)}`,
   ].join('\n');
 }
 

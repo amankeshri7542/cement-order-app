@@ -247,6 +247,8 @@ export class OperationsController {
     });
     return {
       serviceable: Boolean(entry?.zone.active),
+      // Empty means the site form asks for the area; it never guesses one.
+      area: entry?.zone.active ? entry.area : '',
       zone: entry?.zone.active ? entry.zone : null,
     };
   }
@@ -278,7 +280,8 @@ export class OperationsController {
     return this.saveZone(id, body, req.user.id);
   }
   async saveZone(id: string | null, body: z.infer<typeof deliveryZoneSchema>, actorId: string) {
-    const { pincodes, expectedVersion, ...data } = body;
+    const { pincodes, areas, expectedVersion, ...data } = body;
+    const keptAreas = new Map<string, string>();
     const zone = await this.db.atomic(async (tx) => {
       if (id) {
         const changed = await tx.deliveryZone.updateMany({
@@ -286,13 +289,19 @@ export class OperationsController {
           data: { ...data, version: { increment: 1 } },
         });
         if (!changed.count) fail('CONFLICT', 'Delivery zone changed. Refresh before saving.', 409);
+        for (const row of await tx.deliveryPincode.findMany({ where: { zoneId: id } }))
+          keptAreas.set(row.pincode, row.area);
         await tx.deliveryPincode.deleteMany({ where: { zoneId: id } });
       }
       const saved = id
         ? await tx.deliveryZone.findUniqueOrThrow({ where: { id } })
         : await tx.deliveryZone.create({ data });
       await tx.deliveryPincode.createMany({
-        data: pincodes.map((pincode) => ({ pincode, zoneId: saved.id })),
+        data: pincodes.map((pincode) => ({
+          pincode,
+          zoneId: saved.id,
+          area: areas?.[pincode] ?? keptAreas.get(pincode) ?? '',
+        })),
       });
       await tx.auditLog.create({
         data: {
@@ -371,6 +380,20 @@ export class OperationsController {
         where: { customerId: req.user.id },
         data: { purpose: '' },
       });
+      // A closed account is nobody's call any more, and the words about them go with it.
+      await tx.followUpEvent.updateMany({
+        where: { followUp: { customerId: req.user.id } },
+        data: { reason: '' },
+      });
+      await tx.followUp.updateMany({
+        where: { customerId: req.user.id },
+        data: { note: '' },
+      });
+      await tx.followUp.updateMany({
+        where: { customerId: req.user.id, doneAt: null },
+        data: { doneAt: new Date(), doneById: req.user.id },
+      });
+      await tx.khataOpeningDraft.deleteMany({ where: { customerId: req.user.id } });
       const where = { userId: req.user.id };
       const orders = await tx.order.findMany({ where, select: { id: true } });
       const quotes = await tx.quote.findMany({ where, select: { id: true } });
@@ -460,6 +483,11 @@ export class OperationsController {
         },
       });
       await tx.otpChallenge.deleteMany({ where: { phone: req.user.phone } });
+      // Tally's ledger is the shop's books and stays. Only the tie to this person goes.
+      await tx.tallyPartyLink.updateMany({
+        where: { userId: req.user.id },
+        data: { userId: null, status: 'UNLINKED' },
+      });
       await tx.user.update({
         where: { id: req.user.id },
         data: {

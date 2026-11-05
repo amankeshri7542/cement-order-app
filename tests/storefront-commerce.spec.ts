@@ -1,20 +1,23 @@
 import { PrismaClient } from '@prisma/client';
 import type { APIRequestContext, Page } from '@playwright/test';
-import { mkdirSync } from 'node:fs';
 import { productSchema } from '@shiv/shared';
-import { test, expect, verifyAndSkipName } from './fixtures';
+import { test, expect, isCancelledFetch, verifyAndSkipName } from './fixtures';
 
+// One list with three exits, sign-in, checkout and rate requests.
 const site = 'http://localhost:3004';
 const api = 'http://localhost:4010/api/v1';
 const first = 'test-web-cement';
 const second = 'test-web-steel';
+const big = 'test-web-big';
+const empty = 'test-web-empty';
+const onRequest = 'test-web-order-only';
 const errors = new WeakMap<Page, string[]>();
-test.use({ video: process.env.REVIEW_VIDEO === '1' ? 'on' : 'off' });
 test.beforeEach(async ({ page }) => {
-  if (process.env.UPDATE_REVIEW_EVIDENCE === '1') test.setTimeout(180000);
   const list: string[] = [];
   errors.set(page, list);
-  page.on('pageerror', (error) => list.push(error.message));
+  page.on('pageerror', (error) => {
+    if (!isCancelledFetch(error.message)) list.push(error.message);
+  });
 });
 test.afterEach(async ({ page }) => expect(errors.get(page)).toEqual([]));
 function database() {
@@ -27,49 +30,120 @@ function database() {
     throw new Error('Disposable loopback database required');
   return new PrismaClient({ datasourceUrl: url });
 }
+const fixtures = [
+  {
+    id: first,
+    name: 'TEST WEB Cement PPC',
+    unit: '50 kg bag',
+    minQuantity: 1,
+    quantityStep: 1,
+    pricePaise: 38000,
+    stock: 1000,
+  },
+  {
+    id: second,
+    name: 'TEST WEB Steel TMT',
+    unit: 'kg',
+    minQuantity: 5,
+    quantityStep: 5,
+    pricePaise: 6500,
+    stock: 1000,
+  },
+  {
+    id: big,
+    name: 'TEST WEB Costly',
+    unit: '50 kg bag',
+    minQuantity: 1,
+    quantityStep: 1,
+    pricePaise: 90000000,
+    stock: 1000,
+  },
+  {
+    id: empty,
+    name: 'TEST WEB Empty',
+    unit: '50 kg bag',
+    minQuantity: 1,
+    quantityStep: 1,
+    pricePaise: 38000,
+    stock: 0,
+  },
+  {
+    id: onRequest,
+    name: 'TEST WEB Order Only',
+    unit: '50 kg bag',
+    minQuantity: 1,
+    quantityStep: 1,
+    pricePaise: 38000,
+    stock: 10,
+    sourcing: 'ON_REQUEST' as const,
+  },
+];
 test.beforeAll(async () => {
   const db = database();
   try {
-    for (const [id, name, unit, minimum] of [
-      [first, 'TEST WEB Cement PPC', 'bag', 1],
-      [second, 'TEST WEB Steel TMT', 'kg', 5],
-    ] as const) {
+    for (const row of fixtures) {
       const data = {
-        name,
+        ...row,
         categoryId: 'cement',
         brand: 'TEST WEB',
-        type: id === first ? 'Cement' : 'Steel',
-        grade: id === first ? 'PPC' : 'TEST grade',
-        unit,
-        packSize: id === first ? '50 kg' : 'As listed',
-        minQuantity: minimum,
-        quantityStep: minimum,
-        pricePaise: id === first ? 38000 : 6500,
-        stock: 1000,
+        type: 'Test',
+        grade: 'TEST grade',
+        packSize: '',
         description: 'Disposable test fixture; not product advice.',
         recommendedUse: 'Test only.',
         images: [],
         active: true,
       };
-      await db.product.upsert({ where: { id }, create: { id, ...data }, update: data });
+      await db.product.upsert({ where: { id: row.id }, create: data, update: data });
     }
   } finally {
     await db.$disconnect();
   }
 });
-async function token(request: APIRequestContext, phone = '+919999997009') {
-  const response = await request.post(`${api}/auth/otp/request`, { data: { phone } });
-  expect(response.ok()).toBe(true);
-  const verified = await request.post(`${api}/auth/otp/verify`, {
-    data: { phone, code: (await response.json()).devCode },
-  });
-  expect(verified.ok()).toBe(true);
-  return { Authorization: `Bearer ${(await verified.json()).accessToken}` };
+
+/** Puts lines straight on the list, as tapping Add on a public page does. */
+async function fillList(
+  page: Page,
+  lines: {
+    id: string;
+    qty: number;
+    name?: string;
+    rate?: number | null;
+    min?: number;
+    step?: number;
+  }[],
+) {
+  await page.goto(`${site}/about`);
+  await page.evaluate((rows) => {
+    localStorage.setItem(
+      'shiv_list_v1',
+      JSON.stringify({
+        lines: rows.map((row) => ({
+          i: row.id,
+          n: row.name ?? `Name of ${row.id}`,
+          u: 'a bori (50 kg)',
+          m: row.min ?? 1,
+          s: row.step ?? 1,
+          r: row.rate === undefined ? 38000 : row.rate,
+          h: `/materials/cement/${row.id}`,
+          q: row.qty,
+        })),
+      }),
+    );
+  }, lines);
 }
-async function login(page: Page, phone: string, next = '/cart') {
+const exit = (page: Page, name: 'order' | 'whatsapp' | 'rate') =>
+  page.locator(`[data-exit="${name}"]`);
+
+async function signIn(page: Page, phone: string, next: string) {
   await page.goto(`${site}/account?next=${encodeURIComponent(next)}`);
-  await expect(page.getByRole('main').getByLabel('Mobile number', { exact: true })).toBeEnabled();
-  await page.getByRole('main').getByLabel('Mobile number', { exact: true }).fill(phone);
+  await signInHere(page, phone);
+  await expect(page).toHaveURL(`${site}${next}`);
+}
+async function signInHere(page: Page, phone: string) {
+  const field = page.getByRole('main').getByLabel('Mobile number', { exact: true });
+  await expect(field).toBeEnabled();
+  await field.fill(phone);
   const otp = page.waitForResponse((response) => response.url().endsWith('/auth/otp/request'));
   await page.getByRole('button', { name: 'Get sign-in code', exact: true }).click();
   const response = await otp;
@@ -81,7 +155,6 @@ async function login(page: Page, phone: string, next = '/cart') {
   await verifyAndSkipName(page, () =>
     page.getByRole('button', { name: 'Verify and continue', exact: true }).click(),
   );
-  await expect(page).toHaveURL(`${site}${next}`);
 }
 async function seedAddress(page: Page, phone: string) {
   const response = await page.request.post(`${api}/me/addresses`, {
@@ -91,7 +164,7 @@ async function seedAddress(page: Page, phone: string) {
       name: 'Website customer',
       phone: `+91${phone}`,
       line1: 'Plot 18',
-      area: 'Kankarbagh',
+      area: 'Test Area',
       city: 'Patna',
       state: 'Bihar',
       pincode: '800020',
@@ -99,161 +172,652 @@ async function seedAddress(page: Page, phone: string) {
     },
   });
   expect(response.ok(), await response.text()).toBe(true);
-  return (await response.json()).id as string;
 }
-async function putCart(page: Page, quantity = 2, productId = first) {
-  const response = await page.request.put(`${api}/cart/items`, {
-    headers: { Origin: site },
-    data: { productId, quantity },
+async function token(request: APIRequestContext, phone = '+919999997009') {
+  const response = await request.post(`${api}/auth/otp/request`, { data: { phone } });
+  expect(response.ok()).toBe(true);
+  const verified = await request.post(`${api}/auth/otp/verify`, {
+    data: { phone, code: (await response.json()).devCode },
   });
-  expect(response.ok(), await response.text()).toBe(true);
+  expect(verified.ok()).toBe(true);
+  return { Authorization: `Bearer ${(await verified.json()).accessToken}` };
 }
+/** Signed in, one line on the list, placed through to the checkbox on the review. */
 async function checkout(page: Page, phone: string) {
-  await login(page, phone);
+  await signIn(page, phone, '/list');
   await seedAddress(page, phone);
-  await putCart(page);
-  await page.goto(`${site}/checkout`);
+  await page.evaluate(
+    ([id]) => {
+      localStorage.setItem(
+        'shiv_list_v1',
+        JSON.stringify({
+          lines: [
+            {
+              i: id,
+              n: 'TEST WEB Cement PPC',
+              u: 'a bori (50 kg)',
+              m: 1,
+              s: 1,
+              r: 38000,
+              h: `/materials/cement/${id}`,
+              q: 2,
+            },
+          ],
+        }),
+      );
+    },
+    [first],
+  );
+  await page.goto(`${site}/list`);
+  await expect(exit(page, 'order')).toBeVisible();
+  await exit(page, 'order').click();
+  await expect(page).toHaveURL(`${site}/checkout`);
   await page.getByRole('radio', { name: 'Deliver here', exact: true }).check();
   await page.getByRole('button', { name: 'Review current order', exact: true }).click();
   await expect(page.getByRole('checkbox')).toBeVisible();
   await page.getByRole('checkbox').check();
 }
-// Each review milestone writes its own evidence folder so earlier evidence is preserved.
-const evidence = process.env.REVIEW_EVIDENCE_DIR || 'v2-customer';
-async function screenshot(page: Page, name: string) {
-  if (process.env.UPDATE_REVIEW_EVIDENCE === '1') {
-    mkdirSync(`docs/screenshots/${evidence}`, { recursive: true });
-    await page.screenshot({ path: `docs/screenshots/${evidence}/${name}.png`, fullPage: true });
-    if (name.startsWith('home-') || name.includes('enlarged') || name.startsWith('assistant'))
-      return;
-    const viewport = page.viewportSize()!;
-    mkdirSync(`.local/${evidence}/rendered`, { recursive: true });
-    for (const width of [360, 390, 768, 1440]) {
-      await page.setViewportSize({ width, height: 900 });
-      for (const language of ['en', 'hi']) {
-        if (language === 'hi')
-          await page.getByRole('button', { name: 'हिन्दी', exact: true }).click();
-        await expect
-          .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
-          .toBe(true);
-        await page.screenshot({
-          path: `.local/${evidence}/rendered/${name}-${language}-${width}.png`,
-          fullPage: true,
-        });
-        if (width === 390)
-          await page.screenshot({
-            path: `docs/screenshots/${evidence}/${name}-${language}-phone.png`,
-          });
-        if (language === 'hi')
-          await page.getByRole('button', { name: 'English', exact: true }).click();
-      }
-    }
-    await page.setViewportSize(viewport);
-  }
-}
 
-test('guest basket survives reload; a lost merge response replays once against an existing cart', async ({
+test('an empty list says how buying works, and offers no exit', async ({ page }) => {
+  await page.goto(`${site}/list`);
+  await expect(page.getByRole('heading', { name: 'Nothing yet.' })).toBeVisible();
+  await expect(page.locator('[data-exit]')).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'See the rates' })).toBeVisible();
+});
+
+test('Add builds the list on a public page: count, stepper, slip, and it survives a reload', async ({
+  page,
+  request,
+}) => {
+  await expect
+    .poll(
+      async () =>
+        (await (await request.get(`${site}/rates`)).text()).includes('TEST WEB Cement PPC'),
+      { timeout: 30000 },
+    )
+    .toBe(true);
+  await page.goto(`${site}/rates`);
+  const count = page.locator('[data-site-nav] [data-list-count]');
+  const row = page.getByRole('row', { name: /TEST WEB Steel TMT/ });
+  await expect(count).toHaveText('0');
+  // The step and minimum are 5.
+  await row.getByRole('button', { name: 'One more TEST WEB Steel TMT' }).click();
+  await expect(row.locator('output')).toHaveText('5');
+  await expect(count).toHaveText('1');
+  await row.getByRole('button', { name: 'One more TEST WEB Steel TMT' }).click();
+  await expect(row.locator('output')).toHaveText('10');
+  const slip = page.locator('[data-slip]').first();
+  await expect(slip).toContainText('10 × TEST WEB Steel TMT');
+  await expect(slip).toContainText('₹650');
+  await page.reload();
+  await expect(count).toHaveText('1');
+  await expect(row.locator('output')).toHaveText('10');
+  await row.getByRole('button', { name: 'One less TEST WEB Steel TMT' }).click();
+  await row.getByRole('button', { name: 'One less TEST WEB Steel TMT' }).click();
+  await expect(row.locator('output')).toHaveText('0');
+  await expect(count).toHaveText('0');
+});
+
+test('a stage row with several brands opens a chooser; one with a single product adds it', async ({
+  page,
+  request,
+}) => {
+  await expect
+    .poll(
+      async () => (await (await request.get(`${site}/`)).text()).includes('TEST WEB Cement PPC'),
+      { timeout: 30000 },
+    )
+    .toBe(true);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto(site);
+  // Before the page is live this is a plain link to the cement page, on purpose.
+  await page.waitForLoadState('networkidle');
+  const panel = page.locator('[data-panel="0"]');
+  await panel.getByRole('link', { name: 'Add Cement to your list' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Which cement?' });
+  await expect(dialog).toBeVisible();
+  // The link opens the chooser and stays here; it does not also go to the cement page behind it.
+  await page.waitForTimeout(800);
+  await expect(page).toHaveURL(`${site}/`);
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText('Not sure which? How to choose')).toBeVisible();
+  await dialog.getByRole('button', { name: 'Add TEST WEB Cement PPC to your list' }).click();
+  await expect(page.locator('[data-site-nav] [data-list-count]')).toHaveText('1');
+  await dialog.getByRole('button', { name: 'Close' }).click();
+  await expect(dialog).toBeHidden();
+});
+
+test('all fine: Place order leads, and the list shows the rate, total and sample tag', async ({
   page,
 }) => {
-  const phone = '9888810001';
+  await fillList(page, [{ id: first, qty: 3, name: 'TEST WEB Cement PPC' }]);
+  await page.goto(`${site}/list`);
+  await expect(exit(page, 'order')).toHaveClass(/btn-solid/);
+  await expect(exit(page, 'rate')).toHaveClass(/btn-quiet/);
+  await expect(page.getByRole('main').getByText('Sample rates, not real prices')).toBeVisible();
+  await expect(page.locator('[data-order-off]')).toHaveCount(0);
+  await expect(page.getByRole('main').getByText('₹1,140').first()).toBeVisible();
+});
+
+test('a line over the fixed online limit: Ask for a rate leads, with the reason on the line', async ({
+  page,
+}) => {
+  await fillList(page, [{ id: big, qty: 1, name: 'TEST WEB Costly', rate: 90000000 }]);
+  await page.goto(`${site}/list`);
+  await expect(exit(page, 'rate')).toHaveClass(/btn-solid/);
+  await expect(exit(page, 'order')).toHaveCount(0);
+  await expect(page.locator('[data-order-off]')).toContainText('the shop will reply');
+  await expect(page.getByRole('listitem').filter({ hasText: 'TEST WEB Costly' })).toContainText(
+    'Large for an online order',
+  );
+});
+
+test('out of stock and brought-in-to-order lines also go to Ask for a rate, and no count ever shows', async ({
+  page,
+}) => {
+  await fillList(page, [
+    { id: empty, qty: 1, name: 'TEST WEB Empty' },
+    { id: onRequest, qty: 1, name: 'TEST WEB Order Only', rate: null },
+  ]);
+  const checks: string[] = [];
+  page.on('response', async (response) => {
+    if (response.url().endsWith('/public/list-check')) checks.push(await response.text());
+  });
+  await page.goto(`${site}/list`);
+  await expect(exit(page, 'rate')).toHaveClass(/btn-solid/);
+  const lines = page.getByRole('main').getByRole('listitem');
+  await expect(lines.filter({ hasText: 'TEST WEB Empty' })).toContainText(
+    'Not available right now',
+  );
+  await expect(lines.filter({ hasText: 'TEST WEB Order Only' })).toContainText(
+    'Brought in to order',
+  );
+  await expect(lines.filter({ hasText: 'TEST WEB Order Only' })).toContainText('Ask for the rate');
+  expect(checks.join()).not.toMatch(/"stock"|"available"|"left"/);
+});
+
+test('a retired product is flagged, and the rest of the list stands', async ({ page }) => {
+  await fillList(page, [
+    { id: 'test-web-never-existed', qty: 1 },
+    { id: first, qty: 1, name: 'TEST WEB Cement PPC' },
+  ]);
+  await page.goto(`${site}/list`);
+  const gone = page
+    .getByRole('main')
+    .getByRole('listitem')
+    .filter({ hasText: 'Name of test-web-never-existed' });
+  await expect(gone).toContainText('No longer sold');
+  await expect(exit(page, 'order')).toHaveCount(0);
+  await gone.getByRole('button', { name: /Remove/ }).click();
+  await expect(exit(page, 'order')).toBeVisible();
+});
+
+test('a quantity the shop cannot sell is explained, with one tap to fix it', async ({ page }) => {
+  await fillList(page, [
+    { id: second, qty: 7, min: 1, step: 1, name: 'TEST WEB Steel TMT', rate: 6500 },
+  ]);
+  await page.goto(`${site}/list`);
+  const line = page
+    .getByRole('main')
+    .getByRole('listitem')
+    .filter({ hasText: 'TEST WEB Steel TMT' });
+  await expect(line).toContainText('Smallest order 5, in steps of 5');
+  await line.getByRole('button', { name: 'Change to 10' }).click();
+  await expect(line.locator('output')).toHaveText('10');
+  await expect(exit(page, 'order')).toBeVisible();
+});
+
+test('a rate that changed since adding shows the new one and says so', async ({ page }) => {
+  await fillList(page, [{ id: first, qty: 1, name: 'TEST WEB Cement PPC', rate: 30000 }]);
+  await page.goto(`${site}/list`);
+  await expect(
+    page.getByRole('main').getByText('Rate changed since you added this. It was ₹300.'),
+  ).toBeVisible();
+  await expect(page.getByRole('main').getByText('₹380').first()).toBeVisible();
+});
+
+test('a price tampered with in the browser never reaches the shop', async ({ page }) => {
+  const phone = '9888820001';
+  await signIn(page, phone, '/list');
+  await seedAddress(page, phone);
+  await page.evaluate(
+    ([id]) =>
+      localStorage.setItem(
+        'shiv_list_v1',
+        JSON.stringify({
+          lines: [
+            {
+              i: id,
+              n: 'TEST WEB Cement PPC',
+              u: 'a bori',
+              m: 1,
+              s: 1,
+              r: 1,
+              h: `/materials/cement/${id}`,
+              q: 2,
+            },
+          ],
+        }),
+      ),
+    [first],
+  );
+  await page.goto(`${site}/list`);
+  await exit(page, 'order').click();
+  await expect(page).toHaveURL(`${site}/checkout`);
+  await page.getByRole('radio', { name: 'Deliver here', exact: true }).check();
+  await page.getByRole('button', { name: 'Review current order', exact: true }).click();
+  await expect(page.getByText('₹760').first()).toBeVisible();
+});
+
+test('a tampered list cannot put a bad link or script on the page', async ({ page }) => {
+  await page.goto(`${site}/about`);
+  await page.evaluate(() =>
+    localStorage.setItem(
+      'shiv_list_v1',
+      JSON.stringify({
+        lines: [
+          {
+            i: 'x',
+            n: '<img src=x onerror=window.__pwn=1>',
+            u: 'a kg',
+            m: 1,
+            s: 1,
+            r: 100,
+            h: '/materials/cement/x',
+            q: 1,
+          },
+          {
+            i: 'y',
+            n: 'Bad link',
+            u: 'a kg',
+            m: 1,
+            s: 1,
+            r: 100,
+            h: 'javascript:window.__pwn=1',
+            q: 1,
+          },
+          { i: 'z', n: 'Bad rate', u: 'a kg', m: 1, s: 1, r: -100, h: '/materials/cement/z', q: 1 },
+        ],
+      }),
+    ),
+  );
+  await page.goto(`${site}/rates`);
+  await expect(page.locator('[data-slip-lines]').first()).toContainText('<img src=x');
+  await page.goto(`${site}/list`);
+  expect(
+    await page.evaluate(() => (window as unknown as { __pwn?: number }).__pwn),
+  ).toBeUndefined();
+  await expect(page.getByRole('main').getByRole('listitem')).toHaveCount(1);
+  await expect(page.locator('a[href^="javascript"]')).toHaveCount(0);
+});
+
+test('the shop’s list check failing keeps the list and does not lead with Place order', async ({
+  page,
+}) => {
+  await fillList(page, [{ id: first, qty: 1, name: 'TEST WEB Cement PPC' }]);
+  await page.route(`${api}/public/list-check`, (route) =>
+    route.fulfill({ status: 503, body: '{}' }),
+  );
+  await page.goto(`${site}/list`);
+  await expect(
+    page.getByRole('main').getByRole('status').filter({ hasText: 'could not be reached' }),
+  ).toBeVisible();
+  await expect(exit(page, 'order')).toHaveCount(0);
+  await expect(exit(page, 'rate')).toBeVisible();
+  await page.unroute(`${api}/public/list-check`);
+  await page.getByRole('button', { name: 'Try again' }).click();
+  await expect(exit(page, 'order')).toBeVisible();
+});
+
+test('offline: Add still works, the list says it is saved, and nothing needing the server is offered', async ({
+  page,
+  context,
+}) => {
+  await fillList(page, [{ id: first, qty: 1, name: 'TEST WEB Cement PPC' }]);
+  await page.goto(`${site}/list`);
+  await expect(exit(page, 'order')).toBeVisible();
+  await context.setOffline(true);
+  await expect(
+    page.getByRole('main').getByText('You are offline. Your list is saved.'),
+  ).toBeVisible();
+  await expect(page.locator('[data-exit]')).toHaveCount(0);
+  const line = page
+    .getByRole('main')
+    .getByRole('listitem')
+    .filter({ hasText: 'TEST WEB Cement PPC' });
+  await line.getByRole('button', { name: 'One more TEST WEB Cement PPC' }).click();
+  await expect(line.locator('output')).toHaveText('2');
+  await context.setOffline(false);
+  await expect(exit(page, 'order')).toBeVisible();
+});
+
+test('a pincode the shop does not list turns off Place order, with the reason', async ({
+  page,
+}) => {
+  await fillList(page, [{ id: first, qty: 1, name: 'TEST WEB Cement PPC' }]);
+  await page.goto(`${site}/list`);
+  await expect(exit(page, 'order')).toBeVisible();
+  const main = page.getByRole('main');
+  await main.getByLabel('Site pincode').fill('999999');
+  await main.getByRole('button', { name: 'Check', exact: true }).click();
+  await expect(main.getByText(/does not list 999999/)).toBeVisible();
+  await expect(exit(page, 'order')).toHaveCount(0);
+  await expect(page.locator('[data-order-off]')).toContainText('does not list this pincode');
+  await main.getByLabel('Site pincode').fill('800020');
+  await main.getByRole('button', { name: 'Check', exact: true }).click();
+  await expect(exit(page, 'order')).toBeVisible();
+});
+
+test('the WhatsApp exit in a review build carries the whole list and no price', async ({
+  page,
+}) => {
+  await fillList(page, [
+    { id: first, qty: 3, name: 'TEST WEB Cement PPC' },
+    { id: second, qty: 10, name: 'TEST WEB Steel TMT', rate: 6500, min: 5, step: 5 },
+  ]);
+  await page.goto(`${site}/list`);
+  const href = await exit(page, 'whatsapp').getAttribute('href');
+  const text = decodeURIComponent(new URL(href!).searchParams.get('text')!);
+  expect(text).toContain('Namaste, mujhe yeh chahiye:');
+  expect(text).toContain('3 x TEST WEB Cement PPC');
+  expect(text).toContain('10 x TEST WEB Steel TMT');
+  expect(text).not.toMatch(/₹|\d{3,}\.\d/);
+});
+
+test('Place order signs in, returns to the list and carries on to checkout, with the list intact', async ({
+  page,
+}) => {
+  await fillList(page, [{ id: first, qty: 2, name: 'TEST WEB Cement PPC' }]);
+  await page.goto(`${site}/list`);
+  await exit(page, 'order').click();
+  await expect(page).toHaveURL(/\/account\?next=/);
+  await signInHere(page, '9888820002');
+  await expect(page).toHaveURL(`${site}/checkout`, { timeout: 30000 });
+  const cart = await (await page.request.get(`${api}/cart`)).json();
+  expect(
+    cart.map((row: { productId: string; quantity: number }) => [row.productId, row.quantity]),
+  ).toEqual([[first, 2]]);
+});
+
+test('joining a list to a cart never doubles a quantity, however many times it is sent', async ({
+  page,
+}) => {
+  const phone = '9888820003';
+  await signIn(page, phone, '/list');
+  // The account already holds 5 of it from another phone.
+  await page.request.put(`${api}/cart/items`, {
+    headers: { Origin: site },
+    data: { productId: first, quantity: 5 },
+  });
+  await page.evaluate(
+    ([id]) =>
+      localStorage.setItem(
+        'shiv_list_v1',
+        JSON.stringify({
+          lines: [
+            {
+              i: id,
+              n: 'TEST WEB Cement PPC',
+              u: 'a bori',
+              m: 1,
+              s: 1,
+              r: 38000,
+              h: `/materials/cement/${id}`,
+              q: 2,
+            },
+          ],
+        }),
+      ),
+    [first],
+  );
+  await page.goto(`${site}/list`);
+  await exit(page, 'order').click();
+  await expect(page).toHaveURL(`${site}/checkout`);
+  await page.goBack();
+  await expect(exit(page, 'order')).toBeVisible();
+  await exit(page, 'order').click();
+  await expect(page).toHaveURL(`${site}/checkout`);
+  const cart = await (await page.request.get(`${api}/cart`)).json();
+  expect(cart[0].quantity).toBe(2);
+});
+
+test('a double tap on Place order sends each line once and opens checkout once', async ({
+  page,
+}) => {
+  const phone = '9888820021';
+  await signIn(page, phone, '/list');
+  await seedAddress(page, phone);
+  await page.evaluate(
+    ([id]) =>
+      localStorage.setItem(
+        'shiv_list_v1',
+        JSON.stringify({
+          lines: [
+            {
+              i: id,
+              n: 'TEST WEB Cement PPC',
+              u: 'a bori',
+              m: 1,
+              s: 1,
+              r: 38000,
+              h: `/materials/cement/${id}`,
+              q: 6,
+            },
+          ],
+        }),
+      ),
+    [first],
+  );
+  let puts = 0;
+  await page.route(`${api}/cart/items`, async (route) => {
+    if (route.request().method() === 'PUT') puts++;
+    await route.continue();
+  });
+  await page.goto(`${site}/list`);
+  await expect(exit(page, 'order')).toBeVisible();
+  await exit(page, 'order').dblclick();
+  await expect(page).toHaveURL(`${site}/checkout`);
+  expect(puts).toBe(1);
+  const cart = await (await page.request.get(`${api}/cart`)).json();
+  expect(cart[0].quantity).toBe(6);
+});
+
+test('a line added on another phone joins this list, and one taken off here leaves the cart', async ({
+  page,
+}) => {
+  const phone = '9888820004';
+  await signIn(page, phone, '/list');
+  await page.request.put(`${api}/cart/items`, {
+    headers: { Origin: site },
+    data: { productId: first, quantity: 4 },
+  });
+  await page.goto(`${site}/list`);
+  const line = page
+    .getByRole('main')
+    .getByRole('listitem')
+    .filter({ hasText: 'TEST WEB Cement PPC' });
+  await expect(line.locator('output')).toHaveText('4');
+  await line.getByRole('button', { name: /Remove/ }).click();
+  await expect(page.getByRole('heading', { name: 'Nothing yet.' })).toBeVisible();
+  // The empty list has no exit to send the removal, so it goes with the next list.
+  await page.evaluate(
+    ([id]) => {
+      const saved = JSON.parse(localStorage.getItem('shiv_list_v1')!);
+      saved.lines = [
+        {
+          i: id,
+          n: 'TEST WEB Steel TMT',
+          u: 'a kg',
+          m: 5,
+          s: 5,
+          r: 6500,
+          h: `/materials/cement/${id}`,
+          q: 5,
+        },
+      ];
+      localStorage.setItem('shiv_list_v1', JSON.stringify(saved));
+    },
+    [second],
+  );
+  await page.goto(`${site}/list`);
+  await expect(
+    page.getByRole('main').getByRole('listitem').filter({ hasText: 'TEST WEB Cement PPC' }),
+  ).toHaveCount(0);
+  await exit(page, 'order').click();
+  await expect(page).toHaveURL(`${site}/checkout`);
+  const cart = await (await page.request.get(`${api}/cart`)).json();
+  expect(cart.map((row: { productId: string }) => row.productId)).toEqual([second]);
+});
+
+test('a line the server refuses at Place order stays on the list with a reason, and reveals no count', async ({
+  page,
+}) => {
+  const phone = '9888820005';
+  await signIn(page, phone, '/list');
   const db = database();
   try {
-    const user = await db.user.create({ data: { phone: `+91${phone}` } });
-    const product = await db.product.findUniqueOrThrow({ where: { id: first } });
-    await db.cartItem.create({
-      data: {
-        userId: user.id,
-        productId: first,
-        quantity: 2,
-        seenPricePaise: product.pricePaise,
-        seenPriceVersion: product.priceVersion,
+    await db.product.upsert({
+      where: { id: 'test-web-few' },
+      create: {
+        id: 'test-web-few',
+        name: 'TEST WEB Few',
+        categoryId: 'cement',
+        brand: 'TEST WEB',
+        type: 'T',
+        grade: 'G',
+        unit: 'bag',
+        pricePaise: 40000,
+        stock: 3,
+        images: [],
+        description: 'x',
+        recommendedUse: 'x',
+        active: true,
       },
+      update: { stock: 3, pricePaise: 40000 },
     });
   } finally {
     await db.$disconnect();
   }
-  await page.goto(`${site}/products/${first}`);
-  await page.getByRole('main').getByLabel('Quantity for TEST WEB Cement PPC').fill('3');
-  await page.getByRole('main').getByLabel('Quantity for TEST WEB Cement PPC').press('Tab');
-  await page.getByRole('button', { name: 'Add to basket', exact: true }).click();
-  await page.reload();
-  await page.getByRole('link', { name: /^Basket 1$/ }).click();
-  await expect(
-    page.getByRole('heading', { name: 'Ready for the next step.', exact: true }),
-  ).toBeVisible();
-  await expect(page.getByRole('main').getByLabel('Quantity for TEST WEB Cement PPC')).toHaveValue(
-    '3',
-  );
-  let dropped = false;
-  await page.route(`${api}/cart/merge`, async (route) => {
-    if (!dropped) {
-      dropped = true;
-      const response = await route.fetch();
-      expect(response.ok()).toBe(true);
-      await route.abort('failed');
-    } else await route.continue();
-  });
-  await login(page, phone);
-  await expect(page.getByRole('button', { name: 'Recover saved basket' })).toBeVisible();
-  await page.reload();
-  await page.getByRole('button', { name: 'Recover saved basket' }).click();
-  await expect(page.getByRole('button', { name: 'Recover saved basket' })).toHaveCount(0);
-  await expect(page.getByRole('main').getByLabel('Quantity for TEST WEB Cement PPC')).toHaveValue(
-    '5',
-  );
-  await page.reload();
-  await expect(page.getByRole('main').getByLabel('Quantity for TEST WEB Cement PPC')).toHaveValue(
-    '5',
-  );
-  expect((await (await page.request.get(`${api}/cart`)).json())[0].quantity).toBe(5);
-  await screenshot(page, 'basket-desktop');
-});
-
-test('rejected guest merge can be corrected and multidigit quantities persist through shared-app refresh', async ({
-  page,
-}) => {
-  const phone = '9888810002';
-  await page.goto(`${site}/products/${first}`);
-  await page.getByRole('button', { name: 'Add to basket', exact: true }).click();
-  await page.route(`${api}/cart/merge`, (route) =>
-    route.fulfill({
-      status: 409,
-      contentType: 'application/json',
-      headers: { 'access-control-allow-origin': site, 'access-control-allow-credentials': 'true' },
-      body: JSON.stringify({
-        error: {
-          code: 'OUT_OF_STOCK',
-          message: 'Simulated definitive rejection for correction coverage',
-        },
+  await page.evaluate(() =>
+    localStorage.setItem(
+      'shiv_list_v1',
+      JSON.stringify({
+        lines: [
+          {
+            i: 'test-web-few',
+            n: 'TEST WEB Few',
+            u: 'a bori',
+            m: 1,
+            s: 1,
+            r: 40000,
+            h: '/materials/cement/test-web-few',
+            q: 5,
+          },
+        ],
       }),
-    }),
+    ),
   );
-  await login(page, phone);
-  await expect(page.getByRole('button', { name: 'Remove saved material' })).toBeEnabled();
-  await page.getByRole('button', { name: 'Remove saved material' }).click();
-  await page.unroute(`${api}/cart/merge`);
-  await putCart(page, 2);
-  await page.reload();
-  const quantity = page.getByRole('main').getByLabel('Quantity for TEST WEB Cement PPC');
-  await quantity.fill('12');
-  await expect(quantity).toHaveValue('12');
-  await quantity.press('Tab');
-  await expect
-    .poll(async () => (await (await page.request.get(`${api}/cart`)).json())[0]?.quantity)
-    .toBe(12);
-  await putCart(page, 15);
-  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await expect(quantity).toHaveValue('15');
-  // The Android app's basket (web build) reads the same server basket.
-  await page.goto('http://localhost:8082/#/cart');
-  await expect(page.getByRole('textbox', { name: / quantity$/ })).toHaveValue('15');
+  await page.goto(`${site}/list`);
+  await exit(page, 'order').click();
+  const line = page.getByRole('main').getByRole('listitem').filter({ hasText: 'TEST WEB Few' });
+  await expect(line).toContainText('The shop needs to check this quantity. Ask for a rate.');
+  await expect(line).not.toContainText('3');
+  await expect(page).toHaveURL(`${site}/list`);
 });
 
-test('COD lost success recovers exactly one owner task and inventory movement after reload', async ({
+test('a signed-in customer sees their own rate, and a guest never asks for it', async ({
   page,
+  context,
 }) => {
-  await checkout(page, '9888810003');
-  await screenshot(page, 'checkout-desktop');
+  const phone = '9888820006';
+  const db = database();
+  await signIn(page, phone, '/list');
+  const user = await db.user.findUniqueOrThrow({ where: { phone: `+91${phone}` } });
+  const today = new Date().toISOString().slice(0, 10);
+  const rule = await db.priceRule.create({
+    data: {
+      kind: 'SPECIAL',
+      title: 'Test special',
+      productId: first,
+      customerId: user.id,
+      minQuantity: 1,
+      valueType: 'RATE',
+      value: 35000,
+      startsOn: today,
+      endsOn: '2099-12-31',
+      createdById: 'test',
+      active: true,
+    },
+  });
+  try {
+    await page.goto(`${site}/materials/cement/${first}`);
+    await expect(page.locator(`[data-your-rate="${first}"]`)).toHaveText('Your rate ₹350');
+    // It belongs to this person alone.
+    const other = await context.browser()!.newContext();
+    const guest = await other.newPage();
+    const asked: string[] = [];
+    guest.on('request', (request) => {
+      if (request.url().includes('/me/rates')) asked.push(request.url());
+    });
+    await guest.goto(`${site}/materials/cement/${first}`);
+    await guest.waitForLoadState('networkidle');
+    expect(asked).toEqual([]);
+    await expect(guest.locator(`[data-your-rate="${first}"]`)).toBeHidden();
+    await other.close();
+  } finally {
+    await db.priceRule.delete({ where: { id: rule.id } });
+    await db.$disconnect();
+  }
+});
+
+test('a public offer shows on the rate and product pages', async ({ page, request }) => {
+  const db = database();
+  const today = new Date().toISOString().slice(0, 10);
+  const rule = await db.priceRule.create({
+    data: {
+      kind: 'OFFER',
+      title: 'TEST public offer',
+      productId: first,
+      minQuantity: 100,
+      valueType: 'AMOUNT_OFF',
+      value: 1000,
+      startsOn: today,
+      endsOn: '2099-12-31',
+      createdById: 'test',
+      active: true,
+      isPublic: true,
+    },
+  });
+  try {
+    await expect
+      .poll(
+        async () =>
+          (await (await request.get(`${site}/rates`)).text()).includes('TEST public offer'),
+        { timeout: 30000 },
+      )
+      .toBe(true);
+    await page.goto(`${site}/materials/cement/${first}`);
+    await expect(
+      page.getByRole('main').getByText(/TEST public offer ₹10 off on 100 or more/),
+    ).toBeVisible();
+  } finally {
+    await db.priceRule.delete({ where: { id: rule.id } });
+    await db.$disconnect();
+  }
+});
+
+test('placing an order empties the list once, and it cannot be sent again', async ({ page }) => {
+  await checkout(page, '9888820007');
+  await page.getByRole('button', { name: 'Place COD order', exact: true }).click();
+  await expect(page).toHaveURL(/\/orders\/[^?]+\?confirmed=1/);
+  await expect(page.locator('[data-site-nav] [data-list-count]')).toHaveText('0');
+  await page.goto(`${site}/list`);
+  await expect(page.getByRole('heading', { name: 'Nothing yet.' })).toBeVisible();
+});
+
+test('COD lost success recovers exactly one order after reload', async ({ page }) => {
+  await checkout(page, '9888820008');
   let orderId = '';
   let dropped = false;
   await page.route(`${api}/orders`, async (route) => {
@@ -284,15 +848,11 @@ test('COD lost success recovers exactly one owner task and inventory movement af
   } finally {
     await db.$disconnect();
   }
-  await screenshot(page, 'order-confirmation');
 });
 
-test('double-tapping Place COD order creates one order; removing the last basket line empties the shared cart', async ({
-  page,
-}) => {
-  const phone = '9888810021'; // unique: 9888810011 is the second account in the late-checkout test
+test('double-tapping Place COD order creates one order', async ({ page }) => {
+  const phone = '9888820009';
   await checkout(page, phone);
-  // Two taps in quick succession, as on a slow phone: one order, one owner task.
   await page.getByRole('button', { name: 'Place COD order', exact: true }).dblclick();
   await expect(page).toHaveURL(/\/orders\//);
   await expect(page.getByText('Waiting for the shop', { exact: true }).first()).toBeVisible();
@@ -305,29 +865,23 @@ test('double-tapping Place COD order creates one order; removing the last basket
   } finally {
     await db.$disconnect();
   }
-  await putCart(page, 3);
-  await page.goto(`${site}/cart`);
-  await expect(page.getByRole('main').getByLabel('Quantity for TEST WEB Cement PPC')).toHaveValue(
-    '3',
-  );
-  await page.getByRole('main').getByRole('button', { name: 'Remove', exact: true }).click();
-  await expect(
-    page.getByRole('heading', { name: 'Your basket is empty.', exact: true }),
-  ).toBeVisible();
-  expect(await (await page.request.get(`${api}/cart`)).json()).toEqual([]);
 });
 
-test('successful COD remains visible when ancillary cart refresh fails; terms changes require renewed consent', async ({
+test('an order placed stays visible when a refresh fails; a changed rate asks for consent again', async ({
   page,
   request,
 }) => {
-  await checkout(page, '9888810004');
+  await checkout(page, '9888820010');
   const admin = await token(request);
   const product = await (await request.get(`${api}/products/${first}`)).json();
+  // The public route never gives the real count, and a change must carry the real one.
+  const db = database();
+  const { stock } = await db.product.findUniqueOrThrow({ where: { id: first } });
+  await db.$disconnect();
   const updated = await request.patch(`${api}/admin/products/${first}`, {
     headers: admin,
     data: {
-      ...productSchema.parse(productSchema.strip().parse(product)),
+      ...productSchema.parse(productSchema.strip().parse({ ...product, stock })),
       pricePaise: product.pricePaise + 100,
       expectedVersion: product.version,
     },
@@ -353,65 +907,97 @@ test('successful COD remains visible when ancillary cart refresh fails; terms ch
   await expect(page.getByText('Waiting for the shop', { exact: true }).first()).toBeVisible();
 });
 
-test('saved address editing works; account switches and revocation clear private forms', async ({
+test('a late checkout success cannot move or announce into a switched account', async ({
   page,
 }) => {
-  const phone = '9888810005';
-  await login(page, phone);
-  await seedAddress(page, phone);
-  await page.goto(`${site}/account`);
-  await page.getByRole('button', { name: 'Edit address', exact: true }).click();
-  await page.getByRole('main').getByLabel('House / street / site').fill('Plot 19 edited');
-  await page.getByRole('button', { name: 'Save address', exact: true }).click();
-  await expect(page.getByText(/Plot 19 edited/)).toBeVisible();
-  await page.getByRole('button', { name: 'Edit address', exact: true }).click();
-  await page.getByRole('main').getByLabel('Recipient name').fill('PRIVATE A DRAFT');
+  await checkout(page, '9888820011');
+  let release!: () => void;
+  let persisted!: () => void;
+  let delivered!: () => void;
+  const hold = new Promise<void>((resolve) => (release = resolve));
+  const savedOrder = new Promise<void>((resolve) => (persisted = resolve));
+  const resultDelivered = new Promise<void>((resolve) => (delivered = resolve));
+  let orderId = '';
+  await page.route(`${api}/orders`, async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    const response = await route.fetch();
+    expect(response.ok(), await response.text()).toBe(true);
+    orderId = (await response.json()).id;
+    persisted();
+    await hold;
+    await route.fulfill({ response });
+    delivered();
+  });
+  await page.getByRole('button', { name: 'Place COD order', exact: true }).click();
+  await savedOrder;
+  const phone = '+919888820012';
   const otp = await page.request.post(`${api}/auth/otp/request`, {
     headers: { Origin: site },
-    data: { phone: '+919888810006' },
+    data: { phone },
   });
-  expect(
-    (
-      await page.request.post(`${api}/auth/otp/verify`, {
-        headers: { Origin: site },
-        data: { phone: '+919888810006', code: (await otp.json()).devCode },
-      })
-    ).ok(),
-  ).toBe(true);
+  expect(otp.ok(), await otp.text()).toBe(true);
+  const verified = await page.request.post(`${api}/auth/otp/verify`, {
+    headers: { Origin: site },
+    data: { phone, code: (await otp.json()).devCode },
+  });
+  expect(verified.ok(), await verified.text()).toBe(true);
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await expect(page.getByText('+919888810006', { exact: true })).toBeVisible();
-  await expect(page.locator('input[value="PRIVATE A DRAFT"]')).toHaveCount(0);
-  await expect(page.getByText(/Plot 19 edited/)).toHaveCount(0);
-  await page.request.post(`${api}/auth/logout`, { headers: { Origin: site }, data: {} });
-  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await expect(page.getByRole('main').getByLabel('Mobile number', { exact: true })).toBeVisible();
+  await page.goto(`${site}/account`);
+  await expect(page.getByText(phone, { exact: true })).toBeVisible();
+  release();
+  await resultDelivered.catch(() => {});
+  await expect(page).toHaveURL(`${site}/account`);
+  await expect(page.getByText(phone, { exact: true })).toBeVisible();
+  expect((await page.request.get(`${api}/orders/${orderId}`)).status()).toBe(404);
 });
 
-test('multi-material quotation recovers persisted reference, reviews revisions and converts once', async ({
+test('Ask for a rate sends the list as one request, recovers a lost answer, and converts once', async ({
   page,
   request,
 }) => {
-  await login(page, '9888810007');
-  await seedAddress(page, '9888810007');
-  for (const id of [first, second]) {
-    await page.goto(`${site}/products/${id}`);
-    await page.getByRole('button', { name: 'Add to quote', exact: true }).click();
-  }
-  await page.goto(`${site}/quotes`);
+  const phone = '9888820013';
+  await signIn(page, phone, '/quotes');
+  await seedAddress(page, phone);
+  await page.evaluate(
+    ([a, b]) =>
+      localStorage.setItem(
+        'shiv_list_v1',
+        JSON.stringify({
+          lines: [
+            {
+              i: a,
+              n: 'TEST WEB Cement PPC',
+              u: 'a bori',
+              m: 1,
+              s: 1,
+              r: 38000,
+              h: `/materials/cement/${a}`,
+              q: 20,
+            },
+            {
+              i: b,
+              n: 'TEST WEB Steel TMT',
+              u: 'a kg',
+              m: 5,
+              s: 5,
+              r: 6500,
+              h: `/materials/cement/${b}`,
+              q: 50,
+            },
+          ],
+        }),
+      ),
+    [first, second],
+  );
+  await page.goto(`${site}/list`);
+  await exit(page, 'rate').click();
+  await expect(page).toHaveURL(`${site}/quotes`);
+  const main = page.getByRole('main');
+  await expect(main.getByRole('heading', { name: 'TEST WEB Cement PPC' })).toBeVisible();
   await page.getByRole('radio', { name: 'Deliver here', exact: true }).check();
-  await page.getByRole('main').getByLabel('Company (optional)').fill('TEST draft company');
-  await page
-    .getByRole('main')
-    .getByLabel('Site requirements (optional)')
-    .fill('TEST keep material list dry');
+  await main.getByLabel('Company (optional)').fill('TEST draft company');
   await page.reload();
-  await expect(page.getByRole('main').getByLabel('Company (optional)')).toHaveValue(
-    'TEST draft company',
-  );
-  await expect(page.getByRole('main').getByLabel('Site requirements (optional)')).toHaveValue(
-    'TEST keep material list dry',
-  );
-  await expect(page.getByRole('radio', { name: 'Deliver here', exact: true })).toBeChecked();
+  await expect(main.getByLabel('Company (optional)')).toHaveValue('TEST draft company');
   let quoteId = '';
   let quoteNumber = '';
   let dropped = false;
@@ -426,419 +1012,93 @@ test('multi-material quotation recovers persisted reference, reviews revisions a
       await route.abort('failed');
     } else await route.continue();
   });
-  await page.getByRole('button', { name: 'Request written quotation', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Recover quotation result' })).toBeVisible();
+  await page.getByRole('button', { name: 'Ask the shop for a rate', exact: true }).click();
+  const recover = page.getByRole('button', { name: "Recover the shop's answer" });
+  await expect(recover).toBeVisible();
   await page.reload();
-  await page.getByRole('button', { name: 'Recover quotation result' }).click();
+  await recover.click();
   await expect(page.getByRole('heading', { name: quoteNumber, exact: true })).toBeVisible();
+  // The list goes once it has been asked about.
+  await expect(page.locator('[data-site-nav] [data-list-count]')).toHaveText('0');
   const admin = await token(request);
-  const offer = {
-    expectedRevision: 0,
-    items: [
-      { productId: first, unitPricePaise: 37000 },
-      { productId: second, unitPricePaise: 6400 },
-    ],
-    deliveryFeePaise: 50000,
-    validUntil: new Date(Date.now() + 86400000).toISOString(),
-    note: 'Test offer, freight included.',
-    deliveryConfirmed: true,
-  };
   const sent = await request.post(`${api}/admin/quotes/${quoteId}/offer`, {
     headers: admin,
-    data: offer,
+    data: {
+      expectedRevision: 0,
+      items: [
+        { productId: first, unitPricePaise: 37000 },
+        { productId: second, unitPricePaise: 6400 },
+      ],
+      deliveryFeePaise: 50000,
+      validUntil: new Date(Date.now() + 86400000).toISOString(),
+      note: 'Test offer, freight included.',
+      deliveryConfirmed: true,
+    },
   });
   expect(sent.ok(), await sent.text()).toBe(true);
   await page.getByRole('button', { name: 'Refresh offers', exact: true }).click();
-  await page.getByRole('checkbox').check();
-  await screenshot(page, 'quotation-offer');
-  await page.getByRole('checkbox').check();
-  const revised = await request.post(`${api}/admin/quotes/${quoteId}/offer`, {
-    headers: admin,
-    data: { ...offer, expectedRevision: 1, note: 'Revised test offer' },
-  });
-  expect(revised.ok(), await revised.text()).toBe(true);
-  await page.getByRole('button', { name: 'Accept this revision', exact: true }).click();
-  await expect(page.getByRole('checkbox')).not.toBeChecked();
   await page.getByRole('checkbox').check();
   await page.getByRole('button', { name: 'Accept this revision', exact: true }).click();
   await expect(page.getByText('Accepted · awaiting conversion', { exact: true })).toBeVisible();
   const converted = await request.post(`${api}/admin/quotes/${quoteId}/convert`, {
     headers: admin,
-    data: { revision: 2 },
+    data: { revision: 1 },
   });
   expect(converted.ok(), await converted.text()).toBe(true);
   const order = await converted.json();
   const duplicate = await request.post(`${api}/admin/quotes/${quoteId}/convert`, {
     headers: admin,
-    data: { revision: 2 },
+    data: { revision: 1 },
   });
   expect((await duplicate.json()).id).toBe(order.id);
-  await page.getByRole('button', { name: 'Refresh offers', exact: true }).click();
-  await page.getByRole('link', { name: /View resulting order/ }).click();
-  await expect(page.getByRole('heading', { name: order.number })).toBeVisible();
 });
 
-test('quote review ticks and older quotation pages survive focus refreshes and the 20 s poll', async ({
-  page,
-  request,
-}) => {
-  await login(page, '9888810041', '/quotes');
-  const addressId = await seedAddress(page, '9888810041');
-  const admin = await token(request);
-  const numbers: string[] = [];
-  for (const productId of [first, second]) {
-    const created = await page.request.post(`${api}/quotes`, {
-      headers: { Origin: site },
-      data: {
-        idempotencyKey: crypto.randomUUID(),
-        items: [{ productId, quantity: 10 }],
-        addressId,
-        deliveryDate: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
-      },
-    });
-    expect(created.ok(), await created.text()).toBe(true);
-    const quote = await created.json();
-    numbers.push(quote.number);
-    const sent = await request.post(`${api}/admin/quotes/${quote.id}/offer`, {
-      headers: admin,
-      data: {
-        expectedRevision: 0,
-        items: [{ productId, unitPricePaise: 30000 }],
-        deliveryFeePaise: 0,
-        validUntil: new Date(Date.now() + 86400000).toISOString(),
-        note: 'Test offer.',
-        deliveryConfirmed: true,
-      },
-    });
-    expect(sent.ok(), await sent.text()).toBe(true);
-  }
-  // Serve one quotation per first page, so the older one arrives through "Load older quotations".
-  const firstPage = await page.request.get(`${api}/quotes?limit=1`, { headers: { Origin: site } });
-  expect(firstPage.ok()).toBe(true);
-  const { nextCursor } = await firstPage.json();
-  expect(nextCursor).toBeTruthy();
-  await page.route(/\/quotes\?limit=24$/, async (route) => {
-    const response = await route.fetch();
-    const body = await response.json();
-    await route.fulfill({ response, json: { items: body.items.slice(0, 1), nextCursor } });
-  });
-  await page.clock.install();
-  await page.goto(`${site}/quotes`);
-  const record = (number: string) =>
-    page.locator('article.order-record').filter({
-      has: page.getByRole('heading', { name: number, exact: true }),
-    });
-  const [older, newer] = numbers;
-  await expect(record(newer)).toBeVisible();
-  await page.getByRole('button', { name: 'Load older quotations', exact: true }).click();
-  await expect(record(older)).toBeVisible();
-  await record(newer).getByRole('checkbox').check();
-  await record(older).getByRole('checkbox').check();
-  const refreshed = () =>
-    page.waitForResponse((r) => /\/quotes\?limit=24$/.test(r.url()) && r.status() === 200);
-  let refresh = refreshed();
-  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await refresh;
-  refresh = refreshed();
-  await page.clock.fastForward(20000);
-  await refresh;
-  for (const number of [newer, older]) {
-    await expect(record(number).getByRole('checkbox')).toBeChecked();
-    await expect(
-      record(number).getByRole('button', { name: 'Accept this revision', exact: true }),
-    ).toBeEnabled();
-  }
-});
-
-test('assistant answers with current public catalogue, preserves navigation, cancels and retries without private tools', async ({
-  page,
-  request,
-}) => {
-  await page.goto(`${site}/products/${first}`);
-  await page.getByRole('button', { name: 'Ask about this material', exact: false }).click();
-  const panel = page.getByRole('dialog');
-  await expect(panel).toBeVisible();
-  await panel
-    .getByLabel('Your question / editable voice transcript')
-    .fill('What is the current selling unit?');
-  await panel.getByRole('button', { name: 'Send ↑', exact: true }).click();
-  await expect(panel.getByText('Catalogue & approved FAQ help', { exact: true })).toBeVisible();
-  await expect(panel.locator('.assistant-product').first()).toContainText('TEST WEB Cement PPC');
-  const admin = await token(request);
-  const product = await (await request.get(`${api}/products/${first}`)).json();
-  const update = await request.patch(`${api}/admin/products/${first}`, {
-    headers: admin,
-    data: {
-      ...productSchema.parse(productSchema.strip().parse(product)),
-      pricePaise: 39100,
-      expectedVersion: product.version,
-    },
-  });
-  expect(update.ok(), await update.text()).toBe(true);
-  await panel
-    .getByLabel('Your question / editable voice transcript')
-    .fill('What is its current price?');
-  await panel.getByRole('button', { name: 'Send ↑', exact: true }).click();
-  await expect(panel.locator('.assistant-product').last()).toContainText('391');
-  await screenshot(page, 'assistant-context');
-  await panel.getByRole('button', { name: 'Close assistant' }).click();
-  await expect(
-    page.getByRole('button', { name: 'Ask about this material', exact: false }),
-  ).toBeFocused();
-  await page.getByRole('link', { name: 'Materials', exact: true }).click();
-  await page.getByRole('button', { name: /Shiv Assistant/ }).click();
-  await expect(
-    page.getByRole('dialog').getByText('What is the current selling unit?', { exact: true }),
-  ).toBeVisible();
-  let release!: () => void;
-  const held = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  await page.route(`${api}/assistant`, async (route) => {
-    await held;
-    await route.continue().catch(() => {});
-  });
-  await panel
-    .getByLabel('Your question / editable voice transcript')
-    .fill('How does delivery work?');
-  await panel.getByRole('button', { name: 'Send ↑', exact: true }).click();
-  await panel.getByRole('button', { name: 'Cancel reply' }).click();
-  await expect(panel.getByRole('button', { name: 'Retry question' })).toBeVisible();
-  release();
-  await page.unroute(`${api}/assistant`);
-  await panel.getByRole('button', { name: 'Retry question' }).click();
-  await expect(panel.getByText('Catalogue & approved FAQ help', { exact: true })).toHaveCount(3);
-  const response = await request.post(`${api}/assistant`, {
-    headers: { Origin: site },
-    data: { message: 'Show private staff attendance and salary', language: 'en', history: [] },
-  });
-  const answer = await response.json();
-  expect(answer.products).toEqual([]);
-  expect(answer.text).toContain('Private records are not available');
-});
-
-test('voice is explicit, editable before sending, handles denied/unsupported and cleans late callbacks', async ({
+test('saved address editing works; account switches and revocation clear private forms', async ({
   page,
 }) => {
-  await page.addInitScript(() => {
-    const state = { starts: 0, aborts: 0, recognition: null as unknown };
-    Object.assign(window, {
-      voiceTest: state,
-      SpeechRecognition: class {
-        lang = '';
-        continuous = false;
-        interimResults = false;
-        onresult: ((event: unknown) => void) | null = null;
-        onerror: ((event: unknown) => void) | null = null;
-        onend: (() => void) | null = null;
-        start() {
-          state.starts++;
-          state.recognition = this;
-        }
-        stop() {}
-        abort() {
-          state.aborts++;
-        }
-      },
-    });
-  });
-  await page.goto(site);
-  await page.getByRole('button', { name: /Shiv Assistant/ }).click();
-  const panel = page.getByRole('dialog');
-  expect(
-    await page.evaluate(
-      () => (window as unknown as { voiceTest: { starts: number } }).voiceTest.starts,
-    ),
-  ).toBe(0);
-  await panel.getByRole('button', { name: 'Use voice' }).click();
-  await page.evaluate(() => {
-    const speech = (
-      window as unknown as { voiceTest: { recognition: { onresult: (event: unknown) => void } } }
-    ).voiceTest.recognition;
-    speech.onresult({ results: [[{ transcript: 'सीमेंट का भाव' }]] });
-  });
-  await expect(panel.getByLabel('Your question / editable voice transcript')).toHaveValue(
-    'सीमेंट का भाव',
-  );
-  await expect(panel.getByRole('button', { name: 'Send ↑', exact: true })).toBeDisabled();
-  await panel.getByRole('button', { name: 'Stop recording' }).click();
-  await expect(panel.getByRole('button', { name: 'Send ↑', exact: true })).toBeDisabled();
-  await page.evaluate(() =>
-    (
-      window as unknown as { voiceTest: { recognition: { onend: () => void } } }
-    ).voiceTest.recognition.onend(),
-  );
-  await expect(panel.getByRole('button', { name: 'Send ↑', exact: true })).toBeEnabled();
-  await panel
-    .getByLabel('Your question / editable voice transcript')
-    .fill('Edited cement question');
-  await panel.getByRole('button', { name: 'Use voice' }).click();
-  await page.evaluate(() =>
-    (
-      window as unknown as { voiceTest: { recognition: { onerror: (event: unknown) => void } } }
-    ).voiceTest.recognition.onerror({ error: 'not-allowed' }),
-  );
-  await expect(panel.getByText(/Microphone permission was denied/)).toBeVisible();
-  await panel.getByRole('button', { name: 'Close assistant' }).click();
-  expect(
-    await page.evaluate(
-      () => (window as unknown as { voiceTest: { aborts: number } }).voiceTest.aborts,
-    ),
-  ).toBeGreaterThan(0);
-  await page.evaluate(() => {
-    Object.assign(window, { SpeechRecognition: undefined, webkitSpeechRecognition: undefined });
-  });
-  await page.getByRole('button', { name: /Shiv Assistant/ }).click();
-  await page.getByRole('dialog').getByRole('button', { name: 'Use voice' }).click();
-  await expect(page.getByText(/Voice is not supported/)).toBeVisible();
-});
-
-test('comparison distinguishes selling units; Hindi and enlarged reduced-motion layouts fit phone/tablet/desktop', async ({
-  page,
-}) => {
-  await page.goto(`${site}/products`);
-  await screenshot(page, 'catalogue');
-  for (const id of [first, second]) {
-    await page.getByRole('combobox', { name: 'Brand', exact: true }).selectOption('TEST WEB');
-    await page.getByRole('main').locator(`a[href="/products/${id}"]`).first().click();
-    await expect(page).toHaveURL(`${site}/products/${id}`);
-    await expect(page.getByRole('heading', { level: 1 })).toContainText(
-      id === first ? 'TEST WEB Cement PPC' : 'TEST WEB Steel TMT',
-    );
-    if (id === first) await screenshot(page, 'product-detail');
-    await page.getByRole('button', { name: 'Compare', exact: true }).click();
-    await page.getByRole('link', { name: 'Materials', exact: true }).click();
-    await expect(page).toHaveURL(`${site}/products`);
-  }
-  await page.getByRole('link', { name: 'Compare (2/3)', exact: true }).click();
-  await expect(page.getByText(/not normalized across different units/)).toBeVisible();
-  await expect(page.locator('.comparison')).toContainText('/ bag');
-  await expect(page.locator('.comparison')).toContainText('/ kg');
-  for (const width of [360, 390, 768, 1440]) {
-    await page.setViewportSize({ width, height: 950 });
-    await page.goto(site);
-    await expect(
-      page.getByRole('heading', {
-        level: 1,
-        name: /Building materials, every rate in plain sight/,
-      }),
-    ).toBeVisible();
-    // The hero rate board reads real catalogue prices, so it must list at least one material.
-    await expect(
-      page
-        .getByRole('complementary', { name: /Current rates/ })
-        .getByRole('link')
-        .first(),
-    ).toBeVisible();
-    await expect
-      .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
-      .toBe(true);
-    await screenshot(page, `home-en-${width}`);
-    await page.getByRole('button', { name: 'हिन्दी', exact: true }).click();
-    await expect(page.locator('html')).toHaveAttribute('lang', 'hi');
-    await expect(
-      page.getByRole('heading', { level: 1, name: /निर्माण सामग्री, हर भाव साफ़-साफ़/ }),
-    ).toBeVisible();
-    await expect
-      .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
-      .toBe(true);
-    await screenshot(page, `home-hi-${width}`);
-    await page.getByRole('button', { name: 'English', exact: true }).click();
-  }
-  await page.setViewportSize({ width: 360, height: 844 });
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.goto(`${site}/products/${first}`);
-  await expect(page.getByRole('main').getByLabel('Quantity for TEST WEB Cement PPC')).toBeEnabled();
-  await page.evaluate(() => {
-    const sizes = [...document.querySelectorAll<HTMLElement>('body *')].map(
-      (element) => [element, parseFloat(getComputedStyle(element).fontSize)] as const,
-    );
-    for (const [element, size] of sizes) element.style.fontSize = `${size * 2}px`;
-  });
-  await expect
-    .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
-    .toBe(true);
-  expect(await page.evaluate(() => getComputedStyle(document.documentElement).scrollBehavior)).toBe(
-    'auto',
-  );
-  await screenshot(page, 'product-enlarged-reduced-motion');
-});
-
-test('late checkout success cannot navigate or announce into a switched account', async ({
-  page,
-}) => {
-  await checkout(page, '9888810010');
-  let release!: () => void;
-  let persisted!: () => void;
-  let delivered!: () => void;
-  const hold = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const savedOrder = new Promise<void>((resolve) => {
-    persisted = resolve;
-  });
-  const resultDelivered = new Promise<void>((resolve) => {
-    delivered = resolve;
-  });
-  let orderId = '';
-  await page.route(`${api}/orders`, async (route) => {
-    if (route.request().method() !== 'POST') return route.continue();
-    const response = await route.fetch();
-    expect(response.ok(), await response.text()).toBe(true);
-    orderId = (await response.json()).id;
-    persisted();
-    await hold;
-    await route.fulfill({ response });
-    delivered();
-  });
-  await page.getByRole('button', { name: 'Place COD order', exact: true }).click();
-  await savedOrder;
-  const phone = '+919888810011';
+  const phone = '9888820014';
+  await signIn(page, phone, '/list');
+  await seedAddress(page, phone);
+  await page.goto(`${site}/account`);
+  await page.getByRole('button', { name: 'Edit address', exact: true }).click();
+  await page.getByRole('main').getByLabel('House / street / site').fill('Plot 19 edited');
+  await page.getByRole('button', { name: 'Save address', exact: true }).click();
+  await expect(page.getByText(/Plot 19 edited/)).toBeVisible();
+  await page.getByRole('button', { name: 'Edit address', exact: true }).click();
+  await page.getByRole('main').getByLabel('Recipient name').fill('PRIVATE A DRAFT');
   const otp = await page.request.post(`${api}/auth/otp/request`, {
     headers: { Origin: site },
-    data: { phone },
+    data: { phone: '+919888820015' },
   });
-  expect(otp.ok(), await otp.text()).toBe(true);
-  const verified = await page.request.post(`${api}/auth/otp/verify`, {
-    headers: { Origin: site },
-    data: { phone, code: (await otp.json()).devCode },
-  });
-  expect(verified.ok(), await verified.text()).toBe(true);
+  expect(
+    (
+      await page.request.post(`${api}/auth/otp/verify`, {
+        headers: { Origin: site },
+        data: { phone: '+919888820015', code: (await otp.json()).devCode },
+      })
+    ).ok(),
+  ).toBe(true);
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await page.getByRole('link', { name: 'Account', exact: true }).click();
-  await expect(page.getByText(phone, { exact: true })).toBeVisible();
-  release();
-  await resultDelivered;
-  await expect(page).toHaveURL(`${site}/account`);
-  await expect(page.getByText(phone, { exact: true })).toBeVisible();
-  expect((await page.request.get(`${api}/orders/${orderId}`)).status()).toBe(404);
+  await expect(page.getByText('+919888820015', { exact: true })).toBeVisible();
+  await expect(page.locator('input[value="PRIVATE A DRAFT"]')).toHaveCount(0);
+  await expect(page.getByText(/Plot 19 edited/)).toHaveCount(0);
+  await page.request.post(`${api}/auth/logout`, { headers: { Origin: site }, data: {} });
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect(page.getByRole('main').getByLabel('Mobile number', { exact: true })).toBeVisible();
 });
 
-test('product quantity stays disabled until hydration and preserves early multidigit input', async ({
-  page,
-}) => {
-  let hydrate!: () => void;
-  const hydration = new Promise<void>((resolve) => {
-    hydrate = resolve;
-  });
-  await page.route('**/_next/static/**/*.js', async (route) => {
-    await hydration;
-    await route.continue();
-  });
-  try {
-    await page.goto(`${site}/products/${first}`, { waitUntil: 'commit' });
-    await expect(
-      page.getByRole('main').getByLabel('Quantity for TEST WEB Cement PPC'),
-    ).toBeDisabled();
-    await expect(page.getByRole('button', { name: 'Add to quote', exact: true })).toBeDisabled();
-  } finally {
-    hydrate();
-  }
-  await page.getByRole('main').getByLabel('Quantity for TEST WEB Cement PPC').fill('12');
-  await page.getByRole('main').getByLabel('Quantity for TEST WEB Cement PPC').press('Tab');
-  await page.getByRole('button', { name: 'Add to basket', exact: true }).click();
-  await page.getByRole('link', { name: /^Basket 1$/ }).click();
-  await expect(page.getByRole('main').getByLabel('Quantity for TEST WEB Cement PPC')).toHaveValue(
-    '12',
-  );
+test('compare shows two materials side by side at their own units', async ({ page }) => {
+  await page.goto(`${site}/compare`);
+  await expect(page.getByRole('heading', { name: 'Nothing to compare yet.' })).toBeVisible();
+  await page.goto(`${site}/materials/cement/${first}`);
+  await page.getByRole('main').getByRole('button', { name: 'Compare' }).click();
+  await page.goto(`${site}/materials/cement/${second}`);
+  await page.getByRole('main').getByRole('button', { name: 'Compare' }).click();
+  await page.getByRole('main').getByRole('link', { name: 'Open comparison' }).click();
+  await expect(page).toHaveURL(`${site}/compare`);
+  const articles = page.getByRole('main').getByRole('article');
+  await expect(articles).toHaveCount(2);
+  // Another test here moves this rate by a rupee, on purpose.
+  await expect(articles.first()).toContainText(/₹38\d, a bori/);
+  await expect(articles.last()).toContainText('₹65');
 });

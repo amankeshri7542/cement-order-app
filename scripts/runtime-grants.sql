@@ -15,12 +15,16 @@ GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO :"runtime_role";
 -- A new table that the API must delete from is added here; reapply after its migration.
 GRANT DELETE ON TABLE
   public."Address",
+  public."AdvisorConversation",
+  public."AdvisorGap",
+  public."AdvisorTurn",
   public."AuthRateLimit",
   public."CartItem",
   public."CheckoutReview",
   public."DeliveryPincode",
   public."DemandOverride",
   public."Device",
+  public."KhataRecon",
   public."Notification",
   public."OrderItem",
   public."OtpChallenge",
@@ -29,6 +33,10 @@ GRANT DELETE ON TABLE
   public."PushActionToken",
   public."PushSubscription",
   public."Session",
+  public."TallyChunk",
+  public."TallyPairingCode",
+  public."TallyVoucherItem",
+  public."TallyVoucherLine",
   public."WaMessage",
   public."WaThread",
   public."WebEnquiry"

@@ -1,0 +1,122 @@
+@layer reset, base, components;
+@layer components {
+  .panel {
+    display: grid;
+    gap: 1rem;
+  }
+  .first h2 {
+    font-size: var(--t-2);
+    letter-spacing: -0.018em;
+    line-height: 1.12;
+  }
+  .first p {
+    margin-top: 0.5rem;
+  }
+  .followups {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 0.75rem;
+  }
+  .followups :global(.btn) {
+    text-align: left;
+    justify-content: flex-start;
+  }
+  .turns {
+    display: grid;
+    gap: 1.25rem;
+  }
+  .answer {
+    background: var(--ground-up);
+    padding: 16px;
+    border-radius: var(--r);
+    display: grid;
+    gap: 0.5rem;
+  }
+  .question {
+    font-weight: 500;
+  }
+  .speaker {
+    color: var(--ink-2);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+  .tag {
+    font-weight: 500;
+    color: var(--ok);
+  }
+  .tag::before {
+    content: '';
+    display: inline-block;
+    width: 0.6em;
+    height: 0.6em;
+    margin-right: 0.4em;
+    background: currentColor;
+  }
+  .tag[data-level='GENERAL'],
+  .tag[data-level='AI_BUSY'] {
+    color: var(--warn);
+  }
+  .words {
+    font-size: var(--t-3);
+    line-height: 1.45;
+    display: grid;
+    gap: 0.35rem;
+  }
+  .fine {
+    color: var(--ink-2);
+    font-size: 0.9375rem;
+    line-height: 1.4;
+  }
+  .products li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 4px 12px;
+    align-items: center;
+    padding-block: 8px;
+    border-top: 1px solid var(--rule);
+  }
+  .products small {
+    display: block;
+    color: var(--ink-2);
+    font-size: 0.9375rem;
+  }
+  .products b {
+    font-weight: 400;
+  }
+  .product {
+    display: grid;
+  }
+  .articles a {
+    display: flex;
+    align-items: center;
+    min-height: var(--touch);
+    text-underline-offset: 0.22em;
+    text-decoration-thickness: 1px;
+  }
+  .waiting {
+    background: var(--ground-down);
+    padding: 12px 16px;
+    border-radius: var(--r);
+  }
+  .box {
+    display: grid;
+    gap: 8px;
+  }
+  .box textarea {
+    width: 100%;
+    min-height: 72px;
+    padding: 10px 14px;
+    background: var(--ground-up);
+    border: 1.5px solid var(--ink);
+    border-radius: var(--r);
+    resize: vertical;
+  }
+  .boxActions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+}

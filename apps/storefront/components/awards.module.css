@@ -1,0 +1,99 @@
+@layer reset, base, components;
+@layer components {
+  .awards {
+    position: relative;
+    z-index: 2;
+    background: var(--night);
+    color: var(--on-night);
+    padding: var(--section) var(--m);
+    overflow: clip;
+  }
+  .awardsHead {
+    display: grid;
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+    gap: clamp(20px, 4vw, 72px);
+    align-items: end;
+  }
+  .awardsHead p {
+    font-size: var(--t-3);
+    line-height: 1.45;
+    max-width: 26em;
+    color: var(--on-night-2);
+  }
+  .certs {
+    margin-top: clamp(32px, 4vw, 64px);
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: clamp(14px, 1.8vw, 28px);
+    align-items: end;
+  }
+  .cert {
+    grid-column: span 4;
+    margin: 0;
+  }
+  .cert:nth-child(3n + 2) {
+    grid-column: span 5;
+  }
+  .cert:nth-child(3n) {
+    grid-column: span 3;
+  }
+  .frame {
+    display: block;
+    width: 100%;
+    background: var(--ground-up);
+    color: var(--ink);
+    padding: clamp(10px, 1.2vw, 18px);
+    /* The same amber as the house's windows, falling on the wall behind each frame. */
+    box-shadow:
+      0 0 0 clamp(6px, 0.8vw, 12px) var(--night-up),
+      0 0 70px 6px rgba(242, 163, 58, 0.18);
+    text-align: left;
+  }
+  .frame img {
+    width: 100%;
+    height: auto;
+  }
+  .slot {
+    aspect-ratio: 4 / 3;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 18px;
+    padding: clamp(10px, 1.4vw, 20px);
+    outline: 3px double rgba(25, 29, 27, 0.55);
+    outline-offset: -4px;
+  }
+  .slotBrand {
+    font-size: var(--t-2);
+    font-weight: 300;
+    letter-spacing: -0.015em;
+    line-height: 1.1;
+  }
+  .cert figcaption {
+    margin-top: 16px;
+    color: var(--on-night-2);
+    line-height: 1.35;
+  }
+  .cert figcaption b {
+    display: block;
+    color: var(--on-night);
+    font-weight: 500;
+  }
+  .awardsMore {
+    margin-top: clamp(28px, 3vw, 44px);
+  }
+  @media (max-width: 759px) {
+    .awardsHead {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .certs {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 34px;
+    }
+    .cert,
+    .cert:nth-child(3n + 2),
+    .cert:nth-child(3n) {
+      grid-column: auto;
+    }
+  }
+}

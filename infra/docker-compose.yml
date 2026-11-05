@@ -46,7 +46,8 @@ services:
       dockerfile: Dockerfile
       target: build
     working_dir: /app/apps/api
-    command: npx prisma migrate deploy
+    # Migrations, then the guide: an article edited since it was signed drops out here.
+    command: sh -c 'npx prisma migrate deploy && node dist/advisor/sync-cli.js'
     environment:
       DATABASE_URL: postgresql://shiv_owner:${POSTGRES_PASSWORD}@db:5432/shiv_cement
     depends_on:

@@ -2,24 +2,16 @@ import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures';
 import { productSchema, type DeliveryZone, type Order } from '@shiv/shared';
 import { en } from '@shiv/i18n';
-import { appLogin, fillAddress, openBasket, openMaterial, searchMaterials, tab } from './app';
-
-test('catalogue keeps a product press intact across an unchanged search debounce', async ({
-  page,
-}) => {
-  await page.clock.install({ time: new Date('2026-01-01T00:00:00Z') });
-  await page.goto('http://localhost:8082');
-  await expect(page.getByRole('tab', { name: 'Materials' })).toBeVisible();
-  await page.clock.pauseAt(new Date('2026-01-01T01:00:00Z'));
-  await page.getByRole('tab', { name: 'Materials' }).click();
-  const product = page.getByRole('button', { name: 'View UltraTech Super' });
-  await expect(product).toBeVisible();
-  await product.hover();
-  await page.mouse.down();
-  await page.clock.runFor(350);
-  await page.mouse.up();
-  await expect(page.getByRole('textbox', { name: 'Quantity', exact: true })).toBeVisible();
-});
+import {
+  addSite,
+  addToList,
+  appLogin,
+  openList,
+  placeButton,
+  placeOrder,
+  tab,
+  waiting,
+} from './app';
 
 async function mobileLogin(page: Page, phone: string) {
   await appLogin(page, phone);
@@ -40,45 +32,33 @@ async function adminLogin(page: Page, phone = '9999997007') {
   await page.getByRole('button', { name: en['owner.signIn'] }).click();
   await verified;
 }
-test('customer places a COD order, tracks it, reorders and requests a bulk quote', async ({
-  page,
-}) => {
+// The desk journey below works on this customer's order and list.
+test('customer places an order, tracks it, orders again and asks for a rate', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const runtimeErrors: string[] = [];
   page.on('pageerror', (e) => runtimeErrors.push(e.message));
   await mobileLogin(page, '9888888881');
-  await page.getByRole('button', { name: 'Saved addresses', exact: true }).click();
-  await fillAddress(page, {
+  await addSite(page, {
     name: 'Ravi Kumar',
     line1: 'Plot 24',
     area: 'Kankarbagh',
     pincode: '800020',
   });
-  await expect(page.getByText('Address saved', { exact: true })).toBeVisible();
-  await openMaterial(page, 'UltraTech Super');
-  await page.getByRole('textbox', { name: 'Quantity', exact: true }).fill('10');
-  await page.getByRole('button', { name: 'Add to basket', exact: true }).click();
-  await openBasket(page);
-  await expect(page.getByRole('tab', { name: 'Basket, 10' })).toBeVisible();
-  await page.getByRole('button', { name: 'Review order', exact: true }).click();
-  await expect(page.getByText('₹4,600.00', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Place order · ₹4,600.00', exact: true }).click();
-  await expect(
-    page.getByRole('heading', { name: 'Waiting for the shop', exact: true }),
-  ).toBeVisible();
+  await addToList(page, 'UltraTech Super', 10);
+  await openList(page);
+  await placeOrder(page);
   await page.getByRole('button', { name: 'Order again', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Review order', exact: true })).toBeVisible();
-  await tab(page, 'Home').click();
-  await page.getByRole('button', { name: 'Bulk quote', exact: true }).click();
-  await page
-    .getByRole('textbox', { name: 'Find a material to add', exact: true })
-    .fill('UltraTech Super');
-  await page.getByRole('button', { name: 'Add to quote: UltraTech Super', exact: true }).click();
-  await page.getByRole('button', { name: 'Send bulk request' }).click();
-  await expect(page.getByText(/^Requested · awaiting shop$/)).toBeVisible();
-  await tab(page, 'Home').click();
-  await page.getByRole('button', { name: 'Switch language to Hindi' }).click();
-  await expect(page.getByRole('tab', { name: 'होम' })).toBeVisible();
+  await expect(placeButton(page)).toBeEnabled();
+  await page.getByRole('button', { name: 'Close', exact: true }).last().click();
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+  await addToList(page, 'UltraTech Super', 20);
+  await openList(page);
+  const asked = page.waitForResponse(
+    (r) => r.url().endsWith('/quotes') && r.request().method() === 'POST',
+  );
+  await page.getByRole('button', { name: 'Ask for a rate', exact: true }).click();
+  expect((await asked).status()).toBe(201);
+  await expect(page.getByRole('button', { name: /We got your list/ })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
@@ -174,15 +154,8 @@ test('live price updates refresh the catalogue and invalidate an accepted checko
   request,
 }) => {
   await mobileLogin(page, '9888888883');
-  await page.getByRole('button', { name: 'Saved addresses', exact: true }).click();
-  await fillAddress(page, {
-    name: 'Price review customer',
-    line1: 'Plot 25',
-    area: 'Patna',
-    pincode: '800020',
-  });
-  await expect(page.getByText('Address saved', { exact: true })).toBeVisible();
-  await searchMaterials(page, 'UltraTech Super');
+  await addSite(page, { name: 'Price review customer', line1: 'Plot 25', pincode: '800020' });
+  await tab(page, 'Home').click();
   const otp = await request.post('http://localhost:4010/api/v1/auth/otp/request', {
     data: { phone: '+919999997008' },
   });
@@ -263,26 +236,18 @@ test('live price updates refresh the catalogue and invalidate an accepted checko
     expect(response.ok()).toBe(true);
   }
   await updatePrice(45000);
-  await expect(page.getByText('₹450.00', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'View UltraTech Super' }).click();
-  await page.getByRole('textbox', { name: 'Quantity', exact: true }).fill('10');
-  await page.getByRole('button', { name: 'Add to basket', exact: true }).click();
-  await openBasket(page);
-  await page.getByRole('button', { name: 'Review order', exact: true }).click();
-  await expect(page.getByRole('button', { name: /^Place order/ })).toBeEnabled();
+  await expect(page.getByText('₹450', { exact: true }).first()).toBeVisible();
+  await addToList(page, 'UltraTech Super', 10);
+  await openList(page);
+  await expect(placeButton(page)).toBeEnabled();
   await updatePrice(47500);
-  await page.getByRole('button', { name: /^Place order/ }).click();
-  // The refused order is re-reviewed at once and shows exactly what changed.
-  await expect(page.getByRole('alert')).toContainText('UltraTech Super: ₹450.00 → ₹475.00');
-  await expect(page.getByText('₹5,350.00', { exact: true })).toBeVisible();
-  // The new price must be accepted explicitly before the order can be placed.
-  await expect(page.getByRole('checkbox')).not.toBeChecked();
-  await expect(page.getByRole('button', { name: /^Place order/ })).toBeDisabled();
-  await page.getByRole('checkbox').check();
-  await page.getByRole('button', { name: /^Place order/ }).click();
-  await expect(
-    page.getByRole('heading', { name: 'Waiting for the shop', exact: true }),
-  ).toBeVisible();
+  await placeButton(page).click();
+  // The refused order is reviewed again at once and shows exactly what changed; the new total on the
+  // button is the customer's consent.
+  await expect(placeButton(page)).toHaveText(/₹5,350/);
+  await expect(page.getByText(/Rate changed, was ₹450/)).toBeVisible();
+  await placeButton(page).click();
+  await expect(waiting(page)).toBeVisible();
 });
 
 test('admin UI denies a customer account and a lost network produces a recoverable error', async ({
@@ -290,14 +255,16 @@ test('admin UI denies a customer account and a lost network produces a recoverab
 }) => {
   await adminLogin(page, '9888888882');
   await expect(page.getByRole('alert').filter({ hasText: en['error.forbidden'] })).toBeVisible();
+  // A first open with no network: nothing is saved on the phone yet, so it says so and can retry.
+  await page.route('**/api/v1/public/catalog', (route) => route.abort());
   await page.goto('http://localhost:8082');
-  await page.route('**/api/v1/products*', (route) => route.abort());
-  await page.reload();
-  await expect(page.getByRole('alert')).toContainText('Check your connection');
-  await page.unroute('**/api/v1/products*');
-  await page.getByRole('button', { name: 'Retry', exact: true }).click();
-  await expect(page.getByRole('alert')).toBeHidden();
-  await expect(page.getByRole('button', { name: /^Cement: / })).toBeVisible();
+  const retry = page.getByRole('button', { name: 'Try again', exact: true });
+  await expect(retry).toBeVisible();
+  await expect(page.getByText(/Check your connection/)).toBeVisible();
+  await page.unroute('**/api/v1/public/catalog');
+  await retry.click();
+  await expect(retry).toBeHidden();
+  await expect(page.getByRole('button', { name: /^UltraTech Super, / })).toBeVisible();
 });
 
 test('store records stock and delivery rules; customers browse server pages on mobile', async ({
@@ -349,41 +316,20 @@ test('store records stock and delivery rules; customers browse server pages on m
     });
     expect(r.ok()).toBe(true);
   }
+  // As a guest: on this host the desk's session cookie would sign the app in too.
+  await page.context().clearCookies();
   await page.goto('http://localhost:8082');
   // Six digits are a complete pincode: the check runs without another tap.
-  await page.getByRole('textbox', { name: 'Delivery pincode' }).fill('801111');
-  await expect(page.getByText('2–3 days after confirmation', { exact: false })).toBeVisible();
-  await tab(page, 'Materials').click();
-  // Wait for the initial list commit before WebKit pastes into its controlled header.
-  await expect(page.getByText('24 materials · more below', { exact: true })).toBeVisible();
-  const pilotProducts = page.waitForResponse((response) => {
-    const url = new URL(response.url());
-    return (
-      url.pathname.endsWith('/products') &&
-      url.searchParams.get('q') === 'Pilot material' &&
-      response.ok()
-    );
-  });
-  await page.getByRole('textbox', { name: 'Search materials', exact: true }).fill('Pilot material');
-  await pilotProducts;
-  await expect(page.getByRole('button', { name: 'View Pilot material 00' })).toBeVisible();
-  await page.getByRole('button', { name: 'Filters and sort', exact: true }).click();
-  await expect(page.getByRole('textbox', { name: 'Brand', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Show materials', exact: true }).click();
-  await expect(page.getByRole('textbox', { name: 'Brand', exact: true })).toBeHidden();
-  // The list is virtualised: count what loaded, not what is drawn.
-  await expect(page.getByText('24 materials · more below', { exact: true })).toBeVisible();
-  // Reaching the end of the list loads the next page.
-  await page
-    .getByRole('button', { name: /^View / })
-    .last()
-    .scrollIntoViewIfNeeded();
-  await page.mouse.wheel(0, 4000);
-  await expect(
-    page.getByRole('button', { name: 'View Pilot material 26', exact: true }),
-  ).toBeVisible();
-  await expect(page.getByText('27 materials', { exact: true })).toBeAttached();
-  await page.getByRole('textbox', { name: 'Search materials' }).scrollIntoViewIfNeeded();
+  await page.getByRole('button', { name: 'Check delivery', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Pincode', exact: true }).fill('801111');
+  await expect(page.getByText(/We deliver here/)).toBeVisible();
+  await page.getByRole('button', { name: 'Close', exact: true }).last().click();
+  // Every material is on the phone, so search finds beyond what fits on one screen.
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Search', exact: true }).fill('Pilot material');
+  await expect(page.getByRole('button', { name: /^Pilot material 00, / })).toBeVisible();
+  await page.getByRole('textbox', { name: 'Search', exact: true }).fill('Pilot material 26');
+  await expect(page.getByRole('button', { name: /^Pilot material 26, / })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );

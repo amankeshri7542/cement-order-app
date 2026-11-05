@@ -606,6 +606,9 @@
   padding-block: 0.75rem;
   border-block-start: 0.0625rem solid var(--shiv-line);
 }
+.moreCount {
+  composes: tabCount;
+}
 .totalRow th,
 .totalRow td {
   border-block-start: 0.1875rem double var(--shiv-ink);
@@ -638,7 +641,8 @@
     padding-inline: 0.75rem;
     text-align: start;
   }
-  .stockLink {
+  .stockLink,
+  .moreCount {
     display: none;
   }
   .topbar,

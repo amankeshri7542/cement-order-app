@@ -1,0 +1,109 @@
+# A stock keeper's day, on a real release build: link, a green scan, loads, a truck in with a photo.
+appId: in.shivcement.staff
+tags: [smoke]
+---
+- runFlow:
+    file: subflows/link.yaml
+    env:
+      NUMBER: '9000007004'
+- assertVisible: Aane ki hazri lagao
+- assertVisible: Namaste Test
+- takeScreenshot: hazri-home
+- tapOn:
+    id: hazri-main
+- takeScreenshot: scan-camera
+- runFlow: subflows/scan.yaml
+- extendedWaitUntil:
+    visible:
+      id: flood-title
+    timeout: 15000
+- takeScreenshot: hazri-flood
+- assertVisible: Hazri lag gayi.*
+- tapOn:
+    id: flood-home
+- extendedWaitUntil:
+    visible: Jaane ki hazri lagao
+    timeout: 15000
+- takeScreenshot: hazri-in
+# Language switch, in the same place.
+- tapOn:
+    id: language-switch
+- assertVisible: 'Mark attendance: I am leaving'
+- tapOn:
+    id: language-switch
+- assertVisible: Jaane ki hazri lagao
+- tapOn:
+    id: tab-kaam
+- extendedWaitUntil:
+    visible: Aaj ki loading
+    timeout: 15000
+- takeScreenshot: stock-loads
+- tapOn:
+    id: load-done-SC-MAESTRO
+- tapOn:
+    id: vehicle-input
+- inputText: BR01AB1234
+- hideKeyboard
+- tapOn:
+    id: load-send
+- extendedWaitUntil:
+    visible: Load ho gaya
+    timeout: 15000
+- takeScreenshot: stock-load-done
+- tapOn:
+    id: flood-home
+- tapOn:
+    id: stock-truck
+- extendedWaitUntil:
+    visible:
+      id: material-choose
+    timeout: 15000
+- tapOn:
+    id: material-choose
+- tapOn:
+    id: material-cement
+- tapOn:
+    id: truck-qty
+- inputText: '50'
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: truck-supplier
+- tapOn:
+    id: truck-supplier
+- inputText: Test Depot
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: truck-photo
+- tapOn:
+    id: truck-photo
+- extendedWaitUntil:
+    visible:
+      id: photo-take
+    timeout: 15000
+- tapOn:
+    id: photo-take
+- extendedWaitUntil:
+    visible:
+      id: photo-use
+    timeout: 20000
+- takeScreenshot: truck-photo
+- tapOn:
+    id: photo-use
+- tapOn:
+    id: truck-send
+- extendedWaitUntil:
+    visible: Stock mein jud gaya
+    timeout: 30000
+- takeScreenshot: stock-truck-done
+- tapOn:
+    id: flood-home
+- tapOn:
+    id: tab-paisa
+- extendedWaitUntil:
+    visible:
+      id: screen-paisa
+    timeout: 15000
+- assertVisible: Abhi yahan koi salary nahi likhi hai.
+- takeScreenshot: paisa-empty

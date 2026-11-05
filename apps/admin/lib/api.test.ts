@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
-import { API_URL, ApiError, api, download, uploadFile, uploadProductPhoto } from './api';
+import {
+  API_URL,
+  ApiError,
+  api,
+  apiBlob,
+  download,
+  screenApi,
+  uploadFile,
+  uploadProductPhoto,
+} from './api';
 
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
@@ -238,4 +247,67 @@ test('CSV downloads preserve contents, filename and cookies, then release their 
   assert.equal(link.download, 'October.csv');
   assert.ok(clicked && removed && appended);
   assert.equal(revoke.mock.calls[0]!.arguments[0], 'blob:test-report');
+});
+
+test('a private photo is read with the session and comes back as bytes', async (t) => {
+  mockFetch(t, async (input, init) => {
+    assert.equal(input, `${API_URL}/admin/evidence/photo`);
+    assert.equal(init?.credentials, 'include');
+    return new Response(new Uint8Array([1, 2, 3]), {
+      status: 200,
+      headers: { 'Content-Type': 'image/webp' },
+    });
+  });
+  const blob = await apiBlob('/admin/evidence/photo');
+  assert.equal(blob.type, 'image/webp');
+  assert.equal(blob.size, 3);
+});
+test('a refused photo says why, and a web page is never taken for a photo', async (t) => {
+  const answers = [
+    json({ error: { code: 'NOT_FOUND', message: 'Gone' } }, 404),
+    new Response('<html></html>', { status: 200, headers: { 'Content-Type': 'text/html' } }),
+  ];
+  mockFetch(t, async () => answers.shift()!);
+  await assert.rejects(apiBlob('/admin/evidence/photo'), (error: unknown) =>
+    error instanceof ApiError ? error.code === 'NOT_FOUND' : false,
+  );
+  await assert.rejects(apiBlob('/admin/evidence/photo'), ApiError);
+});
+test('the shop screen sends its token and nobody’s cookie', async (t) => {
+  mockFetch(t, async (input, init) => {
+    assert.equal(input, `${API_URL}/screen/today`);
+    assert.equal(init?.credentials, 'omit');
+    assert.equal(new Headers(init?.headers).get('x-shop-screen'), 'screen-token');
+    assert.ok(init?.signal instanceof AbortSignal);
+    return json({ qr: 'CODE' });
+  });
+  assert.deepEqual(await screenApi('/screen/today', { token: 'screen-token' }), { qr: 'CODE' });
+});
+test('being told to pair again never tries to refresh a session', async (t) => {
+  const seen: unknown[] = [];
+  mockFetch(t, async (input) => {
+    seen.push(input);
+    return json({ error: { code: 'SCREEN_REVOKED', message: 'Pair again' } }, 401);
+  });
+  await assert.rejects(screenApi('/screen/today', { token: 'old' }), (error: unknown) =>
+    error instanceof ApiError ? error.code === 'SCREEN_REVOKED' : false,
+  );
+  assert.deepEqual(seen, [`${API_URL}/screen/today`]);
+});
+test('pairing posts the six digits, with no token yet', async (t) => {
+  mockFetch(t, async (_input, init) => {
+    assert.equal(init?.method, 'POST');
+    assert.equal(init?.body, JSON.stringify({ code: '123456' }));
+    assert.equal(new Headers(init?.headers).get('x-shop-screen'), null);
+    return json({ token: 'new' }, 201);
+  });
+  assert.deepEqual(await screenApi('/screen/pair', { method: 'POST', body: { code: '123456' } }), {
+    token: 'new',
+  });
+});
+test('a screen that cannot reach the server gets a plain network error', async (t) => {
+  mockFetch(t, async () => {
+    throw new TypeError('fetch failed');
+  });
+  await assert.rejects(screenApi('/screen/today'), failsWith('error.network', 'NETWORK_ERROR'));
 });

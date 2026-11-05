@@ -257,7 +257,7 @@ describe('the webhook', () => {
     const started = Date.now();
     const raw = body('messages', { statuses: [{ id: 'x', status: 'read' }] });
     const results = await Promise.all(Array.from({ length: 30 }, () => post(raw)));
-    expect(results.every((result) => result.status === 200)).toBe(true);
+    expect(results.map((result) => result.status)).toEqual(results.map(() => 200));
     expect(Date.now() - started).toBeLessThan(5000);
   });
   it('keeps one row when the partner delivers the same message again', async () => {
@@ -347,10 +347,10 @@ describe('nothing is ever sent', () => {
     const dir = join(__dirname, '../src/whatsapp');
     for (const file of readdirSync(dir)) {
       const source = readFileSync(join(dir, file), 'utf8');
-      expect(source, file).not.toMatch(
-        /graph\.facebook|enqueueWhatsApp|outboundMessage|sendNotification/,
-      );
-      expect(source, file).not.toMatch(/waba-v2|api\.ycloud/);
+      expect(source, file).not.toMatch(/enqueueWhatsApp|outboundMessage|sendNotification/);
+      // Replies have their own table and one sender. Nothing else in the folder reaches a partner.
+      if (file !== 'sender.ts')
+        expect(source, file).not.toMatch(/graph\.facebook|waba-v2|api\.ycloud|carry\(/);
     }
   });
 });
@@ -1548,6 +1548,7 @@ describe('the worker’s housekeeping', () => {
       .send({ phone: '+919000000797' })
       .expect(201);
     await db.waMessage.updateMany({ data: { receivedAt: old } });
+    await db.waDraft.updateMany({ data: { status: 'EXPIRED', createdAt: old } });
     await db.$executeRaw`UPDATE "WaThread" SET "updatedAt" = ${old.toISOString()}::timestamp`;
     await wa.purge();
     await wa.purge();

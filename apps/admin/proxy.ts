@@ -18,9 +18,12 @@ export function proxy(request: NextRequest) {
   response.headers.set('X-Content-Type-Options', 'nosniff');
   response.headers.set('X-Frame-Options', 'DENY');
   response.headers.set('Referrer-Policy', 'no-referrer');
+  // Setup's "Yahan dukaan hai" asks for this site's location. The policy belongs to the document a
+  // visit first loaded, and moving between desk pages keeps that document, so it cannot be set for
+  // one page. Self only: a frame or another site still gets nothing, and only that button asks.
   response.headers.set(
     'Permissions-Policy',
-    'camera=(), microphone=(), geolocation=(), payment=()',
+    'camera=(), microphone=(), geolocation=(self), payment=()',
   );
   response.headers.set('Cache-Control', 'no-store');
   if (!dev) response.headers.set('Strict-Transport-Security', 'max-age=31536000');

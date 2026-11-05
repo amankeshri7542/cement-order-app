@@ -1,23 +1,12 @@
-# Largest system font: main actions stay visible without scrolling.
+# Largest system font (adb shell settings put system font_scale 1.3 or more): nothing truncates a rate.
 appId: in.shivcement.store
 ---
 - launchApp
 - extendedWaitUntil:
-    visible: Current rates
+    visible: Today's rates
     timeout: 30000
 - takeScreenshot: large-text-home
-- tapOn:
-    text: Materials
-    index: 0
-- tapOn: Search materials
-- inputText: UltraTech
-- hideKeyboard
-- tapOn: View UltraTech Super
-- assertVisible: Add to basket
-- takeScreenshot: large-text-product
-- tapOn: Add to basket
-- tapOn: Basket.*
-# Signed in or not, the basket's main action is on screen.
-- assertVisible: (Review order|Sign in to order)
-- takeScreenshot: large-text-basket
-- tapOn: Remove UltraTech Super
+- tapOn: Add UltraTech Super to your list
+- tapOn: Your list, .*
+- takeScreenshot: large-text-panel
+- back

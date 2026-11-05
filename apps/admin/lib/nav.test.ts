@@ -20,7 +20,11 @@ test('an owner opens everything', () => {
     '/stock',
     '/manzoori',
     '/galla',
+    '/hazri',
+    '/trips',
+    '/salary',
     '/reports',
+    '/tally',
     '/activity',
     '/users',
     '/staff',
@@ -105,6 +109,11 @@ test('each role reaches the new pages that belong to its job, and only those', (
   assert.equal(opens('ACCOUNTANT', '/manzoori'), false);
   assert.equal(opens('TECH_OPERATOR', '/system'), true);
   assert.equal(opens('TECH_OPERATOR', '/whatsapp'), true);
+  // Cards belong to whoever takes orders at the shop. What they can do there is per permission.
+  assert.equal(opens('MANAGER', '/whatsapp'), true);
+  assert.equal(opens('CASHIER', '/whatsapp'), true);
+  assert.equal(opens('ACCOUNTANT', '/whatsapp'), false);
+  assert.equal(opens('STOCK_KEEPER', '/whatsapp'), false);
   assert.equal(opens('TECH_OPERATOR', '/rates'), false);
   assert.equal(opens('TECH_OPERATOR', '/orders'), false);
 });
@@ -114,4 +123,73 @@ test('the technical operator’s day starts on System', () => {
 test('every old address leads to its page', () => {
   for (const view of Object.keys(moreViews))
     assert.match(moreRoutes[view as MoreView], /^\/[a-z]+(\?[a-z]+=[a-z]+)?$/);
+});
+
+test('hazri is for those who look after attendance, and the accountant reads it', () => {
+  const opens = (role: StaffRole) => pathAllowed(of(role), '/hazri');
+  assert.equal(opens('MANAGER'), true);
+  assert.equal(opens('ACCOUNTANT'), true);
+  for (const role of ['CASHIER', 'STOCK_KEEPER', 'DRIVER', 'HELPER', 'TECH_OPERATOR'] as const)
+    assert.equal(opens(role), false, role);
+});
+test('trips are for whoever assigns them', () => {
+  const opens = (role: StaffRole) => pathAllowed(of(role), '/trips');
+  assert.equal(opens('MANAGER'), true);
+  for (const role of [
+    'ACCOUNTANT',
+    'CASHIER',
+    'STOCK_KEEPER',
+    'DRIVER',
+    'HELPER',
+    'TECH_OPERATOR',
+  ] as const)
+    assert.equal(opens(role), false, role);
+});
+test('salary is for owners and the accountant, and nobody else', () => {
+  const owner = accessFor([{ role: 'OWNER', locationId: null }]);
+  assert.equal(pathAllowed(owner, '/salary'), true);
+  assert.equal(pathAllowed(of('ACCOUNTANT'), '/salary'), true);
+  for (const role of [
+    'MANAGER',
+    'CASHIER',
+    'STOCK_KEEPER',
+    'DRIVER',
+    'HELPER',
+    'TECH_OPERATOR',
+  ] as const)
+    assert.equal(pathAllowed(of(role), '/salary'), false, role);
+});
+
+test('calls and the reports open for the right people', () => {
+  const opens = (role: StaffRole, path: string) => pathAllowed(of(role), path);
+  for (const role of ['OWNER', 'MANAGER', 'CASHIER', 'ACCOUNTANT'] as const)
+    assert.equal(opens(role, '/calls'), true, role);
+  for (const role of ['STOCK_KEEPER', 'DRIVER', 'HELPER', 'TECH_OPERATOR'] as const)
+    assert.equal(opens(role, '/calls'), false, role);
+  // A cashier's work is the calls. The owner's reports are not.
+  assert.equal(opens('CASHIER', '/reports/hisaab'), false);
+  assert.equal(opens('MANAGER', '/reports/hisaab'), true);
+  assert.equal(opens('ACCOUNTANT', '/reports/hisaab'), true);
+});
+test('only those who may type it reach the opening sheet', () => {
+  const opens = (role: StaffRole) => pathAllowed(of(role), '/udhaar/opening');
+  assert.equal(opens('OWNER'), true);
+  assert.equal(opens('ACCOUNTANT'), true);
+  for (const role of ['MANAGER', 'CASHIER', 'STOCK_KEEPER', 'DRIVER', 'HELPER'] as const)
+    assert.equal(opens(role), false, role);
+});
+
+test('Tally opens for those who keep the books or the PCs, and for nobody else', () => {
+  for (const role of ['OWNER', 'ACCOUNTANT', 'TECH_OPERATOR'] as const) {
+    const access = accessFor([{ role, locationId: null }]);
+    assert.equal(pathAllowed(access, '/tally'), true, role);
+  }
+  for (const role of ['MANAGER', 'CASHIER', 'STOCK_KEEPER', 'DRIVER', 'HELPER'] as const) {
+    const access = of(role);
+    assert.equal(pathAllowed(access, '/tally'), false, role);
+    assert.equal(pathAllowed(access, '/tally/anything'), false, role);
+  }
+  // Nobody's home moves because of it.
+  assert.equal(homeFor(accessFor([{ role: 'ACCOUNTANT', locationId: null }])), '/today');
+  assert.equal(homeFor(of('TECH_OPERATOR')), '/system');
 });

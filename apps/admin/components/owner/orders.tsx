@@ -214,7 +214,7 @@ export function OrderDetails({ id }: { id: string }) {
                   <MoneyText value={item.lineTotalPaise} />
                 </div>
                 <p>
-                  {item.quantity} {(item.unit)} × {money(item.pricePaise)}
+                  {item.quantity} {item.unit} × {money(item.pricePaise)}
                 </p>
               </div>
             ))}
@@ -234,11 +234,23 @@ export function OrderDetails({ id }: { id: string }) {
             </div>
             <p>
               {order.payment.method === 'CREDIT'
-                ? t(order.status === 'DELIVERED' ? 'owner.creditPosted' : 'owner.creditOnDelivery')
+                ? t(
+                    ['OUT_FOR_DELIVERY', 'DELIVERY_EXCEPTION', 'DELIVERED'].includes(order.status)
+                      ? 'owner.creditPosted'
+                      : 'owner.creditOnDelivery',
+                  )
                 : order.payment.status === 'CAPTURED'
                   ? t('owner.paid')
                   : t('owner.cash')}
             </p>
+            {order.payment.status !== 'CAPTURED' && order.driverCollectedPaise != null && (
+              <p className={css.warnBlock}>
+                {t('owner.driverShort', {
+                  got: money(order.driverCollectedPaise),
+                  left: money(order.totalPaise - order.driverCollectedPaise),
+                })}
+              </p>
+            )}
             {order.payment.method === 'CREDIT' && (
               <Link className={css.inlineLink} href={`/customers/${order.userId}`}>
                 {t('owner.khata')} <span aria-hidden="true">→</span>
@@ -574,7 +586,7 @@ function DeliveryProblem({ order, close }: { order: Order; close: () => void }) 
             {order.items.map((item) => (
               <fieldset key={item.productId} className={css.card}>
                 <legend>
-                  {item.name} · {item.quantity} {(item.unit)}
+                  {item.name} · {item.quantity} {item.unit}
                 </legend>
                 {(['sellableQuantity', 'damagedQuantity'] as const).map((field) => (
                   <Field

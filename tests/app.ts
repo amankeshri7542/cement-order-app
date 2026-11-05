@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { expect, verifyAndSkipName } from './fixtures';
+import { expect } from './fixtures';
 
 // How the browser journeys drive the customer app (Expo web build on :8082). Keeping the app's
 // labels in one place means a design change touches these helpers, not every journey.
@@ -8,18 +8,15 @@ export const apiUrl = 'http://localhost:4010/api/v1';
 
 /** Completes the open sign-in sheet with the local mock code. */
 export async function verifyCode(page: Page, phone: string) {
-  await page.getByRole('textbox', { name: 'Mobile number (+91)', exact: true }).fill(phone);
+  await page.getByRole('textbox', { name: 'Mobile number', exact: true }).fill(phone);
   const requested = page.waitForResponse(
     (response) => response.url().endsWith('/auth/otp/request') && response.status() === 201,
   );
-  await page.getByRole('button', { name: 'Get verification code', exact: true }).click();
+  await page.getByRole('button', { name: 'Get code', exact: true }).click();
   const code = (await (await requested).json()).devCode;
-  await page.getByRole('textbox', { name: 'Verification code', exact: true }).fill(code);
-  await verifyAndSkipName(page, () =>
-    page.getByRole('button', { name: 'Verify & continue', exact: true }).click(),
-  );
-  await expect(page.getByRole('dialog')).toBeHidden();
-  await expect(page.getByRole('button', { name: 'Verify & continue', exact: true })).toBeHidden();
+  await page.getByRole('textbox', { name: 'Code from SMS', exact: true }).fill(code);
+  await page.getByRole('button', { name: 'Verify and continue', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Verify and continue', exact: true })).toBeHidden();
 }
 
 /** Signs in from the Account tab and stays there. */
@@ -31,58 +28,61 @@ export async function appLogin(page: Page, phone: string) {
   await expect(page.getByRole('button', { name: 'Sign out', exact: true })).toBeVisible();
 }
 
-export const tab = (page: Page, name: 'Home' | 'Materials' | 'Orders' | 'Account') =>
+export const tab = (page: Page, name: 'Home' | 'Ask' | 'Orders' | 'Account') =>
   page.getByRole('tab', { name, exact: true });
-/** The Basket tab; its accessible name carries the item count, e.g. "Basket, 12". */
-export const basketTab = (page: Page) => page.getByRole('tab', { name: /^Basket/ });
 
-/** Opens the Basket and waits for it (the Materials row shares its quantity field's name). */
-export async function openBasket(page: Page) {
-  await basketTab(page).click();
-  await expect(page.getByRole('heading', { name: 'Your basket', exact: true })).toBeVisible();
-}
-
-/** Opens Materials and narrows the list to `query`. */
+/** Opens Search from Home and narrows the list to `query`. */
 export async function searchMaterials(page: Page, query: string) {
-  await tab(page, 'Materials').click();
-  const search = page.getByRole('textbox', { name: 'Search materials', exact: true });
-  // WebKit can drop text typed before the list's first commit: wait for it, then check the value.
-  await expect(
-    page.getByText(/^\d+ (materials?|सामग्री)( · (more below|नीचे और))?$/),
-  ).toBeVisible();
-  await expect(async () => {
-    await search.fill(query);
-    await expect(search).toHaveValue(query, { timeout: 1000 });
-  }).toPass();
+  await tab(page, 'Home').click();
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Search', exact: true }).fill(query);
 }
-/** A product's row on Materials (name, price, Add and the in-basket quantity bar). */
-export const productRow = (page: Page, id: string) => page.getByTestId(`product-${id}`);
-
-export async function openMaterial(page: Page, name: string) {
+/** Adds a product to the list from Search, and comes back to Home. */
+export async function addToList(page: Page, name: string, quantity?: number) {
   await searchMaterials(page, name);
-  await page.getByRole('button', { name: `View ${name}`, exact: true }).click();
+  await page.getByRole('button', { name: `Add ${name} to your list`, exact: true }).click();
+  if (quantity !== undefined) {
+    const box = page.getByRole('textbox', { name: `${name} quantity`, exact: true });
+    await box.fill(String(quantity));
+    await box.blur();
+  }
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+}
+export const openList = (page: Page) => page.getByTestId('list-bar').click();
+
+type Site = { pincode: string; line1: string; name: string; area?: string; landmark?: string };
+/** Fills the open Add a site sheet and saves it. */
+export async function fillSite(page: Page, site: Site) {
+  const dialog = page.getByRole('dialog').last();
+  await dialog.getByRole('textbox', { name: 'Pincode', exact: true }).fill(site.pincode);
+  await expect(dialog.getByText(/We deliver here|We do not deliver here/)).toBeVisible();
+  await dialog.getByRole('textbox', { name: 'House, plot or gali', exact: true }).fill(site.line1);
+  // The form asks for the area only where the shop has not filled one in for this pincode.
+  const area = dialog.getByRole('textbox', { name: 'Area', exact: true });
+  if (await area.isVisible()) await area.fill(site.area ?? 'Kankarbagh');
+  if (site.landmark !== undefined)
+    await dialog
+      .getByRole('textbox', { name: 'Landmark, for the driver', exact: true })
+      .fill(site.landmark);
+  await dialog.getByRole('textbox', { name: 'Who receives it', exact: true }).fill(site.name);
+  await dialog.getByRole('button', { name: 'Save site', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Save site', exact: true })).toBeHidden();
+}
+/** Adds a site from Account, for a customer who is already signed in. */
+export async function addSite(page: Page, site: Site) {
+  await tab(page, 'Account').click();
+  await page.getByRole('button', { name: 'Sites', exact: false }).first().click();
+  await page.getByRole('button', { name: 'Add a site', exact: true }).click();
+  await fillSite(page, site);
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
 }
 
-/** Adds an address on the Saved addresses screen (or the form it opens with). */
-export async function fillAddress(
-  page: Page,
-  values: { name: string; line1: string; area: string; pincode: string; label?: string },
-) {
-  const fields: [string, string | undefined][] = [
-    ['House, plot or street', values.line1],
-    ['Area / locality', values.area],
-    ['Pincode', values.pincode],
-    ['Person receiving', values.name],
-    ['Name this address (Home / Site)', values.label],
-  ];
-  for (const [name, value] of fields)
-    if (value !== undefined) await page.getByRole('textbox', { name, exact: true }).fill(value);
-  await page.getByRole('button', { name: 'Save address', exact: true }).click();
-}
-
-/** From the Basket: review the order, then place it with cash on delivery. */
+export const placeButton = (page: Page) => page.getByRole('button', { name: /^Place order/ });
+export const waiting = (page: Page) =>
+  page.getByRole('heading', { name: 'Waiting for the shop', exact: true });
+/** From the open panel: waits for the server's total, then places it. */
 export async function placeOrder(page: Page) {
-  await page.getByRole('button', { name: 'Review order', exact: true }).click();
-  await page.getByRole('button', { name: /^Place order/ }).click();
-  await expect(page.getByRole('heading', { name: 'Waiting for the shop', exact: true })).toBeVisible();
+  await expect(placeButton(page)).toBeEnabled();
+  await placeButton(page).click();
+  await expect(waiting(page)).toBeVisible();
 }

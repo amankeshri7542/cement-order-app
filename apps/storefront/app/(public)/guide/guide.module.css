@@ -1,0 +1,41 @@
+@layer reset, base, components;
+@layer components {
+  .list {
+    margin-top: clamp(24px, 4vw, 48px);
+    border-bottom: 1px solid var(--rule);
+    max-width: 62rem;
+  }
+  .list li {
+    border-top: 1px solid var(--rule);
+  }
+  .list a {
+    display: block;
+    padding-block: clamp(14px, 1.6vw, 22px);
+    text-decoration: none;
+  }
+  .title {
+    display: block;
+    font-size: var(--t-2);
+    font-weight: 300;
+    letter-spacing: -0.015em;
+    line-height: 1.15;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .list a:hover .title {
+      text-decoration: underline;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 0.16em;
+    }
+  }
+  .summary {
+    display: block;
+    color: var(--ink-2);
+    margin-top: 4px;
+    max-width: 44em;
+  }
+  .checked {
+    display: block;
+    margin-top: 4px;
+    color: var(--ok);
+  }
+}

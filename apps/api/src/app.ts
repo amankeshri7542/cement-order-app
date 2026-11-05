@@ -1,5 +1,12 @@
 import { raw, json } from 'express';
-import { AssistantController, AssistantService, AssistantProvider } from './assistant';
+import { AdvisorAdminController } from './advisor/admin';
+import { AdvisorBudgets } from './advisor/budgets';
+import { AdvisorController } from './advisor/controller';
+import { AdvisorCore } from './advisor/core';
+import { AdvisorModels } from './advisor/provider';
+import { AdvisorReadiness } from './advisor/readiness';
+import { AdvisorRetrieve } from './advisor/retrieve';
+import { AdvisorTools } from './advisor/tools';
 import { RateStudioController, RateStudioService } from './rate-studio/studio';
 import { RateProviders } from './rate-studio/providers';
 import { RateStorage } from './rate-studio/storage';
@@ -8,10 +15,25 @@ import { OperationsController } from './operations';
 import { ApprovalsController, ApprovalsService } from './approvals';
 import { GallaController, GallaService } from './galla';
 import { PricingController, PricingService } from './pricing';
+import { PublicSiteController, SiteRevalidator } from './public-site';
 import { StockController, StockService } from './stock';
+import { Attendance, AttendanceController } from './staff/attendance';
+import { StaffDevices, StaffDevicesController } from './staff/devices';
+import { Evidence, EvidenceController } from './staff/evidence';
+import { Salary, SalaryController } from './staff/pay';
+import { StaffJobs, StaffJobsController } from './staff/trips';
+import { bridgeGate, BridgeGuard, type BridgeRequest } from './tally/auth';
+import { BridgeController, BridgeOpenController, TallyBridge } from './tally/bridge';
+import { TallyDesk, TallyDeskController } from './tally/desk';
+import { TallyIngest } from './tally/ingest';
+import { TallyParts } from './tally/parts';
+import { TallyRecon } from './tally/recon';
 import { WaDeskController, WaWebhookController } from './whatsapp/controller';
 import { WaReader } from './whatsapp/reader';
+import { WaCardsController, WaDrafts } from './whatsapp/drafts';
+import { WaSender } from './whatsapp/sender';
 import { WaService } from './whatsapp/service';
+import { WaStages, WaStagesController } from './whatsapp/stages';
 import { Controller, Get, Inject, Module } from '@nestjs/common';
 import { APP_GUARD, NestFactory } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
@@ -39,6 +61,11 @@ import { CurrentRatesController } from './current-rates';
 import { WebEnquiriesController } from './web-enquiries';
 import { UsersController } from './users';
 import { ConfirmService, InboxController } from './confirm';
+import { CustomerPageController } from './crm/customer-page';
+import { FollowUps, FollowUpsController } from './crm/followups';
+import { MyKhataController, OpeningSheet, OpeningSheetController } from './crm/opening';
+import { CrmReportsController } from './crm/reports';
+import { TallyNumbers } from './crm/tally-numbers';
 
 @Controller('health')
 class HealthController {
@@ -78,7 +105,8 @@ class HealthController {
     ThrottlerModule.forRoot([{ ttl: 60000, limit: process.env.NODE_ENV === 'test' ? 10000 : 120 }]),
   ],
   controllers: [
-    AssistantController,
+    AdvisorController,
+    AdvisorAdminController,
     OwnerWorkController,
     AuthController,
     CatalogController,
@@ -101,14 +129,37 @@ class HealthController {
     InboxController,
     WaWebhookController,
     WaDeskController,
+    WaCardsController,
+    WaStagesController,
     StockController,
     PricingController,
+    PublicSiteController,
     ApprovalsController,
     GallaController,
+    StaffDevicesController,
+    AttendanceController,
+    StaffJobsController,
+    EvidenceController,
+    SalaryController,
+    FollowUpsController,
+    CustomerPageController,
+    OpeningSheetController,
+    MyKhataController,
+    CrmReportsController,
+    BridgeOpenController,
+    BridgeController,
+    TallyDeskController,
   ],
   providers: [
-    AssistantService,
-    AssistantProvider,
+    FollowUps,
+    OpeningSheet,
+    TallyNumbers,
+    AdvisorCore,
+    AdvisorTools,
+    AdvisorRetrieve,
+    AdvisorBudgets,
+    AdvisorReadiness,
+    AdvisorModels,
     OwnerWorkService,
     Db,
     RateStudioService,
@@ -124,10 +175,25 @@ class HealthController {
     ConfirmService,
     WaReader,
     WaService,
+    WaSender,
+    WaDrafts,
+    WaStages,
     StockService,
     PricingService,
+    SiteRevalidator,
     ApprovalsService,
     GallaService,
+    StaffDevices,
+    Attendance,
+    StaffJobs,
+    Evidence,
+    Salary,
+    TallyParts,
+    TallyBridge,
+    TallyIngest,
+    TallyRecon,
+    TallyDesk,
+    BridgeGuard,
     AlertsService,
     Lifecycle,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
@@ -211,7 +277,10 @@ export async function createApp() {
   });
   // Staff upload routes read bodies of up to 5 MB before Nest's guards run. Refuse requests
   // without a live staff session before reading any of the body.
-  app.use(['/api/v1/admin/uploads', '/api/v1/admin/rate-studio'], uploadGate(app.get(Db)));
+  app.use(
+    ['/api/v1/admin/uploads', '/api/v1/admin/rate-studio', '/api/v1/staff/evidence'],
+    uploadGate(app.get(Db)),
+  );
   const rateJson = json({ limit: '512kb' });
   app.use(
     '/api/v1/admin/rate-studio',
@@ -219,6 +288,26 @@ export async function createApp() {
     (req: Request, res: Response, next: NextFunction) => rateJson(req, res, next),
   );
   app.use('/api/v1/admin/uploads', raw({ type: '*/*', limit: '5mb' }));
+  app.use('/api/v1/staff/evidence', raw({ type: '*/*', limit: '5mb' }));
+  // A release of the shop PC's program is a little bigger than an ordinary request.
+  app.use(['/api/v1/admin/tally/releases'], uploadGate(app.get(Db)));
+  // Wrapped, as rateJson is: Nest skips its own JSON parser for every route when it finds a layer
+  // named jsonParser, and every other request's body would then be undefined.
+  const releaseJson = json({ limit: '8mb' });
+  app.use('/api/v1/admin/tally/releases', (req: Request, res: Response, next: NextFunction) =>
+    releaseJson(req, res, next),
+  );
+  // The shop PC signs each body's hash, so a stranger is refused before a byte of it is read.
+  app.use('/api/v1/bridge', bridgeGate(app.get(Db)));
+  const pairJson = json({ limit: '16kb' });
+  app.use('/api/v1/bridge/pair', (req: Request, res: Response, next: NextFunction) =>
+    pairJson(req, res, next),
+  );
+  // Only a PC that has already proved itself gets its body read at this size.
+  const bridgeBody = raw({ type: () => true, limit: '5mb' });
+  app.use('/api/v1/bridge', (req: BridgeRequest, res: Response, next: NextFunction) =>
+    req.bridge ? bridgeBody(req, res, next) : next(),
+  );
   // The partner signs the exact bytes, and may send several messages at once.
   app.use('/api/v1/whatsapp/webhook', raw({ type: '*/*', limit: '4mb' }));
   app.useGlobalFilters(new Errors());

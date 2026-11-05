@@ -12,12 +12,10 @@ test('catalogue and material details render without View text-node warnings', as
   });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('http://localhost:8082');
-  await page.getByRole('tab', { name: 'Materials', exact: true }).click();
-  await page
-    .getByRole('textbox', { name: 'Search materials', exact: true })
-    .fill('UltraTech Super');
-  await page.getByRole('button', { name: 'View UltraTech Super', exact: true }).click();
-  await expect(page.getByRole('textbox', { name: 'Quantity', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Search', exact: true }).fill('UltraTech Super');
+  await page.getByRole('button', { name: /^UltraTech Super, / }).click();
+  await expect(page.getByRole('button', { name: /^Add · / })).toBeVisible();
   await test.info().attach('view-child-warnings', {
     body: JSON.stringify(warnings),
     contentType: 'application/json',

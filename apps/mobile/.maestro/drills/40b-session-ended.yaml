@@ -1,11 +1,11 @@
-# The next request after the server ended the session explains it and signs out cleanly.
+# The next signed-in request finds the session gone: a plain sign-in, and no crash.
 appId: in.shivcement.store
 ---
-- tapOn: Bulk quotes
-- extendedWaitUntil:
-    visible: Your session ended.*
-    timeout: 30000
 - tapOn:
-    text: Account
+    text: Orders
     index: 0
-- assertVisible: Sign in
+- swipe:
+    direction: DOWN
+- extendedWaitUntil:
+    visible: Sign in to see your orders
+    timeout: 30000

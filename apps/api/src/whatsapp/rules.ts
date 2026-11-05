@@ -243,7 +243,7 @@ const dayWords: Record<string, ReaderOutput['day']['kind']> = {
 const pickupWords = ['utha lenge', 'utha lunga', 'le jayenge', 'le jaunga', 'khud le', 'pickup'];
 const englishHints = new Set(['need', 'want', 'please', 'send', 'tomorrow', 'today', 'bags', 'at']);
 
-const languageOf = (text: string, tokens: string[]): ReaderOutput['language'] => {
+export const languageOf = (text: string, tokens: string[]): ReaderOutput['language'] => {
   if (/[ऀ-ॿ]/.test(text)) return 'hindi';
   return tokens.some((token) => englishHints.has(token)) ? 'english' : 'hinglish';
 };
@@ -284,6 +284,72 @@ export function isOnlyChat(text: string) {
   return tokens.every((token) => chatWords.has(token));
 }
 
+/** The notice tells them to write this. A stranger who has not been told is not asking for it. */
+export function isHumanAsk(text: string) {
+  const words = normalizeAlias(text);
+  return justShop.includes(words) || phrase(words, humanWords);
+}
+const justShop = ['dukaan', 'dukan', 'shop', 'दुकान'];
+const cancelWords = [
+  'cancel',
+  'cancel kar do',
+  'cancel kardo',
+  'cancel karo',
+  'cancel karna hai',
+  'cancel it',
+  'rehne do',
+  'nahi chahiye',
+  'mat bhejo',
+  'रद्द',
+  'रद्द करो',
+  'कैंसिल',
+  'मत भेजो',
+  'नहीं चाहिए',
+];
+const unsureDayWords = ['abhi pata nahi', 'pata nahi', 'not sure yet', 'अभी पता नहीं', 'पता नहीं'];
+const collectWords = [
+  'khud utha lenge',
+  'utha lenge',
+  'khud le jayenge',
+  'le jayenge',
+  'will collect',
+  'pickup',
+  'ख़ुद उठा लेंगे',
+  'उठा लेंगे',
+];
+const changeWords = ['badlav karna hai', 'change something', 'बदलाव करना है'];
+const newWords = ['haan naya', 'yes new', 'हाँ नया'];
+export type DraftAnswer =
+  | { kind: 'DAY'; day: 'TODAY' | 'TOMORROW' | 'DAY_AFTER' | 'UNSPECIFIED' }
+  | { kind: 'PICKUP' }
+  | { kind: 'PLACE'; text: string }
+  | { kind: 'CANCEL' }
+  | { kind: 'CHANGE' }
+  | { kind: 'NEW_YES' }
+  | { kind: 'NEW_NO' };
+/**
+ * A short answer to a draft that is already open, or a tapped button, read with no model. Anything
+ * longer or less plain than this goes on to the reader.
+ */
+export function readDraftAnswer(text: string, catalog: Catalog): DraftAnswer | null {
+  const words = normalizeAlias(text);
+  const tokens = words.split(' ').filter(Boolean);
+  if (!tokens.length || tokens.length > 4) return null;
+  const isOneOf = (list: string[]) => list.some((item) => normalizeAlias(item) === words);
+  if (isOneOf(cancelWords)) return { kind: 'CANCEL' };
+  if (isOneOf(unsureDayWords)) return { kind: 'DAY', day: 'UNSPECIFIED' };
+  if (isOneOf(collectWords)) return { kind: 'PICKUP' };
+  if (isOneOf(changeWords)) return { kind: 'CHANGE' };
+  if (isOneOf(newWords)) return { kind: 'NEW_YES' };
+  if (words === 'nahi naya') return { kind: 'NEW_NO' };
+  if (tokens.length === 1 && dayWords[tokens[0]!]) {
+    const day = dayWords[tokens[0]!]!;
+    if (day === 'TODAY' || day === 'TOMORROW' || day === 'DAY_AFTER') return { kind: 'DAY', day };
+  }
+  if (tokens.every((token) => catalog.places.has(token))) return { kind: 'PLACE', text: words };
+  return null;
+}
+
 type Parsed = { value: number; size: number; fraction: boolean };
 function numberAt(tokens: string[], at: number): Parsed | null {
   const token = tokens[at];
@@ -315,7 +381,7 @@ export function readByRules(text: string, catalog: Catalog): ReaderOutput | null
   const plain = (intent: Intent, injection = false) =>
     plainReading(intent, text, tokens, injection);
   if (phrase(words, injectionWords)) return plain('NOT_UNDERSTOOD', true);
-  if (phrase(words, humanWords)) return plain('HUMAN_REQUEST');
+  if (isHumanAsk(text)) return plain('HUMAN_REQUEST');
   if (phrase(words, complaintWords)) return plain('COMPLAINT');
   if (phrase(words, structuralWords) && phrase(words, howMuchWords)) return plain('STRUCTURAL');
   if (phrase(words, creditWords)) return plain('PRICE_OR_CREDIT_TALK');

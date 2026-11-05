@@ -1,188 +1,238 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
-import { deliveryDateOptions } from '@shiv/shared';
-import { categoryResponse, deliveryResponse, productResponse } from './api';
+import { test } from 'node:test';
 import {
-  MAX_PAGES,
-  timeLabel,
-  price,
-  queryString,
-  ratesFrom,
-  readQuery,
-  uniqueProducts,
+  availabilityText,
+  findGroup,
+  findProduct,
+  freshness,
+  groupByMaterial,
+  hasRate,
+  offersFor,
+  offerText,
+  productPath,
+  productSlug,
+  rateText,
+  searchCatalog,
+  slugify,
+  unitWords,
 } from './catalog';
-import { localPhone } from './customer-api';
+import { materials, siteSlug } from './materials';
+import type { Catalog, CatalogProduct, Offer } from './types';
 
-// Isolated synthetic contract fixture: never used as storefront fallback content.
-const fixture = {
-  id: 'test-material',
-  name: 'TEST material',
-  brand: 'TEST brand',
-  categoryId: 'test-category',
-  category: { id: 'test-category', name: 'TEST category', slug: 'test-category' },
-  type: 'TEST type',
-  grade: 'TEST grade',
-  unit: 'bag',
-  packSize: '50 kg',
-  pricePaise: 10025,
-  stock: 5,
-  minQuantity: 10,
-  quantityStep: 5,
-  active: true,
-  description: 'TEST description',
-  recommendedUse: 'TEST use',
+const product = (id: string, over: Partial<CatalogProduct> = {}): CatalogProduct => ({
+  id,
+  name: `Name ${id}`,
+  brand: 'Brand',
+  type: 'Type',
+  grade: 'Grade',
+  unit: '50 kg bag',
+  packSize: '',
+  minQuantity: 1,
+  quantityStep: 1,
+  pricePaise: 41000,
+  availability: 'IN_STOCK',
+  priceUpdatedAt: '2026-11-05T03:00:00.000Z',
+  checkedAt: '2026-11-05T03:00:00.000Z',
   images: [],
-  version: 1,
-  priceVersion: 1,
-  priceUpdatedAt: '2026-10-09T00:00:00.000Z',
-};
-
-test('integer paise retains paise and Indian grouping without implicit rupee conversion', () => {
-  assert.equal(price(10025), '₹100.25');
-  assert.equal(price(12345678), '₹1,23,456.78');
-  assert.equal(price(0), '₹0.00');
-  for (const invalid of [-1, 1.25, NaN, Infinity]) assert.throws(() => price(invalid));
+  description: '',
+  recommendedUse: '',
+  categorySlug: 'cement',
+  searchTerms: [],
+  ...over,
+});
+const catalogOf = (...products: CatalogProduct[]): Catalog => ({
+  products,
+  categories: [
+    { id: 'c1', name: 'Cement', slug: 'cement' },
+    { id: 'c2', name: 'Steel', slug: 'steel' },
+    { id: 'c3', name: 'Pipes', slug: 'pipes' },
+  ],
+  ratesCheckedAt: null,
+  sampleRates: false,
+  generatedAt: '2026-11-05T03:00:00.000Z',
 });
 
-test('public response schema strips private and unknown fields at every rendered object', () => {
-  const parsed = productResponse.parse({
-    ...fixture,
-    purchaseCostPaise: 999,
-    supplier: { name: 'private' },
-    staff: [{ phone: 'private' }],
-    category: { ...fixture.category, attendance: 'private' },
-  });
-  assert.deepEqual(parsed, fixture);
-  assert.deepEqual(
-    categoryResponse.parse({ ...fixture.category, private: true }),
-    fixture.category,
-  );
-  assert.equal(productResponse.safeParse({ ...fixture, pricePaise: 100.25 }).success, false);
-  assert.equal(
-    productResponse.safeParse({ ...fixture, priceUpdatedAt: 'yesterday' }).success,
-    false,
-  );
-  assert.equal(productResponse.safeParse({ ...fixture, stock: true }).success, false);
+test('every material has its address, and steel, sand and aggregates read as the trade words', () => {
+  assert.equal(siteSlug('steel'), 'sariya');
+  assert.equal(siteSlug('sand'), 'balu');
+  assert.equal(siteSlug('aggregates'), 'gitti');
+  assert.equal(siteSlug('pipes'), 'pipes');
+  assert.equal(new Set(materials.map((item) => item.slug)).size, materials.length);
 });
-
-test('public records may omit a recommended-use note without losing the catalogue', () => {
-  assert.equal(productResponse.parse({ ...fixture, recommendedUse: '' }).recommendedUse, '');
-  assert.equal(productResponse.safeParse({ ...fixture, recommendedUse: null }).success, false);
-});
-
-test('query state is normalized, bounded and round-trips supported API filters', () => {
-  const a = readQuery(
-    new URLSearchParams(
-      'q=+cement+&category=cement&brand=TEST&availability=in&sort=price_desc&pages=2',
+test('materials are grouped in building order, unknown ones last', () => {
+  const groups = groupByMaterial(
+    catalogOf(
+      product('p', { categorySlug: 'pipes' }),
+      product('s', { categorySlug: 'steel', unit: 'kg · 12 mm', pricePaise: 6800 }),
+      product('c'),
     ),
   );
-  assert.equal(a.q, 'cement');
-  assert.deepEqual(readQuery(new URLSearchParams(queryString(a))), a);
-  assert.equal(queryString(a), queryString({ ...a, q: ' cement ' }));
-  const invalid = readQuery(
-    new URLSearchParams('q=' + 'x'.repeat(101) + '&availability=bad&sort=bad&pages=-3'),
+  assert.deepEqual(
+    groups.map((group) => group.slug),
+    ['cement', 'sariya', 'pipes'],
   );
-  assert.equal(invalid.q.length, 100);
-  assert.equal(invalid.pages, 1);
-  assert.equal(invalid.availability, 'all');
-  assert.equal(invalid.sort, 'name');
-  assert.equal(readQuery(new URLSearchParams('pages=999')).pages, MAX_PAGES);
-  assert.equal(readQuery(new URLSearchParams('pages=1.5')).pages, 1);
+  assert.equal(groups[1]!.name, 'Sariya');
+  assert.equal(groups[2]!.name, 'Pipes');
+});
+test('"from" appears only when more than one product has a rate', () => {
+  const one = findGroup(catalogOf(product('a')), 'cement')!;
+  assert.equal(one.from, false);
+  const two = findGroup(catalogOf(product('a'), product('b', { pricePaise: 39500 })), 'cement')!;
+  assert.equal(two.from, true);
+  assert.equal(two.lowest?.id, 'b');
+});
+test('a product with no public rate is never the lowest and never ₹0', () => {
+  const group = findGroup(
+    catalogOf(product('a', { pricePaise: null, availability: 'ON_REQUEST' }), product('b')),
+    'cement',
+  )!;
+  assert.equal(group.lowest?.id, 'b');
+  assert.equal(group.from, false);
+  assert.equal(rateText(product('c', { pricePaise: null })), '');
+  assert.equal(hasRate(product('d', { pricePaise: 0 })), false);
+});
+test('a group of only on-request items has no lowest rate', () => {
+  const group = findGroup(catalogOf(product('a', { pricePaise: null })), 'cement')!;
+  assert.equal(group.lowest, null);
 });
 
-test('pagination deduplicates stable ids and retains the latest product value', () => {
-  const product = productResponse.parse(fixture);
-  const result = uniqueProducts([
-    product,
-    { ...product, id: 'other' },
-    { ...product, pricePaise: 20025 },
-  ]);
-  assert.equal(result.length, 2);
-  assert.equal(result[0]?.pricePaise, 20025);
-  assert.equal(result[1]?.id, 'other');
-});
-
-test('delivery requires a consistent serviceability flag and nonnegative paise', () => {
-  assert.equal(deliveryResponse.safeParse({ serviceable: true, zone: null }).success, false);
-  assert.deepEqual(deliveryResponse.parse({ serviceable: false, zone: null, private: 'ignored' }), {
-    serviceable: false,
-    zone: null,
-  });
+test('readable ids stand as the address; generated ids get a name and a stable key', () => {
+  assert.equal(productSlug({ id: 'ultratech-ppc', name: 'UltraTech Super' }), 'ultratech-ppc');
+  const cuid = 'clx9f2ab12cd34ef56gh78ij90';
+  const slug = productSlug({ id: cuid, name: 'Tata Tiscon 550SD' });
+  assert.equal(slug, `tata-tiscon-550sd-${cuid.slice(-8)}`);
   assert.equal(
-    deliveryResponse.safeParse({
-      serviceable: true,
-      zone: {
-        name: 'TEST zone',
-        deliveryFeePaise: -1,
-        minimumOrderPaise: 0,
-        freeDeliveryAbovePaise: null,
-        estimate: 'TEST',
-      },
-    }).success,
+    productPath({ id: cuid, name: 'Tata Tiscon 550SD', categorySlug: 'steel' }),
+    `/materials/sariya/${slug}`,
+  );
+});
+test('renaming a product keeps the old link finding it', () => {
+  const cuid = 'clx9f2ab12cd34ef56gh78ij90';
+  const catalog = catalogOf(product(cuid, { name: 'New name' }));
+  assert.equal(findProduct(catalog, `old-name-${cuid.slice(-8)}`)?.id, cuid);
+  assert.equal(findProduct(catalog, cuid)?.id, cuid);
+});
+test('a made-up address finds nothing, and short keys never match by accident', () => {
+  const catalog = catalogOf(product('ultratech-ppc'), product('clx9f2ab12cd34ef56gh78ij90'));
+  assert.equal(findProduct(catalog, 'nothing'), null);
+  assert.equal(findProduct(catalog, 'x'), null);
+  assert.equal(findProduct(catalog, ''), null);
+  assert.equal(findProduct(catalog, '../../etc/passwd'), null);
+  assert.equal(findProduct(catalog, 'ppc'), null);
+  // A readable id is not found by its tail, only whole.
+  assert.equal(findProduct(catalog, 'ech-ppcx'), null);
+});
+test('slugs are plain and bounded', () => {
+  assert.equal(slugify('  ACC Gold: Water-Shield! '), 'acc-gold-water-shield');
+  assert.ok(slugify('a'.repeat(200)).length <= 60);
+  assert.equal(slugify('!!!'), '');
+});
+
+test('units read the way people say them', () => {
+  assert.deepEqual(unitWords('50 kg bag'), {
+    long: 'a bori (50 kg)',
+    short: 'a bori',
+    slash: 'bori',
+  });
+  assert.equal(unitWords('kg · 12 mm').long, 'a kg, 12 mm');
+  assert.equal(unitWords('kg').short, 'a kg');
+  assert.equal(unitWords('100 cu ft').short, 'per 100 cu ft');
+  assert.equal(unitWords('1,000 bricks').short, 'per 1,000 bricks');
+  assert.equal(unitWords('trolley').short, 'a trolley');
+});
+
+test('"today" is said only when every rate was checked today, in Patna time', () => {
+  const now = new Date('2026-11-05T18:00:00.000Z'); // 23:30 in Patna on the 5th
+  assert.equal(
+    freshness([product('a', { checkedAt: '2026-11-05T03:30:00.000Z' })], now).today,
+    true,
+  );
+  assert.equal(
+    freshness([product('a', { checkedAt: '2026-11-05T03:30:00.000Z' })], now).text,
+    'Checked today, 9:00 AM',
+  );
+  const mixed = freshness(
+    [product('a'), product('b', { checkedAt: '2026-11-03T03:30:00.000Z' })],
+    now,
+  );
+  assert.equal(mixed.today, false);
+  assert.equal(mixed.text, 'Rates as of 3 November');
+});
+test('just after midnight in Patna, yesterday is not today even though UTC agrees', () => {
+  const now = new Date('2026-11-05T18:45:00.000Z'); // 00:15 on the 6th in Patna
+  assert.equal(
+    freshness([product('a', { checkedAt: '2026-11-05T17:00:00.000Z' })], now).today,
     false,
   );
 });
-
-test('IST time is stable across runtime day-period conventions', () => {
-  assert.equal(timeLabel('2026-10-09T09:36:00.000Z'), '15:06');
-  assert.equal(timeLabel('2026-10-09T18:45:00.000Z'), '00:15');
+test('nothing with a rate means nothing to say', () => {
+  assert.deepEqual(freshness([product('a', { pricePaise: null })]), { today: false, text: '' });
+  assert.deepEqual(freshness([]), { today: false, text: '' });
 });
 
-test('rate board keeps the cheapest in-stock item per material with its own selling unit', () => {
-  const item = (id: string, slug: string, pricePaise: number, stock: number, unit = 'bag') =>
-    productResponse.parse({
-      ...fixture,
-      id,
-      unit,
-      pricePaise,
-      stock,
-      categoryId: slug,
-      category: { id: slug, name: `TEST ${slug}`, slug },
-    });
-  const rates = ratesFrom([
-    item('steel-a', 'steel', 6800, 10, 'kg'),
-    item('cement-cheap-but-empty', 'cement', 30000, 0),
-    item('cement-b', 'cement', 41000, 4),
-    item('cement-a', 'cement', 39000, 4),
-    item('custom', 'zinc-sheets', 100, 3, 'sheet'),
-    item('sand', 'sand', 680000, 1, '100 cu ft'),
-  ]);
+test('availability is a word, never a count', () => {
+  assert.equal(availabilityText(product('a')), 'Available');
+  assert.match(availabilityText(product('a', { availability: 'ASK_SHOP' })), /Not available/);
+  assert.match(availabilityText(product('a', { availability: 'ON_REQUEST' })), /Ask for the rate/);
+});
+
+test('search finds a product by name, brand, trade word and confirmed alias', () => {
+  const catalog = catalogOf(
+    product('s', { name: 'Tata Tiscon', categorySlug: 'steel', searchTerms: ['alias-word'] }),
+    product('c', { name: 'UltraTech Super' }),
+  );
+  for (const q of ['saria', 'sariya', 'rod', 'tata', 'alias-word', 'TMT'])
+    assert.deepEqual(
+      searchCatalog(catalog, q).map((row) => row.id),
+      ['s'],
+      q,
+    );
   assert.deepEqual(
-    rates.map((rate) => [rate.slug, rate.product.id, rate.product.unit]),
-    [
-      ['cement', 'cement-a', 'bag'],
-      ['steel', 'steel-a', 'kg'],
-      ['sand', 'sand', '100 cu ft'],
-      ['zinc-sheets', 'custom', 'sheet'],
-    ],
+    searchCatalog(catalog, 'ultratech').map((row) => row.id),
+    ['c'],
   );
-  assert.equal(ratesFrom([item('only-empty', 'cement', 100, 0)]).length, 0);
+  assert.deepEqual(searchCatalog(catalog, 'nothing like this'), []);
+  assert.deepEqual(searchCatalog(catalog, '   '), []);
+});
+test('search takes any text safely', () => {
+  const catalog = catalogOf(product('c'));
+  assert.deepEqual(searchCatalog(catalog, '.*('), []);
+  assert.deepEqual(searchCatalog(catalog, '<script>alert(1)</script>'), []);
+  assert.deepEqual(searchCatalog(catalog, 'x'.repeat(100000)), []);
+});
+
+const offer = (over: Partial<Offer> = {}): Offer => ({
+  title: 'Winter offer',
+  productId: null,
+  categoryId: 'c1',
+  minQuantity: 1,
+  valueType: 'PERCENT_OFF',
+  value: 500,
+  endsOn: '2026-11-30',
+  ...over,
+});
+test('an offer says what it is, how much and until when', () => {
+  assert.equal(offerText(offer()), 'Winter offer 5% off. Until 30 November.');
+  assert.match(
+    offerText(offer({ valueType: 'AMOUNT_OFF', value: 1000, minQuantity: 100 })),
+    /₹10 off on 100 or more\./,
+  );
+});
+test('a fixed-rate offer shows the rate only when it is lower', () => {
+  const p = product('c');
+  assert.match(offerText(offer({ valueType: 'RATE', value: 39000 }), p), /₹390/);
+  assert.doesNotMatch(offerText(offer({ valueType: 'RATE', value: 99000 }), p), /₹990/);
+});
+test('an offer reaches its own product and category only', () => {
+  const lookup = (slug: string) => ({ cement: 'c1', steel: 'c2' })[slug];
+  assert.equal(offersFor([offer()], product('c'), lookup).length, 1);
+  assert.equal(offersFor([offer()], product('s', { categorySlug: 'steel' }), lookup).length, 0);
   assert.equal(
-    ratesFrom(['a', 'b', 'c', 'd', 'e', 'f'].map((slug) => item(slug, slug, 100, 1))).length,
-    5,
+    offersFor([offer({ categoryId: null, productId: 'c' })], product('c'), lookup).length,
+    1,
   );
-});
-
-test('sign-in phone accepts autofilled and pasted Indian mobile formats', () => {
-  for (const value of [
-    '9876543210',
-    '+91 98765 43210',
-    '+91-98765-43210',
-    '098765 43210',
-    '0091 98765 43210',
-    '919876543210',
-    '(98765) 43210',
-  ])
-    assert.equal(localPhone(value), '9876543210', value);
-  // Ten-digit numbers that start with 91 and half-typed prefixes stay as typed.
-  assert.equal(localPhone('9198765432'), '9198765432');
-  assert.equal(localPhone('+91'), '+91');
-  assert.equal(localPhone('0'), '0');
-  assert.equal(localPhone('98765abc'), '98765abc');
-});
-
-test('checkout default delivery date is tomorrow in Patna, not tomorrow in UTC', () => {
-  // 01:30 IST on 17 Oct is still 16 Oct in UTC.
-  assert.deepEqual(deliveryDateOptions(new Date('2026-10-16T20:00:00Z'), 1, 1), ['2026-10-18']);
-  assert.deepEqual(deliveryDateOptions(new Date('2026-10-16T12:00:00Z'), 1, 1), ['2026-10-17']);
+  assert.equal(
+    offersFor([offer({ categoryId: null, productId: 'x' })], product('c'), lookup).length,
+    0,
+  );
 });

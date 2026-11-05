@@ -95,3 +95,36 @@ a {
   color: var(--shiv-red);
 }
 
+/* A printed slip is the slip alone, without the desk around it. */
+@media print {
+  body:has(.print-slip) {
+    background: #ffffff;
+  }
+  body:has(.print-slip) * {
+    visibility: hidden;
+  }
+  body:has(.print-slip) dialog {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    max-inline-size: none;
+    inline-size: 100%;
+    max-block-size: none;
+    block-size: auto;
+    border: 0;
+    box-shadow: none;
+    transform: none;
+    overflow: visible;
+    background: #ffffff;
+  }
+  body:has(.print-slip) dialog::backdrop {
+    background: transparent;
+  }
+  body:has(.print-slip) .print-slip,
+  body:has(.print-slip) .print-slip * {
+    visibility: visible;
+  }
+  body:has(.print-slip) .print-slip .no-print {
+    display: none;
+  }
+}

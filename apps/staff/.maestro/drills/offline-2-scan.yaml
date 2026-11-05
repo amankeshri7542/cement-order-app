@@ -1,0 +1,19 @@
+# Step 2: the API has been cut off with `adb reverse --remove`. The scan must be kept on the phone.
+appId: in.shivcement.staff
+---
+- tapOn:
+    id: hazri-main
+- runFlow: ../subflows/scan.yaml
+- extendedWaitUntil:
+    visible: Scan phone mein save hai
+    timeout: 15000
+- assertVisible: Abhi gaya nahi
+- takeScreenshot: offline-saved
+- tapOn:
+    id: flood-home
+- extendedWaitUntil:
+    visible: Jaane ki hazri lagao
+    timeout: 10000
+- assertVisible:
+    id: offline-band
+- takeScreenshot: offline-home

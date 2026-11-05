@@ -7,7 +7,7 @@
     "build": "next build --webpack",
     "start": "next start --port 3000",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test lib/api.test.ts lib/refresh.test.ts lib/nav.test.ts lib/sw.test.ts lib/money.test.ts components/owner/report-helpers.test.ts"
+    "test": "node --import tsx --test lib/api.test.ts lib/refresh.test.ts lib/nav.test.ts lib/sw.test.ts lib/money.test.ts components/owner/report-helpers.test.ts components/owner/hazri/words.test.ts components/owner/hazri/fixes.test.ts components/owner/hazri/code-loop.test.ts components/owner/salary/pure.test.ts components/owner/trip-order.test.ts components/owner/crm/pure.test.ts components/owner/tally/pure.test.ts"
   },
   "dependencies": {
     "@shiv/design": "1.0.0",
@@ -16,10 +16,12 @@
     "@tanstack/react-query": "^5.104.5",
     "lucide-react": "^0.468.0",
     "next": "^16.4.5",
+    "qrcode": "1.5.4",
     "react": "19.2.0",
     "react-dom": "19.2.0"
   },
   "devDependencies": {
+    "@types/qrcode": "1.5.5",
     "@types/react": "~19.2.0",
     "@types/react-dom": "~19.2.0"
   }

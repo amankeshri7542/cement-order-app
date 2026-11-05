@@ -8,7 +8,7 @@ const hour = 3600000;
 export const clientIp = (req: { ip?: string; socket: { remoteAddress?: string } }) =>
   req.ip || req.socket.remoteAddress || 'unknown';
 
-const budgetKey = (scope: string, subject: string) =>
+export const budgetKey = (scope: string, subject: string) =>
   `budget:${scope}:${createHmac('sha256', getConfig().OTP_HASH_SECRET)
     .update(`${scope}:${subject}`)
     .digest('hex')}`;

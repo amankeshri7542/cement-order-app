@@ -15,7 +15,7 @@ async function main() {
     nodeEnv: c.NODE_ENV,
     otpProvider: c.OTP_PROVIDER,
     demoMode: c.DEMO_MODE,
-    assistantProvider: c.ASSISTANT_PROVIDER,
+    advisorProvider: c.ADVISOR_PROVIDER,
     release: process.env.RELEASE_SHA?.slice(0, 40) || 'unset',
   });
   let stopping = false;

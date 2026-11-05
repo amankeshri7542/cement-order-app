@@ -1,0 +1,173 @@
+/* The wall. Paper and ink, readable across a room on a cheap screen; the life bar is the only motion. */
+.page {
+  box-sizing: border-box;
+  min-block-size: 100dvh;
+  display: grid;
+  align-content: start;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background: var(--shiv-paper);
+  color: var(--shiv-ink);
+  font-family: var(--shiv-font-body);
+}
+.page * {
+  box-sizing: border-box;
+}
+.band {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  background: var(--shiv-navy);
+  color: var(--shiv-card);
+  font-size: clamp(1.125rem, 2.4vw, 1.75rem);
+  font-weight: 600;
+  text-align: center;
+}
+.wall {
+  display: grid;
+  gap: 0.75rem;
+}
+.codeSide {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: center;
+  min-inline-size: 0;
+}
+.qr {
+  display: block;
+  inline-size: min(100%, 86dvh);
+  block-size: auto;
+  background: #ffffff;
+}
+.life {
+  inline-size: min(100%, 86dvh);
+  block-size: 1.25rem;
+  background: var(--shiv-line);
+  overflow: hidden;
+}
+.life span {
+  display: block;
+  block-size: 100%;
+  background: var(--shiv-ink);
+  transform-origin: left center;
+  animation-name: drain;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+@keyframes drain {
+  from {
+    transform: scaleX(var(--life-from, 1));
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .life span {
+    animation-name: none;
+  }
+}
+.info {
+  display: grid;
+  align-content: start;
+  gap: 0.5rem;
+  min-inline-size: 0;
+}
+.shop {
+  margin: 0;
+  font: 700 clamp(2rem, 5vw, 4rem) / 1.15 var(--shiv-font-display);
+  overflow-wrap: anywhere;
+}
+.time {
+  margin: 0;
+  font: 700 clamp(3rem, 9vw, 7rem) / 1 var(--shiv-font-display);
+  font-variant-numeric: tabular-nums;
+}
+.people {
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+  columns: 2;
+  column-gap: 1.5rem;
+  font-size: clamp(1.25rem, 2.6vw, 2rem);
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+.people li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0 0.5rem;
+  break-inside: avoid;
+  padding-block: 0.125rem;
+  border-block-end: 0.0625rem solid var(--shiv-line);
+}
+.people strong {
+  font-weight: 600;
+  max-inline-size: 100%;
+  overflow-wrap: break-word;
+}
+.people span {
+  white-space: nowrap;
+}
+.pair {
+  inline-size: min(100%, 34rem);
+  margin: auto;
+  padding: clamp(1.5rem, 6vh, 4rem) 1rem;
+  display: grid;
+  gap: 1rem;
+}
+.pair h1 {
+  margin: 0;
+  font: 700 clamp(1.75rem, 5vw, 2.75rem) / 1.2 var(--shiv-font-display);
+}
+.pair p {
+  margin: 0;
+  font-size: 1.125rem;
+}
+.gone {
+  padding: 0.75rem 1rem;
+  border-inline-start: 0.25rem solid var(--shiv-brand);
+  background: var(--shiv-card);
+  font-weight: 600;
+}
+.pairForm {
+  display: grid;
+  gap: 1rem;
+}
+.digits {
+  inline-size: 100%;
+  padding: 0.5rem;
+  border: 0.125rem solid var(--shiv-ink);
+  border-radius: var(--shiv-radius-sm);
+  background: var(--shiv-card);
+  color: var(--shiv-ink);
+  font: 700 clamp(2.5rem, 12vw, 4rem) / 1.2 var(--shiv-font-mono);
+  letter-spacing: 0.1em;
+  text-align: center;
+}
+.digits:focus-visible {
+  outline: 0.1875rem solid var(--shiv-blue);
+  outline-offset: 0.1875rem;
+}
+.problem {
+  padding: 0.75rem;
+  border-inline-start: 0.25rem solid var(--shiv-red);
+  background: var(--shiv-card);
+  color: var(--shiv-red);
+  font-size: 1.125rem;
+}
+@media (min-width: 45rem) and (min-aspect-ratio: 1/1) {
+  .wall {
+    grid-template-columns: minmax(0, auto) minmax(18rem, 1fr);
+    align-items: start;
+  }
+  .qr,
+  .life {
+    inline-size: min(58vw, calc(100dvh - 3.5rem));
+  }
+  /* A band above takes its height from the code, so the bar and the code's margin stay on screen. */
+  .banded .qr,
+  .banded .life {
+    inline-size: min(58vw, calc(100dvh - 8.5rem));
+  }
+}

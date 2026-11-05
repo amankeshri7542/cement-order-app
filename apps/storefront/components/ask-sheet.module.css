@@ -1,0 +1,30 @@
+@layer reset, base, components;
+@layer components {
+  .dialog {
+    border: 0;
+    padding: 16px;
+    margin: 0;
+    margin-left: auto;
+    width: min(100vw, 480px);
+    max-width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    background: var(--ground);
+    color: var(--ink);
+    box-shadow: 0 12px 40px rgba(18, 21, 19, 0.22);
+    overflow-y: auto;
+  }
+  .dialog::backdrop {
+    background: rgba(18, 21, 19, 0.5);
+  }
+  .dialogHead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .dialogHead b {
+    font-weight: 500;
+  }
+}

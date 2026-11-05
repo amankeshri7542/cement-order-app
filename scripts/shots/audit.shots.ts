@@ -113,7 +113,7 @@ async function focusOrder(page: Page, stops = 12) {
 test('audit', async ({ browser }) => {
   const result: Record<string, Finding & { focus?: string[] }> = {};
   for (const width of [390, 1440])
-    for (const path of ['/', '/products', '/cart', '/account']) {
+    for (const path of ['/', '/materials', '/list', '/account']) {
       const ctx = await browser.newContext({
         viewport: { width, height: 800 },
         isMobile: width < 768,

@@ -353,7 +353,7 @@ describe('where orders came from', () => {
     const { body } = await get('papa', `reports/trends?${range}`).expect(200);
     expect(body.sources[0]).toEqual({ source: 'PHONE', orders: 2 });
     expect(body.sources.map((row: { source: string }) => row.source).sort()).toEqual(
-      ['APP', 'PHONE', 'QUOTE', 'WALK_IN', 'WEB'].sort(),
+      ['APP', 'PHONE', 'QUOTE', 'WALK_IN', 'WEB', 'WHATSAPP'].sort(),
     );
     const report = (await get('papa', `reports/money?${range}`).expect(200)).body;
     expect(body.sources.reduce((sum: number, row: { orders: number }) => sum + row.orders, 0)).toBe(

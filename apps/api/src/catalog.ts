@@ -17,6 +17,7 @@ import { Subject, finalize, interval, map, merge, takeUntil } from 'rxjs';
 import { z } from 'zod';
 import {
   addressSchema,
+  personSchema,
   categorySchema,
   productSchema,
   productUpdateSchema,
@@ -24,9 +25,11 @@ import {
   settingsSchema,
 } from '@shiv/shared';
 import { clientIp } from './abuse';
-import { blindShops, itemsBeingCounted } from './blind-count';
+import { blindShops } from './blind-count';
 import { Db } from './db';
 import { Lifecycle } from './lifecycle';
+import { AdvisorReadiness } from './advisor/readiness';
+import { shopContent } from './public-content';
 import {
   accountView,
   AuthRequest,
@@ -74,26 +77,29 @@ export class Events {
   }
 }
 /**
- * While an item is being counted, anyone can read this route, including the person counting. There
- * or not there still works for buying, and placing an order checks the real figure as always.
+ * Anyone can read these routes: a stranger, and the person counting. There or not there is enough
+ * for buying, and placing an order checks the real figure as always. The count itself never leaves.
  */
 export const stockDuringCount = 10_000;
-export const stockFor = (product: { id: string; stock: number }, counting: ReadonlySet<string>) =>
-  counting.has(product.id) && product.stock > 0 ? stockDuringCount : product.stock;
+export const stockFor = (product: { stock: number }) =>
+  product.stock > 0 ? stockDuringCount : product.stock;
 
 /** Availability sits beside stock until every client has moved to it; levels stay private. */
 function publicProduct<
   T extends {
     id: string;
     stock: number;
+    pricePaise: number;
     sourcing: string;
     stockMode: string;
     stockLevels: { isOn: boolean }[];
   },
->({ stockLevels, ...product }: T, counting: ReadonlySet<string>) {
+>({ stockLevels, ...product }: T) {
   return {
     ...product,
-    stock: stockFor(product, counting),
+    stock: stockFor(product),
+    // An item the shop only gets to order has no public rate, on any route.
+    pricePaise: product.sourcing === 'ON_REQUEST' ? null : product.pricePaise,
     availability: availabilityOf({ ...product, stockLevels }),
   };
 }
@@ -104,6 +110,7 @@ export class CatalogController {
     @Inject(Db) private db: Db,
     @Inject(Events) private events: Events,
     @Inject(Lifecycle) private lifecycle: Lifecycle,
+    @Inject(AdvisorReadiness) private advisor: AdvisorReadiness,
   ) {}
   @Public()
   @Get('products')
@@ -172,8 +179,7 @@ export class CatalogController {
       take: page.take,
     });
     if (!admin) {
-      const counting = await itemsBeingCounted(this.db);
-      return page.finish(rows.map((row) => publicProduct(row, counting)));
+      return page.finish(rows.map((row) => publicProduct(row)));
     }
     const blind = access ? await blindShops(this.db, access) : new Set<string>();
     // A person limited to certain shops sees those shops' count, not the whole firm's, and nobody
@@ -213,12 +219,15 @@ export class CatalogController {
       },
     });
     if (!product) fail('NOT_FOUND', 'This product is not available.', 404);
-    return publicProduct(product, await itemsBeingCounted(this.db));
+    return publicProduct(product);
   }
   @Public() @Get('categories') categories() {
     return this.db.category.findMany({ orderBy: { name: 'asc' } });
   }
-  @Public() @Get('client-config') clientConfig() {
+  @Public() @Get('shop-content') content() {
+    return shopContent;
+  }
+  @Public() @Get('client-config') async clientConfig() {
     const c = getConfig();
     return {
       android: {
@@ -226,6 +235,8 @@ export class CatalogController {
         latestVersion: c.ANDROID_LATEST_VERSION,
         storeUrl: c.ANDROID_STORE_URL,
       },
+      askEnabled: await this.advisor.askEnabled(),
+      awardsUrl: c.AWARDS_URL ?? null,
     };
   }
   @Public() @Get('store') async store() {
@@ -449,7 +460,7 @@ export class AccountController {
   @Self() @Get('addresses') addresses(@Req() req: AuthRequest) {
     return this.db.address.findMany({
       where: { userId: req.user.id },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ lastUsedAt: { sort: 'desc', nulls: 'last' } }, { createdAt: 'desc' }],
     });
   }
   @Self()
@@ -488,6 +499,70 @@ export class AccountController {
     const result = await this.db.address.deleteMany({ where: { id, userId: req.user.id } });
     if (!result.count) fail('NOT_FOUND', 'Address not found.', 404);
     return { ok: true };
+  }
+  /** My people. Only an account the shop allows credit on may add anyone (plan 04 section 2). */
+  @Self() @Get('people') async people(@Req() req: AuthRequest) {
+    const rows = await this.db.accountDelegate.findMany({
+      where: { accountId: req.user.id, endedAt: null },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, phone: true, name: true, createdAt: true },
+    });
+    return rows;
+  }
+  @Self()
+  @Post('people')
+  @Contract(personSchema)
+  async addPerson(
+    @Input(personSchema) body: z.infer<typeof personSchema>,
+    @Req() req: AuthRequest,
+  ) {
+    if (!req.user.creditAllowed)
+      fail('FORBIDDEN', 'The shop has not opened udhaar on this account.', 403);
+    if (body.phone === req.user.phone) fail('SELF_CHANGE', 'This is your own number.');
+    return this.db.atomic(async (tx) => {
+      const active = await tx.accountDelegate.count({
+        where: { accountId: req.user.id, endedAt: null, phone: { not: body.phone } },
+      });
+      if (active >= 10) fail('PEOPLE_LIMIT', 'You can add up to 10 people.');
+      const person = await tx.accountDelegate.upsert({
+        where: { accountId_phone: { accountId: req.user.id, phone: body.phone } },
+        create: { accountId: req.user.id, ...body },
+        // Adding someone again reopens the same row, with no more rights than a new one has.
+        update: { name: body.name, endedAt: null, canUseUdhaar: false },
+        select: { id: true, phone: true, name: true, createdAt: true },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorId: req.user.id,
+          event: 'PERSON_ADDED',
+          entityId: person.id,
+          // The number is someone else's, and this log can never be changed.
+          details: { accountId: req.user.id },
+        },
+      });
+      return person;
+    });
+  }
+  @Self() @Delete('people/:id') async removePerson(
+    @Param('id') id: string,
+    @Req() req: AuthRequest,
+  ) {
+    return this.db.atomic(async (tx) => {
+      const ended = await tx.accountDelegate.updateMany({
+        where: { id, accountId: req.user.id, endedAt: null },
+        data: { endedAt: new Date(), canUseUdhaar: false },
+      });
+      if (!ended.count) fail('NOT_FOUND', 'That person is not on your list.', 404);
+      await tx.auditLog.create({
+        data: {
+          actorId: req.user.id,
+          event: 'PERSON_REMOVED',
+          entityId: id,
+          details: { accountId: req.user.id },
+        },
+      });
+      return { ok: true };
+    });
   }
   @Self() @Get('notifications') notifications(@Req() req: AuthRequest) {
     return this.db.notification.findMany({

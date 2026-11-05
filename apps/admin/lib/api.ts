@@ -132,6 +132,46 @@ export async function api<T>(
   return readJson<T>(response);
 }
 
+/** A private file, read with this person's session. It never gets a public address. */
+export async function apiBlob(path: string, retry = true): Promise<Blob> {
+  const response = await request(path, {}, 30000, retry);
+  if (!response.ok) await readJson(response);
+  if (response.headers.get('Content-Type')?.includes('text/html'))
+    throw responseError(response, null);
+  try {
+    return await response.blob();
+  } catch (error) {
+    throw transportError(error);
+  }
+}
+
+/**
+ * For the shop screen, which belongs to no person. No cookie goes with it even if someone is signed
+ * in on this browser, and a refusal is never answered by trying to refresh a session.
+ */
+export async function screenApi<T>(
+  path: string,
+  options: { method?: 'GET' | 'POST'; body?: unknown; token?: string } = {},
+): Promise<T> {
+  const { method = 'GET', body, token } = options;
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      method,
+      credentials: 'omit',
+      headers: {
+        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        ...(token ? { 'x-shop-screen': token } : {}),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      signal: AbortSignal.timeout(10000),
+    });
+  } catch (error) {
+    throw transportError(error);
+  }
+  return readJson<T>(response);
+}
+
 export const errorMessage = (e: unknown) =>
   e instanceof Error ? e.message : 'Connection failed. Please try again.';
 

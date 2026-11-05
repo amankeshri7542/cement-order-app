@@ -20,8 +20,10 @@ import {
 } from '@tanstack/react-query';
 import {
   Activity,
+  Banknote,
   BarChart3,
   BookOpen,
+  CalendarCheck,
   CheckCircle,
   ClipboardList,
   Contact,
@@ -35,9 +37,12 @@ import {
   Plus,
   Settings,
   ShieldCheck,
+  Truck,
   UserCog,
   Users,
   Wallet,
+  PhoneCall,
+  Scale,
 } from 'lucide-react';
 import { BottomNav, Button, Confirm, Field, PhoneField, Skeleton, Toast } from '@shiv/design';
 import { canDo, phoneDigits, type Access, type Permission, type User } from '@shiv/shared';
@@ -84,6 +89,8 @@ type OwnerContext = {
   /** The shop being looked at, remembered on this device. Empty means every shop. */
   shopId: string | null;
   setShopId: (id: string | null) => void;
+  /** Hazri cards waiting for this person, at the shop being looked at. */
+  reviewCount: number;
 };
 const Owner = createContext<OwnerContext | null>(null);
 export function useOwner() {
@@ -355,6 +362,18 @@ function OwnerShell({ children }: { children: ReactNode }) {
     staleTime: 5000,
     refetchInterval: 30000,
   });
+  const reviewShop =
+    access && chosenShop && canDo(access, 'attendance.review', chosenShop) ? chosenShop : null;
+  const reviewsOpen = useQuery({
+    enabled: !!access?.['attendance.review'],
+    queryKey: ['hazri', 'reviews', 'count', reviewShop],
+    queryFn: () =>
+      api<{ count: number }>(
+        `/admin/attendance/reviews${reviewShop ? `?locationId=${encodeURIComponent(reviewShop)}` : ''}`,
+      ),
+    refetchInterval: 60000,
+  });
+  const reviewCount = reviewsOpen.data?.count ?? 0;
   useLiveOrders(onDesk);
   // The bell, for work that arrives while the desk is open.
   const lastWaiting = useRef<number | null>(null);
@@ -416,6 +435,7 @@ function OwnerShell({ children }: { children: ReactNode }) {
     shopId:
       chosenShop && auth.data.locations.some((shop) => shop.id === chosenShop) ? chosenShop : null,
     setShopId: chooseShop,
+    reviewCount,
   };
   return (
     <Owner.Provider value={value}>
@@ -483,6 +503,17 @@ function OwnerShell({ children }: { children: ReactNode }) {
                   <Mark size={22} aria-hidden="true" />
                   {t(key as MessageKey)}
                   {route === '/today' && <WaitingCount />}
+                  {route === '/hazri' && reviewCount > 0 && (
+                    <span className={css.tabCount} aria-label={String(reviewCount)}>
+                      {reviewCount}
+                    </span>
+                  )}
+                  {/* A phone has Hazri under Aur, so the number waits on that tab. */}
+                  {route === '/more' && reviewCount > 0 && (
+                    <span className={css.moreCount} aria-hidden="true">
+                      {reviewCount}
+                    </span>
+                  )}
                 </Link>
               ))}
           </BottomNav>
@@ -513,12 +544,17 @@ export const deskLinks: { href: string; key: MessageKey; Icon: typeof Home; tab?
   { href: '/orders/new', key: 'owner.newOrder', Icon: Plus, tab: true },
   { href: '/lists', key: 'owner.lists.title', Icon: FileText },
   { href: '/customers', key: 'owner.customers', Icon: Users, tab: true },
+  { href: '/calls', key: 'owner.crm.todayCalls', Icon: PhoneCall },
   { href: '/udhaar', key: 'owner.khata', Icon: BookOpen },
   { href: '/rates', key: 'owner.rates.nav', Icon: IndianRupee },
   { href: '/stock', key: 'owner.stock', Icon: Package },
   { href: '/manzoori', key: 'owner.manzoori.title', Icon: ShieldCheck },
   { href: '/galla', key: 'owner.galla.title', Icon: Wallet },
+  { href: '/hazri', key: 'owner.hazri.title', Icon: CalendarCheck },
+  { href: '/trips', key: 'owner.trips.title', Icon: Truck },
+  { href: '/salary', key: 'owner.salary.title', Icon: Banknote },
   { href: '/reports', key: 'owner.reports', Icon: BarChart3 },
+  { href: '/tally', key: 'owner.tally.nav', Icon: Scale },
   { href: '/activity', key: 'owner.activity', Icon: History },
   { href: '/users', key: 'owner.people', Icon: UserCog },
   { href: '/staff', key: 'owner.staff', Icon: Contact },

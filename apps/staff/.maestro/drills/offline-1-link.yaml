@@ -1,0 +1,7 @@
+# Offline drill, step 1 of 3: a linked phone, ready to scan. See drills/README in the report.
+appId: in.shivcement.staff
+---
+- runFlow:
+    file: ../subflows/link.yaml
+    env:
+      NUMBER: '9000007004'

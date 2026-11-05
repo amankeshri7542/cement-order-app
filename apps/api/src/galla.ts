@@ -9,7 +9,7 @@ import { AuthRequest, Can, Contract, fail, Input, requireAt, scoped, shopForActi
 type Tx = Prisma.TransactionClient;
 const cash = (channel: string) => channel === 'CASH' || channel === '';
 // Money in is positive and money back out negative, as each row is written.
-const cashIn = ['COUNTER_SALE', 'COLLECTION'];
+const cashIn = ['COUNTER_SALE', 'COLLECTION', 'HANDOVER_OVER'];
 const dayRange = (day: string) => {
   const from = new Date(`${day}T00:00:00+05:30`);
   return { from, to: new Date(from.getTime() + 86400000) };
@@ -56,11 +56,18 @@ export class GallaService {
     });
     const sum = (test: (row: (typeof money)[number]) => boolean) =>
       money.filter(test).reduce((total, row) => total + row.amountPaise, 0);
-    const sales = sum((row) => cashIn.includes(row.kind) && cash(row.channel));
+    // A driver's count that came up short never reached the drawer, whatever the orders say.
+    const sales =
+      sum((row) => cashIn.includes(row.kind) && cash(row.channel)) -
+      sum((row) => row.kind === 'HANDOVER_SHORT' && cash(row.channel));
     const refunds = sum((row) => row.kind === 'REFUND' && cash(row.channel));
     const udhaar =
       sum((row) => row.kind === 'KHATA_PAYMENT' && cash(row.channel)) -
       sum((row) => row.kind === 'KHATA_PAYMENT_REVERSAL' && cash(row.channel));
+    // Shown without a name: a cashier sees that staff were paid, not who, or how much each.
+    const staffPaid =
+      sum((row) => ['STAFF_PAY', 'STAFF_ADVANCE'].includes(row.kind)) -
+      sum((row) => row.kind === 'STAFF_PAY_REVERSAL');
     const entries = await tx.gallaEntry.findMany({
       where: { locationId, createdAt: { gte: from, lt: to } },
       orderBy: { createdAt: 'asc' },
@@ -71,7 +78,7 @@ export class GallaService {
     const paidOut = entries
       .filter((row) => row.kind === 'PAID_OUT')
       .reduce((total, row) => total + row.amountPaise, 0);
-    const expectedPaise = opening + sales + udhaar + paidIn - refunds - paidOut;
+    const expectedPaise = opening + sales + udhaar + paidIn - refunds - paidOut - staffPaid;
     return {
       day,
       locationId,
@@ -81,6 +88,7 @@ export class GallaService {
       refunds,
       paidIn,
       paidOut,
+      staffPaid,
       expectedPaise,
       entries,
       // True when this sheet also holds a day or more that nobody closed.
@@ -132,7 +140,8 @@ export class GallaService {
         if (
           earlier.actorId !== req.user.id ||
           earlier.amountPaise !== body.amountPaise ||
-          earlier.kind !== body.kind
+          earlier.kind !== body.kind ||
+          earlier.locationId !== body.locationId
         )
           fail('IDEMPOTENCY_CONFLICT', 'This request was used for something else.', 409);
         return earlier;

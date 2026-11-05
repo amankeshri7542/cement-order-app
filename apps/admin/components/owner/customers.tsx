@@ -19,6 +19,11 @@ import {
   rupeesToPaise,
   usePaged,
 } from './common';
+import { CustomerFactsCard, CustomerRatesCard } from './crm/customer-page';
+import { CustomerNumbersPanel } from './tally/customer-numbers';
+import { YaadDilao } from './crm/reminder';
+import { Timeline } from './crm/timeline';
+import crm from './crm/crm.module.css';
 import { OrderRow } from './orders';
 import css from './owner.module.css';
 
@@ -106,6 +111,7 @@ function CustomerRow({ customer }: { customer: Customer }) {
 
 export function Khata() {
   const t = useT();
+  const { can } = useOwner();
   const summary = useQuery({
     queryKey: ['khata', 'summary'],
     queryFn: () => api<KhataSummary>('/admin/khata/summary'),
@@ -124,6 +130,16 @@ export function Khata() {
           <p className={`${css.moneyHero} ${css.due}`}>{money(summary.data.totalDuePaise)}</p>
         </section>
       )}
+      <nav className={`${css.card} ${css.menu}`} aria-label={t('owner.khata')}>
+        <Link href="/reports/hisaab?tab=vasooli">
+          <span>{t('owner.crm.report.vasooli')}</span>
+          <span aria-hidden="true">→</span>
+        </Link>
+        <Link href="/udhaar/opening">
+          <span>{t('owner.crm.opening.title')}</span>
+          <span aria-hidden="true">→</span>
+        </Link>
+      </nav>
       {!!summary.data?.overdue30d.length && (
         <section className={css.stack}>
           <h2>{t('owner.overdue')}</h2>
@@ -135,15 +151,7 @@ export function Khata() {
                 </Link>
                 <MoneyText value={customer.overduePaise} signed />
               </div>
-              <ContactActions
-                customerId={customer.id}
-                phone={customer.phone}
-                purpose="reminder"
-                text={t('owner.reminder', {
-                  name: customer.name,
-                  amount: money(customer.balancePaise),
-                })}
-              />
+              {can('crm.remind') && <YaadDilao customerId={customer.id} />}
             </article>
           ))}
         </section>
@@ -157,15 +165,7 @@ export function Khata() {
           .map((customer) => (
             <article className={css.card} key={customer.id}>
               <CustomerRow customer={customer} />
-              <ContactActions
-                phone={customer.phone}
-                customerId={customer.id}
-                purpose="reminder"
-                text={t('owner.reminder', {
-                  name: customer.name,
-                  amount: money(customer.balancePaise),
-                })}
-              />
+              {can('crm.remind') && <YaadDilao customerId={customer.id} />}
             </article>
           ))}
         <MoreRows query={customers} />
@@ -175,116 +175,142 @@ export function Khata() {
   );
 }
 
-export function CustomerDetails({ id }: { id: string }) {
+export function CustomerDetails({ id, startTab }: { id: string; startTab?: 'tally' }) {
   const t = useT();
   const { requestClose, can } = useOwner();
-  // Credit limits are an owner's decision, so that tab is only for them.
-  const tabs = (['ledger', 'orders', 'notes', 'settings'] as const).filter(
-    (value) => value !== 'settings' || can('khata.credit.set'),
+  // Credit limits are an owner's decision, and Tally's number is for owners and the accountant.
+  const tabs = (['timeline', 'ledger', 'tally', 'orders', 'notes', 'settings'] as const).filter(
+    (value) =>
+      (value !== 'settings' || can('khata.credit.set')) &&
+      (value !== 'tally' || can('tally.numbers.view')),
   );
   const customer = useQuery({
     queryKey: ['customers', 'detail', id],
     queryFn: () => api<Customer>(`/admin/customers/${id}`),
   });
-  const [tab, setTab] = useState('ledger');
+  // An address can ask for the Tally tab. Whoever may not see it simply stays on the first one.
+  const [tab, setTab] = useState(
+    startTab === 'tally' && can('tally.numbers.view') ? 'tally' : 'timeline',
+  );
   const [form, setForm] = useState<'payment' | 'adjust' | null>(null);
   return (
     <>
       <PageHeader title={customer.data?.name || t('owner.customer')} back="/customers" />
       <QueryStatus query={customer} />
       {customer.data && (
-        <>
-          <section className={css.card}>
-            <p>
-              {customer.data.phone}
-              {customer.data.area ? ` · ${customer.data.area}` : ''}
-            </p>
-            <p className={customer.data.balancePaise > 0 ? css.due : css.paid}>
-              {t(
-                customer.data.balancePaise > 0
-                  ? 'owner.due'
-                  : customer.data.balancePaise < 0
-                    ? 'owner.advance'
-                    : 'owner.clearBalance',
-              )}
-            </p>
-            <p className={css.moneyHero}>{money(Math.abs(customer.data.balancePaise))}</p>
-            <div className={css.actions}>
-              {can('khata.payment') && (
+        <div className={crm.split}>
+          <div className={css.stack}>
+            <section className={css.card}>
+              <p>
+                {customer.data.phone}
+                {customer.data.area ? ` · ${customer.data.area}` : ''}
+              </p>
+              <p className={customer.data.balancePaise > 0 ? css.due : css.paid}>
+                {t(
+                  customer.data.balancePaise > 0
+                    ? 'owner.due'
+                    : customer.data.balancePaise < 0
+                      ? 'owner.advance'
+                      : 'owner.clearBalance',
+                )}
+              </p>
+              <p className={css.moneyHero}>{money(Math.abs(customer.data.balancePaise))}</p>
+              <div className={css.actions}>
+                {can('khata.payment') && (
+                  <Button
+                    onClick={() =>
+                      void requestClose(() => {
+                        setTab('ledger');
+                        setForm('payment');
+                      })
+                    }
+                  >
+                    {t('owner.receiveMoney')}
+                  </Button>
+                )}
+                {can('orders.create') && (
+                  <Link className={css.inlineLink} href={`/orders/new?customer=${id}`}>
+                    {t('owner.newOrder')}
+                  </Link>
+                )}
+              </div>
+              <ContactActions phone={customer.data.phone} customerId={id} />
+            </section>
+            <CustomerFactsCard
+              id={id}
+              onTally={() =>
+                void requestClose(() => {
+                  setTab('tally');
+                  // Already open further down a phone's page, a tap must still lead somewhere.
+                  document.getElementById('panel-tally')?.scrollIntoView({ block: 'start' });
+                })
+              }
+            />
+            <CustomerRatesCard id={id} />
+          </div>
+          <div className={css.stack}>
+            <div role="tablist" aria-label={t('owner.customer')} className={css.tabs}>
+              {tabs.map((value) => (
                 <Button
-                  onClick={() =>
+                  key={value}
+                  role="tab"
+                  id={`tab-${value}`}
+                  aria-controls={`panel-${value}`}
+                  aria-selected={value === tab}
+                  tabIndex={value === tab ? 0 : -1}
+                  variant={value === tab ? 'primary' : 'secondary'}
+                  onClick={() => {
+                    if (value !== tab) void requestClose(() => setTab(value));
+                  }}
+                  onKeyDown={(event) => {
+                    const index = tabs.indexOf(tab as (typeof tabs)[number]);
+                    const target =
+                      event.key === 'Home'
+                        ? 0
+                        : event.key === 'End'
+                          ? tabs.length - 1
+                          : event.key === 'ArrowRight'
+                            ? (index + 1) % tabs.length
+                            : event.key === 'ArrowLeft'
+                              ? (index + tabs.length - 1) % tabs.length
+                              : null;
+                    if (target === null) return;
+                    event.preventDefault();
                     void requestClose(() => {
-                      setTab('ledger');
-                      setForm('payment');
-                    })
-                  }
+                      setTab(tabs[target]!);
+                      document.getElementById(`tab-${tabs[target]}`)?.focus();
+                    });
+                  }}
                 >
-                  {t('owner.receiveMoney')}
+                  {t(
+                    value === 'timeline'
+                      ? 'owner.crm.tab.everything'
+                      : value === 'ledger'
+                        ? 'owner.khata'
+                        : value === 'tally'
+                          ? 'owner.tally.numbers.tab'
+                          : value === 'orders'
+                            ? 'owner.customerHistory'
+                            : value === 'notes'
+                              ? 'owner.customerNotes'
+                              : 'owner.customerSettings',
+                  )}
                 </Button>
-              )}
-              {can('orders.create') && (
-                <Link className={css.inlineLink} href={`/orders/new?customer=${id}`}>
-                  {t('owner.newOrder')}
-                </Link>
+              ))}
+            </div>
+            <div id={`panel-${tab}`} role="tabpanel" aria-labelledby={`tab-${tab}`}>
+              {tab === 'timeline' && <Timeline id={id} />}
+              {tab === 'ledger' && <CustomerLedger id={id} onAdjust={() => setForm('adjust')} />}
+              {tab === 'tally' && can('tally.numbers.view') && <CustomerNumbersPanel id={id} />}
+              {tab === 'orders' && <CustomerOrders id={id} />}
+              {tab === 'notes' && <CustomerNotes id={id} />}
+              {tab === 'settings' && can('khata.credit.set') && (
+                <CustomerSettings key={id} customer={customer.data} />
               )}
             </div>
-            <ContactActions phone={customer.data.phone} customerId={id} />
-          </section>
-          <div role="tablist" aria-label={t('owner.customer')} className={css.tabs}>
-            {tabs.map((value) => (
-              <Button
-                key={value}
-                role="tab"
-                id={`tab-${value}`}
-                aria-controls={`panel-${value}`}
-                aria-selected={value === tab}
-                tabIndex={value === tab ? 0 : -1}
-                variant={value === tab ? 'primary' : 'secondary'}
-                onClick={() => {
-                  if (value !== tab) void requestClose(() => setTab(value));
-                }}
-                onKeyDown={(event) => {
-                  const index = tabs.indexOf(tab as (typeof tabs)[number]);
-                  const target =
-                    event.key === 'Home'
-                      ? 0
-                      : event.key === 'End'
-                        ? tabs.length - 1
-                        : event.key === 'ArrowRight'
-                          ? (index + 1) % tabs.length
-                          : event.key === 'ArrowLeft'
-                            ? (index + tabs.length - 1) % tabs.length
-                            : null;
-                  if (target === null) return;
-                  event.preventDefault();
-                  void requestClose(() => {
-                    setTab(tabs[target]!);
-                    document.getElementById(`tab-${tabs[target]}`)?.focus();
-                  });
-                }}
-              >
-                {t(
-                  value === 'ledger'
-                    ? 'owner.khata'
-                    : value === 'orders'
-                      ? 'owner.customerHistory'
-                      : value === 'notes'
-                        ? 'owner.customerNotes'
-                        : 'owner.customerSettings',
-                )}
-              </Button>
-            ))}
-          </div>
-          <div id={`panel-${tab}`} role="tabpanel" aria-labelledby={`tab-${tab}`}>
-            {tab === 'ledger' && <CustomerLedger id={id} onAdjust={() => setForm('adjust')} />}
-            {tab === 'orders' && <CustomerOrders id={id} />}
-            {tab === 'notes' && <CustomerNotes id={id} />}
-            {tab === 'settings' && can('khata.credit.set') && (
-              <CustomerSettings key={id} customer={customer.data} />
-            )}
           </div>
           {form && <LedgerForm id={id} mode={form} close={() => setForm(null)} />}
-        </>
+        </div>
       )}
     </>
   );
@@ -310,7 +336,7 @@ function CustomerLedger({ id, onAdjust }: { id: string; onAdjust: () => void }) 
       <QueryStatus query={query} />
       {can('khata.adjust') && (
         <Button variant="secondary" onClick={onAdjust}>
-          {t(entries.length ? 'owner.adjust' : 'owner.openingBalance')}
+          {t('owner.adjust')}
         </Button>
       )}
       {!query.isPending && !entries.length && <EmptyState title={t('owner.emptyLedger')} />}

@@ -144,21 +144,21 @@ test('website', async ({ browser }) => {
         continue;
       }
       await attempt(`site products ${tag}`, async () => {
-        await page.goto(`${site}/products`);
+        await page.goto(`${site}/materials`);
         await shot(page, 'storefront', `products-${tag}`, full(width));
       });
       if (set === 'demo')
         await attempt(`site product ${tag}`, async () => {
-          await page.goto(`${site}/products`);
+          await page.goto(`${site}/materials`);
           const href = await page
-            .locator('main a[href^="/products/"]')
+            .locator('main a[href^="/materials/"]')
             .first()
             .getAttribute('href');
           await page.goto(`${site}${href}`);
           await shot(page, 'storefront', `product-${tag}`, full(width));
         });
       await attempt(`site empty basket ${tag}`, async () => {
-        await page.goto(`${site}/cart`);
+        await page.goto(`${site}/list`);
         await shot(page, 'storefront', `cart-empty-${tag}`, full(width));
       });
       await attempt(`site sign-in ${tag}`, async () => {

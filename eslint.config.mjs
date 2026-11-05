@@ -15,6 +15,10 @@ export default ts.config(
       '**/next-env.d.ts',
       'apps/mobile/android/**',
       'apps/mobile/ios/**',
+      'apps/staff/android/**',
+      'apps/staff/dist/**',
+      // Maestro's own JavaScript, with its own globals.
+      'apps/staff/.maestro/scripts/**',
       '.local/**',
       '.claude/**',
       '.playwright-cli/**',
@@ -49,7 +53,7 @@ export default ts.config(
   },
   {
     // Code that runs inside the Android/iOS app (Hermes) must avoid web-only APIs.
-    files: ['apps/mobile/**/*.{ts,tsx}', 'packages/shared/src/**/*.ts'],
+    files: ['apps/mobile/**/*.{ts,tsx}', 'apps/staff/src/**/*.{ts,tsx}', 'packages/shared/src/**/*.ts'],
     rules: {
       'no-restricted-properties': [
         'error',
@@ -69,7 +73,12 @@ export default ts.config(
   },
   {
     // Expo config plugins and Metro config are loaded with require().
-    files: ['apps/mobile/plugins/**/*.js', 'apps/mobile/metro.config.js'],
+    files: [
+      'apps/mobile/plugins/**/*.js',
+      'apps/mobile/metro.config.js',
+      'apps/staff/plugins/**/*.js',
+      'apps/staff/metro.config.js',
+    ],
     languageOptions: { sourceType: 'commonjs' },
     rules: { '@typescript-eslint/no-require-imports': 'off' },
   },

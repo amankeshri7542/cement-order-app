@@ -52,7 +52,11 @@ function checkHeaders(headers, frontend) {
   assert(csp.includes("frame-ancestors 'none'"));
   assert.equal(headers['x-content-type-options'], 'nosniff');
   assert(headers['strict-transport-security']?.includes('max-age='));
-  assert(headers['cache-control']?.includes('no-store'));
+  // The website's public pages may be kept for Back and Forward. Everything else stays no-store.
+  const caching = headers['cache-control'] ?? '';
+  assert(
+    caching.includes('no-store') || (frontend === 'storefront' && caching.includes('no-cache')),
+  );
   const microphone = headers['permissions-policy']
     ?.split(',')
     .find((v) => v.trim().startsWith('microphone='))
@@ -141,13 +145,13 @@ if (process.argv.includes('--self-test')) {
   assert.throws(() => checkDocumentNonces(undefined, [{ nonce: '', text: 'injected()', src: '' }]));
   const scriptFixture = new Map([
     ['/core.js', { bytes: 100, gzipBytes: 50 }],
-    ['/assistant.js', { bytes: 40, gzipBytes: 30 }],
+    ['/ask.js', { bytes: 40, gzipBytes: 30 }],
   ]);
   assert.equal(scriptSizes(scriptFixture).gzipScriptBytes, 80);
   assert.deepEqual(scriptSizes(scriptFixture, new Set(['/core.js'])), {
     scriptBytes: 40,
     gzipScriptBytes: 30,
-    scripts: { '/assistant.js': { bytes: 40, gzipBytes: 30 } },
+    scripts: { '/ask.js': { bytes: 40, gzipBytes: 30 } },
   });
   assert.equal(scriptSizes(scriptFixture, new Set(scriptFixture.keys())).scriptBytes, 0);
   const requestFixture = (type, url, method = 'GET') => ({
@@ -535,16 +539,31 @@ try {
           checkDocumentNonces(nonce, await domScripts());
           if (frontend === 'storefront') {
             phase = 'storefront-interactions';
-            assert(headers['cache-control'].includes('no-store'));
-            await page.getByRole('button', { name: 'हिन्दी', exact: true }).click();
-            assert.equal(await page.locator('html').getAttribute('lang'), 'hi');
-            await page.getByRole('button', { name: 'English', exact: true }).click();
+            // Public pages may be kept for Back and Forward; buying pages stay no-store.
+            assert.equal(headers['cache-control'], 'private, no-cache');
+            assert.equal(
+              (await page.request.get(`${url}/account`)).headers()['cache-control'],
+              'no-store',
+              'A buying page may be kept by the browser',
+            );
+            assert.equal(await page.locator('html').getAttribute('lang'), 'en');
+            // The API is unavailable here, so Ask counts as off: nothing offers it and it is no page.
+            assert.equal(
+              await page.locator('[data-ask]').count(),
+              0,
+              'Ask offered while it is off',
+            );
+            assert.equal(
+              (await page.request.get(`${url}/ask`)).status(),
+              404,
+              '/ask open while Ask is off',
+            );
             page.off('response', collectScript);
             await Promise.all(scriptReads);
             const core = scriptSizes(scripts);
             assert(
-              core.gzipScriptBytes > 0 && core.gzipScriptBytes <= 450 * 1024,
-              'Storefront initial scripts exceed 450 KiB gzip budget',
+              core.gzipScriptBytes > 0 && core.gzipScriptBytes <= 190 * 1024,
+              'Storefront initial scripts exceed 190 KiB gzip budget',
             );
             const timing = await page.evaluate(() => ({
               navigation: performance.getEntriesByType('navigation').map((entry) => entry.toJSON()),
@@ -557,24 +576,6 @@ try {
               timing,
               note: 'Local TLS, unthrottled production build; unavailable API simulated',
             });
-            const coreUrls = new Set(scripts.keys());
-            page.on('response', collectScript);
-            await page.getByRole('button', { name: /Shiv Assistant/ }).click();
-            await page.waitForFunction(
-              () => document.querySelector('dialog[aria-labelledby="assistant-title"]')?.open,
-            );
-            page.off('response', collectScript);
-            await Promise.all(scriptReads);
-            const assistant = scriptSizes(scripts, coreUrls);
-            assert(assistant.scriptBytes > 0, 'Assistant did not fetch a separate lazy script');
-            recordEvidence({
-              frontend,
-              engine,
-              feature: 'assistant',
-              ...assistant,
-              note: 'Incremental JavaScript after explicit assistant click and open dialog; core script URLs excluded. No assistant budget asserted.',
-            });
-            await page.getByRole('button', { name: 'Close assistant', exact: true }).click();
           }
           phase = 'nonce-reload';
           const next = await page.reload();

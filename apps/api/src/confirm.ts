@@ -427,6 +427,8 @@ export class ConfirmService {
         id: { not: order.id },
         payment: { method: 'CREDIT' },
         status: { in: ['CONFIRMED', 'PREPARING', 'OUT_FOR_DELIVERY', 'DELIVERY_EXCEPTION'] },
+        // One that has left is already in the balance. Counting it here would count it twice.
+        ledgerEntries: { none: {} },
       },
       _sum: { totalPaise: true },
     });
@@ -751,6 +753,9 @@ export class ConfirmService {
       order.payment?.status !== 'PENDING'
     )
       fail('ORDER_CHANGED', 'Cash is already recorded on this order.', 409);
+    // Once it is on a vehicle it is on the customer's khata. Undoing it now would strand that entry.
+    if (await tx.customerLedgerEntry.findUnique({ where: { orderId: id }, select: { id: true } }))
+      fail('ORDER_CHANGED', 'This order is already loaded.', 409);
     const version = order.version + 1;
     const key = `undo:${order.id}:${version}`;
     if (order.status === 'CONFIRMED') {

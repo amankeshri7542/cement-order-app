@@ -146,7 +146,7 @@ export async function applicationIdentity(name, origin) {
           /<title>(?:Shiv Cement · Dukaan ka kaam|Shiv Cement Store · Store desk|शिव सीमेंट स्टोर · दुकान का काम)<\/title>/.test(
             body,
           );
-      else if (name === 'customer') matches = /<title>Shiv Cement Store<\/title>/.test(body);
+      else if (name === 'customer') matches = /<title>Shiv Cement(?: Store)?<\/title>/.test(body);
       else if (name === 'storefront') matches = response.headers.get('x-shiv-app') === 'storefront';
     }
     return {

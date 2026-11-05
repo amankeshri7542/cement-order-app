@@ -46,6 +46,7 @@ export const whatsappTemplates = {
   shiv_new_order: 3, // नया ऑर्डर {{1}}, ₹{{2}}, क्षेत्र {{3}}
   shiv_new_quote: 2, // नया थोक भाव अनुरोध {{1}}, {{2}} सामग्री
   shiv_order_status: 2, // आपका ऑर्डर {{1}}: {{2}}
+  shiv_night_summary: 2, // Aaj {{1}} log aaye. Aaj ka code: {{2}}
   shiv_test_alert: 1, // शिव सीमेंट स्टोर: {{1}} के लिए अलर्ट चालू है
 } as const;
 export type WhatsappTemplate = keyof typeof whatsappTemplates;
@@ -194,7 +195,9 @@ export class AlertsService {
             ? '/manzoori'
             : note.dedupeKey?.startsWith('people:')
             ? '/users'
-            : '/lists',
+            : note.dedupeKey?.startsWith('wa-draft:')
+              ? '/whatsapp'
+              : '/lists',
         tag: note.orderId || note.id,
         ack,
         ...(offered?.clean ? { confirmToken } : {}),

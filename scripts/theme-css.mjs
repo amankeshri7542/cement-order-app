@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 // Writes the Direction A design tokens (packages/shared/src/theme.ts) as CSS custom properties
-// for the two websites, so the website, the owner desk and the app share one set of values.
+// for the owner desk.
 //
-//   node scripts/theme-css.mjs          regenerate apps/storefront/app/theme.css and apps/admin/app/theme.css
-//   node scripts/theme-css.mjs --check  exit 1 when either file is missing or out of date
+//   node scripts/theme-css.mjs          regenerate apps/admin/app/theme.css
+//   node scripts/theme-css.mjs --check  exit 1 when the file is missing or out of date
+//
+// The website has its own Naksha tokens in apps/storefront/app/base.css (plan 02), so it is not here.
 //
 // Reads the built package (packages/shared/dist), so run `npm run build -w @shiv/shared` first.
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -13,9 +15,7 @@ import * as prettier from 'prettier';
 import shared from '@shiv/shared';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const targets = ['apps/storefront/app/theme.css', 'apps/admin/app/theme.css'].map((file) =>
-  resolve(root, file),
-);
+const targets = ['apps/admin/app/theme.css'].map((file) => resolve(root, file));
 const check = process.argv.includes('--check');
 
 if (typeof shared.cssVariables !== 'function') {

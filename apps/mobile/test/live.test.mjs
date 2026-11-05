@@ -4,7 +4,7 @@ import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 import ts from 'typescript';
 
-const compiled = ts.transpileModule(readFileSync('src/live.ts', 'utf8'), {
+const compiled = ts.transpileModule(readFileSync('src/logic/live.ts', 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText;
 function load() {

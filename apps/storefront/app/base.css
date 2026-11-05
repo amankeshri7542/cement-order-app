@@ -1,0 +1,353 @@
+/* Naksha: paper, ink and one lamp. Tokens and the few shared pieces every public page uses.
+   Everything else lives in a CSS Module beside its component, in the components layer, so the
+   order files load in can never change how a page looks. */
+@layer reset, base, components;
+
+:root {
+  --ground: #eae7de;
+  --ground-up: #f3f1ea;
+  --ground-down: #dedace;
+  --ink: #191d1b;
+  --ink-2: #4a4f4b;
+  --rule: rgba(25, 29, 27, 0.16);
+  --night: #121513;
+  --night-up: #1d211e;
+  --on-night: #eae7de;
+  --on-night-2: #b6b8ae;
+  --rule-night: rgba(234, 231, 222, 0.16);
+  --diya: #f2a33a;
+  --diya-press: #dc8c22;
+  --on-diya: #191d1b;
+  --diya-ink: #7a4e00;
+  --ok: #1b6c44;
+  --ok-soft: #dfece2;
+  --warn: #7a4e00;
+  --warn-soft: #f4e6c8;
+  --danger: #b23a2f;
+  --danger-soft: #f4e0da;
+
+  --font: var(--font-hanken), 'Helvetica Neue', Helvetica, Arial, 'Noto Sans', sans-serif;
+  --t-hero: clamp(2.5rem, 0.2rem + 5.2vw, 6.25rem);
+  --t-1: clamp(2rem, 1.1rem + 3.2vw, 4.25rem);
+  --t-2: clamp(1.5rem, 1.2rem + 1.2vw, 2.25rem);
+  --t-3: 1.1875rem;
+  --t-4: 1rem;
+  --m: clamp(16px, 2.8vw, 40px);
+  --section: clamp(72px, 9vw, 150px);
+  --r: 2px;
+  --touch: 44px;
+  --nav: 64px;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --press: 140ms;
+  --hover: 180ms;
+}
+@media (max-width: 759px) {
+  :root {
+    --nav: 56px;
+  }
+}
+
+@layer reset {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+  [hidden] {
+    display: none !important;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body,
+  h1,
+  h2,
+  h3,
+  p,
+  ol,
+  ul,
+  dl,
+  dd,
+  figure {
+    margin: 0;
+    padding: 0;
+  }
+  ol,
+  ul {
+    list-style: none;
+  }
+  img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+  }
+  button {
+    font: inherit;
+    color: inherit;
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+  }
+  input,
+  select,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
+  a {
+    color: inherit;
+  }
+}
+
+@layer base {
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--font);
+    font-size: var(--t-4);
+    line-height: 1.5;
+    overflow-x: clip;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  h1,
+  h2 {
+    font-weight: 300;
+    letter-spacing: -0.028em;
+    line-height: 1.03;
+    text-wrap: balance;
+  }
+  h1 {
+    font-size: var(--t-hero);
+  }
+  h2 {
+    font-size: var(--t-1);
+  }
+  h3 {
+    font-size: var(--t-2);
+    font-weight: 300;
+    letter-spacing: -0.018em;
+    line-height: 1.12;
+  }
+  :focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 3px;
+  }
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+  .sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .skip {
+    position: fixed;
+    left: 8px;
+    top: 8px;
+    z-index: 60;
+    background: var(--ink);
+    color: var(--ground);
+    padding: 10px 14px;
+    transform: translateY(-200%);
+    text-decoration: none;
+  }
+  .skip:focus {
+    transform: none;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5em;
+    min-height: 48px;
+    padding: 0.7em 1.2em;
+    border-radius: var(--r);
+    font-size: var(--t-4);
+    font-weight: 500;
+    line-height: 1.1;
+    text-align: center;
+    text-decoration: none;
+    transition:
+      transform var(--press) var(--ease-out),
+      background-color var(--hover) ease,
+      color var(--hover) ease;
+  }
+  .btn:active {
+    transform: scale(0.97);
+  }
+  .btn[disabled],
+  .btn[aria-disabled='true'] {
+    opacity: 0.45;
+    cursor: not-allowed;
+    transform: none;
+  }
+  .btn-solid {
+    background: var(--ink);
+    color: var(--ground);
+  }
+  .btn-line {
+    border: 1.5px solid currentColor;
+  }
+  .btn-lamp {
+    background: var(--diya);
+    color: var(--on-diya);
+  }
+  .btn-quiet {
+    background: var(--ground-down);
+  }
+  .link {
+    text-underline-offset: 0.22em;
+    text-decoration-thickness: 1px;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .btn-solid:hover {
+      background: #303532;
+    }
+    .btn-line:hover {
+      background: var(--ink);
+      border-color: var(--ink);
+      color: var(--ground);
+    }
+    .btn-lamp:hover {
+      background: var(--diya-press);
+    }
+    .btn-quiet:hover {
+      background: var(--ink);
+      color: var(--ground);
+    }
+  }
+
+  /* Add and the stepper. Without JavaScript they are hidden, and every rate still shows. */
+  html:not(.js) [data-add],
+  html:not(.js) [data-choose],
+  html:not(.js) [data-qty],
+  html:not(.js) [data-needs-js] {
+    display: none;
+  }
+  .add {
+    min-height: var(--touch);
+    min-width: 4.75rem;
+    padding-inline: 0.75em;
+    border-radius: var(--r);
+    font-weight: 500;
+    background: var(--ground-down);
+    white-space: nowrap;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition:
+      transform var(--press) var(--ease-out),
+      background-color var(--hover) ease,
+      color var(--hover) ease;
+  }
+  .add:active {
+    transform: scale(0.95);
+  }
+  .add[aria-pressed='true'] {
+    background: var(--diya);
+    color: var(--on-diya);
+  }
+  .add .on,
+  .add[aria-pressed='true'] .off {
+    display: none;
+  }
+  .add[aria-pressed='true'] .on {
+    display: inline;
+  }
+  .stepper {
+    display: inline-grid;
+    grid-template-columns: var(--touch) 2.6em var(--touch);
+    align-items: center;
+    text-align: center;
+  }
+  .stepper button {
+    width: var(--touch);
+    height: var(--touch);
+    border-radius: var(--r);
+    background: var(--ground-down);
+    font-size: 1.25rem;
+    transition:
+      transform var(--press) var(--ease-out),
+      background-color var(--hover) ease;
+  }
+  .stepper button:active {
+    transform: scale(0.92);
+  }
+  .stepper output {
+    font-variant-numeric: tabular-nums;
+  }
+  .on-night .add,
+  .on-night .stepper button {
+    background: var(--night-up);
+  }
+  .on-night .add[aria-pressed='true'] {
+    background: var(--diya);
+    color: var(--on-diya);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .add:not([aria-pressed='true']):hover {
+      background: var(--ink);
+      color: var(--ground);
+    }
+    .on-night .add:not([aria-pressed='true']):hover {
+      background: var(--on-night);
+      color: var(--night);
+    }
+    .stepper button:hover {
+      background: var(--ink);
+      color: var(--ground);
+    }
+    .on-night .stepper button:hover {
+      background: var(--on-night);
+      color: var(--night);
+    }
+  }
+
+  .sample {
+    display: inline-block;
+    background: var(--diya);
+    color: var(--on-diya);
+    padding: 0.35em 0.7em;
+    font-weight: 500;
+    border-radius: var(--r);
+  }
+  .your-rate {
+    display: block;
+    font-size: var(--t-4);
+    letter-spacing: 0;
+    font-weight: 500;
+    color: var(--diya-ink);
+  }
+  .on-night .your-rate {
+    color: var(--diya);
+  }
+  /* Placeholders Aman fills in. A production build never renders these. */
+  .review {
+    border-left: 4px solid var(--diya);
+    background: var(--warn-soft);
+    color: var(--warn);
+    padding: 10px 14px;
+    font-size: 0.9375rem;
+    line-height: 1.4;
+  }
+  .review b {
+    font-weight: 500;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}

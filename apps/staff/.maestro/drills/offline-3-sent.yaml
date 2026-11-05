@@ -1,0 +1,12 @@
+# Step 3: after `adb reboot`, with the API back. The kept scan goes by itself, and a person looks.
+appId: in.shivcement.staff
+---
+- launchApp:
+    stopApp: false
+- extendedWaitUntil:
+    visible:
+      id: flood-title
+    timeout: 45000
+- assertVisible: Time likh liya.*
+- assertVisible: Manager dekh kar pakka karega.
+- takeScreenshot: offline-sent

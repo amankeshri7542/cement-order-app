@@ -1,0 +1,20 @@
+# The emulator has no way to be shown a QR: the local build's hidden paste box stands in for the camera.
+appId: in.shivcement.staff
+---
+- extendedWaitUntil:
+    visible:
+      id: scan-title
+    timeout: 15000
+- longPressOn:
+    id: scan-title
+- extendedWaitUntil:
+    visible:
+      id: paste-code
+    timeout: 5000
+- runScript: ../scripts/qr.js
+- tapOn:
+    id: paste-code
+- inputText: ${output.qr}
+- takeScreenshot: paste-typed
+- tapOn:
+    id: paste-go

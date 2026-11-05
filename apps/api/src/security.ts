@@ -42,6 +42,8 @@ export async function assertSession(
     if (session.adminVerifiedAt) fail('UNAUTHORIZED', 'Staff access changed. Sign in again.', 401);
     return;
   }
+  // The staff app holds a narrow list of rights and its own key, so no passphrase applies.
+  if (session.surface === 'STAFF_APP') return;
   if (!getConfig().STAFF_PASSPHRASE_REQUIRED) return;
   if (session.createdAt.getTime() + refreshLifetime('ADMIN') <= Date.now())
     fail('UNAUTHORIZED', 'Your staff session expired. Sign in again.', 401);

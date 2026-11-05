@@ -5,6 +5,7 @@ import type { Response } from 'express';
 import { istToday, reportRangeSchema, type MoneyReport } from '@shiv/shared';
 import { Db } from './db';
 import { AuthRequest, Can, fail, scoped, shopAsked, shopWhere } from './http';
+import { shownPhone } from './crm/common';
 
 const day = (date: Date) =>
   new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(date);
@@ -12,10 +13,10 @@ const rupees = (paise: number) => (paise / 100).toFixed(2);
 const DAY_MS = 86400000;
 
 /** Money in and out of the shop, the same way the money report adds it up. */
-const moneyIn = ['COLLECTION', 'KHATA_PAYMENT', 'COUNTER_SALE'];
-const moneyOut = ['REFUND', 'KHATA_PAYMENT_REVERSAL'];
+export const moneyIn = ['COLLECTION', 'KHATA_PAYMENT', 'COUNTER_SALE', 'HANDOVER_OVER'];
+export const moneyOut = ['REFUND', 'KHATA_PAYMENT_REVERSAL', 'HANDOVER_SHORT'];
 /** Orders no one has agreed to yet, or that are gone, bring in no money. */
-const notSold = [
+export const notSold = [
   'PENDING_PAYMENT',
   'AWAITING_CONFIRMATION',
   'CANCELLED',
@@ -23,7 +24,7 @@ const notSold = [
   'REFUND_PENDING',
 ] as const;
 /** These are made by a person at the shop, so they are confirmed the moment they exist. */
-const bornConfirmed = ['PHONE', 'WALK_IN', 'QUOTE'] as const;
+const bornConfirmed = ['PHONE', 'WALK_IN', 'QUOTE', 'WHATSAPP'] as const;
 /** How many items get their own bar. The rest join under one lighter bar. */
 const ITEM_BARS = 5;
 
@@ -99,7 +100,7 @@ export class ReportsController {
         where: { occurredAt: range, ...shop },
         select: { kind: true, channel: true, amountPaise: true, occurredAt: true },
       }),
-      this.db.payment.aggregate({
+      this.db.payment.findMany({
         where: {
           method: 'COD',
           status: 'PENDING',
@@ -112,12 +113,13 @@ export class ReportsController {
                 'PREPARING',
                 'OUT_FOR_DELIVERY',
                 'DELIVERY_EXCEPTION',
+                // Delivered with part still owed, because the driver got less than was due.
+                'DELIVERED',
               ],
             },
           },
         },
-        _count: true,
-        _sum: { amountPaise: true },
+        select: { orderId: true, amountPaise: true },
       }),
       this.db.quote.groupBy({ by: ['status'], where: { createdAt: range, ...shop }, _count: true }),
       this.db.customerLedgerEntry.aggregate({
@@ -132,6 +134,11 @@ export class ReportsController {
         _sum: { amountPaise: true },
       }),
     ]);
+    // What a driver took at the door is not still to collect.
+    const atTheDoor = await this.db.driverCollection.aggregate({
+      where: { orderId: { in: pending.map((row) => row.orderId) } },
+      _sum: { amountPaise: true },
+    });
     const creditPaymentsPaise = movements.reduce(
       (total, movement) =>
         total +
@@ -146,6 +153,12 @@ export class ReportsController {
     for (const movement of movements) {
       if (movement.kind === 'KHATA_PAYMENT') movement.kind = 'COLLECTION';
       if (movement.kind === 'KHATA_PAYMENT_REVERSAL') movement.kind = 'REFUND';
+      // A driver's cash joined at what was counted, so the report and the drawer say the same.
+      if (movement.kind === 'HANDOVER_OVER') movement.kind = 'COLLECTION';
+      if (movement.kind === 'HANDOVER_SHORT') {
+        movement.kind = 'COLLECTION';
+        movement.amountPaise = -movement.amountPaise;
+      }
     }
     const sum = (kind: string, channel?: string) =>
       movements
@@ -218,7 +231,12 @@ export class ReportsController {
         .sort((a, b) => b.totalPaise - a.totalPaise || a.id.localeCompare(b.id))
         .slice(0, 10),
       netPaise: sum('COLLECTION') + sum('COUNTER_SALE') - refundsPaise,
-      pendingCash: { orders: pending._count, amountPaise: pending._sum.amountPaise || 0 },
+      pendingCash: {
+        orders: pending.length,
+        amountPaise:
+          pending.reduce((sum, row) => sum + row.amountPaise, 0) -
+          (atTheDoor._sum.amountPaise ?? 0),
+      },
       quotes: {
         requested: quoteCount('REQUESTED'),
         sent: quoteCount('SENT'),
@@ -230,11 +248,21 @@ export class ReportsController {
     };
   }
 
-  @Can('reports.read', scoped) @Get('money') report(
+  @Can('reports.read', scoped) @Get('money') async report(
     @Query() query: Record<string, string>,
     @Req() req: AuthRequest,
   ) {
-    return this.money(query, shopWhere(req, 'reports.read'));
+    return this.withNumbersShown(await this.money(query, shopWhere(req, 'reports.read')), req);
+  }
+
+  private withNumbersShown(report: MoneyReport, req: AuthRequest): MoneyReport {
+    return {
+      ...report,
+      topCustomers: report.topCustomers.map((row) => ({
+        ...row,
+        phone: shownPhone(req, row.phone),
+      })),
+    };
   }
 
   /** The numbers behind the Report page's charts. Reads only. Money figures are never profit. */
@@ -383,7 +411,7 @@ export class ReportsController {
     );
     const rows = await this.db.$queryRaw<{ step: number; paise: bigint }[]>`
       WITH debts AS (
-        SELECT e."locationId", e."occurredAt", e."amountPaise"::bigint AS amount,
+        SELECT e."locationId", e."occurredAt", e.kind, e."amountPaise"::bigint AS amount,
           u."khataBalancePaise"::bigint AS balance,
           COALESCE(SUM(e."amountPaise"::bigint) OVER (
             PARTITION BY e."customerId" ORDER BY e."occurredAt" DESC, e.id DESC
@@ -393,7 +421,8 @@ export class ReportsController {
         WHERE e."amountPaise" > 0 AND u."khataBalancePaise" > 0
           AND u."deletedAt" IS NULL AND u.role <> 'ADMIN'
       )
-      SELECT (CASE WHEN "occurredAt" >= ${d30} THEN 0 WHEN "occurredAt" >= ${d60} THEN 1
+      SELECT (CASE WHEN kind = 'OPENING_BALANCE' THEN 3 WHEN "occurredAt" >= ${d30} THEN 0
+        WHEN "occurredAt" >= ${d60} THEN 1
         WHEN "occurredAt" >= ${d90} THEN 2 ELSE 3 END)::int AS step,
         SUM(LEAST(amount, balance - newer))::bigint AS paise
       FROM debts
@@ -413,7 +442,7 @@ export class ReportsController {
     @Res() res: Response,
     @Req() req: AuthRequest,
   ) {
-    const r = await this.money(query, shopWhere(req, 'reports.read'));
+    const r = this.withNumbersShown(await this.money(query, shopWhere(req, 'reports.read')), req);
     const customerText = (value: string) => (/^\s*[=+\-@]/.test(value) ? `'${value}` : value);
     const lines = [
       ['Date', 'Orders', 'Collected (₹)', 'Counter (₹)', 'Refunds (₹)'],

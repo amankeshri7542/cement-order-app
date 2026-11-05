@@ -2,8 +2,8 @@ import { PrismaClient } from '@prisma/client';
 import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures';
 
-// Hindi product names: the owner adds a Hindi name on the desk, the website shows it (with
-// Hindi units) to Hindi readers, and English readers see the catalogue exactly as before.
+// Hindi product names: the owner can add a Hindi name on the desk. The website and the customer
+// app have one language, so they never print the name, but website search still finds it.
 const site = 'http://localhost:3004';
 const desk = 'http://localhost:3001';
 const productId = 'test-hindi-cement';
@@ -65,7 +65,7 @@ async function deskLogin(page: Page) {
   await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
 }
 
-test('a Hindi name saved on the desk reaches Hindi readers; English is unchanged', async ({
+test('a Hindi name saved on the desk stays off the website, and still finds the product', async ({
   page,
 }) => {
   await deskLogin(page);
@@ -82,70 +82,28 @@ test('a Hindi name saved on the desk reaches Hindi readers; English is unchanged
     page.getByRole('button', { name: `Change goods ${name}`, exact: true }),
   ).toBeVisible();
 
-  // English readers see the stored English name and unit, with no Hindi text.
-  await page.goto(`${site}/products/${productId}`);
+  // The website has one language: the English name, and no Hindi anywhere, even when one is saved.
+  // A new product shows once the website's saved catalogue has been read again.
+  await expect
+    .poll(async () => (await page.request.get(`${site}/materials/cement/${productId}`)).status(), {
+      timeout: 30000,
+    })
+    .toBe(200);
+  await page.goto(`${site}/materials/cement/${productId}`);
   const main = page.getByRole('main');
   await expect(page.getByRole('heading', { level: 1, name, exact: true })).toBeVisible();
-  await expect(main.locator('.detail-price')).toHaveText(/\/ bag$/);
-  // Minimum quantity and quantity step are both 1.
-  await expect(main.getByText('1 × bag', { exact: true })).toHaveCount(2);
   await expect(main.getByText(nameHi)).toHaveCount(0);
-  await expect(main.getByText('बोरी')).toHaveCount(0);
+  await expect(main.getByText(descriptionHi)).toHaveCount(0);
+  expect(await page.content()).not.toMatch(/[\u0900-\u097F]/);
 
-  // Hindi readers see the Hindi name and unit, and the English name printed on the bag.
-  await page.getByRole('button', { name: 'हिन्दी', exact: true }).click();
-  await expect(page.locator('html')).toHaveAttribute('lang', 'hi');
-  await expect(page.getByRole('heading', { level: 1, name: nameHi, exact: true })).toBeVisible();
-  await expect(main.getByText(name, { exact: true })).toBeVisible();
-  await expect(main.locator('.detail-price')).toHaveText(/\/ बोरी$/);
-  // Minimum quantity and quantity step are both 1.
-  await expect(main.getByText('1 × बोरी', { exact: true })).toHaveCount(2);
-  await expect(main.getByText(descriptionHi, { exact: true })).toBeVisible();
-
-  // The catalogue finds it by its Hindi name and shows the Hindi card.
-  await page.goto(`${site}/products`);
-  await expect(page.locator('html')).toHaveAttribute('lang', 'hi');
-  const search = main.getByLabel('सामग्री खोजें');
-  await expect(search).toBeEnabled();
-  await search.fill('हिन्दी सीमेंट');
-  const card = main
-    .getByRole('article')
-    .filter({ has: page.locator(`a[href="/products/${productId}"]`) });
-  await expect(card).toContainText(nameHi);
-  await expect(card).toContainText('/ बोरी');
-
-  // Back in English the card reads exactly as before.
-  await page.getByRole('button', { name: 'English', exact: true }).click();
-  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
-  await expect(card).toContainText(name);
-  await expect(card).toContainText('/ bag');
-  await expect(card).not.toContainText(nameHi);
-});
-
-test('the app shows the Hindi name and unit to Hindi readers', async ({ browser }) => {
-  const db = database();
-  try {
-    await db.product.update({ where: { id: productId }, data: { nameHi, descriptionHi } });
-  } finally {
-    await db.$disconnect();
-  }
-  // A fresh phone that chose Hindi on first launch.
-  const context = await browser.newContext();
-  await context.addInitScript(() => localStorage.setItem('shiv_language', '"hi"'));
-  const page = await context.newPage();
-  await page.goto('http://localhost:8082');
-  await page.getByRole('tab', { name: 'सामग्री', exact: true }).click();
-  const search = page.getByRole('textbox', { name: 'सामग्री खोजें', exact: true });
-  await expect(
-    page.getByText(/^\d+ (materials?|सामग्री)( · (more below|नीचे और))?$/),
-  ).toBeVisible();
-  await expect(async () => {
-    await search.fill('हिन्दी सीमेंट');
-    await expect(search).toHaveValue('हिन्दी सीमेंट', { timeout: 1000 });
-  }).toPass();
-  const row = page.getByTestId(`product-${productId}`);
-  await expect(row).toContainText(nameHi);
-  await expect(row).toContainText('बोरी');
-  await expect(row).not.toContainText('/ bag');
-  await context.close();
+  // A customer who types the Hindi name still finds it: the words are matched on the server only.
+  await expect
+    .poll(
+      async () => {
+        await page.goto(`${site}/materials?q=${encodeURIComponent(nameHi)}`);
+        return main.getByRole('row', { name: new RegExp(name) }).count();
+      },
+      { timeout: 30000, intervals: [1000] },
+    )
+    .toBeGreaterThan(0);
 });

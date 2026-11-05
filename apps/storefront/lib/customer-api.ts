@@ -1,6 +1,13 @@
-import { errorText as sharedErrorText } from '@shiv/shared';
-export { localPhone } from '@shiv/shared';
+import { errorText as sharedErrorText } from '@shiv/shared/src/errors';
 import { API_URL } from './api';
+/** The ten digits of an Indian mobile number, however it was typed or pasted. */
+export function localPhone(value: string) {
+  return value
+    .replace(/[\s().-]/g, '')
+    .replace(/^(?:\+91|0091)(?=\d)/, '')
+    .replace(/^91(?=[6-9]\d{9}$)/, '')
+    .replace(/^0(?=[6-9])/, '');
+}
 export class CustomerError extends Error {
   constructor(
     readonly code: string,
@@ -83,8 +90,8 @@ export async function customerApi<T>(
   return data as T;
 }
 // Messages come from the catalogue shared with the Android app (@shiv/shared errors.ts).
-export function errorText(error: unknown, hi: boolean) {
+export function errorText(error: unknown) {
   return error instanceof CustomerError
-    ? sharedErrorText(error.code, hi ? 'hi' : 'en', error.message)
-    : sharedErrorText(undefined, hi ? 'hi' : 'en');
+    ? sharedErrorText(error.code, 'en', error.message)
+    : sharedErrorText(undefined, 'en');
 }

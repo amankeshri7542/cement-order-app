@@ -25,7 +25,12 @@ import { applyCount } from './stock';
 
 type Tx = Prisma.TransactionClient;
 export type ApprovalKind =
-  'COUNT_CORRECTION' | 'STOCK_DAMAGE' | 'TRANSFER_SHORTAGE' | 'RATE_CHANGE' | 'ORDER_CONFIRM';
+  | 'COUNT_CORRECTION'
+  | 'STOCK_DAMAGE'
+  | 'TRANSFER_SHORTAGE'
+  | 'RATE_CHANGE'
+  | 'ORDER_CONFIRM'
+  | 'ADVANCE';
 
 // A big count must still reach an owner, even when its value is more than the column can hold.
 const storedAmount = (paise: number | null) =>
@@ -106,6 +111,7 @@ type Payload = {
   expectedVersion?: number;
   changes?: OrderChanges;
   rates?: { productId: string; pricePaise: number; expectedVersion: number }[];
+  evidenceId?: string;
 };
 
 @Injectable()
@@ -117,6 +123,12 @@ export class ApprovalsService {
   ) {}
 
   /** Registered by the pricing service, which would otherwise be a circular import. */
+  giveAdvance?: (
+    tx: Tx,
+    payload: unknown,
+    actorId: string,
+    approvedById: string,
+  ) => Promise<unknown>;
   publishRates?: (
     tx: Tx,
     payload: unknown,
@@ -191,6 +203,11 @@ export class ApprovalsService {
             },
             actor,
           );
+      } else if (request.kind === 'ADVANCE') {
+        if (approve) {
+          if (!this.giveAdvance) fail('INVALID_INPUT', 'Advances cannot be given right now.');
+          await this.giveAdvance(tx, payload, req.user.id, req.user.id);
+        }
       } else if (request.kind === 'RATE_CHANGE') {
         if (approve) {
           if (!this.publishRates) fail('INVALID_INPUT', 'Rates cannot be published right now.');
@@ -281,6 +298,29 @@ export class ApprovalsService {
   /** The facts an owner needs to decide, in numbers and catalogue names. */
   private async detail(row: { kind: string; payload: Prisma.JsonValue }, req: AuthRequest) {
     const payload = row.payload as Payload;
+    if (row.kind === 'ADVANCE') {
+      const asked = row.payload as {
+        userId?: string;
+        amountPaise?: number;
+        recoveryPaise?: number;
+        channel?: string;
+        paidFrom?: string;
+      };
+      const person = asked.userId
+        ? await this.db.user.findUnique({
+            where: { id: asked.userId },
+            select: { name: true },
+          })
+        : null;
+      return {
+        name: person?.name ?? '',
+        amountPaise: asked.amountPaise ?? 0,
+        recoveryPaise: asked.recoveryPaise ?? 0,
+        // Approving records this payment, so the owner sees where the money comes from.
+        channel: asked.channel ?? 'CASH',
+        paidFrom: asked.paidFrom ?? 'OWNER',
+      };
+    }
     if (row.kind === 'RATE_CHANGE') {
       const asked = payload.rates ?? [];
       const products = await this.db.product.findMany({
@@ -325,7 +365,12 @@ export class ApprovalsService {
         where: { id: payload.productId! },
         select: { name: true, unit: true },
       });
-      return { name: product?.name ?? '', unit: product?.unit ?? '', quantity: payload.quantity };
+      return {
+        name: product?.name ?? '',
+        unit: product?.unit ?? '',
+        quantity: payload.quantity,
+        evidenceId: payload.evidenceId ?? null,
+      };
     }
     if (row.kind === 'TRANSFER_SHORTAGE') {
       const transfer = await this.db.stockTransfer.findUnique({

@@ -1,0 +1,226 @@
+/* The Tally page and the customer's two numbers. Shared tokens only. Amber with a word means "a
+   person should look"; a Tally number sits at body size, so it reads second to the khata. */
+.page {
+  display: grid;
+  gap: var(--shiv-space-4);
+  min-inline-size: 0;
+}
+.section {
+  display: grid;
+  gap: var(--shiv-space-3);
+  min-inline-size: 0;
+}
+.cards {
+  display: grid;
+  gap: var(--shiv-space-3);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  align-items: start;
+}
+.cardBody {
+  display: grid;
+  gap: 0.5rem;
+  min-inline-size: 0;
+}
+/* The desk gives every paragraph a margin. Here the grid's gap sets the rhythm alone. */
+main .cardBody p,
+main .section p {
+  margin: 0;
+}
+.title {
+  margin: 0;
+  font: 600 1.125rem/1.5 var(--shiv-font-display);
+  overflow-wrap: anywhere;
+}
+.subtitle {
+  margin: 0;
+  font: 600 1rem/1.5 var(--shiv-font-display);
+}
+.line {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.steps {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding-inline-start: 1.5rem;
+}
+.setting {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  background: var(--shiv-paper);
+  border-radius: var(--shiv-radius-sm);
+  font-size: var(--shiv-small);
+  overflow-wrap: anywhere;
+}
+.bar {
+  display: block;
+  inline-size: 100%;
+  block-size: 0.5rem;
+  accent-color: var(--shiv-ink);
+}
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+.filters > button {
+  flex: 0 0 auto;
+}
+.search {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--shiv-space-2);
+  align-items: end;
+}
+.search > * {
+  flex: 1 1 16rem;
+  min-inline-size: 0;
+}
+/* One above the other on a phone, as a name and a large sum cannot share a line. Three columns with
+   a mouse, with the money in its own ruled column. */
+.party {
+  display: grid;
+  gap: 0.5rem 1rem;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    'who'
+    'amount'
+    'act';
+  min-inline-size: 0;
+}
+@media (min-width: 64rem) {
+  .party {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(9rem, auto);
+    grid-template-areas: 'who act amount';
+  }
+}
+.partyWho {
+  grid-area: who;
+  display: grid;
+  gap: 0.25rem;
+  align-content: start;
+  min-inline-size: 0;
+}
+.partyAct {
+  grid-area: act;
+  display: grid;
+  gap: 0.5rem;
+  align-content: start;
+  min-inline-size: 0;
+}
+.partyAmount {
+  grid-area: amount;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 0.5rem;
+  font-variant-numeric: tabular-nums;
+}
+.partyAmount strong {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+@media (min-width: 64rem) {
+  .partyAmount {
+    display: block;
+    padding-inline-start: 0.75rem;
+    border-inline-start: 0.1875rem double var(--shiv-ink2);
+    text-align: end;
+  }
+  .partyAmount strong {
+    display: block;
+    white-space: nowrap;
+  }
+}
+.suggestion {
+  display: grid;
+  gap: 0.25rem 0.75rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  padding-block-end: 0.5rem;
+  border-block-end: 0.0625rem solid var(--shiv-line);
+  min-inline-size: 0;
+}
+.suggestion:last-of-type {
+  padding-block-end: 0;
+  border-block-end: 0;
+}
+.choices {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.code {
+  margin: 0;
+  font: 700 2rem/1.2 var(--shiv-font-display);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.command {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  background: var(--shiv-paper);
+  border-radius: var(--shiv-radius-sm);
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: var(--shiv-small);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.divider {
+  margin-block: var(--shiv-space-2);
+  border: 0;
+  border-block-start: 0.0625rem solid var(--shiv-line);
+}
+.details > summary {
+  min-block-size: 2.75rem;
+  cursor: pointer;
+  padding-block: 0.5rem;
+  font-weight: 600;
+}
+.greyed {
+  color: var(--shiv-ink2);
+}
+/* Long Hinglish must wrap on a phone, unlike the shorter tags elsewhere. */
+.wrapTag {
+  justify-self: start;
+  white-space: normal;
+}
+/* Leaves a little room above when a phone is taken down to the numbers. */
+.anchor {
+  scroll-margin-block-start: 1rem;
+}
+.ledgerNote {
+  display: block;
+  color: var(--shiv-ink2);
+  font-size: var(--shiv-small);
+  overflow-wrap: anywhere;
+}
+.ledgerTotal {
+  border-block-start: 0.0625rem solid var(--shiv-ink);
+  border-block-end: 0.1875rem double var(--shiv-ink);
+  font-weight: 700;
+}
+.rowEnd {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+  align-items: center;
+  justify-content: space-between;
+  padding-block: 0.5rem;
+  border-block-end: 0.0625rem solid var(--shiv-line);
+  min-inline-size: 0;
+}
+.rowEnd > :first-child {
+  flex: 1 1 12rem;
+  min-inline-size: 0;
+}
+.narrowField {
+  max-inline-size: 16rem;
+}

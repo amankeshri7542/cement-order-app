@@ -30,6 +30,8 @@ export const configSchema = z.object({
     .transform((value) => value === 'true'),
   OWNER_SESSION_DAYS: z.coerce.number().int().min(1).max(90).default(30),
   OTP_HASH_SECRET: z.string().min(32),
+  // Shop codes, sealed positions and phone renewals. Falls back to OTP_HASH_SECRET if not set.
+  STAFF_SECRET: z.string().min(32).optional(),
   TWILIO_ACCOUNT_SID: z.string().optional(),
   TWILIO_AUTH_TOKEN: z.string().optional(),
   TWILIO_VERIFY_SERVICE_SID: z.string().optional(),
@@ -44,32 +46,68 @@ export const configSchema = z.object({
   GOOGLE_VISION_API_KEY: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
   RATE_OPENAI_MODEL: z.string().max(200).optional(),
-  ASSISTANT_PROVIDER: z.enum(['fallback', 'openai', 'simulation']).default('fallback'),
-  ASSISTANT_OPENAI_API_KEY: z.string().min(1).optional(),
-  ASSISTANT_MODEL: z
+  // Ask, the AI advisor. Off by default: with no provider, no key or ASK_ENABLED off, nothing calls a
+  // model and customers get fixed text and the checked guide.
+  ADVISOR_PROVIDER: z.enum(['fallback', 'anthropic', 'simulation']).default('fallback'),
+  // Its own key, in its own workspace with a spend limit, so the provider is the last net.
+  ADVISOR_ANTHROPIC_API_KEY: z.string().min(1).optional(),
+  ADVISOR_MODEL_TRIAGE: z
     .string()
     .regex(/^[a-zA-Z0-9._-]{1,100}$/)
-    .optional(),
-  ASSISTANT_INPUT_MICRO_USD_PER_MILLION: z.coerce
+    .default('claude-haiku-5-5'),
+  ADVISOR_MODEL_ANSWER: z
+    .string()
+    .regex(/^[a-zA-Z0-9._-]{1,100}$/)
+    .default('claude-haiku-5-5'),
+  // Haiku 5.5 for prompts under 100,000 tokens, ours always are. In micro dollars per million tokens.
+  ADVISOR_INPUT_MICRO_USD_PER_MILLION: z.coerce
     .number()
     .int()
     .min(1)
     .max(1_000_000_000)
-    .optional(),
-  ASSISTANT_OUTPUT_MICRO_USD_PER_MILLION: z.coerce
+    .default(100_000),
+  ADVISOR_OUTPUT_MICRO_USD_PER_MILLION: z.coerce
     .number()
     .int()
     .min(1)
     .max(1_000_000_000)
-    .optional(),
-  ASSISTANT_DAILY_BUDGET_MICRO_USD: z.coerce
+    .default(500_000),
+  ADVISOR_CACHE_WRITE_MICRO_USD_PER_MILLION: z.coerce
     .number()
     .int()
     .min(1)
     .max(1_000_000_000)
-    .default(1_000_000),
-  ASSISTANT_REQUESTS_PER_HOUR: z.coerce.number().int().min(1).max(1000).default(30),
-  ASSISTANT_REQUESTS_PER_DAY: z.coerce.number().int().min(1).max(100000).default(500),
+    .default(125_000),
+  ADVISOR_CACHE_READ_MICRO_USD_PER_MILLION: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(1_000_000_000)
+    .default(10_000),
+  // Decision 54: rupees 10 a day and rupees 300 a month, at 95 to the dollar (decision 32).
+  ADVISOR_DAILY_BUDGET_MICRO_USD: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(1_000_000_000)
+    .default(105_263),
+  ADVISOR_MONTHLY_BUDGET_MICRO_USD: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(1_000_000_000)
+    .default(3_157_894),
+  // Decision 54: questions that reach a model. Fixed text does not count.
+  ADVISOR_QUESTIONS_PER_DEVICE_DAY: z.coerce.number().int().min(1).max(100000).default(5),
+  ADVISOR_QUESTIONS_PER_ACCOUNT_DAY: z.coerce.number().int().min(1).max(100000).default(10),
+  ADVISOR_QUESTIONS_PER_IP_DAY: z.coerce.number().int().min(1).max(100000).default(20),
+  // The hard floor under every turn, so nobody can fill the database with fixed answers.
+  ADVISOR_TURNS_PER_IP_HOUR: z.coerce.number().int().min(1).max(100000).default(120),
+  ADVISOR_TURNS_PER_DEVICE_DAY: z.coerce.number().int().min(1).max(100000).default(60),
+  ADVISOR_TURNS_PER_DAY: z.coerce.number().int().min(1).max(1000000).default(1500),
+  ADVISOR_TURNS_PER_CONVERSATION: z.coerce.number().int().min(1).max(1000).default(16),
+  ADVISOR_DEVICES_PER_IP_DAY: z.coerce.number().int().min(1).max(100000).default(30),
+  ADVISOR_CONCURRENCY: z.coerce.number().int().min(1).max(100).default(8),
   RATE_SOURCE_BUCKET: z.string().optional(),
   DEMAND_PAUSED: z
     .enum(['true', 'false'])
@@ -122,9 +160,36 @@ export const configSchema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
-  // Silent reading of the shop's WhatsApp. There is no reply mode yet, on purpose: no setting can
-  // make this send anything. Off refuses the webhook.
-  WA_MODE: z.enum(['off', 'shadow']).default('off'),
+  // The shop's WhatsApp. Off refuses the webhook. Shadow reads and sends nothing. Reply lets the
+  // sender run, and even then nobody hears anything until an owner moves the stage up on the desk.
+  WA_MODE: z.enum(['off', 'shadow', 'reply']).default('off'),
+  // Who carries replies. Off means nothing can leave, whatever else is set.
+  WA_REPLY_PROVIDER: z.enum(['off', 'fake', 'meta', 'd360', 'ycloud']).default('off'),
+  WA_REPLY_API_KEY: z.string().min(16).optional(),
+  // Named in the first notice to every customer.
+  WA_PRIVACY_URL: z.url().startsWith('https://').optional(),
+  // Set only once each is really in place: the readiness check reads these.
+  WA_SECOND_NUMBER: z
+    .string()
+    .regex(/^\+\d{10,15}$/)
+    .optional(),
+  WA_APPEAL_ROUTE: z.string().trim().min(3).max(200).optional(),
+  WA_TEMPLATES_APPROVED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  WA_REPLY_TEMPLATE_LANGUAGE: z
+    .string()
+    .regex(/^[a-z]{2}(_[A-Z]{2})?$/)
+    .default('en_IN'),
+  // Counted per answer to a message, not per bubble. These also stop a loop with another bot.
+  WA_REPLIES_PER_THREAD_HOUR: z.coerce.number().int().min(1).max(100).default(3),
+  WA_REPLIES_PER_THREAD_DAY: z.coerce.number().int().min(1).max(500).default(8),
+  // An answer later than this is a stranger's voice in an old chat, so it stays unsaid.
+  WA_REPLY_MAX_AGE_MINUTES: z.coerce.number().int().min(1).max(1440).default(30),
+  // Past this from one number in an hour, words are not kept or read.
+  WA_THREAD_MESSAGES_PER_HOUR: z.coerce.number().int().min(1).max(10000).default(60),
+  WA_PASTES_PER_HOUR: z.coerce.number().int().min(1).max(10000).default(60),
   WA_WEBHOOK_PROVIDER: z.enum(['meta', 'd360', 'ycloud']).optional(),
   // Named on the privacy page, so it must be set before any customer's words arrive.
   WA_PARTNER_NAME: z.string().trim().min(2).max(60).optional(),
@@ -155,7 +220,6 @@ export const configSchema = z.object({
   WA_READER_CALLS_PER_THREAD_HOUR: z.coerce.number().int().min(1).max(1000).default(12),
   WA_READER_CALLS_PER_THREAD_DAY: z.coerce.number().int().min(1).max(10000).default(40),
   WA_BURST_WAIT_SECONDS: z.coerce.number().int().min(0).max(120).default(8),
-  WA_HUMAN_QUIET_MINUTES: z.coerce.number().int().min(0).max(1440).default(45),
   // Decision 10: stored words stay short-lived while reading silently.
   WA_TEXT_RETENTION_DAYS: z.coerce.number().int().min(1).max(400).default(30),
   // A sample until the family gives their figure.
@@ -167,6 +231,13 @@ export const configSchema = z.object({
     .string()
     .regex(/^(mailto:|https:\/\/)/)
     .default('mailto:owner@example.invalid'),
+  // Ask stays hidden in the app and on the website until the advisor has passed its safety test.
+  ASK_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+  // The website's awards page, once real certificates are up. Unset keeps the link hidden.
+  AWARDS_URL: z.url().startsWith('https://').optional(),
   // App versions below the minimum must update before use; below latest see a gentle prompt.
   ANDROID_MINIMUM_VERSION: z
     .string()
@@ -231,6 +302,21 @@ export function getConfig(): Config {
           : !(candidate.WHATSAPP_WEBHOOK_SECRET && candidate.WA_BUSINESS_PHONE);
     if (missing) throw new Error('WhatsApp reading needs its webhook secret and own number');
   }
+  if (candidate.WA_MODE === 'reply') {
+    if (candidate.WA_REPLY_PROVIDER === 'off')
+      throw new Error('WA_MODE=reply needs WA_REPLY_PROVIDER');
+    if (!candidate.WA_PRIVACY_URL) throw new Error('WA_MODE=reply needs WA_PRIVACY_URL');
+  }
+  if (candidate.NODE_ENV === 'production' && candidate.WA_REPLY_PROVIDER === 'fake')
+    throw new Error('The fake WhatsApp sender is forbidden in production');
+  if (
+    (candidate.WA_REPLY_PROVIDER === 'meta' &&
+      !(candidate.WHATSAPP_ACCESS_TOKEN && candidate.WHATSAPP_PHONE_NUMBER_ID)) ||
+    (candidate.WA_REPLY_PROVIDER === 'd360' && !candidate.WA_REPLY_API_KEY) ||
+    (candidate.WA_REPLY_PROVIDER === 'ycloud' &&
+      !(candidate.WA_REPLY_API_KEY && candidate.WA_BUSINESS_PHONE))
+  )
+    throw new Error('The WhatsApp sender needs its key and own number');
   if (candidate.NODE_ENV === 'production' && candidate.WA_READER_PROVIDER === 'fake')
     throw new Error('The fake WhatsApp reader is forbidden in production');
   if (
@@ -246,18 +332,13 @@ export function getConfig(): Config {
     throw new Error('The WhatsApp reader needs a paid key, a pinned model and approved prices');
   if (Boolean(candidate.WEB_PUSH_PUBLIC_KEY) !== Boolean(candidate.WEB_PUSH_PRIVATE_KEY))
     throw new Error('Web Push needs both its public and private key');
-  if (candidate.NODE_ENV === 'production' && candidate.ASSISTANT_PROVIDER === 'simulation')
-    throw new Error('Assistant simulation is forbidden in production');
-  if (
-    candidate.ASSISTANT_PROVIDER === 'openai' &&
-    !(
-      candidate.ASSISTANT_OPENAI_API_KEY &&
-      candidate.ASSISTANT_MODEL &&
-      candidate.ASSISTANT_INPUT_MICRO_USD_PER_MILLION &&
-      candidate.ASSISTANT_OUTPUT_MICRO_USD_PER_MILLION
-    )
-  )
-    throw new Error('Assistant requires its own credentials, model and approved token prices');
+  if (candidate.NODE_ENV === 'production' && candidate.ADVISOR_PROVIDER === 'simulation')
+    throw new Error('Advisor simulation is forbidden in production');
+  if (candidate.ADVISOR_PROVIDER === 'anthropic' && !candidate.ADVISOR_ANTHROPIC_API_KEY)
+    throw new Error('The advisor needs its own Anthropic key');
+  // A demo holds fake data and is open to anyone, so it must not spend real money.
+  if (candidate.DEMO_MODE && candidate.ADVISOR_PROVIDER === 'anthropic')
+    throw new Error('DEMO_MODE forbids a paid advisor');
   for (const origin of candidate.CORS_ORIGINS.split(',')) {
     const u = new URL(origin);
     if (
@@ -322,7 +403,8 @@ export function getConfig(): Config {
       candidate.RAZORPAY_KEY_SECRET ||
       candidate.RAZORPAY_WEBHOOK_SECRET ||
       candidate.WHATSAPP_PROVIDER === 'meta' ||
-      candidate.WA_MODE !== 'off')
+      candidate.WA_MODE !== 'off' ||
+      candidate.WA_REPLY_PROVIDER !== 'off')
   )
     throw new Error(
       'DEMO_MODE requires mock OTP and DEMO_STAFF_CODE, and forbids Razorpay and real WhatsApp',

@@ -30,7 +30,7 @@ import { Db } from '../db';
 import { AuthRequest, Can, Contract, fail, Input, Public, safeEqual } from '../http';
 import { paginate } from '../pagination';
 import { parseWebhook, verifyWebhook } from './provider';
-import { renderReply, type AiReplyKind, type ReplyLanguage } from './replies';
+import { renderReply, replyParams, type AiReplyKind, type ReplyLanguage } from './replies';
 import type { Reading } from './reading';
 import { clearWords, maskedContact, WaService } from './service';
 
@@ -73,29 +73,9 @@ export class WaWebhookController {
   }
 }
 
-function replyParams(reading: Reading | null, catalog: Catalog) {
-  const first = reading?.lines[0]?.productId
-    ? catalog.products.get(reading.lines[0].productId)
-    : undefined;
-  return {
-    lines: reading?.lines
-      .map((line) =>
-        [line.quantity, line.unitWord, line.productName ?? line.rawText].filter(Boolean).join(' '),
-      )
-      .join(', '),
-    place: reading?.placeText,
-    day: reading?.deliveryDate ?? '',
-    item: first?.name,
-    rate: first?.pricePaise,
-    unit: first?.unit,
-    words: reading?.lines.find((line) => !line.productId)?.rawText,
-  };
-}
 const words = (kinds: string[], reading: Reading | null, catalog: Catalog) => {
   const language: ReplyLanguage = reading?.language ?? 'hinglish';
-  const params = JSON.parse(JSON.stringify(replyParams(reading, catalog))) as Parameters<
-    typeof renderReply
-  >[2];
+  const params = replyParams(reading, catalog);
   return kinds.map((kind) => renderReply(kind as AiReplyKind, language, params));
 };
 const pageFilter = z.enum(['unreviewed', 'all']).default('unreviewed');
@@ -260,7 +240,14 @@ export class WaDeskController {
     return this.db.atomic(async (tx) => {
       const thread = await tx.waThread.findUnique({ where: { id } });
       if (!thread) fail('WA_THREAD_NOT_FOUND', 'That number is not here.', 404);
-      await tx.waThread.update({ where: { id }, data: { aiMode: body.aiMode } });
+      await tx.waThread.update({
+        where: { id },
+        data: {
+          aiMode: body.aiMode,
+          // Staff turning a number back on also ends "they asked for a person".
+          ...(body.aiMode === 'AUTO' ? { handoffUntil: null } : {}),
+        },
+      });
       if (body.aiMode === 'OFF') await clearWords(tx, id);
       await tx.auditLog.create({
         data: {
@@ -309,6 +296,12 @@ export class WaDeskController {
           pausedAt: body.paused ? new Date() : null,
         },
       });
+      // Nothing waiting goes either, even if the switch comes straight back on.
+      if (body.paused)
+        await tx.waReply.updateMany({
+          where: { status: 'QUEUED', class: 'AI_REPLY' },
+          data: { status: 'SKIPPED', skipReason: 'STOP_ALL', body: null },
+        });
       await tx.auditLog.create({
         data: {
           actorId: req.user.id,

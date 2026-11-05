@@ -1,187 +1,225 @@
 'use client';
 
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { useSearchParams } from 'next/navigation';
-import {
-  CustomerError,
-  customerApi,
-  errorText,
-  localPhone,
-  refusedFields,
-} from '../lib/customer-api';
-import { useLanguage } from './language';
+import { API_URL } from '../lib/api';
+import s from './page.module.css';
 
-/**
- * "Ask the shop": a visitor with no account leaves a name, a number and a question. The shop's
- * owner sees it on the owner desk's Today screen and phones back. Nothing is sent to the visitor
- * automatically. A hidden field catches robots (a person never fills it).
- */
 type Field = 'name' | 'phone' | 'pincode' | 'interest' | 'message';
-const fieldNames: Record<Field, [string, string]> = {
-  name: ['your name', 'आपका नाम'],
-  phone: ['the mobile number', 'मोबाइल नंबर'],
-  pincode: ['the pincode', 'पिनकोड'],
-  interest: ['the material', 'सामग्री'],
-  message: ['your question', 'आपका सवाल'],
+const names: Record<Field, string> = {
+  name: 'your name',
+  phone: 'the mobile number',
+  pincode: 'the pincode',
+  interest: 'the material',
+  message: 'your message',
 };
 
-export function EnquiryForm() {
-  const { t, language } = useLanguage();
-  const params = useSearchParams();
+/**
+ * "Ask the shop": a visitor with no account leaves a name, a number and a question or complaint.
+ * The shop sees it on the desk's Today screen. Nothing is sent to the visitor automatically, and a
+ * hidden field catches robots.
+ */
+export function EnquiryForm({ interest: seeded = '' }: { interest?: string }) {
+  const [kind, setKind] = useState<'question' | 'complaint'>('question');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [pincode, setPincode] = useState('');
+  const [interest, setInterest] = useState(seeded.slice(0, 200));
   const [message, setMessage] = useState('');
-  const [interest, setInterest] = useState((params.get('interest') ?? '').slice(0, 200));
   const [website, setWebsite] = useState('');
   const [busy, setBusy] = useState(false);
-  const [sentTo, setSentTo] = useState('');
+  const [done, setDone] = useState<{ phone: string; ticket: string; kind: string } | null>(null);
   const [error, setError] = useState('');
-  const [invalid, setInvalid] = useState<Field[]>([]);
-  // Keyboard and screen-reader users are taken to what changed: the problem, or the reply.
+  const [bad, setBad] = useState<Field[]>([]);
   const errorRef = useRef<HTMLParagraphElement>(null);
   const doneRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     if (error) errorRef.current?.focus();
   }, [error]);
   useEffect(() => {
-    if (sentTo) doneRef.current?.focus();
-  }, [sentTo]);
-  // The form works once the page can run scripts, so an early tap is not lost.
-  const [ready, setReady] = useState(false);
-  useEffect(() => setReady(true), []);
-
-  const problem = (field: Field) =>
-    invalid.includes(field)
+    if (done) doneRef.current?.focus();
+  }, [done]);
+  const mark = (field: Field) =>
+    bad.includes(field)
       ? { 'aria-invalid': true as const, 'aria-describedby': 'enquiry-error' }
       : {};
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (busy) return;
     setBusy(true);
     setError('');
-    setInvalid([]);
+    setBad([]);
     try {
-      await customerApi('/web/enquiries', 'POST', {
-        name: name.trim(),
-        phone: `+91${phone}`,
-        ...(pincode ? { pincode } : {}),
-        message: message.trim(),
-        ...(interest.trim() ? { interest: interest.trim() } : {}),
-        language,
-        website,
+      const response = await fetch(`${API_URL}/web/enquiries`, {
+        method: 'POST',
+        credentials: 'omit',
+        headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(20000),
+        body: JSON.stringify({
+          name: name.trim(),
+          phone: `+91${phone}`,
+          ...(pincode ? { pincode } : {}),
+          ...(kind === 'complaint'
+            ? { interest: 'Complaint' }
+            : interest.trim()
+              ? { interest: interest.trim() }
+              : {}),
+          message: message.trim(),
+          language: 'en',
+          website,
+        }),
       });
-      setSentTo(phone);
-    } catch (e) {
-      const fields = refusedFields(e).filter((field): field is Field => field in fieldNames);
+      const data = (await response.json().catch(() => null)) as {
+        ticket?: string;
+        error?: { details?: { field?: string }[] };
+      } | null;
+      if (response.ok) {
+        setDone({ phone, ticket: data?.ticket ?? '', kind });
+        return;
+      }
+      const fields = (data?.error?.details ?? [])
+        .map((item) => item.field)
+        .filter((field): field is Field => Boolean(field && field in names));
       if (fields.length) {
-        setInvalid(fields);
-        const names = fields.map((field) => fieldNames[field][language === 'hi' ? 1 : 0]);
-        setError(t(`Please check ${names.join(', ')}.`, `कृपया ${names.join(', ')} जाँचें।`));
-      } else if (e instanceof CustomerError && e.status === 429)
-        // The shop's number is not shown yet, so this must not say "call the shop".
+        setBad(fields);
+        setError(`Please check ${fields.map((field) => names[field]).join(', ')}.`);
+      } else if (response.status === 429)
         setError(
-          t(
-            'Many messages have just been sent from this network or number. Please try again later.',
-            'इस नेटवर्क या नंबर से अभी बहुत संदेश भेजे गए हैं। कृपया कुछ देर बाद फिर कोशिश करें।',
-          ),
+          'Many messages have just come from this network or number. Please try again later.',
         );
-      else setError(errorText(e, language === 'hi'));
+      else setError('The shop could not receive this just now. Please try again.');
+    } catch {
+      setError('This could not be sent. Check your connection and try again.');
     } finally {
       setBusy(false);
     }
   }
 
-  if (sentTo)
+  if (done)
     return (
-      <div className="account-form" role="status">
+      <div className={s.state} role="status">
         <h3 ref={doneRef} tabIndex={-1}>
-          {t('Your message has reached the shop.', 'आपका संदेश दुकान तक पहुँच गया है।')}
+          Your message has reached the shop.
         </h3>
-        <p>
-          {t(`The shop will contact you on ${sentTo}.`, `दुकान आपसे ${sentTo} पर संपर्क करेगी।`)}
+        {done.ticket ? (
+          <p>
+            Your {done.kind === 'complaint' ? 'complaint' : 'message'} number is{' '}
+            <b data-ticket>{done.ticket}</b>. Keep it, so the shop can find this quickly.
+          </p>
+        ) : null}
+        <p>The shop will contact you on {done.phone}.</p>
+        <p className={s.actions}>
+          <button
+            type="button"
+            className="btn btn-quiet"
+            onClick={() => {
+              setDone(null);
+              setMessage('');
+            }}
+          >
+            Send another message
+          </button>
         </p>
-        <button
-          className="text-link"
-          onClick={() => {
-            setSentTo('');
-            setMessage('');
-          }}
-        >
-          {t('Send another message', 'एक और संदेश भेजें')}
-        </button>
       </div>
     );
 
   return (
-    <form className="account-form" onSubmit={(event) => void submit(event)} aria-busy={busy}>
-      <label>
-        {t('Your name', 'आपका नाम')}
+    <form
+      onSubmit={(event) => void submit(event)}
+      aria-busy={busy}
+      style={{ display: 'grid', gap: 16, maxWidth: '34rem' }}
+    >
+      <fieldset
+        style={{ border: 0, padding: 0, margin: 0, display: 'flex', flexWrap: 'wrap', gap: 16 }}
+      >
+        <legend className="sr">What is this about?</legend>
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minHeight: 44 }}>
+          <input
+            type="radio"
+            name="kind"
+            checked={kind === 'question'}
+            onChange={() => setKind('question')}
+          />
+          A question
+        </label>
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minHeight: 44 }}>
+          <input
+            type="radio"
+            name="kind"
+            checked={kind === 'complaint'}
+            onChange={() => setKind('complaint')}
+          />
+          A complaint
+        </label>
+      </fieldset>
+      <label className={s.field}>
+        Your name
         <input
           required
           maxLength={80}
           autoComplete="name"
-          {...problem('name')}
           value={name}
-          disabled={!ready || busy}
+          {...mark('name')}
           onChange={(event) => setName(event.target.value)}
         />
       </label>
-      <label>
-        {t('Mobile number', 'मोबाइल नंबर')}
+      <label className={s.field}>
+        Mobile number
         <input
           type="tel"
           required
           autoComplete="tel"
-          {...problem('phone')}
           placeholder="9876543210"
           pattern="[6-9][0-9]{9}"
-          title={t('A 10-digit mobile number', '10 अंकों का मोबाइल नंबर')}
+          title="A 10-digit mobile number"
           value={phone}
-          disabled={!ready || busy}
-          onChange={(event) => setPhone(localPhone(event.target.value))}
+          {...mark('phone')}
+          onChange={(event) =>
+            setPhone(
+              event.target.value
+                .replace(/^\+?91/, '')
+                .replace(/\D/g, '')
+                .slice(0, 10),
+            )
+          }
         />
       </label>
-      <label>
-        {t('Site pincode (optional)', 'साइट का पिनकोड (वैकल्पिक)')}
+      <label className={s.field}>
+        Site pincode (optional)
         <input
           inputMode="numeric"
           autoComplete="postal-code"
-          {...problem('pincode')}
           pattern="[1-9][0-9]{5}"
           maxLength={6}
           value={pincode}
-          disabled={!ready || busy}
+          {...mark('pincode')}
           onChange={(event) => setPincode(event.target.value.replace(/\D/g, ''))}
         />
       </label>
-      <label>
-        {t(
-          'Material you are asking about (optional)',
-          'जिस सामग्री के बारे में पूछना है (वैकल्पिक)',
-        )}
-        <input
-          maxLength={200}
-          value={interest}
-          {...problem('interest')}
-          disabled={!ready || busy}
-          onChange={(event) => setInterest(event.target.value)}
-        />
-      </label>
-      <label>
-        {t('Your question', 'आपका सवाल')}
+      {kind === 'question' ? (
+        <label className={s.field}>
+          Material you are asking about (optional)
+          <input
+            maxLength={200}
+            value={interest}
+            {...mark('interest')}
+            onChange={(event) => setInterest(event.target.value)}
+          />
+        </label>
+      ) : null}
+      <label className={s.field}>
+        {kind === 'complaint' ? 'What went wrong?' : 'Your question'}
         <textarea
           required
           rows={4}
           maxLength={1000}
           value={message}
-          {...problem('message')}
-          disabled={!ready || busy}
+          {...mark('message')}
           onChange={(event) => setMessage(event.target.value)}
         />
       </label>
       {/* Robots fill every field they find; people never see this one. */}
-      <div className="hp" aria-hidden="true">
+      <div aria-hidden="true" style={{ position: 'absolute', left: '-9999px' }}>
         <label>
           Website
           <input
@@ -192,19 +230,24 @@ export function EnquiryForm() {
           />
         </label>
       </div>
-      {error && (
-        <p className="error-text" role="alert" id="enquiry-error" ref={errorRef} tabIndex={-1}>
+      {error ? (
+        <p
+          role="alert"
+          id="enquiry-error"
+          ref={errorRef}
+          tabIndex={-1}
+          style={{ color: 'var(--danger)' }}
+        >
           {error}
         </p>
-      )}
-      <button className="button" disabled={!ready || busy}>
-        {busy ? t('Please wait…', 'कृपया रुकें…') : t('Send to the shop', 'दुकान को भेजें')}
-      </button>
-      <p className="form-note">
-        {t(
-          'We use your number only to reply to this message.',
-          'आपका नंबर सिर्फ़ इस संदेश का जवाब देने के लिए इस्तेमाल होगा।',
-        )}
+      ) : null}
+      <div>
+        <button className="btn btn-solid" disabled={busy}>
+          {busy ? 'Please wait…' : 'Send to the shop'}
+        </button>
+      </div>
+      <p className={s.meta} style={{ marginTop: 0 }}>
+        We use your number only to reply to this message.
       </p>
     </form>
   );

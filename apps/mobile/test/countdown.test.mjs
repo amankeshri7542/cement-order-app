@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { loadTs } from './load-ts.mjs';
 
-const { secondsLeft, resendSeconds } = loadTs('src/countdown.ts');
+const { secondsLeft, resendSeconds } = loadTs('src/logic/countdown.ts');
 
 test('a new code can be asked for after thirty seconds', () => {
   assert.equal(resendSeconds, 30);

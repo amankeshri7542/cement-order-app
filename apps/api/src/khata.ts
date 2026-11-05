@@ -13,6 +13,7 @@ import { ApiTags } from '@nestjs/swagger';
 import { LedgerKind, Prisma } from '@prisma/client';
 import { z } from 'zod';
 import {
+  canDo,
   customerContactSchema,
   customerNoteSchema,
   customerUpdateSchema,
@@ -35,6 +36,7 @@ import {
   requireAt,
 } from './http';
 import { paginate } from './pagination';
+import { shownPhone } from './crm/common';
 
 // All operations for one account touch this row, including idempotent replays.
 // Serializable retries then see the latest balance and receipt together.
@@ -93,6 +95,66 @@ export async function appendLedger(
   return entry;
 }
 
+/**
+ * Udhaar is owed from the moment the goods leave (plan 10 conflict 8, and family question F3 can
+ * overturn it): the first of being loaded, going out, or being delivered. The ledger's one entry per
+ * order means every later step finds this one and adds nothing.
+ */
+export async function postCreditSale(
+  tx: Prisma.TransactionClient,
+  order: {
+    id: string;
+    number: string;
+    userId: string;
+    locationId: string;
+    totalPaise: number;
+    payment?: { method: string } | null;
+  },
+  actorId: string,
+) {
+  if (order.payment?.method !== 'CREDIT') return;
+  if (
+    await tx.customerLedgerEntry.findUnique({ where: { orderId: order.id }, select: { id: true } })
+  )
+    return;
+  await appendLedger(tx, {
+    locationId: order.locationId,
+    customerId: order.userId,
+    kind: 'SALE_ON_CREDIT',
+    amountPaise: order.totalPaise,
+    orderId: order.id,
+    actorId,
+    note: `Credit sale ${order.number}`,
+    occurredAt: new Date(),
+  });
+}
+
+/** The goods came back or never went, so the customer owes nothing for them. Happens only once. */
+export async function reverseCreditSale(
+  tx: Prisma.TransactionClient,
+  orderId: string,
+  actorId: string,
+  note: string,
+) {
+  const sale = await tx.customerLedgerEntry.findUnique({
+    where: { orderId },
+    include: { reversal: { select: { id: true } } },
+  });
+  if (!sale || sale.kind !== 'SALE_ON_CREDIT' || sale.reversal) return;
+  await appendLedger(tx, {
+    locationId: sale.locationId,
+    customerId: sale.customerId,
+    kind: 'REVERSAL',
+    amountPaise: -sale.amountPaise,
+    actorId,
+    note,
+    occurredAt: new Date(),
+    reversesId: sale.id,
+    idempotencyKey: `sale-back:${sale.id}`,
+    requestHash: hash(`sale-back:${sale.id}`),
+  });
+}
+
 function businessTime(value?: string) {
   const time = value
     ? new Date(value.length === 10 ? `${value}T00:00:00+05:30` : value)
@@ -147,11 +209,15 @@ export class KhataService {
         return previous;
       }
       const occurredAt = businessTime(input.occurredAt);
-      const kind = payment
-        ? 'PAYMENT_RECEIVED'
-        : (await tx.customerLedgerEntry.count({ where: { customerId } }))
-          ? 'ADJUSTMENT'
-          : 'OPENING_BALANCE';
+      // The signed opening is where this customer's book starts. Nothing can be slipped in before it.
+      const signoff = await tx.khataSignoff.findFirst({
+        where: { customerId },
+        select: { asOf: true },
+      });
+      if (signoff && occurredAt < new Date(`${signoff.asOf}T00:00:00+05:30`))
+        fail('BEFORE_SIGNOFF', 'This date is before the signed opening balance.', 409);
+      // An opening balance comes only from the signed opening sheet, never from a first entry.
+      const kind = payment ? 'PAYMENT_RECEIVED' : 'ADJUSTMENT';
       const financial = payment
         ? await tx.financialMovement.create({
             data: {
@@ -217,6 +283,11 @@ export class KhataService {
           'An entry can be reversed once; a reversal cannot be reversed.',
           409,
         );
+      // What an owner signed is where this book starts, and it can never be signed again.
+      if (
+        await tx.khataSignoff.findFirst({ where: { ledgerEntryId: entryId }, select: { id: true } })
+      )
+        fail('INVALID_REVERSAL', 'A signed opening stays. Correct it with an adjustment.', 409);
       const occurredAt = new Date();
       const financial = original.financialMovement
         ? await tx.financialMovement.create({
@@ -271,11 +342,11 @@ export class KhataService {
         }[]
       >`SELECT u.id, u.name, u.phone, u."khataBalancePaise" AS "balancePaise",
         LEAST(u."khataBalancePaise", SUM(CASE WHEN e."occurredAt" < ${cutoff.toISOString()}::timestamp
-          OR e."amountPaise" < 0 THEN e."amountPaise" ELSE 0 END))::integer AS "overduePaise"
+          OR e."amountPaise" < 0 OR e.kind = 'OPENING_BALANCE' THEN e."amountPaise" ELSE 0 END))::integer AS "overduePaise"
         FROM "User" u JOIN "CustomerLedgerEntry" e ON e."customerId" = u.id
         WHERE u."deletedAt" IS NULL AND u.role <> 'ADMIN' AND u."khataBalancePaise" > 0
         GROUP BY u.id HAVING SUM(CASE WHEN e."occurredAt" < ${cutoff.toISOString()}::timestamp
-          OR e."amountPaise" < 0 THEN e."amountPaise" ELSE 0 END) > 0
+          OR e."amountPaise" < 0 OR e.kind = 'OPENING_BALANCE' THEN e."amountPaise" ELSE 0 END) > 0
         ORDER BY "overduePaise" DESC, u.id`;
       return {
         totalDuePaise: totals._sum.khataBalancePaise ?? 0,
@@ -316,7 +387,7 @@ export class KhataController {
 
   @Can('khata.read.one')
   @Get('customers/:id/khata')
-  ledger(@Param('id') id: string, @Query() query: Record<string, string>) {
+  ledger(@Param('id') id: string, @Query() query: Record<string, string>, @Req() req: AuthRequest) {
     const page = paginate(query, `khata:${id}`);
     return this.db.atomic(async (tx) => {
       const customer = await tx.user.findFirst({
@@ -326,16 +397,36 @@ export class KhataController {
       const entries = page.finish(
         await tx.customerLedgerEntry.findMany({
           where: { customerId: id, ...page.after },
-          include: { reversal: { select: { id: true } } },
+          include: {
+            reversal: { select: { id: true } },
+            order: { select: { locationId: true } },
+            reverses: { select: { order: { select: { locationId: true } } } },
+          },
           orderBy: page.orderBy,
           take: page.take,
         }),
       );
+      const signoff = await tx.khataSignoff.findFirst({
+        where: { customerId: id },
+        select: { asOf: true, chosenPaise: true, createdAt: true },
+      });
       return {
         balancePaise: customer.khataBalancePaise,
         creditAllowed: customer.creditAllowed,
         creditLimitPaise: customer.creditLimitPaise,
-        entries,
+        signoff,
+        // The balance belongs to the whole firm. An order's note names the order, which stays with
+        // the shop that took it.
+        entries: {
+          ...entries,
+          items: entries.items.map(({ order, reverses, ...row }) => {
+            // Taking a sale back names the same order, so it stays with the same shop.
+            const sale = order ?? reverses?.order;
+            return sale && !canDo(req.access, 'orders.read', sale.locationId)
+              ? { ...row, note: '', orderId: null }
+              : row;
+          }),
+        },
       };
     });
   }
@@ -372,8 +463,12 @@ export class KhataController {
   ) {
     return this.khata.reverse(id, entryId, input, req.user.id);
   }
-  @Can('khata.read.list') @Get('khata/summary') summary() {
-    return this.khata.summary();
+  @Can('khata.read.list') @Get('khata/summary') async summary(@Req() req: AuthRequest) {
+    const summary = await this.khata.summary();
+    return {
+      ...summary,
+      overdue30d: summary.overdue30d.map((row) => ({ ...row, phone: shownPhone(req, row.phone) })),
+    };
   }
 
   @Can('khata.credit.set')
@@ -389,6 +484,13 @@ export class KhataController {
       const next = { ...customer, ...input };
       if (next.creditAllowed && next.creditLimitPaise === null)
         fail('CREDIT_LIMIT_REQUIRED', 'Set a credit limit before enabling credit.');
+      // Sales cannot go in before the opening they sit on top of. It may be a signed nothing.
+      if (
+        input.creditAllowed &&
+        !customer.creditAllowed &&
+        !(await tx.khataSignoff.findFirst({ where: { customerId: id }, select: { id: true } }))
+      )
+        fail('OPENING_NOT_SIGNED', 'Sign off this customer’s opening balance first.', 409);
       const updated = await tx.user.update({ where: { id }, data: input });
       await tx.auditLog.create({
         data: {
@@ -463,7 +565,12 @@ export class KhataController {
     return this.db.atomic(async (tx) => {
       await khataCustomer(tx, id);
       const contact = await tx.customerContact.create({
-        data: { customerId: id, actorId: req.user.id, ...input },
+        data: {
+          customerId: id,
+          actorId: req.user.id,
+          ...input,
+          kind: input.channel === 'CALL' ? 'CALL' : 'MESSAGE',
+        },
       });
       await tx.auditLog.create({
         data: {

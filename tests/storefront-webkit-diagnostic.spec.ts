@@ -63,14 +63,16 @@ if (process.env.RUN_STOREFRONT_WEBKIT_DIAGNOSTIC === '1') {
       let failure: string | null = null;
       try {
         // No mocked EventSource, lifecycle wrapper, network-idle wait, pause or extra readiness check between these navigations.
-        await page.goto('http://localhost:3004/products/test-v2-26');
-        await expect(page.getByText(/out of stock/i).first()).toBeVisible();
-        await page.goto('http://localhost:3004/products/does-not-exist');
+        await page.goto('http://localhost:3004/materials/cement/test-pub-empty');
+        await expect(page.getByText(/Not available right now/).first()).toBeVisible();
+        await page.goto('http://localhost:3004/materials/cement/does-not-exist');
         await expect(
-          page.getByRole('heading', { name: 'This material is not available.', exact: true }),
+          page.getByRole('heading', { name: 'This page is not here.', exact: true }),
         ).toBeVisible();
-        await page.goto('http://localhost:3004/products?q=NO-SUCH-TEST-V2-MATERIAL');
-        await expect(page.getByText(/no materials|no products/i).first()).toBeVisible();
+        await page.goto('http://localhost:3004/materials?q=NO-SUCH-TEST-V2-MATERIAL');
+        await expect(
+          page.getByRole('heading', { name: 'Not listed? Ask the shop.' }),
+        ).toBeVisible();
         expect(
           errors,
           'Every native page error is retained; no access-control diagnostic is suppressed.',
@@ -88,7 +90,7 @@ if (process.env.RUN_STOREFRONT_WEBKIT_DIAGNOSTIC === '1') {
               requests,
               consoleErrors,
               scenario: [
-                'test-v2-26 + visible Out of stock',
+                'test-pub-empty + visible Not available',
                 'does-not-exist + visible unavailable heading',
                 'empty-search URL',
               ],

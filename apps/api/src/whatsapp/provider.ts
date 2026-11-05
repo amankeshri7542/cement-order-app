@@ -2,6 +2,7 @@ import { createHmac } from 'node:crypto';
 import { z } from 'zod';
 import { getConfig } from '../config';
 import { fail, safeEqual } from '../http';
+import { buttonMeaning } from './replies';
 
 export type WaEvent =
   | {
@@ -24,6 +25,7 @@ export type WaEvent =
     }
   | { kind: 'edit'; wamid: string; text: string | null }
   | { kind: 'revoke'; wamid: string }
+  | { kind: 'status'; wamid: string; status: string; code: number | null }
   | { kind: 'account'; event: string };
 
 type Headers = Record<string, string | string[] | undefined>;
@@ -71,6 +73,29 @@ const isoDate = (value: unknown) => {
 const wamidSchema = z.string().min(1).max(200);
 const textBody = (message: { text?: { body?: unknown } | undefined }) =>
   typeof message.text?.body === 'string' ? message.text.body : null;
+const buttonSchema = z
+  .object({
+    interactive: z
+      .object({ button_reply: z.object({ id: z.string().max(100) }).optional() })
+      .optional(),
+    button: z.object({ payload: z.string().max(100) }).optional(),
+  })
+  .passthrough();
+/** A tapped button, as the fixed words it stands for. An id we never sent reads as nothing. */
+const tappedWords = (message: unknown) => {
+  const parsed = buttonSchema.safeParse(message);
+  if (!parsed.success) return null;
+  const id = parsed.data.interactive?.button_reply?.id ?? parsed.data.button?.payload;
+  return id ? buttonMeaning(id) : null;
+};
+const isTap = (type: string) => type === 'interactive' || type === 'button';
+const statusSchema = z
+  .object({
+    id: wamidSchema,
+    status: z.string().max(30),
+    errors: z.array(z.object({ code: z.coerce.number().optional() }).passthrough()).optional(),
+  })
+  .passthrough();
 
 const metaMessage = z
   .object({
@@ -125,6 +150,17 @@ function parseMeta(body: unknown): WaEvent[] {
       const metadata = (value.metadata ?? {}) as { phone_number_id?: unknown };
       if (String(metadata.phone_number_id ?? '') !== c.WHATSAPP_PHONE_NUMBER_ID)
         fail('FORBIDDEN', 'This webhook is for another number.', 403);
+      if (field === 'messages' && Array.isArray(value.statuses))
+        for (const item of value.statuses) {
+          const status = statusSchema.safeParse(item);
+          if (status.success)
+            events.push({
+              kind: 'status',
+              wamid: status.data.id,
+              status: status.data.status,
+              code: status.data.errors?.[0]?.code ?? null,
+            });
+        }
       const list = field === 'messages' ? value.messages : value.message_echoes;
       if (!Array.isArray(list)) continue;
       const contacts = z.array(metaContact).safeParse(value.contacts ?? []);
@@ -176,8 +212,8 @@ function metaEvent(
       phone: phoneOf(message.from),
       bsuid: message.from_user_id ?? contact?.user_id ?? contacts[0]?.user_id ?? null,
       profileName: contact?.profile?.name ?? '',
-      type: message.type,
-      text: textBody(message),
+      type: isTap(message.type) ? 'button' : message.type,
+      text: isTap(message.type) ? tappedWords(message) : textBody(message),
       sentAt: secondsDate(message.timestamp),
     },
   ];
@@ -201,6 +237,14 @@ const ycloudBody = z
     type: z.string().max(100),
     whatsappInboundMessage: z.unknown().optional(),
     whatsappMessage: z.unknown().optional(),
+  })
+  .passthrough();
+
+const ycloudStatus = z
+  .object({
+    wamid: wamidSchema,
+    status: z.string().max(30),
+    errorCode: z.union([z.string(), z.number()]).optional(),
   })
   .passthrough();
 
@@ -230,8 +274,8 @@ function parseYcloud(body: unknown): WaEvent[] {
         phone: phoneOf(message.data.from),
         bsuid: message.data.fromUserId ?? null,
         profileName: message.data.customerProfile?.name ?? '',
-        type: message.data.type,
-        text: textBody(message.data),
+        type: isTap(message.data.type) ? 'button' : message.data.type,
+        text: isTap(message.data.type) ? tappedWords(message.data) : textBody(message.data),
         sentAt: isoDate(message.data.sendTime),
       },
     ];
@@ -249,6 +293,18 @@ function parseYcloud(body: unknown): WaEvent[] {
         bsuid: message.data.toUserId ?? null,
         type: message.data.type,
         sentAt: isoDate(message.data.sendTime),
+      },
+    ];
+  }
+  if (parsed.data.type === 'whatsapp.message.updated') {
+    const message = ycloudStatus.safeParse(parsed.data.whatsappMessage);
+    if (!message.success) return [];
+    return [
+      {
+        kind: 'status',
+        wamid: message.data.wamid,
+        status: message.data.status,
+        code: message.data.errorCode ? Number(message.data.errorCode) || null : null,
       },
     ];
   }

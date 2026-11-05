@@ -280,7 +280,7 @@ test('an owner makes a slab, and a customer group with a rate', async ({ browser
     await page.getByRole('tab', { name: hi['owner.rates.tab.customers'], exact: true }).click();
     await page.getByRole('textbox', { name: hi['owner.rates.newGroup'], exact: true }).fill(group);
     await page.getByRole('button', { name: hi['owner.rates.addGroup'], exact: true }).click();
-    await expect(page.getByText(new RegExp(group))).toBeVisible();
+    await expect(page.getByRole('button', { name: group, exact: true })).toBeVisible();
   } finally {
     await context.close();
   }

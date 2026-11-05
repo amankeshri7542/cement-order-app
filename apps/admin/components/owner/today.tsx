@@ -7,16 +7,18 @@ import { api } from '../../lib/api';
 import { useT } from '../../lib/i18n';
 import type { Dashboard } from '../../lib/owner-types';
 import { PageHeader, QueryStatus } from './common';
+import { CallsBlock } from './crm/calls';
 import { EnquiryCards, useNewEnquiries } from './enquiries';
 import { NextOrderAction } from './orders';
 import { PakkaQueue } from './inbox';
 import { useApprovals } from './manzoori';
+import { ReviewsLink } from './hazri/today';
 import css from './owner.module.css';
 import { useOwner } from '../../lib/owner';
 
 export function Today() {
   const t = useT();
-  const { can, shopId } = useOwner();
+  const { can, shopId, reviewCount } = useOwner();
   const shopQuery = shopId ? `&locationId=${shopId}` : '';
   const dashboard = useQuery({
     queryKey: ['dashboard', shopId],
@@ -68,6 +70,7 @@ export function Today() {
           <span aria-hidden="true">→</span>
         </Link>
       )}
+      <ReviewsLink count={reviewCount} />
       {staleRates && can('rates.publish') && (
         <Link href="/rates" className={`${css.card} ${css.cardLink}`}>
           {t('owner.rates.staleToday')} <span aria-hidden="true">→</span>
@@ -97,6 +100,7 @@ export function Today() {
       )}
       {/* Questions sent from the website's Contact page; nothing shows while there are none. */}
       <EnquiryCards items={enquiries.data?.items ?? []} />
+      <CallsBlock />
       <section className={css.stack} aria-label={t('owner.nextWork')}>
         <h2>{t('owner.nextWork')}</h2>
         <QueryStatus query={work} />

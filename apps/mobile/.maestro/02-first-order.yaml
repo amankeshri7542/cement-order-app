@@ -1,0 +1,63 @@
+# A new customer: a list as a guest, sign in only at Place order, one site, one order, an honest word.
+# Local API only (reads the mock code).
+appId: in.shivcement.store
+tags: [smoke, order]
+---
+- evalScript: ${output.phone = '98888' + String(Math.floor(10000 + Math.random() * 89999))}
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: Today's rates
+    timeout: 20000
+- tapOn: Add UltraTech Super to your list
+- tapOn: Your list, .*
+- assertVisible: The shop confirms this order.*
+- tapOn: Sign in to order
+- tapOn: Mobile number
+- inputText: ${output.phone}
+- hideKeyboard
+- tapOn: Get code
+- hideKeyboard
+- extendedWaitUntil:
+    visible: Local development code.*
+    timeout: 10000
+- copyTextFrom:
+    text: Local development code.*
+- evalScript: ${output.code = maestro.copiedText.match(/\d{6}/)[0]}
+- tapOn: Code from SMS
+- inputText: ${output.code}
+- pressKey: Enter
+# With no site yet, the form opens by itself.
+- extendedWaitUntil:
+    visible: Add a site
+    timeout: 15000
+- tapOn: Pincode
+- inputText: '800001'
+- pressKey: Enter
+- inputText: Plot 7, Road 2
+- hideKeyboard
+- runFlow:
+    when:
+      visible: Area
+    commands:
+      - tapOn: Area
+      - inputText: Boring Road
+      - hideKeyboard
+- scrollUntilVisible:
+    element: Who receives it
+    timeout: 5000
+- tapOn: Who receives it
+- inputText: Maestro Test
+- hideKeyboard
+- scrollUntilVisible:
+    element: Save site
+    timeout: 5000
+- tapOn: Save site
+- extendedWaitUntil:
+    visible: Place order.*
+    timeout: 15000
+- tapOn: Place order.*
+- extendedWaitUntil:
+    visible: Waiting for the shop
+    timeout: 15000
+- assertVisible: .*No need to call.*

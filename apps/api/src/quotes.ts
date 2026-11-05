@@ -28,7 +28,17 @@ import {
   Self,
   shopWhere,
 } from './http';
+import { withShownPhones } from './crm/common';
 import { customerWork, orderInclude, reference, validDelivery } from './orders';
+
+/** A reply past its date reads as expired, whatever the stored status still says. */
+const asCustomerSees = <Q extends { status: string; validUntil: Date | null }>(quote: Q) => ({
+  ...quote,
+  status:
+    quote.status === 'SENT' && quote.validUntil && quote.validUntil < new Date()
+      ? 'EXPIRED'
+      : quote.status,
+});
 
 @ApiTags('Bulk quotations')
 @Controller()
@@ -52,13 +62,20 @@ export class QuotesController {
       orderBy: page.orderBy,
       take: page.take,
     });
-    return page.finish(
-      quotes.map((q) => ({
-        ...q,
-        status:
-          q.status === 'SENT' && q.validUntil && q.validUntil < new Date() ? 'EXPIRED' : q.status,
-      })),
-    );
+    return page.finish(quotes.map(asCustomerSees));
+  }
+  /** One list and the shop's reply, for the customer who sent it. Anyone else's reads as missing. */
+  @Self() @Get('quotes/:id') async one(@Param('id') id: string, @Req() req: AuthRequest) {
+    const quote = await this.db.quote.findFirst({
+      where: { id, userId: req.user.id },
+      include: {
+        work: customerWork,
+        items: true,
+        order: { select: { id: true, number: true } },
+      },
+    });
+    if (!quote) fail('NOT_FOUND', 'Quote not found.', 404);
+    return asCustomerSees(quote);
   }
   @Self()
   @Post('quotes')
@@ -67,6 +84,8 @@ export class QuotesController {
     @Input(quoteRequestSchema) body: z.infer<typeof quoteRequestSchema>,
     @Req() req: AuthRequest,
   ) {
+    if (req.user.role === 'ADMIN')
+      fail('STAFF_ACCOUNT', 'Use a customer number to ask for a rate.', 403);
     if (new Set(body.items.map((i) => i.productId)).size !== body.items.length)
       fail('INVALID_INPUT', 'Each product can appear only once.');
     return this.db.atomic(async (tx) => {
@@ -163,7 +182,7 @@ export class QuotesController {
     });
     return page.finish(
       quotes.map((q) => ({
-        ...q,
+        ...withShownPhones(req, q),
         status:
           q.status === 'SENT' && q.validUntil && q.validUntil < new Date() ? 'EXPIRED' : q.status,
       })),

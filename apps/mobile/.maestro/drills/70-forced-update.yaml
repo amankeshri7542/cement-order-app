@@ -6,4 +6,4 @@ appId: in.shivcement.store
     visible: Please update the app
     timeout: 30000
 - assertVisible: Update on Google Play
-- assertNotVisible: Current rates
+- assertNotVisible: Today's rates

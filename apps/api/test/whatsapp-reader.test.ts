@@ -14,9 +14,33 @@ import {
   numbersIn,
   readerOutputSchema,
   type ReaderOutput,
+  type Reading,
 } from '../src/whatsapp/reading';
-import { decideReplies, renderReply, replyWords, type AiReplyKind } from '../src/whatsapp/replies';
-import { hasTradeWord, isOnlyChat, isStop, readByRules } from '../src/whatsapp/rules';
+import {
+  allowedPakka,
+  buttonMeaning,
+  decideReplies,
+  isOwnWords,
+  lineWords,
+  promisesTooMuch,
+  renderReply,
+  replyButtons,
+  replyParams,
+  replyWords,
+  type AiReplyKind,
+  type CardFacts,
+} from '../src/whatsapp/replies';
+import { renderDecision, decisionTemplate, enqueueDecision } from '../src/whatsapp/decisions';
+import { carry, isNight, replyBlock, SendRefused, type GuardInput } from '../src/whatsapp/sender';
+import {
+  hasTradeWord,
+  isHumanAsk,
+  isOnlyChat,
+  isStop,
+  readByRules,
+  readDraftAnswer,
+} from '../src/whatsapp/rules';
+import { mergeLines, sameLines, stageAllows, type DraftLine } from '../src/whatsapp/draft-core';
 
 const row = (
   id: string,
@@ -378,14 +402,116 @@ describe('the fixed replies', () => {
     privacyUrl: 'https://example.test/privacy',
   };
   const kinds = Object.keys(replyWords) as AiReplyKind[];
-  const negative = /abhi pakka nahi hai|अभी पक्का नहीं है|not confirmed yet/gi;
   for (const language of ['hinglish', 'hindi', 'english'] as const)
     for (const kind of kinds)
       it(`${kind} in ${language} never says pakka, and only a rate reply names money`, () => {
-        const words = renderReply(kind, language, hostile).replace(negative, '');
+        const words = renderReply(kind, language, hostile).replace(allowedPakka, '');
         expect(words).not.toMatch(/pakka|पक्का|confirm/i);
         if (kind !== 'RATE') expect(words).not.toMatch(/₹/);
+        expect(promisesTooMuch(kind, renderReply(kind, language, hostile))).toBe(false);
       });
+  it('the one sentence that says something was confirmed is ASK_NEW, and it needs a real tap', () => {
+    const affirmative = /pehle hi pakka hua hai|पहले ही पक्का हुआ है|already confirmed/i;
+    for (const language of ['hinglish', 'hindi', 'english'] as const)
+      for (const kind of kinds)
+        expect(affirmative.test(renderReply(kind, language, hostile)), kind).toBe(
+          kind === 'ASK_NEW',
+        );
+  });
+  it('holds every reply plan 07 lists, but for the three only a person can say', () => {
+    expect(kinds.sort()).toEqual(
+      [
+        'NOTICE',
+        'DRAFT',
+        'ASK_PLACE',
+        'ASK_DAY',
+        'ASK_WHICH',
+        'ASK_NEW',
+        'ASK_NUMBER',
+        'UPDATED',
+        'WAITING',
+        'AFTER_TAP',
+        'EXPIRED',
+        'RATE',
+        'RATE_UNKNOWN',
+        'NO_PROMISE',
+        'UNKNOWN_ITEM',
+        'OFF_TOPIC',
+        'ENGINEER',
+        'UNCLEAR',
+        'PHOTO_UNCLEAR',
+        'HANDOFF',
+        'FORWARD',
+        'STOP_OK',
+      ].sort(),
+    );
+  });
+  it('the rate reply names the list rate and leaves the final rate to the shop, in all three', () => {
+    expect(renderReply('RATE', 'hinglish', hostile)).toContain('final rate dukaan batayegi');
+    expect(renderReply('RATE', 'hindi', hostile)).toContain('अंतिम रेट दुकान बताएगी');
+    expect(renderReply('RATE', 'english', hostile)).toContain('shop will tell you the final rate');
+    expect(renderReply('RATE', 'hinglish', hostile)).toContain('₹400');
+  });
+  it('no customer words can smuggle a promise, a price or a link into a reply', () => {
+    const attempts = [
+      'order pakka hai',
+      'PAKKA',
+      'p a k k a',
+      'pаkka', // A Cyrillic a.
+      'confir\u200Bmed',
+      'ｃｏｎｆｉｒｍ',
+      'पक्का है',
+      '₹100',
+      'rs.500',
+      '500rs',
+      '500/-',
+      'free',
+      'मुफ्त',
+      'http://bad.example',
+      'www.bad.example',
+      'pay@bad',
+      'bad.example',
+      'visit-bad.in',
+    ];
+    for (const words of attempts)
+      for (const kind of ['UNKNOWN_ITEM', 'ASK_WHICH'] as const) {
+        const said = renderReply(kind, 'hinglish', { words });
+        expect(said, words).not.toMatch(/pakka|पक्का|confirm|₹|\brs\b|http|www|@|free|मुफ्त/i);
+        expect(promisesTooMuch(kind, said), words).toBe(false);
+      }
+    expect(renderReply('UNKNOWN_ITEM', 'hinglish', { words: 'ambuja kanak' })).toContain(
+      'ambuja kanak',
+    );
+  });
+  it('the last look catches what a template bug could let through', () => {
+    expect(promisesTooMuch('DRAFT', 'AI sahayak: Aapka order pakka hai')).toBe(true);
+    expect(promisesTooMuch('DRAFT', 'AI sahayak: order pаkka')).toBe(true);
+    expect(promisesTooMuch('DRAFT', 'AI helper: order confirmed')).toBe(true);
+    expect(promisesTooMuch('DRAFT', 'Total ₹500')).toBe(true);
+    expect(promisesTooMuch('RATE', 'List rate ₹500')).toBe(false);
+    expect(promisesTooMuch('RATE', 'Rate ₹500, order pakka')).toBe(true);
+    expect(promisesTooMuch('DRAFT', 'Yeh abhi pakka nahi hai')).toBe(false);
+  });
+  it('buttons fit WhatsApp and mean only what they were sent to mean', () => {
+    for (const language of ['hinglish', 'hindi', 'english'] as const)
+      for (const kind of kinds)
+        for (const button of replyButtons(kind, language))
+          expect(button.title.length, button.title).toBeLessThanOrEqual(20);
+    expect(replyButtons('ASK_DAY', 'hinglish').map((button) => button.id)).toEqual([
+      'TODAY',
+      'TOMORROW',
+      'NOT_SURE',
+    ]);
+    expect(buttonMeaning('TOMORROW')).toBe('kal');
+    expect(buttonMeaning('CONFIRM')).toBeNull();
+    expect(buttonMeaning('constructor')).toBeNull();
+    expect(buttonMeaning('__proto__')).toBeNull();
+  });
+  it('knows our own sentences when they come back', () => {
+    expect(isOwnWords('AI sahayak: Aapka message dukaan tak')).toBe(true);
+    expect(isOwnWords('एआई सहायक: आपका संदेश')).toBe(true);
+    expect(isOwnWords('50 bori ultratech')).toBe(false);
+  });
   it('has no way to say a confirmation', () => {
     expect(kinds).not.toContain('CONFIRMED');
     expect(kinds).not.toContain('CONFIRMED_CHANGED');
@@ -580,8 +706,15 @@ describe('partner formats', () => {
   });
   it('ignores delivery receipts and one odd message, but refuses another number', () => {
     expect(parseWebhook(metaWrap('messages', { statuses: [{ id: 'x', status: 'read' }] }))).toEqual(
-      [],
+      [{ kind: 'status', wamid: 'x', status: 'read', code: null }],
     );
+    expect(
+      parseWebhook(
+        metaWrap('messages', {
+          statuses: [{ id: 'x', status: 'failed', errors: [{ code: 131047 }] }, { nonsense: 1 }],
+        }),
+      ),
+    ).toEqual([{ kind: 'status', wamid: 'x', status: 'failed', code: 131047 }]);
     expect(
       parseWebhook(
         metaWrap('messages', {
@@ -681,7 +814,10 @@ describe('partner formats', () => {
 });
 
 describe('the privacy pages', () => {
-  for (const file of ['../../admin/app/privacy/page.tsx', '../../storefront/components/pages.tsx'])
+  for (const file of [
+    '../../admin/app/privacy/page.tsx',
+    '../../storefront/app/(public)/privacy/page.tsx',
+  ])
     it(`${file} names who handles WhatsApp messages and how to stop`, () => {
       const page = readFileSync(join(__dirname, file), 'utf8');
       for (const word of [
@@ -721,8 +857,38 @@ describe('configuration', () => {
   it('is off unless asked for', async () => {
     expect((await load({}))().WA_MODE).toBe('off');
   });
-  it('has no way to turn on sending', async () => {
-    expect(await load({ ...valid, WA_MODE: 'reply' })).toThrow(/WA_MODE/);
+  it('reply mode needs a sender and a privacy page, and is never the default', async () => {
+    expect((await load({}))().WA_REPLY_PROVIDER).toBe('off');
+    expect(await load({ ...valid, WA_MODE: 'reply' })).toThrow(/WA_REPLY_PROVIDER/);
+    expect(await load({ ...valid, WA_MODE: 'reply', WA_REPLY_PROVIDER: 'fake' })).toThrow(
+      /WA_PRIVACY_URL/,
+    );
+    expect(
+      await load({
+        ...valid,
+        WA_MODE: 'reply',
+        WA_REPLY_PROVIDER: 'fake',
+        WA_PRIVACY_URL: 'https://example.test/privacy',
+      }),
+    ).not.toThrow();
+  });
+  it('a real sender needs its own key', async () => {
+    const reply = { ...valid, WA_PRIVACY_URL: 'https://example.test/privacy' };
+    expect(await load({ ...reply, WA_REPLY_PROVIDER: 'd360' })).toThrow(/key/);
+    expect(await load({ ...reply, WA_REPLY_PROVIDER: 'ycloud' })).toThrow(/key/);
+    expect(await load({ ...reply, WA_REPLY_PROVIDER: 'meta' })).toThrow(/key/);
+    expect(
+      await load({
+        ...reply,
+        WA_REPLY_PROVIDER: 'd360',
+        WA_REPLY_API_KEY: 'partner-key-for-tests-only',
+      }),
+    ).not.toThrow();
+  });
+  it('the second number is only ever in the environment, and a fake sender stays out of production', () => {
+    const source = readFileSync(join(__dirname, '../src/config.ts'), 'utf8');
+    expect(source).toMatch(/NODE_ENV === 'production' && candidate\.WA_REPLY_PROVIDER === 'fake'/);
+    expect(source).toMatch(/WA_SECOND_NUMBER/);
   });
   it('needs the partner named and the secret set before reading', async () => {
     expect(await load({ ...valid, WA_PARTNER_NAME: undefined })).toThrow(/partner/);
@@ -743,9 +909,17 @@ describe('configuration', () => {
     expect(await load({ ...reader, WA_READER_PAID_KEY: 'false' })).toThrow(/paid key/);
     expect(await load({ ...reader, WA_READER_MODEL: undefined })).toThrow(/paid key/);
   });
-  it('keeps reading out of the demo', async () => {
+  it('keeps reading and sending out of the demo', async () => {
     expect(
       await load({ ...valid, DEMO_MODE: 'true', OTP_PROVIDER: 'mock', DEMO_STAFF_CODE: '123456' }),
+    ).toThrow(/DEMO_MODE/);
+    expect(
+      await load({
+        WA_REPLY_PROVIDER: 'fake',
+        DEMO_MODE: 'true',
+        OTP_PROVIDER: 'mock',
+        DEMO_STAFF_CODE: '123456',
+      }),
     ).toThrow(/DEMO_MODE/);
   });
   it('keeps the fake reader out of production', () => {
@@ -753,5 +927,445 @@ describe('configuration', () => {
     expect(readFileSync(join(__dirname, '../src/config.ts'), 'utf8')).toMatch(
       /NODE_ENV === 'production' && candidate\.WA_READER_PROVIDER === 'fake'/,
     );
+  });
+});
+
+describe('what the AI says about a draft', () => {
+  const asked = (
+    context: Partial<Parameters<typeof decideReplies>[1]>,
+    reading: Reading | null = finish(plainOrder()),
+  ) =>
+    decideReplies(reading, {
+      known: true,
+      humanQuiet: false,
+      freshRatePaise: null,
+      failed: false,
+      ...context,
+    });
+  const status = () => finish(plainOrder({ intent: 'STATUS_QUESTION', lines: [] }));
+  it('a change says updated, the same again says waiting, then nothing', () => {
+    expect(asked({ draft: 'CHANGED' })[0]).toBe('UPDATED');
+    expect(asked({ draft: 'SAME' })).toEqual(['WAITING']);
+    expect(asked({ draft: 'SAME_TOLD' })).toEqual([]);
+  });
+  it('after a tap it asks or defers, and never changes anything', () => {
+    expect(asked({ draft: 'REPEAT' })).toEqual(['ASK_NEW']);
+    expect(asked({ draft: 'AFTER_TAP' })).toEqual(['AFTER_TAP']);
+  });
+  it('a status question answers from the database, never from the words', () => {
+    expect(asked({ draft: 'OPEN' }, status())).toEqual(['WAITING']);
+    expect(asked({ draft: 'EXPIRED' }, status())).toEqual(['EXPIRED']);
+    expect(asked({ draft: 'NONE' }, status())).toEqual(['AFTER_TAP']);
+  });
+  it('on Papa’s thread, a status question gets only "the shop will answer", once quiet is over', () => {
+    expect(asked({ papa: true, draft: 'OPEN' }, status())).toEqual(['AFTER_TAP']);
+    expect(asked({ papa: true, humanQuiet: true, draft: 'OPEN' }, status())).toEqual([]);
+    expect(asked({ papa: true, draft: 'CHANGED' })).toEqual([]);
+    expect(asked({ papa: true, failed: true }, null)).toEqual([]);
+  });
+  it('after they ask for a person, nothing at all', () => {
+    expect(asked({ handedOff: true })).toEqual([]);
+    expect(asked({ handedOff: true }, status())).toEqual([]);
+    expect(asked({ handedOff: true, failed: true }, null)).toEqual([]);
+  });
+  it('in the quiet after Papa types, a new order gets only its receipt', () => {
+    expect(asked({ humanQuiet: true, draft: 'NEW' })).toEqual(['DRAFT']);
+    expect(asked({ humanQuiet: true, draft: 'CHANGED' })).toEqual([]);
+    expect(asked({ humanQuiet: true, draft: 'SAME' })).toEqual([]);
+    expect(asked({ humanQuiet: true }, status())).toEqual([]);
+  });
+  it('asks each question once, and no more than two', () => {
+    const facts: CardFacts = {
+      lines: [],
+      placeText: '',
+      fulfilment: 'UNKNOWN',
+      dayKind: 'UNSPECIFIED',
+    };
+    expect(asked({ card: facts, draft: 'CHANGED' })).toContain('ASK_PLACE');
+    expect(asked({ card: facts, draft: 'CHANGED', asked: ['ASK_PLACE'] })).toEqual(['UPDATED']);
+    expect(
+      asked({ card: { ...facts, placeText: 'x' }, draft: 'CHANGED', asked: ['ASK_PLACE'] }),
+    ).toContain('ASK_DAY');
+    expect(
+      asked({
+        card: { ...facts, placeText: 'x' },
+        draft: 'CHANGED',
+        asked: ['ASK_PLACE', 'ASK_WHICH'],
+      }),
+    ).toEqual(['UPDATED']);
+  });
+});
+
+describe('merging lines', () => {
+  const line = (productId: string | null, quantity: number | null, rawText = ''): DraftLine => ({
+    rawText,
+    productId,
+    productName: productId,
+    quantity,
+    unitWord: null,
+    candidates: 1,
+  });
+  it('a correction changes the line, a new item adds one, and nothing is dropped', () => {
+    const merged = mergeLines([line('a', 50), line('b', 10)], [line('a', 60), line('c', 5)]);
+    expect(merged.map((row) => [row.productId, row.quantity])).toEqual([
+      ['a', 60],
+      ['b', 10],
+      ['c', 5],
+    ]);
+  });
+  it('words with no product are told apart by the words', () => {
+    const merged = mergeLines(
+      [line(null, 2, 'gitti')],
+      [line(null, 3, 'GITTI'), line(null, 1, 'x')],
+    );
+    expect(merged.map((row) => row.quantity)).toEqual([3, 1]);
+  });
+  it('holds no more than 20', () => {
+    const many = Array.from({ length: 25 }, (_, index) => line(String(index), 1));
+    expect(mergeLines([], many)).toHaveLength(20);
+  });
+  it('the same lines are the same in any order, and a changed number is not', () => {
+    expect(sameLines([line('a', 1), line('b', 2)], [line('b', 2), line('a', 1)])).toBe(true);
+    expect(sameLines([line('a', 1)], [line('a', 2)])).toBe(false);
+    expect(sameLines([line('a', 1)], [line('a', 1), line('b', 1)])).toBe(false);
+  });
+});
+
+describe('short answers on an open draft', () => {
+  it('reads days, pickup, a known place and a cancel, with no model', () => {
+    expect(readDraftAnswer('kal', catalog)).toEqual({ kind: 'DAY', day: 'TOMORROW' });
+    expect(readDraftAnswer('Aaj', catalog)).toEqual({ kind: 'DAY', day: 'TODAY' });
+    expect(readDraftAnswer('abhi pata nahi', catalog)).toEqual({ kind: 'DAY', day: 'UNSPECIFIED' });
+    expect(readDraftAnswer('khud utha lenge', catalog)).toEqual({ kind: 'PICKUP' });
+    expect(readDraftAnswer('sipara', catalog)).toEqual({ kind: 'PLACE', text: 'sipara' });
+    expect(readDraftAnswer('cancel kar do', catalog)).toEqual({ kind: 'CANCEL' });
+    expect(readDraftAnswer('रद्द करो', catalog)).toEqual({ kind: 'CANCEL' });
+    expect(readDraftAnswer('badlav karna hai', catalog)).toEqual({ kind: 'CHANGE' });
+    expect(readDraftAnswer('haan naya', catalog)).toEqual({ kind: 'NEW_YES' });
+    expect(readDraftAnswer('nahi naya', catalog)).toEqual({ kind: 'NEW_NO' });
+  });
+  it('anything longer or less plain goes on to the reader', () => {
+    expect(readDraftAnswer('50 bori ultratech', catalog)).toBeNull();
+    expect(readDraftAnswer('kal nahi parso', catalog)).toBeNull();
+    expect(readDraftAnswer('cancel kar do aur 60 bhej do', catalog)).toBeNull();
+    expect(readDraftAnswer('', catalog)).toBeNull();
+    expect(readDraftAnswer('nowhere', catalog)).toBeNull();
+    expect(readDraftAnswer('confirm', catalog)).toBeNull();
+  });
+  it('asking for the shop is plain, and a greeting is not asking', () => {
+    expect(isHumanAsk('dukaan')).toBe(true);
+    expect(isHumanAsk('दुकान')).toBe(true);
+    expect(isHumanAsk('dukaan se baat karni hai')).toBe(true);
+    expect(isHumanAsk('dukaan kab khulti hai')).toBe(false);
+    expect(readByRules('dukaan', catalog)!.intent).toBe('HUMAN_REQUEST');
+  });
+});
+
+describe('the words a person’s decision uses', () => {
+  const confirmed = {
+    kind: 'CONFIRMED',
+    number: 'SC-2026-1',
+    lines: '50 bori UltraTech',
+    totalPaise: 2000000,
+    day: '2026-11-06',
+  } as const;
+  it('say what was decided, in all three languages', () => {
+    expect(renderDecision(confirmed, 'hinglish')).toContain(
+      'Dukaan ne aapka order SC-2026-1 pakka kiya',
+    );
+    expect(renderDecision(confirmed, 'hindi')).toContain('पक्का किया');
+    expect(renderDecision(confirmed, 'english')).toContain(
+      'The shop confirmed your order SC-2026-1',
+    );
+    expect(renderDecision(confirmed, 'hinglish')).toContain('₹20,000');
+    expect(renderDecision({ ...confirmed, kind: 'CONFIRMED_CHANGED' }, 'hinglish')).toContain(
+      'badlav ke saath',
+    );
+  });
+  it('a refusal gives the reason in the shop’s words, or a person’s own note', () => {
+    expect(renderDecision({ kind: 'REFUSED', reason: 'NO_CREDIT' }, 'hinglish')).toContain(
+      'udhaar abhi nahi',
+    );
+    expect(
+      renderDecision(
+        { kind: 'REFUSED', reason: 'OTHER', note: 'kal ke baad\nbaat karein' },
+        'english',
+      ),
+    ).toContain('kal ke baad baat karein');
+  });
+  it('template values are one plain line each', () => {
+    const template = decisionTemplate({ ...confirmed, lines: 'a\nb\t c' }, 'hinglish');
+    expect(template.name).toBe('shiv_order_confirmed_v1');
+    expect(template.params).toEqual([
+      'SC-2026-1',
+      'a b c',
+      expect.stringContaining('₹20,000'),
+      '2026-11-06',
+    ]);
+    expect(decisionTemplate({ kind: 'REFUSED', reason: 'OTHER', note: 'x\ny' }, 'hindi')).toEqual({
+      name: 'shiv_order_refused_v1',
+      params: ['x y'],
+    });
+  });
+  it('refuses to run without a person', async () => {
+    await expect(
+      enqueueDecision({} as never, {
+        actorId: '',
+        threadId: 't',
+        draftId: 'd',
+        language: 'hinglish',
+        facts: confirmed,
+      }),
+    ).rejects.toThrow(/person/);
+  });
+  it('a reply never shows raw line words past what the card holds', () => {
+    expect(
+      lineWords([
+        { quantity: 50, unitWord: 'bori', productName: 'UltraTech', rawText: 'x', productId: 'u' },
+        {
+          quantity: null,
+          unitWord: 'trolley',
+          productName: null,
+          rawText: 'gitti',
+          productId: null,
+        },
+      ]),
+    ).toBe('50 bori UltraTech, trolley gitti');
+    expect(replyParams(null, catalog)).toMatchObject({ lines: '', place: '', day: '' });
+  });
+});
+
+describe('the last look before sending', () => {
+  const at = new Date('2026-11-05T06:30:00Z');
+  const fresh = new Date(at.getTime() - 60000);
+  const input = (
+    rest: {
+      settings?: Partial<GuardInput['settings']>;
+      thread?: Partial<GuardInput['thread']>;
+      row?: Partial<GuardInput['row']>;
+      draft?: GuardInput['draft'];
+      known?: boolean;
+      mode?: string;
+      provider?: string;
+    } = {},
+  ): GuardInput => ({
+    now: at,
+    mode: rest.mode ?? 'reply',
+    provider: rest.provider ?? 'fake',
+    businessPhone: '+919999900000',
+    maxAgeMinutes: 30,
+    settings: {
+      aiPaused: false,
+      replyStage: 'EVERYONE',
+      testNumbers: [],
+      nightFromHour: 21,
+      nightToHour: 7,
+      ...rest.settings,
+    },
+    thread: {
+      phone: '+919000000001',
+      aiMode: 'AUTO',
+      humanUntil: null,
+      lastEchoAt: null,
+      lastInboundAt: fresh,
+      handoffUntil: null,
+      ...rest.thread,
+    },
+    known: rest.known ?? false,
+    draft: rest.draft ?? null,
+    row: {
+      class: 'AI_REPLY',
+      kind: 'DRAFT',
+      triggerAt: fresh,
+      quietOk: false,
+      body: 'Yeh abhi pakka nahi hai',
+      ...rest.row,
+    },
+  });
+  const decision = { class: 'HUMAN_DECISION', kind: 'CONFIRMED', body: 'Pakka.' };
+  it('lets a clean reply go', () => {
+    expect(replyBlock(input())).toBeNull();
+  });
+  it('stops for each switch, whoever spoke', () => {
+    for (const row of [{}, decision]) {
+      expect(replyBlock(input({ row, mode: 'shadow' }))).toBe('MODE_OFF');
+      expect(replyBlock(input({ row, provider: 'off' }))).toBe('MODE_OFF');
+      expect(replyBlock(input({ row, settings: { aiPaused: true } }))).toBe('STOP_ALL');
+      expect(replyBlock(input({ row, settings: { replyStage: 'OFF' } }))).toBe('STAGE_OFF');
+      expect(replyBlock(input({ row, thread: { aiMode: 'OFF' } }))).toBe('NUMBER_OFF');
+      expect(replyBlock(input({ row, thread: { aiMode: 'OPTED_OUT' } }))).toBe('OPTED_OUT');
+      expect(replyBlock(input({ row, thread: { phone: null } }))).toBe('NO_PHONE');
+      expect(replyBlock(input({ row, thread: { phone: '+919999900000' } }))).toBe('OWN_NUMBER');
+    }
+  });
+  it('STOP gets its one acknowledgement, and nothing else gets through on it', () => {
+    const row = { kind: 'STOP_OK', body: 'Theek hai.' };
+    expect(replyBlock(input({ row, thread: { aiMode: 'OPTED_OUT' } }))).toBeNull();
+    expect(replyBlock(input({ row, thread: { aiMode: 'OFF' } }))).toBe('NUMBER_OFF');
+    expect(replyBlock(input({ row, settings: { replyStage: 'OFF' } }))).toBe('STAGE_OFF');
+  });
+  it('the AI’s quiet rules hold for it, and a person’s decision passes them', () => {
+    const quiet = { humanUntil: new Date(at.getTime() + 60000) };
+    const off = { lastEchoAt: at };
+    const handed = { handoffUntil: new Date(at.getTime() + 60000) };
+    const night = { nightFromHour: 0, nightToHour: 23 };
+    const closed = { lastInboundAt: new Date(at.getTime() - 25 * 3600000) };
+    const old = { triggerAt: new Date(at.getTime() - 31 * 60000) };
+    expect(replyBlock(input({ thread: quiet }))).toBe('QUIET_AFTER_ECHO');
+    expect(replyBlock(input({ thread: quiet, row: { quietOk: true } }))).toBeNull();
+    expect(replyBlock(input({ thread: off }))).toBe('PAPA_TYPED');
+    expect(replyBlock(input({ thread: handed }))).toBe('HANDED_OFF');
+    expect(replyBlock(input({ thread: handed, row: { kind: 'HANDOFF' } }))).toBeNull();
+    expect(replyBlock(input({ settings: night }))).toBe('NIGHT');
+    expect(replyBlock(input({ thread: closed }))).toBe('WINDOW_CLOSED');
+    expect(replyBlock(input({ row: old }))).toBe('TOO_OLD');
+    for (const rest of [
+      { thread: quiet },
+      { thread: off },
+      { thread: handed },
+      { settings: night },
+      { thread: closed },
+    ])
+      expect(replyBlock(input({ ...rest, row: decision }))).toBeNull();
+  });
+  it('on a draft Papa answered, or one closed, the AI has nothing to say about it', () => {
+    const papa = { status: 'OPEN', papaRepliedAt: at };
+    expect(replyBlock(input({ draft: papa }))).toBe('PAPA_TYPED');
+    expect(replyBlock(input({ draft: papa, row: { kind: 'AFTER_TAP' } }))).toBeNull();
+    expect(replyBlock(input({ draft: { status: 'CONFIRMED', papaRepliedAt: null } }))).toBe(
+      'DRAFT_CLOSED',
+    );
+    expect(replyBlock(input({ draft: papa, row: decision }))).toBeNull();
+  });
+  it('the words themselves get a last look', () => {
+    expect(replyBlock(input({ row: { body: 'Aapka order pakka hai' } }))).toBe('FORBIDDEN_WORDS');
+    expect(replyBlock(input({ row: { body: 'Total ₹100' } }))).toBe('FORBIDDEN_WORDS');
+  });
+  it('the stages hold: test numbers, known customers, everyone', () => {
+    const on = (replyStage: string, testNumbers: string[], known = false) =>
+      replyBlock(input({ settings: { replyStage, testNumbers }, known }));
+    expect(on('TEST_NUMBERS', [])).toBe('NOT_THIS_STAGE');
+    expect(on('TEST_NUMBERS', ['+919000000001'])).toBeNull();
+    expect(on('TEST_NUMBERS', [], true)).toBe('NOT_THIS_STAGE');
+    expect(on('KNOWN_CUSTOMERS', [])).toBe('NOT_THIS_STAGE');
+    expect(on('KNOWN_CUSTOMERS', [], true)).toBeNull();
+    expect(on('KNOWN_CUSTOMERS', ['+919000000001'])).toBeNull();
+    expect(on('EVERYONE', [])).toBeNull();
+    expect(stageAllows({ replyStage: 'EVERYONE', testNumbers: [] }, null, true)).toBe(false);
+    expect(stageAllows({ replyStage: 'OFF', testNumbers: ['+1'] }, '+1', true)).toBe(false);
+  });
+  it('knows the night, across midnight or within a day', () => {
+    const ist = (hour: number) =>
+      new Date(`2026-11-05T${String(hour).padStart(2, '0')}:30:00+05:30`);
+    expect(isNight(ist(22), 21, 7)).toBe(true);
+    expect(isNight(ist(3), 21, 7)).toBe(true);
+    expect(isNight(ist(7), 21, 7)).toBe(false);
+    expect(isNight(ist(12), 21, 7)).toBe(false);
+    expect(isNight(ist(14), 13, 15)).toBe(true);
+    expect(isNight(ist(15), 13, 15)).toBe(false);
+    expect(isNight(ist(5), 9, 9)).toBe(false);
+  });
+});
+
+describe('the real senders', () => {
+  const outgoing = { to: '+919000000001', kind: 'DRAFT', body: 'Words' };
+  const answered = (json: unknown, status = 200) =>
+    vi.fn(async () => new Response(JSON.stringify(json), { status }));
+  const env = (rest: Record<string, unknown>) =>
+    Object.assign(getConfig(), {
+      WA_BUSINESS_PHONE: '+919999900000',
+      WHATSAPP_ACCESS_TOKEN: 'meta-token-for-tests-only-000',
+      WHATSAPP_PHONE_NUMBER_ID: '123',
+      WA_REPLY_API_KEY: 'partner-key-for-tests-only',
+      ...rest,
+    });
+  let saved: Record<string, unknown>;
+  beforeEach(() => {
+    saved = { ...getConfig() };
+  });
+  afterEach(() => {
+    Object.assign(getConfig(), saved);
+    vi.unstubAllGlobals();
+  });
+  it('360dialog: its address, its header and the Cloud API format, with the number in digits', async () => {
+    const fetchMock = answered({ messages: [{ id: 'wamid.1' }] });
+    vi.stubGlobal('fetch', fetchMock);
+    env({ WA_REPLY_PROVIDER: 'd360' });
+    expect(await carry(outgoing)).toBe('wamid.1');
+    const [url, options] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('https://waba-v2.360dialog.io/messages');
+    expect((options.headers as Record<string, string>)['D360-API-KEY']).toBe(
+      'partner-key-for-tests-only',
+    );
+    expect(JSON.parse(String(options.body))).toMatchObject({
+      messaging_product: 'whatsapp',
+      to: '919000000001',
+      type: 'text',
+      text: { body: 'Words', preview_url: false },
+    });
+  });
+  it('Meta: the graph address and bearer token', async () => {
+    const fetchMock = answered({ messages: [{ id: 'wamid.2' }] });
+    vi.stubGlobal('fetch', fetchMock);
+    env({ WA_REPLY_PROVIDER: 'meta' });
+    await carry(outgoing);
+    const [url, options] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toContain('graph.facebook.com');
+    expect(url).toContain('/123/messages');
+    expect((options.headers as Record<string, string>).authorization).toMatch(/^Bearer /);
+  });
+  it('YCloud: its address, its header, and from the shop’s number', async () => {
+    const fetchMock = answered({ wamid: 'wamid.3' });
+    vi.stubGlobal('fetch', fetchMock);
+    env({ WA_REPLY_PROVIDER: 'ycloud' });
+    expect(await carry(outgoing)).toBe('wamid.3');
+    const [url, options] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toContain('api.ycloud.com');
+    expect(JSON.parse(String(options.body))).toMatchObject({
+      from: '+919999900000',
+      to: '+919000000001',
+      type: 'text',
+    });
+  });
+  it('buttons and templates go in WhatsApp’s shapes', async () => {
+    const fetchMock = answered({ messages: [{ id: 'x' }] });
+    vi.stubGlobal('fetch', fetchMock);
+    env({ WA_REPLY_PROVIDER: 'd360' });
+    await carry({ ...outgoing, buttons: [{ id: 'TODAY', title: 'Aaj' }] });
+    await carry({
+      to: outgoing.to,
+      kind: 'CONFIRMED',
+      template: { name: 'shiv_order_confirmed_v1', language: 'en_IN', params: ['a', 'b'] },
+    });
+    const bodies = fetchMock.mock.calls.map((call) =>
+      JSON.parse(String((call as unknown as [string, RequestInit])[1].body)),
+    );
+    expect(bodies[0].interactive.action.buttons[0]).toEqual({
+      type: 'reply',
+      reply: { id: 'TODAY', title: 'Aaj' },
+    });
+    expect(bodies[1].template).toMatchObject({
+      name: 'shiv_order_confirmed_v1',
+      language: { code: 'en_IN' },
+    });
+    expect(bodies[1].template.components[0].parameters).toEqual([
+      { type: 'text', text: 'a' },
+      { type: 'text', text: 'b' },
+    ]);
+  });
+  it('a refusal keeps WhatsApp’s code, and an answer with no id is a failure', async () => {
+    vi.stubGlobal('fetch', answered({ error: { code: 131047, message: 'x' } }, 400));
+    env({ WA_REPLY_PROVIDER: 'd360' });
+    await expect(carry(outgoing)).rejects.toBeInstanceOf(SendRefused);
+    await expect(carry(outgoing)).rejects.toMatchObject({ code: 131047 });
+    vi.stubGlobal('fetch', answered({}, 200));
+    await expect(carry(outgoing)).rejects.toMatchObject({ code: null });
+  });
+  it('with no sender set, nothing is called', async () => {
+    const fetchMock = answered({});
+    vi.stubGlobal('fetch', fetchMock);
+    env({ WA_REPLY_PROVIDER: 'off' });
+    await expect(carry(outgoing)).rejects.toThrow(/No sender/);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

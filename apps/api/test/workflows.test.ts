@@ -167,7 +167,8 @@ afterAll(async () => {
   await app?.close();
   if (ownsDatabase) await adminDb.$executeRawUnsafe(`DROP DATABASE "${databaseName}" WITH (FORCE)`);
   await adminDb.$disconnect();
-}, 30000);
+  // Removing a database can take minutes on a slow disk, and that is not a failed test.
+}, 300000);
 
 async function cart(who: Person = 'customer', quantity = 50) {
   await request(server)

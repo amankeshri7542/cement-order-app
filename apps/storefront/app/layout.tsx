@@ -1,73 +1,55 @@
-import type { Metadata } from 'next';
-import { Kalam, Teko } from 'next/font/google';
+import './base.css';
+import type { Metadata, Viewport } from 'next';
+import localFont from 'next/font/local';
+import { headers } from 'next/headers';
 import { connection } from 'next/server';
 import type { ReactNode } from 'react';
-import { LanguageProvider } from '../components/language';
-import { requestLanguage } from '../lib/language';
-import { Header, Footer } from '../components/shell';
-import { CommerceAlert, CommerceProvider, CommerceFeedback } from '../components/commerce';
+import { SiteFrame } from '../components/site-frame';
+import { headScript } from '../film/tier';
 import { indexingOn, siteName, siteUrl } from '../lib/site';
-import './theme.css';
-import './globals.css';
 
-// Self-hosted through next/font, so no request reaches Google from the browser (CSP font-src
-// 'self'). Teko 600 sets display, headings and prices in Latin and Devanagari; Kalam is the
-// shopkeeper's hand on the parchi only, so it is not preloaded on every page.
-const display = Teko({
-  weight: '600',
-  subsets: ['latin', 'devanagari'],
+// One subset file: Basic Latin, the rupee sign and punctuation, weights 300 to 500. It is under
+// 25 KB, served from this site, so no request reaches Google from a visitor's browser.
+const hanken = localFont({
+  src: './fonts/hanken-grotesk-subset.woff2',
+  weight: '300 500',
+  style: 'normal',
   display: 'swap',
-  variable: '--font-teko',
-});
-const hand = Kalam({
-  weight: '400',
-  subsets: ['latin', 'devanagari'],
-  display: 'swap',
-  variable: '--font-kalam',
-  preload: false,
+  variable: '--font-hanken',
+  adjustFontFallback: 'Arial',
 });
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: `${siteName}, Patna | सीमेंट, सरिया, बालू के भाव`,
+    default: `${siteName}, Patna`,
     template: `%s | ${siteName}`,
   },
   description:
-    'Cement, steel, bricks, sand and stone chips at Shiv Cement Store, Patna: current rates with the selling unit beside every price, delivery by pincode, cash on delivery and written bulk quotes. पटना में सीमेंट, सरिया, ईंट, बालू और गिट्टी के भाव।',
+    'Cement, sariya, bricks, balu and gitti from a family shop in Patna, with the rate and the selling unit beside every item.',
   applicationName: siteName,
-  openGraph: { siteName, type: 'website', locale: 'en_IN', alternateLocale: ['hi_IN'] },
+  openGraph: { siteName, type: 'website', locale: 'en_IN' },
   // Kept out of search results until the owner switches indexing on for the real address.
   robots: indexingOn ? { index: true, follow: true } : { index: false, follow: false },
 };
+export const viewport: Viewport = { themeColor: '#eae7de', viewportFit: 'cover' };
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
   // Request-time rendering lets Next attach the per-request CSP nonce to its scripts.
   await connection();
-  // The first page is written in the visitor's language (lib/language.ts), so a Hindi reader is
-  // not shown English until scripts have run.
-  const { language, fromAddress } = await requestLanguage();
+  const nonce = (await headers()).get('x-nonce') ?? undefined;
+  const filmOff = process.env.NEXT_PUBLIC_FILM === 'off';
   return (
-    // translate="no": the site has its own Hindi/English switch, and Chrome's page translation
-    // rewrites text React keeps updating, which flickers or breaks it.
-    <html
-      lang={language}
-      translate="no"
-      data-scroll-behavior="smooth"
-      className={`${display.variable} ${hand.variable}`}
-    >
+    <html lang="en" className={hanken.variable} suppressHydrationWarning>
+      <head>
+        <script
+          nonce={nonce}
+          suppressHydrationWarning
+          dangerouslySetInnerHTML={{ __html: headScript(filmOff) }}
+        />
+      </head>
       <body>
-        <LanguageProvider initial={language} chosen={fromAddress}>
-          <CommerceProvider>
-            <Header />
-            <CommerceAlert />
-            <main id="main" className="site-main">
-              {children}
-            </main>
-            <Footer />
-            <CommerceFeedback />
-          </CommerceProvider>
-        </LanguageProvider>
+        <SiteFrame>{children}</SiteFrame>
       </body>
     </html>
   );

@@ -1,19 +1,19 @@
-# Drill setup: a fresh customer (PHONE from the drill script) with a saved site address.
+# Sets up the customer the drills use: a saved site, and something on the list. Local API only.
 appId: in.shivcement.store
 ---
 - launchApp:
     clearState: true
-- tapOn: English
 - extendedWaitUntil:
-    visible: Current rates
-    timeout: 20000
+    visible: Today's rates
+    timeout: 30000
 - tapOn:
     text: Account
     index: 0
 - tapOn: Sign in
-- tapOn: 10-digit mobile number
+- tapOn: Mobile number
 - inputText: ${PHONE}
-- tapOn: Get verification code
+- hideKeyboard
+- tapOn: Get code
 - hideKeyboard
 - extendedWaitUntil:
     visible: Local development code.*
@@ -21,23 +21,37 @@ appId: in.shivcement.store
 - copyTextFrom:
     text: Local development code.*
 - evalScript: ${output.code = maestro.copiedText.match(/\d{6}/)[0]}
-- tapOn: 6-digit code
+- tapOn: Code from SMS
 - inputText: ${output.code}
 - pressKey: Enter
 - extendedWaitUntil:
-    visible: Saved addresses
-    timeout: 15000
-- tapOn: Saved addresses
-- tapOn: House, plot or street
-- inputText: Plot 9, Drill Road
-- pressKey: Enter
-- inputText: Boring Road
-- pressKey: Enter
+    visible: Sign out
+    timeout: 20000
+- tapOn: Sites.*
+- tapOn: Add a site
+- tapOn: Pincode
 - inputText: '800001'
 - pressKey: Enter
+- inputText: Plot 7, Road 2
+- hideKeyboard
+- runFlow:
+    when:
+      visible: Area
+    commands:
+      - tapOn: Area
+      - inputText: Boring Road
+      - hideKeyboard
+- scrollUntilVisible:
+    element: Who receives it
+    timeout: 5000
+- tapOn: Who receives it
 - inputText: Drill Customer
 - hideKeyboard
-- tapOn: Save address
+- scrollUntilVisible:
+    element: Save site
+    timeout: 5000
+- tapOn: Save site
 - extendedWaitUntil:
-    visible: Address saved
-    timeout: 10000
+    visible: Change .*
+    timeout: 15000
+- back

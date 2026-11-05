@@ -34,20 +34,24 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   }
   return {
     ...config,
-    name: 'Shiv Cement Store',
+    name: 'Shiv Cement',
     slug: 'shiv-cement-store',
     // Read by the app: every build except production shows a small TEST mark in the header.
     extra: { ...config.extra, appEnv: environment },
     // Local QA release builds reach the laptop's HTTP API over adb reverse; never production.
     plugins: [
       ...(config.plugins ?? []),
-      // Teko 600 (Latin and Devanagari, 155 KB) for display text and prices, as on the website.
-      // Embedded at build time, so it draws on the first frame; resolved here because npm
-      // workspaces hoist the package to the repository root.
+      // Hanken Grotesk, the one face (decision 27): Light for big headings, Regular for reading and
+      // for every rate, Medium for emphasis. Embedded at build time, so it draws on the first frame;
+      // resolved here because npm workspaces hoist the package to the repository root.
       [
         'expo-font',
         {
-          fonts: [require.resolve('@expo-google-fonts/teko/600SemiBold/Teko_600SemiBold.ttf')],
+          fonts: [
+            '300Light/HankenGrotesk_300Light',
+            '400Regular/HankenGrotesk_400Regular',
+            '500Medium/HankenGrotesk_500Medium',
+          ].map((file) => require.resolve(`@expo-google-fonts/hanken-grotesk/${file}.ttf`)),
         },
       ] as [string, unknown],
       ...(process.env.APP_VARIANT === 'local' ? ['./plugins/local-cleartext'] : []),

@@ -34,7 +34,7 @@ export function paginate(
       (field === 'createdAt' && !Number.isFinite((value as Date).getTime())) ||
       (field === 'pricePaise' && typeof value !== 'number') ||
       (field === 'khataBalancePaise' && typeof value !== 'number') ||
-      (field === 'name' && typeof value !== 'string')
+      ((field === 'name' || field === 'dueOn') && typeof value !== 'string')
     )
       fail('INVALID_CURSOR', 'Refresh this list to continue.');
     const operator = direction === 'asc' ? 'gt' : 'lt';

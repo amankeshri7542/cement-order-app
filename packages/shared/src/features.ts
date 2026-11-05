@@ -10,6 +10,8 @@ export type CustomerFeature = {
   en: string;
   hi: string;
   app: readonly string[];
+  /** Why a feature is deliberately not on the app. */
+  notOnApp?: string;
   web: readonly string[];
 };
 
@@ -20,7 +22,7 @@ export const customerFeatures: readonly CustomerFeature[] = [
     hi: 'आज के भाव, इकाई के साथ',
     app: ['apps/mobile/.maestro/01-browse.yaml'],
     web: [
-      'tests/storefront-experience.spec.ts › home rate board shows the cheapest in-stock catalogue price per material with its unit',
+      'tests/storefront.spec.ts › the rate board shows each rate with its unit, and the sample tag',
     ],
   },
   {
@@ -28,24 +30,20 @@ export const customerFeatures: readonly CustomerFeature[] = [
     en: 'Browse, search and filter materials',
     hi: 'सामग्री देखें, खोजें और छाँटें',
     app: [
-      'tests/journeys.spec.ts › catalogue keeps a product press intact across an unchanged search debounce',
-      'tests/customer-recovery.spec.ts › catalog refresh retains loaded pages and search selection',
+      'tests/customer-app.spec.ts › a product page shows the rate beside its unit, and Add turns into the way to the list',
+      'tests/customer-app.spec.ts › the rate the shop keeps stays on screen with its age when the shop cannot be reached',
     ],
     web: [
-      'tests/storefront.spec.ts › storefront filters, sorts and paginates without duplicates and restores browser Back',
+      'tests/storefront.spec.ts › a category shows its lowest rate, “from”, brand filters and how to buy',
     ],
   },
   {
     id: 'hindi',
     en: 'Hindi and English, remembered',
     hi: 'हिन्दी और अंग्रेज़ी, याद रहती है',
-    app: [
-      'apps/mobile/.maestro/02-language.yaml',
-      'tests/customer-recovery.spec.ts › a guest basket survives sign-in and refresh; the chosen language persists immediately',
-    ],
-    web: [
-      'tests/storefront.spec.ts › storefront persists Hindi, supports keyboard navigation and fits narrow enlarged text',
-    ],
+    app: [],
+    notOnApp: 'Aman asked that Hindi be removed from the app entirely.',
+    web: ['tests/storefront.spec.ts › there is no language switch'],
   },
   {
     id: 'live-prices',
@@ -54,19 +52,17 @@ export const customerFeatures: readonly CustomerFeature[] = [
     app: [
       'tests/journeys.spec.ts › live price updates refresh the catalogue and invalidate an accepted checkout total',
     ],
-    web: [
-      'tests/storefront.spec.ts › owner price publication reaches storefront and existing customer app',
-    ],
+    web: ['tests/storefront.spec.ts › a price published by the owner reaches the next page load'],
   },
   {
     id: 'basket',
     en: 'Basket with minimum, step and stock rules',
     hi: 'टोकरी: न्यूनतम, बढ़त और स्टॉक के नियम',
     app: [
-      'tests/cart-feedback.spec.ts › product row quantity respects minimum, step and stock and explains rejected typing',
+      'tests/customer-app.spec.ts › typing 200 is one entry, and stepping to nothing takes it off',
     ],
     web: [
-      'tests/storefront-experience.spec.ts › basket feedback names the material; comparison survives reload; basket page has one summary',
+      'tests/storefront-commerce.spec.ts › Add builds the list on a public page: count, stepper, slip, and it survives a reload',
     ],
   },
   {
@@ -74,10 +70,10 @@ export const customerFeatures: readonly CustomerFeature[] = [
     en: 'A guest basket joins the account at sign-in',
     hi: 'बिना साइन इन की टोकरी साइन इन पर जुड़ जाती है',
     app: [
-      'tests/cart-feedback.spec.ts › a guest basket merges once at sign-in and a second add waits for it',
+      'tests/customer-app.spec.ts › first order: sign in only at Place, add a site, and the status is honest',
     ],
     web: [
-      'tests/storefront-commerce.spec.ts › guest basket survives reload; a lost merge response replays once against an existing cart',
+      'tests/storefront-commerce.spec.ts › Place order signs in, returns to the list and carries on to checkout, with the list intact',
     ],
   },
   {
@@ -85,7 +81,7 @@ export const customerFeatures: readonly CustomerFeature[] = [
     en: 'Saved delivery addresses',
     hi: 'सहेजे गए डिलीवरी पते',
     app: [
-      'tests/customer-recovery.spec.ts › basket delivery draft survives address edit, creation, back, reload and failed catalog refresh',
+      'tests/customer-app.spec.ts › first order: sign in only at Place, add a site, and the status is honest',
     ],
     web: [
       'tests/storefront-commerce.spec.ts › saved address editing works; account switches and revocation clear private forms',
@@ -96,12 +92,12 @@ export const customerFeatures: readonly CustomerFeature[] = [
     en: 'Place a cash-on-delivery order exactly once',
     hi: 'डिलीवरी पर भुगतान वाला ऑर्डर, सिर्फ़ एक बार',
     app: [
-      'tests/journeys.spec.ts › customer places a COD order, tracks it, reorders and requests a bulk quote',
-      'tests/customer-recovery.spec.ts › lost creation response survives reload and retries the original request exactly once',
+      'tests/customer-app.spec.ts › Order again takes two taps and never touches a half-built list',
+      'tests/customer-app.spec.ts › a connection lost as Place is tapped makes no duplicate',
     ],
     web: [
-      'tests/storefront-commerce.spec.ts › double-tapping Place COD order creates one order; removing the last basket line empties the shared cart',
-      'tests/storefront-commerce.spec.ts › COD lost success recovers exactly one owner task and inventory movement after reload',
+      'tests/storefront-commerce.spec.ts › double-tapping Place COD order creates one order',
+      'tests/storefront-commerce.spec.ts › COD lost success recovers exactly one order after reload',
     ],
   },
   {
@@ -109,7 +105,7 @@ export const customerFeatures: readonly CustomerFeature[] = [
     en: 'Track, cancel and reorder past orders',
     hi: 'ऑर्डर देखें, रद्द करें, फिर से मँगाएँ',
     app: [
-      'tests/journeys.spec.ts › customer places a COD order, tracks it, reorders and requests a bulk quote',
+      'tests/customer-app.spec.ts › Order again takes two taps and never touches a half-built list',
     ],
     web: ['tests/storefront-orders.spec.ts › order history tracks, cancels and reorders'],
   },
@@ -117,7 +113,7 @@ export const customerFeatures: readonly CustomerFeature[] = [
     id: 'share-order',
     en: 'Share an order summary on WhatsApp',
     hi: 'ऑर्डर का सारांश WhatsApp पर भेजें',
-    app: ['tests/app-account.spec.ts › an order summary can be shared'],
+    app: ['tests/customer-account.spec.ts › an order summary can be shared'],
     web: [
       'tests/storefront-account.spec.ts › each order can be shared on WhatsApp without the delivery address',
     ],
@@ -127,29 +123,32 @@ export const customerFeatures: readonly CustomerFeature[] = [
     en: 'Ask for a bulk quote, accept it, get one order',
     hi: 'थोक भाव माँगें, मंज़ूर करें, एक ऑर्डर बने',
     app: [
-      'tests/journeys.spec.ts › customer places a COD order, tracks it, reorders and requests a bulk quote',
-      'tests/customer-recovery.spec.ts › guest quotation intent resumes and saved quote fields survive address navigation',
+      'tests/customer-app.spec.ts › Order again takes two taps and never touches a half-built list',
+      'tests/customer-app.spec.ts › Ask a person: a typed list goes to the shop, and the reply lives at the top of Orders',
     ],
     web: [
-      'tests/storefront-commerce.spec.ts › multi-material quotation recovers persisted reference, reviews revisions and converts once',
+      'tests/storefront-commerce.spec.ts › Ask for a rate sends the list as one request, recovers a lost answer, and converts once',
     ],
   },
   {
     id: 'compare',
     en: 'Compare materials by their selling units',
     hi: 'बिक्री की इकाई से सामग्री की तुलना',
-    app: ['apps/mobile/.maestro/06-compare-assistant.yaml'],
+    app: [],
+    notOnApp: 'Plan 04: the rate sheet already lines up every brand in one unit. Website only.',
     web: [
-      'tests/storefront-commerce.spec.ts › comparison distinguishes selling units; Hindi and enlarged reduced-motion layouts fit phone/tablet/desktop',
+      'tests/storefront-commerce.spec.ts › compare shows two materials side by side at their own units',
     ],
   },
   {
     id: 'assistant',
     en: 'Assistant that answers from the live catalogue',
     hi: 'सहायक जो चालू सूची से जवाब दे',
-    app: ['apps/mobile/.maestro/06-compare-assistant.yaml'],
+    app: [
+      'tests/customer-ask.spec.ts › Ask is a tab that keeps its conversation, its box and its speaker',
+    ],
     web: [
-      'tests/storefront-commerce.spec.ts › assistant answers with current public catalogue, preserves navigation, cancels and retries without private tools',
+      'tests/storefront-outage.spec.ts › Ask: opens in a sheet, loads only when asked for, and answers from the guide',
     ],
   },
   {
@@ -157,17 +156,17 @@ export const customerFeatures: readonly CustomerFeature[] = [
     en: 'A lost connection asks to retry, not to sign in again',
     hi: 'नेटवर्क जाने पर दोबारा कोशिश, दोबारा साइन इन नहीं',
     app: [
-      'tests/cart-feedback.spec.ts › Enter commits a whole quantity; offline recovery preserves it and another account sees no basket',
+      'tests/customer-app.spec.ts › typing 200 is one entry, and stepping to nothing takes it off',
     ],
     web: [
-      'tests/storefront-experience.spec.ts › an outage during checkout asks to retry, not to sign in again, and recovers',
+      'tests/storefront-hardening.spec.ts › an outage during checkout asks to retry, not to sign in again, and recovers',
     ],
   },
   {
     id: 'profile',
     en: 'Edit name and profile',
     hi: 'नाम और प्रोफ़ाइल बदलें',
-    app: ['tests/app-account.spec.ts › the profile name can be changed'],
+    app: ['tests/customer-account.spec.ts › the name can be changed'],
     web: [
       'tests/storefront-account.spec.ts › a customer edits their name on the website and it stays after reload',
     ],
@@ -176,7 +175,7 @@ export const customerFeatures: readonly CustomerFeature[] = [
     id: 'devices',
     en: 'See signed-in devices and sign one out',
     hi: 'साइन इन वाले फ़ोन देखें और किसी से साइन आउट करें',
-    app: ['tests/app-account.spec.ts › another signed-in phone can be signed out'],
+    app: ['tests/customer-account.spec.ts › other phones can be signed out, in one row'],
     web: [
       'tests/storefront-account.spec.ts › signed-in devices mark this browser and sign out another phone',
     ],
@@ -185,19 +184,22 @@ export const customerFeatures: readonly CustomerFeature[] = [
     id: 'delete-account',
     en: 'Delete the account (after open orders finish)',
     hi: 'खाता हटाएँ (खुले ऑर्डर पूरे होने के बाद)',
-    app: ['tests/app-account.spec.ts › the account can be deleted once no order is open'],
+    app: [
+      'tests/customer-account.spec.ts › the account can be deleted once no order is open, and nothing stays on the phone',
+    ],
     web: [
       'tests/storefront-account.spec.ts › deleting the account is refused while an order is open',
-      'tests/storefront-account.spec.ts › deleting an account with no open orders signs out and returns home',
+      'tests/storefront-account.spec.ts › deleting an account with no open orders signs out and says so',
     ],
   },
   {
     id: 'hindi-catalogue',
     en: 'Hindi product names and units',
     hi: 'सामग्री के हिन्दी नाम और इकाई',
-    app: ['tests/catalogue-hindi.spec.ts › the app shows the Hindi name and unit to Hindi readers'],
+    app: [],
+    notOnApp: 'Aman asked that Hindi be removed from the app entirely.',
     web: [
-      'tests/catalogue-hindi.spec.ts › a Hindi name saved on the desk reaches Hindi readers; English is unchanged',
+      'tests/catalogue-hindi.spec.ts › a Hindi name saved on the desk stays off the website, and still finds the product',
     ],
   },
   {
@@ -205,10 +207,10 @@ export const customerFeatures: readonly CustomerFeature[] = [
     en: 'First order guide, remembered pincode, name asked once',
     hi: 'पहले ऑर्डर की राह, याद रहा पिनकोड, नाम एक बार',
     app: [
-      'tests/first-run.spec.ts › app first run: language, pincode, basket, sign-in with name, order, what happens next',
+      'tests/customer-app.spec.ts › first order: sign in only at Place, add a site, and the status is honest',
     ],
     web: [
-      'tests/first-run.spec.ts › website first run: language, pincode, basket, sign-in with name, order, what happens next',
+      'tests/first-run.spec.ts › website first run: pincode, list, sign-in with name, order, what happens next',
     ],
   },
   {
@@ -216,10 +218,10 @@ export const customerFeatures: readonly CustomerFeature[] = [
     en: 'What happens next after an order',
     hi: 'ऑर्डर के बाद आगे क्या होगा',
     app: [
-      'tests/first-run.spec.ts › app first run: language, pincode, basket, sign-in with name, order, what happens next',
+      'tests/customer-app.spec.ts › first order: sign in only at Place, add a site, and the status is honest',
     ],
     web: [
-      'tests/first-run.spec.ts › website first run: language, pincode, basket, sign-in with name, order, what happens next',
+      'tests/first-run.spec.ts › website first run: pincode, list, sign-in with name, order, what happens next',
     ],
   },
 ];

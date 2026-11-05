@@ -4,6 +4,7 @@ node_modules/
 !.env.example
 .next/
 .next-e2e/
+.next-e2e-*/
 .next-shots/
 .next-lighthouse/
 .next-catalyst/
@@ -23,6 +24,9 @@ GoogleService-Info.plist
 # Expo prebuild output (regenerated from app.config.ts; never edited by hand)
 apps/mobile/android/
 apps/mobile/ios/
+apps/staff/android/
+apps/staff/ios/
+apps/staff/modules/*/android/build/
 
 # Release credentials: never committed. eas submit reads the Play service account from here.
 apps/mobile/play-service-account.json

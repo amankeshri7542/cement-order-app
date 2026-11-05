@@ -81,7 +81,10 @@ describe('website enquiries', () => {
   it('stores a visitor question for the owner without an account and leaves no PII in audit', async () => {
     const response = await send();
     expect(response.status, JSON.stringify(response.body)).toBe(201);
-    expect(response.body).toEqual({ received: true });
+    expect(response.body).toEqual({
+      received: true,
+      ticket: expect.stringMatching(/^[A-Z0-9]{8}$/),
+    });
     const rows = await db.webEnquiry.findMany();
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ name: 'Ramesh Kumar', status: 'NEW', pincode: '800020' });
@@ -93,7 +96,10 @@ describe('website enquiries', () => {
   it('answers a robot that fills the hidden field exactly like a person, and stores nothing', async () => {
     const response = await send(enquiry({ website: 'http://spam.example' }));
     expect(response.status).toBe(201);
-    expect(response.body).toEqual({ received: true });
+    expect(response.body).toEqual({
+      received: true,
+      ticket: expect.stringMatching(/^[A-Z0-9]{8}$/),
+    });
     expect(await db.webEnquiry.count()).toBe(0);
   });
 

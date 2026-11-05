@@ -6,6 +6,8 @@ import { Db } from './db';
 import { blindShops } from './blind-count';
 import { orderInclude, orderPerson } from './orders';
 import { AuthRequest, Can, fail, forbid, scoped, shopAsked, shopWhere } from './http';
+import { canDo } from '@shiv/shared';
+import { shownPhone, withShownPhones } from './crm/common';
 import { z } from 'zod';
 
 /** The activity log's filters. A repeated or nested value is refused rather than guessed at. */
@@ -56,7 +58,7 @@ export class AdminController {
       this.db.order.count({ where: { createdAt: { gte: today }, ...shop } }),
       this.db.financialMovement.aggregate({
         where: {
-          kind: { in: ['COLLECTION', 'KHATA_PAYMENT'] },
+          kind: { in: ['COLLECTION', 'KHATA_PAYMENT', 'HANDOVER_OVER'] },
           occurredAt: { gte: today },
           ...shop,
         },
@@ -113,7 +115,7 @@ export class AdminController {
         include: { ...orderInclude, user: { select: orderPerson } },
       }),
     ]);
-    const [counter, refunds, newWork, issues] = await Promise.all([
+    const [counter, refunds, newWork, issues, short] = await Promise.all([
       this.db.financialMovement.aggregate({
         where: { kind: 'COUNTER_SALE', occurredAt: { gte: today }, ...shop },
         _sum: { amountPaise: true },
@@ -137,6 +139,11 @@ export class AdminController {
       }),
       this.db.order.count({
         where: { status: { in: ['DELIVERY_EXCEPTION', 'REFUND_PENDING'] }, ...shop },
+      }),
+      // A driver's count that came up short never reached the drawer.
+      this.db.financialMovement.aggregate({
+        where: { kind: 'HANDOVER_SHORT', occurredAt: { gte: today }, ...shop },
+        _sum: { amountPaise: true },
       }),
     ]);
     const [khataDue, creditSales, todayPhoneOrders] = await Promise.all([
@@ -162,7 +169,11 @@ export class AdminController {
         _sum: { amountPaise: true },
       }),
       this.db.order.count({
-        where: { source: { in: ['PHONE', 'WALK_IN'] }, createdAt: { gte: today }, ...shop },
+        where: {
+          source: { in: ['PHONE', 'WALK_IN', 'WHATSAPP'] },
+          createdAt: { gte: today },
+          ...shop,
+        },
       }),
     ]);
     return {
@@ -175,13 +186,13 @@ export class AdminController {
       todayRefundsPaise: refunds._sum.amountPaise || 0,
       profitPaise: null,
       todayOrders,
-      todaySalesPaise: sales._sum.amountPaise || 0,
+      todaySalesPaise: (sales._sum.amountPaise || 0) - (short._sum.amountPaise || 0),
       pendingOrders,
       pendingPayments,
       pendingDeliveries,
       bulkRequests,
       lowStock,
-      recentOrders,
+      recentOrders: recentOrders.map((row) => withShownPhones(req, row)),
     };
   }
   @Can('customers.read') @Get('customers') async customers(
@@ -201,11 +212,27 @@ export class AdminController {
     const seesAll = !!req.access['khata.read.list'];
     if (sort === 'due' && !seesAll) forbid(req, 'khata.read.list');
     const showBalance = seesAll || /^\+91[6-9]\d{9}$/.test(q);
+    // Part of a number is a way to discover numbers, for anyone who may not see them.
+    const seesPhone = canDo(req.access, 'customers.phone.read');
+    const searched =
+      seesPhone || /^\+91[6-9]\d{9}$/.test(q) ? ['name', 'phone', 'area'] : ['name', 'area'];
     const page = paginate(
       query,
       JSON.stringify({ list: 'customers', q, sort }),
       sort === 'due' ? 'khataBalancePaise' : 'createdAt',
     );
+    // The accountant knows people by their Tally names. Only those who may see Tally search by them.
+    const byLedger =
+      q && req.access['tally.read']
+        ? await this.db.tallyPartyLink.findMany({
+            where: {
+              status: 'LINKED',
+              ledger: { name: { contains: q, mode: 'insensitive' }, deletedAt: null },
+            },
+            select: { userId: true },
+            take: 50,
+          })
+        : [];
     const result = page.finish(
       await this.db.user.findMany({
         where: {
@@ -216,9 +243,12 @@ export class AdminController {
             page.after,
             q
               ? {
-                  OR: ['name', 'phone', 'area'].map((field) => ({
-                    [field]: { contains: q, mode: 'insensitive' },
-                  })),
+                  OR: [
+                    ...searched.map((field) => ({
+                      [field]: { contains: q, mode: 'insensitive' as const },
+                    })),
+                    { id: { in: byLedger.flatMap((row) => (row.userId ? [row.userId] : [])) } },
+                  ],
                 }
               : {},
           ],
@@ -245,11 +275,12 @@ export class AdminController {
     );
     return {
       ...result,
-      items: result.items.map(({ khataBalancePaise, creditLimitPaise, ...customer }) =>
-        showBalance
+      items: result.items.map(({ khataBalancePaise, creditLimitPaise, phone, ...rest }) => {
+        const customer = { ...rest, phone: shownPhone(req, phone) };
+        return showBalance
           ? { ...customer, khataBalancePaise, creditLimitPaise, balancePaise: khataBalancePaise }
-          : customer,
-      ),
+          : customer;
+      }),
     };
   }
   @Can('customers.read') @Get('customers/:id') async customer(
@@ -266,7 +297,19 @@ export class AdminController {
       },
     });
     if (!user) fail('NOT_FOUND', 'Customer not found.', 404);
-    return { ...user, balancePaise: user.khataBalancePaise };
+    // Their number, on their addresses and on their orders, is for those who may hold it.
+    return {
+      ...user,
+      phone: shownPhone(req, user.phone),
+      addresses: user.addresses.map((row) => ({ ...row, phone: shownPhone(req, row.phone) })),
+      orders: user.orders.map((row) => {
+        const address = row.address as { phone?: string } | null;
+        return address?.phone
+          ? { ...row, address: { ...address, phone: shownPhone(req, address.phone) } }
+          : row;
+      }),
+      balancePaise: user.khataBalancePaise,
+    };
   }
   @Can('audit.read') @Get('audit') async audit(
     @Query() query: Record<string, unknown>,
@@ -333,7 +376,13 @@ export class AdminController {
     return page.finish(
       rows.map((row) => ({
         ...row,
-        actorName: labels.get(row.actorId) || (row.actorId === 'seed' ? 'Setup' : ''),
+        actorName:
+          labels.get(row.actorId) ||
+          (row.actorId === 'seed'
+            ? 'Setup'
+            : row.actorId.startsWith('bridge:')
+              ? 'Tally computer'
+              : ''),
         entityLabel: labels.get(row.entityId) || '',
         customerName: sold.get(row.entityId)?.user.name ?? '',
         shopName: names.get(shopOf(row) ?? '') ?? '',

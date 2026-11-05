@@ -1,5 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
@@ -143,6 +148,23 @@ export class RateStorage {
         'Could not save the private source. Please retry the upload.',
         503,
       );
+    } finally {
+      remote?.client.destroy();
+    }
+  }
+
+  /** Gone for good. A file that is already gone is not a failure. */
+  async remove(key: string): Promise<void> {
+    this.key(key);
+    const remote = this.remote();
+    try {
+      if (remote)
+        await remote.client.send(new DeleteObjectCommand({ Bucket: remote.bucket, Key: key }), {
+          abortSignal: AbortSignal.timeout(30000),
+        });
+      else await rm(resolve(localDirectory, key), { force: true });
+    } catch {
+      fail('RATE_STORAGE_WRITE_FAILED', 'Could not remove the private file.', 503);
     } finally {
       remote?.client.destroy();
     }

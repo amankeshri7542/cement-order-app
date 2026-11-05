@@ -91,6 +91,21 @@ export async function clearShopWork(db: PrismaClient) {
   await db.$executeRawUnsafe(
     'TRUNCATE TABLE "ApprovalRequest", "StockCountLine", "StockCount", "StockTransferLine", "StockTransfer" CASCADE',
   );
+  for (const [table, trigger] of [
+    ['AttendanceEvent', 'attendance_event_append_only'],
+    ['CashHandover', 'cash_handover_append_only'],
+    ['DeliveryProof', 'delivery_proof_append_only'],
+    ['StaffLedgerEntry', 'staff_ledger_append_only'],
+    ['PayAdjustment', 'pay_adjustment_append_only'],
+    ['PayLine', 'pay_line_append_only'],
+  ]) {
+    await db.$executeRawUnsafe(`ALTER TABLE "${table}" DISABLE TRIGGER ${trigger}`);
+    await db.$executeRawUnsafe(`TRUNCATE TABLE "${table}" CASCADE`);
+    await db.$executeRawUnsafe(`ALTER TABLE "${table}" ENABLE TRIGGER ${trigger}`);
+  }
+  await db.$executeRawUnsafe(
+    'TRUNCATE TABLE "AttendanceReview", "AttendanceGeo", "AttendanceDay", "ProofAnchor", "DeviceLinkRequest", "StaffDevice", "ShopScreen", "StockReceipt", "OrderLoad", "TripStop", "Trip", "DriverCollection", "EvidenceObject", "StaffSchedule", "StaffProfile", "StaffNoticeAck", "StaffPayTerms", "PayRun", "PaymentAck" CASCADE',
+  );
   await db.$executeRawUnsafe('ALTER TABLE "DayClose" DISABLE TRIGGER day_close_append_only');
   await db.$executeRawUnsafe('ALTER TABLE "GallaEntry" DISABLE TRIGGER galla_entry_append_only');
   await db.$executeRawUnsafe('TRUNCATE TABLE "DayClose", "GallaEntry" CASCADE');

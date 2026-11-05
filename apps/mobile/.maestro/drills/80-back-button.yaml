@@ -1,20 +1,32 @@
-# Android Back walks back through screens, keeps the search, and leaves the app from Home.
+# Android Back closes a sheet, pops a screen, returns to Home, then leaves the app.
 appId: in.shivcement.store
 ---
 - launchApp
 - extendedWaitUntil:
-    visible: Current rates
+    visible: Today's rates
     timeout: 30000
-- tapOn:
-    text: Materials
-    index: 0
-- tapOn: Search materials
-- inputText: UltraTech
+- runFlow:
+    when:
+      notVisible: Your list, .*
+    commands:
+      - scrollUntilVisible:
+          element: Add Dalmia DSP to your list
+          timeout: 10000
+      - tapOn: Add Dalmia DSP to your list
+- tapOn: Your list, .*
+- extendedWaitUntil:
+    visible: Deliver to.*|Sign in to order
+    timeout: 15000
+- back
+- assertVisible: Today's rates
+- tapOn: Search
 - hideKeyboard
-- tapOn: View UltraTech Super
 - back
-- assertVisible: View UltraTech Super
+- assertVisible: Today's rates
+- tapOn:
+    text: Account
+    index: 0
 - back
-- assertVisible: Current rates
+- assertVisible: Today's rates
 - back
-- assertNotVisible: Current rates
+- assertNotVisible: Today's rates

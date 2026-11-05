@@ -1,0 +1,11 @@
+# Local release build only (APP_VARIANT=local, API on 4020 through adb reverse). Seed first:
+# apps/staff/e2e/android-seed.ts. The emulator cannot be shown a QR, so these use the paste box
+# that only exists in a local build.
+flows:
+  - '*.yaml'
+executionOrder:
+  continueOnFailure: false
+  flowsOrder:
+    - 01-keeper
+    - 02-driver
+    - 03-cut-off

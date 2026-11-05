@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Controller, Get, Inject, Param, Post, Query, Req } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
@@ -19,6 +20,9 @@ const STORE_PER_DAY = 300;
 /** How long the privacy page says enquiries are kept. */
 export const HANDLED_KEEP_DAYS = 180;
 export const UNANSWERED_KEEP_DAYS = 365;
+
+/** The number a visitor keeps, and the desk can find: the end of the enquiry's own id. */
+export const ticketFor = (id: string) => id.slice(-8).toUpperCase();
 
 const listSchema = z.object({ status: z.enum(['NEW', 'HANDLED']).default('NEW') });
 const select = {
@@ -55,9 +59,9 @@ export class WebEnquiriesController {
     // A robot that filled the hidden field gets the same answer as a person, so it learns nothing,
     // and it still spends its address's budget.
     const robot = Boolean(input.website?.trim());
-    await this.db.atomic(async (tx) => {
+    const ticket = await this.db.atomic(async (tx) => {
       await budget(tx, 'enquiry:ip', ip, PER_IP_HOUR);
-      if (robot) return;
+      if (robot) return randomUUID().replace(/-/g, '').slice(-8).toUpperCase();
       await budget(tx, 'enquiry:phone', input.phone, PER_PHONE_DAY, 24 * hour);
       await budget(tx, 'enquiry:global', 'store', STORE_PER_DAY, 24 * hour);
       const enquiry = await tx.webEnquiry.create({
@@ -80,9 +84,10 @@ export class WebEnquiriesController {
           details: {},
         },
       });
+      return ticketFor(enquiry.id);
     });
     if (!robot) this.work.stream.next({ type: 'ENQUIRY_RECEIVED' });
-    return { received: true };
+    return { received: true, ticket };
   }
 
   @Can('enquiries.handle') @Get('admin/enquiries')

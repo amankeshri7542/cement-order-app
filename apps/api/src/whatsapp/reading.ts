@@ -303,7 +303,8 @@ export function finishReading(output: ReaderOutput, context: ReadingContext): Re
       productId: product?.id ?? null,
       productName: product?.name ?? null,
       quantity,
-      unitWord: line.unitWord,
+      // Only a unit found in the customer's own words, so a model cannot put one in their mouth.
+      unitWord: unit || null,
       evidence: line.evidence,
       method,
       candidates,

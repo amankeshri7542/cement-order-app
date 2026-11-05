@@ -35,7 +35,7 @@ const env = {
     OTP_HASH_SECRET: secrets.OTP_HASH_SECRET,
     TRUST_PROXY_HOPS: process.env.TRUST_PROXY_HOPS || '1',
     WHATSAPP_PROVIDER: 'fake',
-    ASSISTANT_PROVIDER: 'fallback',
+    ADVISOR_PROVIDER: 'fallback',
     UPLOADS_PAUSED: 'true',
     EXTRACTION_PAUSED: 'true',
     RELEASE_SHA: process.env.RELEASE_SHA || 'demo',

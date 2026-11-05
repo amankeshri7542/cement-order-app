@@ -45,6 +45,7 @@ enum OrderSource {
   PHONE
   WALK_IN
   QUOTE
+  WHATSAPP
 }
 
 enum LedgerKind {
@@ -64,57 +65,72 @@ enum QuoteStatus {
 }
 
 model User {
-  customerGroupId   String?
-  customerGroup     CustomerGroup? @relation(fields: [customerGroupId], references: [id])
+  /// The customer asked for no more reminders. A person may still call; nothing is sent.
+  remindersStoppedAt   DateTime?
+  remindersStoppedById String?
+  /// An owner has turned on this customer's own view of their udhaar. Needs a signed opening first.
+  khataViewOn          Boolean               @default(false)
+  followUps            FollowUp[]            @relation("FollowUpCustomer")
+  assignedFollowUps    FollowUp[]            @relation("FollowUpAssignee")
+  khataSignoffs        KhataSignoff[]
+  khataOpeningDraft    KhataOpeningDraft?
+  customerGroupId      String?
+  customerGroup        CustomerGroup?        @relation(fields: [customerGroupId], references: [id])
+  /// Tally ledgers a person has linked to this customer.
+  tallyLinks           TallyPartyLink[]
   /// How far below list this person may set a rate at confirm. Empty means the shop's limit.
-  rateCapPercent    Int?
+  rateCapPercent       Int?
   // Set while an owner has paused this person. Their memberships stay, and give no access.
-  staffPausedAt     DateTime?
-  staffMemberships  StaffMembership[]     @relation("MemberUser")
-  pushTokens        PushActionToken[]
-  creditAllowed     Boolean               @default(false)
-  creditLimitPaise  Int?
-  khataBalancePaise Int                   @default(0)
-  area              String                @default("")
-  tags              String[]              @default([])
-  lastOrderAt       DateTime?
-  notesCount        Int                   @default(0)
-  ledgerEntries     CustomerLedgerEntry[]
-  customerNotes     CustomerNote[]
-  customerContacts  CustomerContact[]
-  demandOverrides   DemandOverride[]
-  contractorStatus  String                @default("NONE")
-  deletedAt         DateTime?
-  adminCredential   AdminCredential?
-  id                String                @id @default(cuid())
-  phone             String                @unique
-  name              String                @default("")
-  role              Role                  @default(CUSTOMER)
-  language          String                @default("en")
-  staffTitle        String                @default("")
-  whatsappAlerts    Boolean               @default(false)
-  pushSubscriptions PushSubscription[]
-  outboundMessages  OutboundMessage[]
-  createdAt         DateTime              @default(now())
-  updatedAt         DateTime              @updatedAt
-  sessions          Session[]
-  addresses         Address[]
-  cart              CartItem[]
-  reviews           CheckoutReview[]
-  orders            Order[]
-  quotes            Quote[]
-  notifications     Notification[]
-  devices           Device[]
-  assignedWork      OwnerWork[]           @relation("WorkOwner")
-  technicalWork     OwnerWork[]           @relation("TechnicalOwner")
+  staffPausedAt        DateTime?
+  staffMemberships     StaffMembership[]     @relation("MemberUser")
+  pushTokens           PushActionToken[]
+  creditAllowed        Boolean               @default(false)
+  delegates            AccountDelegate[]     @relation("AccountDelegates")
+  creditLimitPaise     Int?
+  khataBalancePaise    Int                   @default(0)
+  area                 String                @default("")
+  tags                 String[]              @default([])
+  lastOrderAt          DateTime?
+  notesCount           Int                   @default(0)
+  ledgerEntries        CustomerLedgerEntry[]
+  customerNotes        CustomerNote[]
+  customerContacts     CustomerContact[]
+  demandOverrides      DemandOverride[]
+  contractorStatus     String                @default("NONE")
+  deletedAt            DateTime?
+  adminCredential      AdminCredential?
+  id                   String                @id @default(cuid())
+  phone                String                @unique
+  name                 String                @default("")
+  role                 Role                  @default(CUSTOMER)
+  language             String                @default("en")
+  staffTitle           String                @default("")
+  whatsappAlerts       Boolean               @default(false)
+  pushSubscriptions    PushSubscription[]
+  outboundMessages     OutboundMessage[]
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  sessions             Session[]
+  addresses            Address[]
+  cart                 CartItem[]
+  reviews              CheckoutReview[]
+  orders               Order[]
+  quotes               Quote[]
+  notifications        Notification[]
+  devices              Device[]
+  assignedWork         OwnerWork[]           @relation("WorkOwner")
+  technicalWork        OwnerWork[]           @relation("TechnicalOwner")
 
   @@index([createdAt, id])
+  @@index([lastOrderAt])
 }
 
 model Session {
   // Where this session signed in. Staff rights apply only to desk sessions, so a token from
   // the customer app of someone who is also staff reaches nothing on the desk.
   surface              SessionSurface @default(CUSTOMER)
+  /// The phone this staff app session belongs to. A token is useless once that phone is cut off.
+  staffDeviceId        String?
   label                String         @default("Unknown device")
   lastSeenAt           DateTime       @default(now())
   adminVerifiedAt      DateTime?
@@ -147,29 +163,34 @@ model OtpChallenge {
 }
 
 model Address {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  label     String
-  name      String
-  phone     String
-  line1     String
-  area      String
-  city      String
-  state     String   @default("Bihar")
-  pincode   String
-  landmark  String   @default("")
-  createdAt DateTime @default(now())
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label      String
+  name       String
+  phone      String
+  line1      String
+  area       String
+  city       String
+  state      String    @default("Bihar")
+  pincode    String
+  landmark   String    @default("")
+  // Set only when the customer taps "I am at the site". Goes when the account is deleted.
+  lat        Float?
+  lng        Float?
+  // Set on placing an order: the Sites sheet lists the last used first.
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
 
   @@index([userId])
 }
 
 model Category {
   priceRules PriceRule[]
-  id       String    @id @default(cuid())
-  name     String
-  slug     String    @unique
-  products Product[]
+  id         String      @id @default(cuid())
+  name       String
+  slug       String      @unique
+  products   Product[]
 }
 
 model Product {
@@ -288,6 +309,8 @@ model Order {
   quoteId           String?               @unique
   quote             Quote?                @relation(fields: [quoteId], references: [id])
   quoteRevision     Int?
+  // The customer's own earlier order this repeats. For measuring only; never for pricing.
+  repeatOfOrderId   String?
   work              OwnerWork?
   deliveryAttempts  DeliveryAttempt[]
   id                String                @id @default(cuid())
@@ -310,6 +333,8 @@ model Order {
   items             OrderItem[]
   history           OrderStatusHistory[]
   payment           Payment?
+  loads             OrderLoad[]
+  tripStops         TripStop[]
 
   @@unique([userId, idempotencyKey])
   @@index([userId, createdAt])
@@ -325,19 +350,19 @@ model OrderItem {
   ruleKind        String?
   rateChangedById String?
   // The rate on the shop's list when this line was made. pricePaise is what is charged.
-  listPricePaise Int
-  packSize       String  @default("")
-  id             String  @id @default(cuid())
-  orderId        String
-  order          Order   @relation(fields: [orderId], references: [id])
-  productId      String
-  product        Product @relation(fields: [productId], references: [id])
-  name           String
-  unit           String
-  quantity       Int
-  pricePaise     Int
-  priceVersion   Int
-  lineTotalPaise Int
+  listPricePaise  Int
+  packSize        String  @default("")
+  id              String  @id @default(cuid())
+  orderId         String
+  order           Order   @relation(fields: [orderId], references: [id])
+  productId       String
+  product         Product @relation(fields: [productId], references: [id])
+  name            String
+  unit            String
+  quantity        Int
+  pricePaise      Int
+  priceVersion    Int
+  lineTotalPaise  Int
 
   @@index([orderId])
 }
@@ -574,15 +599,20 @@ model CustomerNote {
 }
 
 model CustomerContact {
-  id         String   @id @default(cuid())
-  customerId String
-  customer   User     @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  actorId    String
-  channel    String
-  purpose    String
-  createdAt  DateTime @default(now())
+  id             String   @id @default(cuid())
+  customerId     String
+  customer       User     @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  actorId        String
+  channel        String
+  purpose        String
+  /// CALL, MESSAGE, REMINDER or QUIET. OTHER on rows older than this column.
+  kind           String   @default("OTHER")
+  idempotencyKey String?
+  createdAt      DateTime @default(now())
 
+  @@unique([customerId, idempotencyKey])
   @@index([customerId, createdAt, id])
+  @@index([customerId, kind, createdAt])
 }
 
 model Device {
@@ -601,7 +631,7 @@ model Device {
 model AuditLog {
   // What the rules said when this happened, and at which shop. Append-only by trigger.
   locationId         String?
-  permissionsVersion Int      @default(4)
+  permissionsVersion Int      @default(10)
   id                 String   @id @default(cuid())
   actorId            String
   event              String
@@ -663,6 +693,8 @@ model DeliveryZone {
 
 model DeliveryPincode {
   pincode String       @id
+  // Area name for a new site's form. Empty means the form asks; it never guesses.
+  area    String       @default("")
   zoneId  String
   zone    DeliveryZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
 
@@ -908,6 +940,13 @@ model Location {
   active                Boolean               @default(true)
   /// When this shop's count began. A shop added from the desk counts from nothing, at once.
   stockStartedAt        DateTime?
+  /// Where the shop stands, taken by someone standing inside it. Hazri cross-checks scans against this.
+  lat                   Float?
+  lng                   Float?
+  radiusM               Int                   @default(100)
+  /// Hazri comes on one shop at a time.
+  attendanceOn          Boolean               @default(false)
+  graceMinutes          Int                   @default(10)
   createdAt             DateTime              @default(now())
   updatedAt             DateTime              @updatedAt
   stockLevels           StockLevel[]
@@ -923,6 +962,11 @@ model Location {
   stockCounts           StockCount[]
   dayCloses             DayClose[]
   gallaEntries          GallaEntry[]
+  shopScreens           ShopScreen[]
+  stockReceipts         StockReceipt[]
+  trips                 Trip[]
+  cashHandovers         CashHandover[]
+  followUps             FollowUp[]
 }
 
 /// Per-shop stock. Product.stock stays the all-shops total until every client reads availability.
@@ -1021,6 +1065,13 @@ model WaThread {
   updatedAt     DateTime      @updatedAt
   messages      WaMessage[]
   runs          WaReaderRun[]
+  // The notice has gone or is queued. It goes once per number, before the first answer.
+  noticeAt      DateTime?
+  language      String        @default("hinglish")
+  // They asked for a person: nothing from the AI here until this passes or staff turn it back on.
+  handoffUntil  DateTime?
+  drafts        WaDraft[]
+  replies       WaReply[]
 
   @@index([nextRunAt])
   @@index([lastEchoAt])
@@ -1076,13 +1127,161 @@ model WaReaderRun {
 }
 
 model WaSettings {
-  id            String    @id @default("wa")
-  aiPaused      Boolean   @default(false)
-  pausedById    String?
-  pausedAt      DateTime?
-  lastWebhookAt DateTime?
-  lastAccount   String    @default("")
-  updatedAt     DateTime  @updatedAt
+  id             String    @id @default("wa")
+  aiPaused       Boolean   @default(false)
+  pausedById     String?
+  pausedAt       DateTime?
+  lastWebhookAt  DateTime?
+  lastAccount    String    @default("")
+  // Who may hear from the AI. Off on a fresh database, and only an owner moves it.
+  replyStage     String    @default("OFF")
+  stageMovedAt   DateTime?
+  stageMovedById String?
+  // Up to 5, for the TEST_NUMBERS stage.
+  testNumbers    String[]  @default([])
+  // How long the AI stays quiet in a chat after Papa types there (decision 8).
+  quietMinutes   Int       @default(45)
+  // No AI reply between these hours, IST. A person's decision still goes.
+  nightFromHour  Int       @default(21)
+  nightToHour    Int       @default(7)
+  updatedAt      DateTime  @updatedAt
+}
+
+// One order before a person has looked at it (master plan Phase 3). It holds no price and no stock,
+// and only a person's tap turns it into an order: the database refuses CONFIRMED without one.
+model WaDraft {
+  id             String         @id @default(cuid())
+  threadId       String?
+  thread         WaThread?      @relation(fields: [threadId], references: [id])
+  source         String
+  status         String         @default("OPEN")
+  version        Int            @default(1)
+  locationId     String         @default("loc_main")
+  // Who sent it, and who pays, are two different questions (decision 62).
+  orderedByName  String         @default("")
+  orderedByPhone String?
+  payWhen        String         @default("UNSET")
+  payerUserId    String?
+  // What the message said about paying or whose account. Never trusted, only shown.
+  payerWords     String         @default("")
+  paymentWords   String         @default("")
+  // The customer's own words. Empty once deleted, or past their time.
+  originalText   String?
+  truncated      Boolean        @default(false)
+  lines          Json
+  placeText      String         @default("")
+  pincode        String?
+  fulfilment     String         @default("UNKNOWN")
+  dayKind        String         @default("UNSPECIFIED")
+  deliveryDate   String?
+  timeWish       String         @default("")
+  band           String?
+  flags          String[]       @default([])
+  reader         String         @default("none")
+  readerError    String?
+  messageIds     String[]       @default([])
+  // A person who pasted it. Always set on a pasted card.
+  createdById    String?
+  pasteKey       String?        @unique
+  // Questions already put to the customer, so none is asked twice.
+  asked          String[]       @default([])
+  // Papa typed in this chat after the draft was made: it never expires and the AI never reports on it.
+  papaRepliedAt  DateTime?
+  lastWaitingAt  DateTime?
+  orderId        String?        @unique
+  decidedById    String?
+  decidedAt      DateTime?
+  refuseReason   String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  events         WaDraftEvent[]
+  replies        WaReply[]
+
+  @@index([status, createdAt])
+  @@index([threadId, status])
+  @@index([locationId, status])
+}
+
+// Append-only. Holds product ids and quantities, never words. AI draft against what a person
+// confirmed is the true measure of the reader.
+model WaDraftEvent {
+  id        String   @id @default(cuid())
+  draftId   String
+  draft     WaDraft  @relation(fields: [draftId], references: [id], onDelete: Cascade)
+  version   Int
+  actorId   String
+  change    Json
+  createdAt DateTime @default(now())
+
+  @@index([draftId, version])
+}
+
+// Everything the system says on WhatsApp goes through this one table and one sender.
+model WaReply {
+  id             String    @id @default(cuid())
+  threadId       String
+  thread         WaThread  @relation(fields: [threadId], references: [id])
+  draftId        String?
+  draft          WaDraft?  @relation(fields: [draftId], references: [id], onDelete: SetNull)
+  runId          String?
+  dedupeKey      String    @unique
+  // AI_REPLY has no actor and cannot hold a decision. HUMAN_DECISION always names who tapped.
+  class          String
+  actorId        String?
+  kind           String
+  language       String    @default("hinglish")
+  body           String?
+  buttons        Json?
+  template       String?
+  templateParams Json?
+  forceTemplate  Boolean   @default(false)
+  // The message this answers, for "did Papa speak since?" and "is it too late?"
+  triggerAt      DateTime?
+  // A receipt for a new order may go while the chat is quiet (decision 8). Nothing else may.
+  quietOk        Boolean   @default(false)
+  status         String    @default("QUEUED")
+  skipReason     String?
+  failedCode     String?
+  attempts       Int       @default(0)
+  nextAttemptAt  DateTime  @default(now())
+  leaseUntil     DateTime?
+  // WhatsApp's id can carry the number, so only its hash is kept.
+  providerId     String?
+  viaTemplate    Boolean   @default(false)
+  sentAt         DateTime?
+  deliveredAt    DateTime?
+  readAt         DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([status, nextAttemptAt])
+  @@index([threadId, createdAt])
+  @@index([providerId])
+  @@index([createdAt])
+}
+
+// The family's own list of what each size of trolley or truck holds. A person picks one on the
+// card. Nothing here is ever worked out or guessed (decision 62).
+model WaLoadSize {
+  id          String   @id @default(cuid())
+  productId   String
+  label       String
+  quantity    Int
+  active      Boolean  @default(true)
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([productId, label])
+}
+
+// The paper tally of confirmation calls, copied in at baseline and at weeks 2, 4 and 8.
+model WaCallTally {
+  period       String   @id
+  days         Int      @default(3)
+  calls        Int
+  orders       Int
+  recordedById String
+  updatedAt    DateTime @updatedAt
 }
 
 // Shop operations (master plan Phase 4). Goods on the road belong to neither shop until counted in.
@@ -1265,4 +1464,1134 @@ model DeliveryRate {
   updatedAt DateTime     @updatedAt
 
   @@unique([zoneId, vehicle])
+}
+
+/// Staff facts that are not about money. Pay terms arrive with salary, in their own table.
+model StaffProfile {
+  userId    String   @id
+  /// No smartphone, or one that cannot run the app: a manager marks them, and it stays visible.
+  noPhone   Boolean  @default(false)
+  updatedAt DateTime @updatedAt
+}
+
+/// Never overwritten: a new row from a date, so last month still reads last month's hours.
+model StaffSchedule {
+  id            String   @id @default(cuid())
+  userId        String
+  effectiveFrom String
+  startMinute   Int
+  endMinute     Int
+  breakMinutes  Int      @default(60)
+  /// 0 is Sunday.
+  weeklyOffs    Int[]
+  createdById   String
+  createdAt     DateTime @default(now())
+
+  @@unique([userId, effectiveFrom])
+}
+
+model StaffNoticeAck {
+  userId        String
+  noticeVersion Int
+  at            DateTime @default(now())
+
+  @@id([userId, noticeVersion])
+}
+
+enum StaffDeviceStatus {
+  PENDING
+  ACTIVE
+  REVOKED
+  REPLACED
+  LOST
+}
+
+/// One active phone per person, holding a key that cannot leave it.
+model StaffDevice {
+  id          String              @id @default(cuid())
+  userId      String
+  publicKey   String
+  model       String              @default("")
+  sdk         Int                 @default(0)
+  status      StaffDeviceStatus   @default(PENDING)
+  linkedById  String?
+  lastSeenAt  DateTime?
+  createdAt   DateTime            @default(now())
+  revokedAt   DateTime?
+  revokedById String?
+  requests    DeviceLinkRequest[]
+
+  @@index([userId, status])
+}
+
+enum DeviceRequestKind {
+  FIRST
+  CHANGE
+}
+
+enum DeviceRequestStatus {
+  PENDING
+  APPROVED
+  REFUSED
+  CANCELLED
+}
+
+model DeviceLinkRequest {
+  id          String              @id @default(cuid())
+  userId      String
+  deviceId    String
+  device      StaffDevice         @relation(fields: [deviceId], references: [id])
+  kind        DeviceRequestKind
+  reason      String              @default("")
+  /// Scanning the shop's code proves the new phone was really at the shop.
+  qrScannedAt DateTime?
+  qrScreenId  String?
+  status      DeviceRequestStatus @default(PENDING)
+  decidedById String?
+  decidedAt   DateTime?
+  createdAt   DateTime            @default(now())
+
+  @@index([status, createdAt])
+  @@index([userId, status])
+}
+
+enum ShopScreenKind {
+  SCREEN
+  MANAGER_PHONE
+}
+
+enum ShopScreenStatus {
+  PENDING
+  ACTIVE
+  REVOKED
+}
+
+/// What shows the rotating code. Its key is derived, so nothing here can make a code by itself.
+model ShopScreen {
+  id               String           @id @default(cuid())
+  locationId       String
+  location         Location         @relation(fields: [locationId], references: [id])
+  /// Short and uppercase, so the code stays small and scans from a metre away.
+  code             String           @unique
+  label            String           @default("")
+  kind             ShopScreenKind   @default(SCREEN)
+  epoch            Int              @default(1)
+  status           ShopScreenStatus @default(PENDING)
+  credentialHash   String?          @unique
+  pairingCodeHash  String?
+  pairingExpiresAt DateTime?
+  pairedById       String?
+  lastSeenAt       DateTime?
+  revokedAt        DateTime?
+  revokedById      String?
+  createdAt        DateTime         @default(now())
+
+  @@index([locationId, status])
+}
+
+enum AttendanceKind {
+  IN
+  OUT
+  MANUAL_IN
+  MANUAL_OUT
+  CORRECTION
+  DECISION
+  SIGNAL
+}
+
+enum AttendanceResult {
+  GREEN
+  GREEN_NOTE
+  RETRY
+  REVIEW
+}
+
+/// Append-only and chained per person, so a changed or missing row breaks the chain.
+model AttendanceEvent {
+  id           String            @id @default(cuid())
+  userId       String
+  stream       String
+  seq          Int
+  prevHash     String
+  hash         String
+  locationId   String?
+  kind         AttendanceKind
+  /// Always the server's own clock. The phone's clock is never used.
+  serverAt     DateTime
+  captureId    String?
+  claimedAgeMs Int?
+  bootCount    Int?
+  appVersion   String?
+  deviceId     String?
+  signature    String?
+  qrCounter    Int?
+  screenId     String?
+  distanceM    Int?
+  accuracyM    Int?
+  mocked       Boolean?
+  /// What each check saw, as short codes. Words are chosen on the screen.
+  reasons      String[]          @default([])
+  geoHash      String?
+  evidenceId   String?
+  result       AttendanceResult?
+  actorId      String
+  reason       String            @default("")
+  refersToId   String?
+  /// For a correction: which time it fixes, and to what.
+  correctsKind String?
+  correctedAt  DateTime?
+
+  @@unique([stream, seq])
+  @@unique([userId, captureId])
+  @@index([userId, serverAt])
+  @@index([locationId, serverAt])
+}
+
+/// Exact position, only for a scan someone must judge. Can be erased; the chain holds only its hash.
+model AttendanceGeo {
+  eventId     String    @id
+  geoEnc      String?
+  retainUntil DateTime
+  erasedAt    DateTime?
+
+  @@index([retainUntil, erasedAt])
+}
+
+/// Worked out from the events, and rebuilt from them at any time. Not part of the record.
+model AttendanceDay {
+  userId      String
+  day         String
+  locationIds String[]
+  firstInAt   DateTime?
+  lastOutAt   DateTime?
+  minutes     Int?
+  lateMinutes Int       @default(0)
+  status      String
+  flags       String[]  @default([])
+  updatedAt   DateTime  @updatedAt
+
+  @@id([userId, day])
+  @@index([day])
+}
+
+enum ReviewStatus {
+  OPEN
+  ACCEPTED
+  REJECTED
+}
+
+model AttendanceReview {
+  id          String       @id @default(cuid())
+  eventId     String       @unique
+  userId      String
+  locationId  String?
+  kind        String
+  status      ReviewStatus @default(OPEN)
+  /// Sent up, or the person's own manager cannot decide it, or it waited too long.
+  toOwner     Boolean      @default(false)
+  decidedById String?
+  decidedAt   DateTime?
+  note        String       @default("")
+  createdAt   DateTime     @default(now())
+
+  @@index([status, locationId, createdAt])
+}
+
+/// Each night's code. It leaves the database that night, so a later rewrite shows.
+model ProofAnchor {
+  day      String    @id
+  root     String
+  prevRoot String
+  sentAt   DateTime?
+}
+
+/// One place for private files. The row stays as the record that the file existed.
+model EvidenceObject {
+  id          String    @id @default(cuid())
+  kind        String
+  storageKey  String    @unique
+  sha256      String
+  contentType String
+  size        Int
+  locationId  String?
+  createdById String
+  createdAt   DateTime  @default(now())
+  retainUntil DateTime?
+  erasedAt    DateTime?
+
+  @@index([retainUntil, erasedAt])
+}
+
+/// A truck received. One product per receipt; a mixed truck is two rows.
+model StockReceipt {
+  id             String   @id @default(cuid())
+  locationId     String
+  location       Location @relation(fields: [locationId], references: [id])
+  productId      String
+  quantity       Int
+  supplierName   String
+  vehicle        String   @default("")
+  evidenceId     String?
+  movementId     String   @unique
+  actorId        String
+  idempotencyKey String   @unique
+  createdAt      DateTime @default(now())
+
+  @@index([locationId, createdAt])
+}
+
+/// Goods put on a vehicle. The list a loader sees has no rate, money or udhaar.
+model OrderLoad {
+  id             String   @id @default(cuid())
+  orderId        String
+  order          Order    @relation(fields: [orderId], references: [id])
+  locationId     String
+  vehicle        String   @default("")
+  /// The bill or challan that travels with the load, if the accountant asks for one.
+  billNumber     String   @default("")
+  loadedById     String
+  note           String   @default("")
+  createdAt      DateTime @default(now())
+  idempotencyKey String   @unique
+
+  @@index([orderId])
+}
+
+enum TripStatus {
+  PLANNED
+  OUT
+  DONE
+  CANCELLED
+}
+
+enum TripStopStatus {
+  PENDING
+  DELIVERED
+  PROBLEM
+}
+
+model Trip {
+  id             String     @id @default(cuid())
+  locationId     String
+  location       Location   @relation(fields: [locationId], references: [id])
+  driverId       String
+  helperId       String?
+  vehicle        String     @default("")
+  status         TripStatus @default(PLANNED)
+  createdById    String
+  idempotencyKey String     @unique
+  createdAt      DateTime   @default(now())
+  startedAt      DateTime?
+  endedAt        DateTime?
+  stops          TripStop[]
+
+  @@index([driverId, status])
+  @@index([locationId, createdAt])
+}
+
+model TripStop {
+  id         String         @id @default(cuid())
+  tripId     String
+  trip       Trip           @relation(fields: [tripId], references: [id])
+  orderId    String
+  order      Order          @relation(fields: [orderId], references: [id])
+  sequence   Int
+  status     TripStopStatus @default(PENDING)
+  departedAt DateTime?
+  arrivedAt  DateTime?
+  problem    String         @default("")
+
+  @@unique([tripId, orderId])
+  @@index([orderId])
+}
+
+/// What happened at a site. Location is read only at this tap, and the driver is told so.
+model DeliveryProof {
+  id             String   @id @default(cuid())
+  orderId        String
+  tripStopId     String?
+  kind           String
+  serverAt       DateTime @default(now())
+  claimedAgeMs   Int?
+  distanceM      Int?
+  accuracyM      Int?
+  geoEnc         String?
+  evidenceId     String?
+  skipReason     String   @default("")
+  actorId        String
+  idempotencyKey String   @unique
+
+  @@index([orderId])
+}
+
+/// What a driver says they took. It joins the drawer only when someone else has counted it.
+model DriverCollection {
+  id             String   @id @default(cuid())
+  orderId        String
+  driverId       String
+  locationId     String
+  duePaise       Int
+  amountPaise    Int
+  channel        String
+  claimedAgeMs   Int?
+  handoverKey    String?
+  serverAt       DateTime @default(now())
+  idempotencyKey String   @unique
+
+  @@index([driverId, handoverKey])
+  @@index([orderId])
+}
+
+/// One row per step, never changed: OFFERED by the driver, COUNTED by someone else, SETTLED by an owner.
+model CashHandover {
+  id          String   @id @default(cuid())
+  handoverKey String
+  step        String
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
+  driverId    String
+  amountPaise Int
+  actorId     String
+  note        String   @default("")
+  createdAt   DateTime @default(now())
+
+  @@unique([handoverKey, step])
+  @@index([locationId, createdAt])
+  @@index([driverId, createdAt])
+}
+
+/// A new row from a date, so last month still reads last month's pay.
+model StaffPayTerms {
+  id            String   @id @default(cuid())
+  userId        String
+  effectiveFrom String
+  amountPaise   Int
+  createdById   String
+  createdAt     DateTime @default(now())
+
+  @@unique([userId, effectiveFrom])
+}
+
+enum PayRunStatus {
+  DRAFT
+  LOCKED
+}
+
+model PayRun {
+  id         String       @id @default(cuid())
+  month      String       @unique
+  status     PayRunStatus @default(DRAFT)
+  lockedById String?
+  lockedAt   DateTime?
+  createdAt  DateTime     @default(now())
+  lines      PayLine[]
+}
+
+/// Frozen when the month is locked: the slip says what was true then, for good.
+model PayLine {
+  id       String @id @default(cuid())
+  payRunId String
+  payRun   PayRun @relation(fields: [payRunId], references: [id])
+  userId   String
+  slip     Json
+  slipHash String
+  netPaise Int
+
+  @@unique([payRunId, userId])
+  @@index([userId])
+}
+
+/// Each line has a reason beside it, and a wrong one gets an opposite row, never an edit.
+model PayAdjustment {
+  id             String   @id @default(cuid())
+  month          String
+  userId         String
+  kind           String
+  amountPaise    Int
+  reason         String
+  actorId        String
+  reversesId     String?  @unique
+  idempotencyKey String   @unique
+  createdAt      DateTime @default(now())
+
+  @@index([month, userId])
+}
+
+/// Append-only and chained per person. A mistake gets an opposite entry beside it.
+model StaffLedgerEntry {
+  id                String   @id @default(cuid())
+  userId            String
+  stream            String
+  seq               Int
+  prevHash          String
+  hash              String
+  account           String
+  kind              String
+  amountPaise       Int
+  balanceAfterPaise Int
+  month             String?
+  channel           String   @default("")
+  paidFrom          String   @default("")
+  locationId        String?
+  utr               String   @default("")
+  /// How much to recover each month, on an advance.
+  recoveryPaise     Int?
+  reversesId        String?  @unique
+  idempotencyKey    String   @unique
+  actorId           String
+  approvedById      String?
+  serverAt          DateTime
+  note              String   @default("")
+
+  @@unique([stream, seq])
+  @@index([userId, account, serverAt])
+  @@index([month])
+}
+
+/// The person's own word: "Haan, mil gaya" or "Nahi mila".
+model PaymentAck {
+  entryId String   @id
+  userId  String
+  answer  String
+  at      DateTime @default(now())
+}
+
+// A customer's "My people": a munshi or mistri who may order on the account (plan 01). One row per
+// account and number; removing someone ends the row, and adding them again reopens it.
+model AccountDelegate {
+  id           String    @id @default(cuid())
+  accountId    String
+  account      User      @relation("AccountDelegates", fields: [accountId], references: [id], onDelete: Cascade)
+  phone        String
+  name         String    @default("")
+  canUseUdhaar Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  endedAt      DateTime?
+
+  @@unique([accountId, phone])
+  @@index([phone])
+}
+
+// ---- Tally, read-only (plan 09) ------------------------------------------------------------
+// A copy of someone else's books: upserted and soft-deleted, never corrected here. Nothing in this
+// repository writes to Tally. Money is BigInt paise, because a supplier's dues can pass khata's cap.
+
+/// One PC that runs Tally. It proves itself with its own key on every call and reaches nothing else.
+model TallyDevice {
+  id              String         @id @default(cuid())
+  name            String
+  /// Which shop's PC. No foreign key: a closed shop must not disturb the books.
+  locationId      String?
+  /// Ed25519 public key, base64 of the SPKI bytes.
+  publicKey       String         @unique
+  createdById     String
+  createdAt       DateTime       @default(now())
+  revokedAt       DateTime?
+  revokedById     String?
+  /// "Bridge roko": it keeps saying it is alive, and asks Tally nothing.
+  pausedAt        DateTime?
+  lastHeartbeatAt DateTime?
+  lastWakeAt      DateTime?
+  /// The last time Tally itself answered this PC.
+  lastGoodAt      DateTime?
+  state           String         @default("NEW")
+  stateSince      DateTime       @default(now())
+  version         String         @default("")
+  os              String         @default("")
+  caps            Json           @default("{}")
+  lastSeq         BigInt         @default(0)
+  /// A person chose this release for this PC. Nothing updates on its own.
+  targetVersion   String?
+  companies       TallyCompany[]
+  jobs            TallySyncJob[]
+}
+
+model TallyPairingCode {
+  hash           String    @id
+  name           String
+  locationId     String?
+  expiresAt      DateTime
+  usedAt         DateTime?
+  usedByDeviceId String?
+  createdById    String
+  createdAt      DateTime  @default(now())
+}
+
+/// A company file in Tally. Starts PENDING: nothing is copied until a person says which it is.
+model TallyCompany {
+  id                  String         @id @default(cuid())
+  guid                String         @unique
+  name                String
+  firmId              String?
+  /// PENDING, PRIMARY, BRANCH_COPY, IGNORE
+  role                String         @default("PENDING")
+  ownerDeviceId       String?
+  owner               TallyDevice?   @relation(fields: [ownerDeviceId], references: [id])
+  bookFamily          String         @default("")
+  booksFrom           String?
+  lastVoucherDate     String?
+  /// Tally's own change marks, as last read.
+  altMstId            BigInt         @default(0)
+  altVchId            BigInt         @default(0)
+  /// How far the mirror has proved itself. Moves in the same transaction as the rows.
+  wmMstId             BigInt         @default(0)
+  wmVchId             BigInt         @default(0)
+  marksChangedAt      DateTime?
+  marksFirstChangedAt DateTime?
+  /// Last moment Tally's marks said the mirror was current. The time beside every Tally number.
+  freshAt             DateTime?
+  /// MASTERS, BASELINE, BACKFILL, LIVE
+  phase               String         @default("MASTERS")
+  /// The mirror holds vouchers from this day on: this financial year unless the accountant asks.
+  copyFrom            String?
+  backfillCursor      String?
+  backfillWindowDays  Int            @default(7)
+  lastSweepOn         String?
+  lastRereadOn        String?
+  failures            Int            @default(0)
+  lastFailureAt       DateTime?
+  lastError           String?
+  rewrittenAt         DateTime?
+  /// A company of this name was here under another guid: a restore, repair or migration.
+  sameNameAsId        String?
+  tieOut              Json?
+  tieOutAt            DateTime?
+  reconDue            Boolean        @default(false)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  jobs                TallySyncJob[]
+  ledgers             TallyLedger[]
+  vouchers            TallyVoucher[]
+}
+
+/// One or more fixed reads for one PC. A failed job simply repeats, and upserts make that harmless.
+model TallySyncJob {
+  id         String       @id @default(cuid())
+  deviceId   String
+  device     TallyDevice  @relation(fields: [deviceId], references: [id])
+  companyId  String
+  company    TallyCompany @relation(fields: [companyId], references: [id])
+  /// MASTERS, BASELINE, WINDOW, DELTA, SWEEP
+  kind       String
+  reads      Json
+  params     Json         @default("{}")
+  /// QUEUED, LEASED, UPLOADED, INGESTING, APPLIED, FAILED, EXPIRED
+  status     String       @default("QUEUED")
+  leaseUntil DateTime?
+  report     Json?
+  result     Json?
+  error      String?
+  createdAt  DateTime     @default(now())
+  uploadedAt DateTime?
+  finishedAt DateTime?
+  chunks     TallyChunk[]
+
+  @@index([deviceId, status])
+  @@index([status, uploadedAt])
+  @@index([companyId, createdAt])
+}
+
+/// One gzip part of one answer. The bytes live in private storage and expire in 7 days.
+model TallyChunk {
+  jobId      String
+  job        TallySyncJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  seq        Int
+  sha256     String
+  storageKey String
+  size       Int
+  parsedAt   DateTime?
+  expiresAt  DateTime
+  createdAt  DateTime     @default(now())
+
+  @@id([jobId, seq])
+  @@index([expiresAt])
+}
+
+model TallyGroup {
+  companyId String
+  guid      String
+  alterId   BigInt @default(0)
+  name      String
+  parent    String @default("")
+
+  @@id([companyId, guid])
+}
+
+model TallyVoucherType {
+  companyId String
+  guid      String
+  name      String
+  parent    String @default("")
+  /// Where its parent chain ends: Sales, Purchase, Receipt and so on. Empty means it is not copied.
+  baseType  String @default("")
+
+  @@id([companyId, guid])
+}
+
+model TallyGodown {
+  companyId  String
+  guid       String
+  name       String
+  parent     String  @default("")
+  locationId String?
+
+  @@id([companyId, guid])
+}
+
+model TallyLedger {
+  id             String          @id @default(cuid())
+  companyId      String
+  company        TallyCompany    @relation(fields: [companyId], references: [id])
+  guid           String
+  masterId       String?
+  alterId        BigInt
+  name           String
+  parent         String
+  /// DEBTOR or CREDITOR
+  class          String
+  phones         String[]        @default([])
+  gstin          String?
+  billWise       Boolean         @default(false)
+  openingPaise   BigInt?
+  closingPaise   BigInt?
+  closingAsOf    DateTime?
+  /// Tally's balance the day before our copy starts, read once.
+  baselinePaise  BigInt?
+  baselineOn     String?
+  /// Baseline plus mirrored lines equals Tally's closing, to the paisa.
+  tieOutOk       Boolean?
+  tieOutGapPaise BigInt?
+  deletedAt      DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  link           TallyPartyLink?
+
+  @@unique([companyId, guid])
+  @@index([companyId, class, deletedAt])
+  // Finds a ledger by a piece of its name. pg_trgm comes from 20261002120000_pilot_operations.
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "TallyLedger_name_trgm_idx")
+}
+
+model TallyStockItem {
+  id                String    @id @default(cuid())
+  companyId         String
+  guid              String
+  alterId           BigInt
+  name              String
+  parent            String    @default("")
+  baseUnits         String    @default("")
+  closingQtyText    String?
+  closingValuePaise BigInt?
+  asOf              DateTime?
+  deletedAt         DateTime?
+
+  @@unique([companyId, guid])
+}
+
+model TallyVoucher {
+  id               String             @id @default(cuid())
+  companyId        String
+  company          TallyCompany       @relation(fields: [companyId], references: [id])
+  guid             String
+  masterId         String?
+  alterId          BigInt
+  date             String
+  type             String             @default("")
+  baseType         String             @default("")
+  number           String             @default("")
+  party            String             @default("")
+  partyGuid        String?
+  reference        String             @default("")
+  /// An order number (SC-...) found in the narration or reference. The narration itself is not kept.
+  orderRef         String?
+  /// The party line, with Tally's sign: debit is negative.
+  partyAmountPaise BigInt?
+  isOptional       Boolean            @default(false)
+  isCancelled      Boolean            @default(false)
+  deletedAt        DateTime?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  lines            TallyVoucherLine[]
+  items            TallyVoucherItem[]
+
+  @@unique([companyId, guid])
+  @@index([companyId, date])
+  @@index([companyId, alterId])
+  @@index([companyId, orderRef])
+}
+
+model TallyVoucherLine {
+  id          String       @id @default(cuid())
+  voucherId   String
+  voucher     TallyVoucher @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+  /// Resolved by name when read, so a later rename does not lose the line.
+  ledgerGuid  String?
+  ledgerName  String
+  amountPaise BigInt
+
+  @@index([voucherId])
+  @@index([ledgerGuid])
+}
+
+model TallyVoucherItem {
+  id            String       @id @default(cuid())
+  voucherId     String
+  voucher       TallyVoucher @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+  stockItemName String
+  billedQtyText String       @default("")
+  rateText      String       @default("")
+  amountPaise   BigInt
+
+  @@index([voucherId])
+}
+
+/// A fact, not an accusation: a voucher we held changed or went away. Append-only by trigger.
+model TallyVoucherChange {
+  id             String   @id @default(cuid())
+  companyId      String
+  voucherId      String
+  /// ALTERED, DELETED, RESTORED
+  kind           String
+  oldAlterId     BigInt?
+  newAlterId     BigInt?
+  oldAmountPaise BigInt?
+  newAmountPaise BigInt?
+  detectedAt     DateTime @default(now())
+
+  @@index([voucherId])
+  @@index([companyId, detectedAt])
+}
+
+/// A person said this ledger is this customer. Keyed on the ledger's guid, so a rename keeps it.
+model TallyPartyLink {
+  id            String      @id @default(cuid())
+  companyId     String
+  guid          String
+  ledger        TallyLedger @relation(fields: [companyId, guid], references: [companyId, guid])
+  userId        String?
+  user          User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  /// LINKED, UNLINKED, NOT_CUSTOMER
+  status        String
+  /// PHONE, GSTIN, NAME, TYPED
+  method        String      @default("TYPED")
+  score         Int?
+  confirmedById String
+  confirmedAt   DateTime    @default(now())
+
+  @@unique([companyId, guid])
+  @@index([userId])
+}
+
+/// A person matched a khata entry to a voucher. Undone by a later row, never edited. Append-only.
+model KhataVoucherMatch {
+  id            String   @id @default(cuid())
+  entryId       String
+  voucherId     String
+  amountPaise   BigInt
+  /// ORDER_NUMBER, SUGGESTED, PERSON
+  method        String
+  confirmedById String
+  undoesId      String?  @unique
+  createdAt     DateTime @default(now())
+
+  @@index([entryId])
+  @@index([voucherId])
+}
+
+/// The worker's last sum for one customer, so the Farq list need not work it out on every open.
+model KhataRecon {
+  customerId       String
+  firmId           String    @default("")
+  appPaise         Int
+  tallyPaise       BigInt?
+  differencePaise  BigInt?
+  unexplainedPaise BigInt?
+  reasons          Json?
+  tallyAsOf        DateTime?
+  computedAt       DateTime
+
+  @@id([customerId, firmId])
+  @@index([computedAt])
+}
+
+/// A new version of the shop PC's program. The server only holds it; the PC checks the offline signature.
+model TallyRelease {
+  version     String   @id
+  manifest    String
+  signature   String
+  files       Json
+  createdById String
+  createdAt   DateTime @default(now())
+}
+
+// ---- CRM (plan 09 section 11) ---------------------------------------------------------------
+// A phone call or a decision at the end of every row. Nothing here sends anything by itself.
+
+enum FollowUpKind {
+  PAYMENT
+  ORDER
+  CALLBACK
+  OTHER
+}
+
+/// One call somebody owes someone: Aaj ke call. It belongs to one shop, so that shop's people see it.
+model FollowUp {
+  id             String          @id @default(cuid())
+  customerId     String
+  customer       User            @relation("FollowUpCustomer", fields: [customerId], references: [id], onDelete: Restrict)
+  locationId     String
+  location       Location        @relation(fields: [locationId], references: [id])
+  /// The India date it is due.
+  dueOn          String
+  kind           FollowUpKind
+  note           String          @default("")
+  assigneeId     String?
+  assignee       User?           @relation("FollowUpAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  /// What the customer said they would pay by dueOn. Only on a PAYMENT follow-up.
+  promisedPaise  Int?
+  snoozes        Int             @default(0)
+  doneAt         DateTime?
+  doneById       String?
+  createdById    String
+  idempotencyKey String
+  requestHash    String
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  events         FollowUpEvent[]
+
+  @@unique([customerId, idempotencyKey])
+  @@index([locationId, doneAt, dueOn])
+  @@index([assigneeId, doneAt, dueOn])
+  @@index([customerId, createdAt, id])
+}
+
+/// What was done to a follow-up. A retried tap finds its own row here and does nothing twice.
+model FollowUpEvent {
+  id             String   @id @default(cuid())
+  followUpId     String
+  followUp       FollowUp @relation(fields: [followUpId], references: [id], onDelete: Cascade)
+  /// DONE, SNOOZED or ASSIGNED
+  action         String
+  fromDueOn      String?
+  toDueOn        String?
+  fromAssigneeId String?
+  toAssigneeId   String?
+  /// Why it moved. Wiped with the account, so it is not append-only like the money tables.
+  reason         String   @default("")
+  actorId        String
+  idempotencyKey String
+  requestHash    String
+  createdAt      DateTime @default(now())
+
+  @@unique([followUpId, idempotencyKey])
+  @@index([followUpId, createdAt])
+}
+
+/// The opening sheet's row, typed from the paper book. Changes freely until an owner signs it.
+model KhataOpeningDraft {
+  customerId  String    @id
+  customer    User      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  /// The shop the opening entry is written at. A customer's balance counts under this shop until
+  /// they next take credit somewhere.
+  locationId  String
+  /// The agreed cut-off, as an India date.
+  asOf        String
+  paperPaise  Int
+  /// Tally's number when this row was typed, kept beside the paper one. Never sent by a browser.
+  tallyPaise  BigInt?
+  tallyAsOf   DateTime?
+  note        String    @default("")
+  enteredById String
+  /// Goes up with every edit, so an owner signs what they saw and not a later figure.
+  version     Int       @default(1)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+/// An owner agreed what a customer owed on the cut-off date. Once per customer per firm. Append-only.
+model KhataSignoff {
+  id            String   @id @default(cuid())
+  customerId    String
+  customer      User     @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  firmId        String
+  locationId    String
+  asOf          String
+  paperPaise    Int?
+  tallyPaise    BigInt?
+  chosenPaise   Int
+  reason        String   @default("")
+  enteredById   String
+  approvedById  String
+  /// The opening entry. Empty when the customer starts at nothing, because no money moved.
+  ledgerEntryId String?  @unique
+  requestHash   String
+  createdAt     DateTime @default(now())
+
+  @@unique([customerId, firmId])
+  @@index([createdAt, id])
+}
+
+/// How often each report is opened, one row per person per day. A report nobody opens gets deleted.
+model ReportOpen {
+  report String
+  day    String
+  userId String
+  opens  Int    @default(1)
+
+  @@id([report, day, userId])
+  @@index([report, day])
+}
+
+// ---- Ask, the AI home-building advisor (plan 08) ----
+
+/// One guide article, or one answer the shop has written. Only PUBLISHED rows ever reach a customer,
+/// and a raw check refuses a PUBLISHED guide with no reviewer. Content comes from content/advisor/.
+model KnowledgeArticle {
+  id                 String           @id @default(cuid())
+  slug               String           @unique
+  /// GUIDE or SHOP
+  kind               String
+  /// DRAFT, PUBLISHED or RETIRED
+  status             String           @default("DRAFT")
+  version            Int              @default(1)
+  number             Int?
+  titleEn            String
+  titleHinglish      String
+  summary            String
+  aliases            String[]
+  /// The aliases as one string, for trigram search.
+  aliasText          String           @default("")
+  stages             String[]
+  materials          String[]
+  relatedQuestions   Json             @default("[]")
+  standardsMentioned String[]
+  bodyEn             String
+  bodyHinglish       String?
+  /// Sign-off binds to this, so any edit drops the article at the next sync.
+  sha256             String
+  /// ENG-1 style key. The real name stays out of the repo.
+  reviewerKey        String?
+  reviewedAt         DateTime?
+  reviewDueAt        DateTime?
+  approvedById       String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  chunks             KnowledgeChunk[]
+
+  @@index([status, kind])
+  @@index([aliasText(ops: raw("gin_trgm_ops"))], type: Gin, map: "KnowledgeArticle_aliasText_search")
+}
+
+/// One H2 of an article. tsv is generated by the database from heading and body.
+model KnowledgeChunk {
+  id             String                   @id @default(cuid())
+  articleId      String
+  article        KnowledgeArticle         @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  articleVersion Int
+  ordinal        Int
+  anchor         String
+  heading        String
+  blocks         Json
+  body           String
+  // A stored generated column, written by hand in the migration. Prisma reads its expression as a
+  // default, so it is named here or every later migration tries to drop it.
+  tsv            Unsupported("tsvector")? @default(dbgenerated("to_tsvector('english'::regconfig, ((heading || ' '::text) || body))"))
+
+  @@unique([articleId, articleVersion, ordinal])
+  @@index([tsv], type: Gin, map: "KnowledgeChunk_tsv_idx")
+}
+
+/// No user id, ever. A random token held on the phone, stored as a hash, is the only key.
+model AdvisorConversation {
+  id        String        @id @default(cuid())
+  tokenHash String
+  channel   String
+  language  String
+  turns     Int           @default(0)
+  createdAt DateTime      @default(now())
+  lastAt    DateTime      @default(now())
+  records   AdvisorTurn[]
+
+  @@index([tokenHash, lastAt])
+  @@index([lastAt])
+}
+
+/// One question and answer, scrubbed. Kept 30 days, or 90 if disliked or stopped by the gate.
+model AdvisorTurn {
+  id             String              @id @default(cuid())
+  conversationId String
+  conversation   AdvisorConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  tokenHash      String
+  clientTurnId   String
+  ordinal        Int
+  /// PENDING, DONE or CANCELLED
+  status         String              @default("PENDING")
+  question       String
+  /// The question reduced to its words, for answering the same question from the cache.
+  questionKey    String
+  answer         String?
+  route          String
+  /// CHECKED, GENERAL, FIXED or FALLBACK
+  level          String
+  /// CHECKED, GENERAL, AI_BUSY or FROM_GUIDE
+  label          String?
+  language       String
+  articleIds     String[]
+  citations      Json                @default("[]")
+  gateFlags      String[]
+  productIds     String[]
+  delivery       Json?
+  estimate       Json?
+  followups      Json                @default("[]")
+  limitReached   String?
+  nudge          Boolean             @default(false)
+  articleSetHash String?
+  promptVersion  String
+  modelTriage    String?
+  modelAnswer    String?
+  inputTokens    Int                 @default(0)
+  cachedTokens   Int                 @default(0)
+  outputTokens   Int                 @default(0)
+  costMicroUsd   Int                 @default(0)
+  ms             Int                 @default(0)
+  feedback       String?
+  feedbackReason String?
+  purgeAt        DateTime
+  createdAt      DateTime            @default(now())
+
+  @@unique([tokenHash, clientTurnId])
+  @@index([conversationId, ordinal])
+  @@index([purgeAt])
+  @@index([createdAt])
+  @@index([questionKey, createdAt])
+}
+
+/// A question the guide could not answer, in scrubbed words, for the owners and for new articles.
+model AdvisorGap {
+  id          String    @id @default(cuid())
+  canonical   String
+  samples     Json      @default("[]")
+  count       Int       @default(1)
+  /// NO_ARTICLE, DISLIKED, NOT_LISTED or SHOP_FACT
+  kind        String
+  /// NEW, ASKED_ENGINEER, ANSWERED or IGNORED
+  status      String    @default("NEW")
+  articleId   String?
+  decidedById String?
+  decidedAt   DateTime?
+  firstSeen   DateTime  @default(now())
+  lastSeen    DateTime  @default(now())
+
+  @@unique([canonical, kind])
+  @@index([status, lastSeen])
+  @@index([lastSeen])
+}
+
+/// One row. Lets an owner stop the AI at once, with no restart.
+model AdvisorSettings {
+  id             String   @id @default("advisor")
+  aiPaused       Boolean  @default(false)
+  generalEnabled Boolean  @default(true)
+  updatedById    String?
+  updatedAt      DateTime @updatedAt
 }

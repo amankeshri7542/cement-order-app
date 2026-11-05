@@ -1,0 +1,18 @@
+appId: in.shivcement.store
+---
+- launchApp
+- extendedWaitUntil:
+    visible: Today's rates
+    timeout: 30000
+- runFlow:
+    when:
+      notVisible: Your list, .*
+    commands:
+      - scrollUntilVisible:
+          element: Add Dalmia DSP to your list
+          timeout: 10000
+      - tapOn: Add Dalmia DSP to your list
+- tapOn: Your list, .*
+- extendedWaitUntil:
+    visible: Materials
+    timeout: 30000

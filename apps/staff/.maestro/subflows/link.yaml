@@ -1,0 +1,56 @@
+# A real phone link: number, code, "yours", the notice, then an owner agrees.
+appId: in.shivcement.staff
+---
+- launchApp:
+    clearState: true
+    permissions:
+      all: allow
+- extendedWaitUntil:
+    visible:
+      id: phone-input
+    timeout: 30000
+- tapOn:
+    id: phone-input
+- inputText: ${NUMBER}
+- hideKeyboard
+- tapOn:
+    id: number-next
+- extendedWaitUntil:
+    visible:
+      id: dev-code
+    timeout: 15000
+- copyTextFrom:
+    id: dev-code
+- evalScript: ${output.code = maestro.copiedText.match(/\d{6}/)[0]}
+- tapOn:
+    id: code-input
+- inputText: ${output.code}
+- hideKeyboard
+- tapOn:
+    id: code-next
+- extendedWaitUntil:
+    visible:
+      id: yours-ok
+    timeout: 15000
+- assertVisible: Yeh phone aapke naam hoga
+- takeScreenshot: link-yours
+- tapOn:
+    id: yours-ok
+- extendedWaitUntil:
+    visible:
+      id: notice-accept
+    timeout: 15000
+- assertVisible: Hazri ki suchna
+- tapOn:
+    id: notice-accept
+- extendedWaitUntil:
+    visible: Manzoori ka intezaar
+    timeout: 15000
+- takeScreenshot: link-waiting
+- runScript: ../scripts/approve.js
+- tapOn:
+    id: link-check
+- extendedWaitUntil:
+    visible:
+      id: hazri-main
+    timeout: 15000

@@ -195,14 +195,14 @@ try {
   const viewPage = await (await viewer.newContext({ ignoreHTTPSErrors: true })).newPage();
   await viewPage.goto('http://localhost:3031/');
   await viewPage
-    .locator('.rate-row:not(.rate-row-placeholder), .rate-empty')
+    .locator('[data-ratebar]')
     .first()
     .waitFor({ timeout: 30000 })
     .catch(() => {});
   await viewPage.waitForTimeout(1500);
   const production = await viewPage.evaluate(() => ({
-    reviewNotes: document.querySelectorAll('.review-note').length,
-    placeholderText: /goes here|आएगी|Review note/i.test(document.body.innerText),
+    reviewNotes: document.querySelectorAll('[data-placeholder]').length,
+    placeholderText: /goes here|Placeholder, not shown/i.test(document.body.innerText),
     pageHeight: document.documentElement.scrollHeight,
   }));
   await viewer.close();

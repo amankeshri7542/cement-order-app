@@ -19,6 +19,8 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 export type AuthRequest = Request & {
   user: User;
   sessionId: string;
+  /** Set for a staff app session: the phone it belongs to. */
+  staffDevice?: { id: string; userId: string; publicKey: string; status: string } | null;
   sessionAccessHash: string;
   // What this person may do now, worked out from their memberships on every request.
   access: Access;
@@ -60,6 +62,7 @@ export type ShopLookup = (
         quote: { locationId: string } | null;
       } | null>;
     };
+    followUp: { findUnique(args: object): Promise<{ locationId: string } | null> };
   },
   req: AuthRequest,
 ) => Promise<string | undefined>;
@@ -85,6 +88,15 @@ export const atQuote =
   async (db, req) =>
     (
       await db.quote.findUnique({
+        where: { id: paramOf(req, param) },
+        select: { locationId: true },
+      })
+    )?.locationId;
+export const atFollowUp =
+  (param = 'id'): ShopLookup =>
+  async (db, req) =>
+    (
+      await db.followUp.findUnique({
         where: { id: paramOf(req, param) },
         select: { locationId: true },
       })

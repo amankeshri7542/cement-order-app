@@ -6,7 +6,18 @@ import { collectionSchema, paymentVerifySchema } from '@shiv/shared';
 import { Db } from './db';
 import { notifyCustomer, pushText } from './notify';
 import { getConfig, onlineReady } from './config';
-import { atOrder, AuthRequest, Can, Contract, fail, hash, Input, Public, safeEqual, Self } from './http';
+import {
+  atOrder,
+  AuthRequest,
+  Can,
+  Contract,
+  fail,
+  hash,
+  Input,
+  Public,
+  safeEqual,
+  Self,
+} from './http';
 
 const capturedSchema = z.object({
   id: z.string(),
@@ -328,7 +339,9 @@ export class PaymentsService {
       if (p.status === (refund ? 'REFUNDED' : 'CAPTURED')) {
         // A repeat naming another channel would leave the wrong record in place silently.
         const recorded = p.movements.find((m) => m.kind === (refund ? 'REFUND' : 'COLLECTION'));
-        if (channel && recorded?.channel && recorded.channel !== channel)
+        // Paid in two parts, the first record is the driver's and says nothing about this repeat.
+        const inParts = !refund && (await tx.driverCollection.count({ where: { orderId } })) > 0;
+        if (channel && recorded?.channel && recorded.channel !== channel && !inParts)
           fail(
             'IDEMPOTENCY_CONFLICT',
             `This payment was already recorded as ${recorded.channel}. Refresh the order.`,
@@ -336,11 +349,23 @@ export class PaymentsService {
           );
         return { ok: true, duplicate: true };
       }
+      // What a driver already took at the door is not owed twice.
+      const atTheDoor = refund
+        ? []
+        : await tx.driverCollection.findMany({
+            where: { orderId },
+            select: { amountPaise: true },
+          });
+      const owedPaise =
+        p.amountPaise - atTheDoor.reduce((total, row) => total + row.amountPaise, 0);
       if (
         refund
           ? p.status !== 'REFUND_PENDING'
           : p.status !== 'PENDING' ||
-            !['CONFIRMED', 'PREPARING', 'OUT_FOR_DELIVERY'].includes(p.order.status)
+            !(
+              ['CONFIRMED', 'PREPARING', 'OUT_FOR_DELIVERY'].includes(p.order.status) ||
+              (p.order.status === 'DELIVERED' && atTheDoor.length > 0)
+            )
       )
         fail('INVALID_PAYMENT_STATE', 'Payment cannot be updated in this state.', 409);
       // Money goes back the way it came unless staff say otherwise; a collection recorded
@@ -356,11 +381,13 @@ export class PaymentsService {
       });
       await tx.financialMovement.create({
         data: {
-          paymentId: p.id,
+          // A payment holds one collection, as its guard against booking twice. When a driver took
+          // part at the door that slot is theirs, and the status above guards this one.
+          ...(atTheDoor.length ? {} : { paymentId: p.id }),
           locationId: p.order.locationId,
           kind: refund ? 'REFUND' : 'COLLECTION',
           channel,
-          amountPaise: p.amountPaise,
+          amountPaise: refund ? p.amountPaise : owedPaise,
           actorId,
         },
       });
@@ -383,7 +410,10 @@ export class PaymentsService {
           actorId,
           event: refund ? 'CASH_REFUNDED' : 'COD_RECEIVED',
           entityId: orderId,
-          details: { amountPaise: p.amountPaise, ...(channel ? { channel } : {}) },
+          details: {
+            amountPaise: refund ? p.amountPaise : owedPaise,
+            ...(channel ? { channel } : {}),
+          },
         },
       });
       return { ok: true };
@@ -426,7 +456,10 @@ export class PaymentsService {
 @Controller()
 export class PaymentsController {
   constructor(@Inject(PaymentsService) private payments: PaymentsService) {}
-  @Self() @Post('payments/orders/:id') initialize(@Param('id') id: string, @Req() req: AuthRequest) {
+  @Self() @Post('payments/orders/:id') initialize(
+    @Param('id') id: string,
+    @Req() req: AuthRequest,
+  ) {
     return this.payments.initialize(id, req.user.id);
   }
   @Self() @Post('payments/verify') @Contract(paymentVerifySchema) verify(
@@ -443,7 +476,10 @@ export class PaymentsController {
       String(req.headers['x-razorpay-event-id'] || ''),
     );
   }
-  @Can('money.receive', atOrder()) @Post('admin/orders/:id/cod-received') @Contract(collectionSchema) cod(
+  @Can('money.receive', atOrder())
+  @Post('admin/orders/:id/cod-received')
+  @Contract(collectionSchema)
+  cod(
     @Param('id') id: string,
     @Input(collectionSchema.optional()) body: z.infer<typeof collectionSchema> | undefined,
     @Req() req: AuthRequest,
@@ -451,14 +487,20 @@ export class PaymentsController {
     return this.payments.cod(id, req.user.id, false, body?.channel || '');
   }
   // The channel defaults to how the money was collected; the desk sends no body.
-  @Can('money.refund', atOrder()) @Post('admin/orders/:id/cash-refunded') @Contract(collectionSchema) refund(
+  @Can('money.refund', atOrder())
+  @Post('admin/orders/:id/cash-refunded')
+  @Contract(collectionSchema)
+  refund(
     @Param('id') id: string,
     @Input(collectionSchema.optional()) body: z.infer<typeof collectionSchema> | undefined,
     @Req() req: AuthRequest,
   ) {
     return this.payments.cod(id, req.user.id, true, body?.channel || '');
   }
-  @Can('money.refund', atOrder()) @Post('admin/orders/:id/reconcile-payment') @Contract(reconcileSchema) reconcile(
+  @Can('money.refund', atOrder())
+  @Post('admin/orders/:id/reconcile-payment')
+  @Contract(reconcileSchema)
+  reconcile(
     @Param('id') id: string,
     @Input(reconcileSchema) body: z.infer<typeof reconcileSchema>,
     @Req() req: AuthRequest,

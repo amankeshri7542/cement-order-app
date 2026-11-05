@@ -1032,7 +1032,7 @@ describe('the book figure stays out of sight during a count', () => {
     (await get(who, 'products').expect(200)).body.items.find(
       (item: { id: string }) => item.id === 'cement',
     );
-  it('the public catalogue, one product and the cart all stop showing it, then show it again', async () => {
+  it('the public catalogue, one product and the cart never show it, during a count or after', async () => {
     const id = await startCount();
     const list = await request(server).get('/api/v1/products').expect(200);
     const row = list.body.items.find((item: { id: string }) => item.id === 'cement');
@@ -1057,7 +1057,9 @@ describe('the book figure stays out of sight during a count', () => {
       .expect(409);
     await fill(id, { cement: 100, acc: 100 });
     await post('keeper', `stock/counts/${id}/submit`).expect(201);
-    expect((await request(server).get('/api/v1/products/cement').expect(200)).body.stock).toBe(100);
+    expect((await request(server).get('/api/v1/products/cement').expect(200)).body.stock).toBe(
+      stockDuringCount,
+    );
   });
   it('the staff product list hides it from those counting, and not from owners', async () => {
     await startCount();

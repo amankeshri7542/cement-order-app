@@ -11,7 +11,7 @@ import css from './owner.module.css';
 /** Everything that has no tab on a phone, as large rows. */
 export function More() {
   const t = useT();
-  const { canOpen } = useOwner();
+  const { canOpen, reviewCount } = useOwner();
   const router = useRouter();
   const view = useSearchParams().get('view');
   // Links saved before each of these became a page of its own.
@@ -26,7 +26,10 @@ export function More() {
           .filter(({ href, tab }) => !tab && canOpen(href))
           .map(({ href, key }) => (
             <Link href={href} key={href}>
-              {t(key)}
+              <span>
+                {t(key)}
+                {href === '/hazri' && reviewCount > 0 && ` (${reviewCount})`}
+              </span>
               <span aria-hidden="true">→</span>
             </Link>
           ))}

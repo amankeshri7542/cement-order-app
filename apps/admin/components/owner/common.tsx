@@ -151,16 +151,15 @@ export function moneyInput(value: number | null | undefined) {
     ? ''
     : `${Math.trunc(value / 100)}${value % 100 ? '.' + String(Math.abs(value % 100)).padStart(2, '0') : ''}`;
 }
+/** A call or an order's details. A payment reminder is never made here: see crm/reminder.tsx. */
 export function ContactActions({
   phone,
   customerId,
   text = '',
-  purpose = 'order',
 }: {
   phone: string;
   customerId?: string;
   text?: string;
-  purpose?: 'order' | 'reminder';
 }) {
   const t = useT();
   const { notice } = useOwner();
@@ -170,12 +169,7 @@ export function ContactActions({
     if (customerId)
       void api(`/admin/customers/${customerId}/contacts`, 'POST', {
         channel,
-        purpose:
-          channel === 'CALL'
-            ? t('owner.contactCall')
-            : purpose === 'reminder'
-              ? t('owner.contactReminder')
-              : t('owner.contactOrder'),
+        purpose: channel === 'CALL' ? t('owner.contactCall') : t('owner.contactOrder'),
       }).catch((error) => notice(words.error(error)));
   };
   return (
@@ -190,7 +184,7 @@ export function ContactActions({
         rel="noreferrer"
         onClick={() => log('WHATSAPP')}
       >
-        {purpose === 'reminder' ? t('owner.remind') : t('owner.shareOrder')}
+        {t('owner.shareOrder')}
       </a>
     </div>
   );
@@ -202,9 +196,7 @@ export function orderShare(
 ) {
   return t('owner.orderShare', {
     number: order.number,
-    items: order.items
-      .map((item) => `${item.name} × ${item.quantity} ${(item.unit)}`)
-      .join('\n'),
+    items: order.items.map((item) => `${item.name} × ${item.quantity} ${item.unit}`).join('\n'),
     total: money(order.totalPaise),
     date: dayLabel(order.deliveryDate, language),
   });

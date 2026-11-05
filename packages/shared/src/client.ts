@@ -7,6 +7,10 @@ export const clientConfigSchema = z.object({
     latestVersion: z.string().regex(/^\d+\.\d+\.\d+$/),
     storeUrl: z.url(),
   }),
+  // Ask stays hidden until the advisor has passed its safety test on this server.
+  askEnabled: z.boolean().default(false),
+  // Awards stay hidden until real certificates are up. Set once the /awards page is live.
+  awardsUrl: z.url().nullable().default(null),
 });
 export type ClientConfig = z.infer<typeof clientConfigSchema>;
 

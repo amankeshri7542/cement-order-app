@@ -1,12 +1,11 @@
-# 04 and 05 continue as the customer created by 03, so the order is fixed.
+# 03 to 05 continue as the customer created by 02, so the order is fixed.
 flows:
   - '*.yaml'
 executionOrder:
   continueOnFailure: false
   flowsOrder:
     - 01-browse
-    - 02-language
-    - 03-guest-order
+    - 02-first-order
+    - 03-order-again
     - 04-tap-budgets
-    - 05-quote-cancel-pincode
-    - 06-compare-assistant
+    - 05-keep-my-place

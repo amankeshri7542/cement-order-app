@@ -7,12 +7,17 @@ const pages: [path: string, needs: Permission][] = [
   ['/orders', 'orders.read'],
   ['/lists', 'quotes.read'],
   ['/customers', 'customers.read'],
+  ['/calls', 'crm.followups.read'],
   ['/khata', 'khata.read.list'],
+  ['/udhaar/opening', 'khata.opening.draft'],
   ['/udhaar', 'khata.read.list'],
   ['/rates', 'rates.read'],
   ['/stock', 'stock.read'],
   ['/manzoori', 'approvals.ask'],
   ['/galla', 'galla.read'],
+  ['/hazri', 'attendance.read'],
+  ['/trips', 'trip.assign'],
+  ['/salary', 'staff.salary.read'],
   ['/reports', 'reports.read'],
   ['/activity', 'audit.read'],
   ['/users', 'staff.manage'],
@@ -29,6 +34,9 @@ export function pathAllowed(access: Access, path: string) {
     return canDo(access, 'approvals.ask') || canDo(access, 'approvals.decide');
   if (path === '/staff' || path.startsWith('/staff/'))
     return canDo(access, 'staff.read') || canDo(access, 'alerts.manage');
+  // The technical operator keeps the PCs running and sees no money, so either one opens the page.
+  if (path === '/tally' || path.startsWith('/tally/'))
+    return canDo(access, 'tally.read') || canDo(access, 'tally.health');
   const page = pages.find(([route]) => path === route || path.startsWith(`${route}/`));
   return page ? canDo(access, page[1]) : canDo(access, 'desk.use');
 }
@@ -54,7 +62,7 @@ export const moreViews = {
   rates: ['rates.read'],
   products: ['products.edit'],
   staff: ['staff.read', 'alerts.manage'],
-  whatsapp: ['wa.read', 'wa.ai.control', 'wa.admin'],
+  whatsapp: ['wa.read', 'wa.ai.control', 'wa.admin', 'wa.cards'],
 } as const satisfies Record<string, readonly Permission[]>;
 /** Where each old address now lives. */
 export const moreRoutes: Record<MoreView, string> = {

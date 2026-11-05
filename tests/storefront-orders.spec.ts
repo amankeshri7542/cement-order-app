@@ -79,8 +79,14 @@ test('order history tracks, cancels and reorders', async ({ page }) => {
   await expect(record).toContainText('Cancelled');
   await expect(record.getByRole('button', { name: 'Cancel order', exact: true })).toHaveCount(0);
   await record.getByRole('button', { name: 'Reorder at current prices', exact: true }).click();
-  await expect(page).toHaveURL(`${site}/cart`);
-  await expect(page.getByRole('main').getByLabel('Quantity for UltraTech Super')).toHaveValue('3');
+  await expect(page).toHaveURL(`${site}/list`);
+  await expect(
+    page
+      .getByRole('main')
+      .getByRole('listitem')
+      .filter({ hasText: 'UltraTech Super' })
+      .locator('output'),
+  ).toHaveText('3');
 });
 
 test('older orders loaded with "Load older orders" stay listed when focus refreshes the list', async ({

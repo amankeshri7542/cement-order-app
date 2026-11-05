@@ -1,19 +1,21 @@
 'use client';
 
 import Link from 'next/link';
-import { useLanguage } from '../components/language';
+
+/** Something broke while drawing a page. Never a stack trace; always a way forward. */
 export default function ErrorPage({ reset }: { reset: () => void }) {
-  const { t } = useLanguage();
   return (
-    <div className="empty-state" role="alert">
-      <h1>{t('This page could not load.', 'यह पेज लोड नहीं हो सका।')}</h1>
-      <p>{t('Check your connection, then try again.', 'इंटरनेट जाँचें, फिर कोशिश करें।')}</p>
-      <button className="button" onClick={reset}>
-        {t('Try again', 'फिर कोशिश करें')}
-      </button>
-      <Link className="text-link" href="/products">
-        {t('Browse materials', 'सामग्री देखें')}
-      </Link>
+    <div style={{ padding: 'clamp(32px, 5vw, 72px) var(--m)' }}>
+      <h1>This page could not be shown.</h1>
+      <p style={{ marginTop: '1rem', fontSize: 'var(--t-3)' }}>Your list is saved on this phone.</p>
+      <p style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: '1.25rem' }}>
+        <button type="button" className="btn btn-solid" onClick={reset}>
+          Try again
+        </button>
+        <Link className="btn btn-line" href="/">
+          Go to the home page
+        </Link>
+      </p>
     </div>
   );
 }

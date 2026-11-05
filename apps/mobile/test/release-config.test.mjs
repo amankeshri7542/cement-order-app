@@ -49,7 +49,7 @@ test('release builds require real HTTPS API and privacy URLs, without local clea
     () => config({ ...release, EXPO_PUBLIC_API_URL: 'https://api.shivcement.in/' }),
     /api\/v1/,
   );
-  assert.equal(config({ ...release, EXPO_PUBLIC_APP_ENV: 'production' }).name, 'Shiv Cement Store');
+  assert.equal(config({ ...release, EXPO_PUBLIC_APP_ENV: 'production' }).name, 'Shiv Cement');
   // Only production hides the header's TEST mark (staging builds share the production package).
   assert.equal(
     config({ ...release, EXPO_PUBLIC_APP_ENV: 'production' }).extra.appEnv,
@@ -60,12 +60,35 @@ test('release builds require real HTTPS API and privacy URLs, without local clea
   assert.ok(config({ APP_VARIANT: 'local' }).plugins.includes('./plugins/local-cleartext'));
 });
 
-test('every build embeds Teko 600 for display text and prices', () => {
+test('every build embeds the one face, Hanken Grotesk, in its three weights', () => {
   const font = config(release).plugins.find((plugin) => plugin[0] === 'expo-font');
   assert.ok(font, 'expo-font plugin is configured');
   // The config runs in another realm, so compare plain strings rather than arrays.
-  assert.equal(font[1].fonts.map((file) => file.split('/').at(-1)).join(), 'Teko_600SemiBold.ttf');
-  assert.ok(existsSync(font[1].fonts[0]));
+  assert.equal(
+    font[1].fonts.map((file) => file.split('/').at(-1)).join(),
+    'HankenGrotesk_300Light.ttf,HankenGrotesk_400Regular.ttf,HankenGrotesk_500Medium.ttf',
+  );
+  for (const file of font[1].fonts) assert.ok(existsSync(file));
+});
+
+test('voice and online payment are gone, and location is foreground only', () => {
+  const app = JSON.parse(readFileSync('app.json', 'utf8')).expo;
+  const names = app.plugins.map((plugin) => (Array.isArray(plugin) ? plugin[0] : plugin));
+  assert.ok(!names.includes('expo-speech-recognition'));
+  const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+  for (const gone of [
+    'expo-speech-recognition',
+    'react-native-razorpay',
+    '@expo-google-fonts/teko',
+  ])
+    assert.equal(pkg.dependencies[gone], undefined, gone);
+  const location = app.plugins.find((plugin) => plugin[0] === 'expo-location');
+  assert.equal(location[1].isAndroidBackgroundLocationEnabled, false);
+  assert.ok(
+    app.android.blockedPermissions.includes('android.permission.ACCESS_BACKGROUND_LOCATION'),
+  );
+  assert.ok(app.android.blockedPermissions.includes('android.permission.RECORD_AUDIO'));
+  assert.doesNotMatch(JSON.stringify(app), /razorpay/i);
 });
 
 test('EAS preview APK and closed-test AAB use preview environment; submissions remain drafts', () => {

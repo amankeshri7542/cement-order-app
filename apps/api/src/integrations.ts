@@ -4,6 +4,7 @@ import {
   Injectable,
   OnModuleDestroy,
   OnModuleInit,
+  Optional,
   Post,
   Req,
 } from '@nestjs/common';
@@ -18,18 +19,32 @@ import { z } from 'zod';
 import { deviceSchema } from '@shiv/shared';
 import { AuthRequest, Can, Contract, errorCause, fail, Input, Self } from './http';
 import { getConfig } from './config';
+import { WaDrafts } from './whatsapp/drafts';
+import { WaSender } from './whatsapp/sender';
 import { WaService } from './whatsapp/service';
 import { Db } from './db';
 import { OrdersService } from './orders';
 import { OwnerWorkService } from './owner-work';
 import { AlertsService } from './alerts';
 import { istToday } from '@shiv/shared';
+import { Attendance } from './staff/attendance';
+import { TallyDesk } from './tally/desk';
+import { TallyIngest } from './tally/ingest';
+import { TallyRecon } from './tally/recon';
 import { KhataService } from './khata';
 import { purgeEnquiries } from './web-enquiries';
+import { purgeAdvisor } from './advisor/core';
 
-const laneNames = ['fast', 'release', 'timers', 'reader'] as const;
+const laneNames = ['fast', 'release', 'timers', 'reader', 'sender', 'bulk'] as const;
 type LaneName = (typeof laneNames)[number];
-const laneEveryMs: Record<LaneName, number> = { reader: 3000, fast: 20000, release: 30000, timers: 5 * 60000 };
+const laneEveryMs: Record<LaneName, number> = {
+  reader: 3000,
+  sender: 3000,
+  fast: 20000,
+  release: 30000,
+  timers: 5 * 60000,
+  bulk: 30000,
+};
 @Injectable()
 export class Maintenance implements OnModuleInit, OnModuleDestroy {
   private timers: ReturnType<typeof setInterval>[] = [];
@@ -38,6 +53,8 @@ export class Maintenance implements OnModuleInit, OnModuleDestroy {
     release: false,
     timers: false,
     reader: false,
+    sender: false,
+    bulk: false,
   };
   private khataCheckedDay = '';
   constructor(
@@ -47,6 +64,13 @@ export class Maintenance implements OnModuleInit, OnModuleDestroy {
     @Inject(AlertsService) private alerts: AlertsService,
     @Inject(KhataService) private khata: KhataService,
     @Inject(WaService) private wa: WaService,
+    // Optional so the lanes can be tested without it. Nest always gives it.
+    @Optional() @Inject(Attendance) private attendance?: Attendance,
+    @Optional() @Inject(TallyIngest) private tallyIngest?: TallyIngest,
+    @Optional() @Inject(TallyRecon) private tallyRecon?: TallyRecon,
+    @Optional() @Inject(TallyDesk) private tallyDesk?: TallyDesk,
+    @Optional() @Inject(WaSender) private waSender?: WaSender,
+    @Optional() @Inject(WaDrafts) private waDrafts?: WaDrafts,
   ) {}
   onModuleInit() {
     const c = getConfig();
@@ -144,9 +168,21 @@ export class Maintenance implements OnModuleInit, OnModuleDestroy {
       release: [['reservations', () => this.orders.expireReservations()]],
       // A slow model must not hold up anything else.
       reader: [['waRead', () => this.wa.runDue()]],
+      // A person's confirmation must not wait behind a slow model.
+      sender: [['waSend', async () => this.waSender?.sendDue()]],
+      // Tally's day books can be large. Reading them must never hold up anything a person waits on.
+      bulk: [
+        ['tallyIngest', async () => this.tallyIngest?.runDue()],
+        ['tallyRecon', async () => this.tallyRecon?.runDue()],
+      ],
       // Housekeeping. Nobody notices a few minutes here.
       timers: [
         ['waPurge', () => this.wa.purge()],
+        ['waDrafts', async () => this.waDrafts?.timers()],
+        ['hazriNight', async () => this.attendance?.nightly()],
+        ['hazriHousekeeping', async () => this.attendance?.housekeeping()],
+        ['tallyAlerts', async () => this.tallyDesk?.watch()],
+        ['purgeTallyChunks', async () => this.tallyDesk?.purge()],
         [
           'authRateLimits',
           async () => {
@@ -190,6 +226,7 @@ export class Maintenance implements OnModuleInit, OnModuleDestroy {
             }),
         ],
         ['enquiries', () => purgeEnquiries(this.db)],
+        ['advisor', () => purgeAdvisor(this.db)],
         [
           'sessions',
           () => this.db.session.deleteMany({ where: { refreshExpiresAt: { lt: new Date() } } }),

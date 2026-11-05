@@ -1,0 +1,21 @@
+# Continues as the driver of 02: cut off from the desk, and the phone wipes itself.
+appId: in.shivcement.staff
+tags: [smoke]
+---
+- tapOn:
+    id: flood-home
+- runScript: scripts/revoke.js
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: screen-cut-off
+    timeout: 20000
+- assertVisible: Yeh phone band kar diya gaya
+- takeScreenshot: cut-off
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: screen-cut-off
+    timeout: 20000

@@ -91,22 +91,29 @@ export const profileSchema = z.strictObject({
 });
 // Address text is shown to the owner and goes into the shop's WhatsApp alerts, so it is held to
 // plain text like an enquiry.
-export const addressSchema = z.strictObject({
-  label: plainText(40),
-  name: plainText(100),
-  phone: phoneSchema,
-  line1: plainText(250),
-  area: plainText(120),
-  city: plainText(100),
-  state: z.literal('Bihar'),
-  pincode: z.string().regex(/^\d{6}$/),
-  landmark: z
-    .string()
-    .trim()
-    .max(200)
-    .refine((value) => !/[^\P{C}\u200C\u200D]/u.test(value), 'Remove special characters')
-    .default(''),
-});
+export const addressSchema = z
+  .strictObject({
+    label: plainText(40),
+    name: plainText(100),
+    phone: phoneSchema,
+    line1: plainText(250),
+    area: plainText(120),
+    city: plainText(100),
+    state: z.literal('Bihar'),
+    pincode: z.string().regex(/^\d{6}$/),
+    landmark: z
+      .string()
+      .trim()
+      .max(200)
+      .refine((value) => !/[^\P{C}\u200C\u200D]/u.test(value), 'Remove special characters')
+      .default(''),
+    // A map pin, set only by the customer's "I am at the site" tap. Both or neither; null clears it.
+    lat: z.number().min(-90).max(90).nullable().optional(),
+    lng: z.number().min(-180).max(180).nullable().optional(),
+  })
+  .refine((address) => (address.lat == null) === (address.lng == null), {
+    message: 'A map pin needs both its numbers.',
+  });
 export const cartItemSchema = z.strictObject({
   productId: id,
   quantity: z.number().int().min(0).max(10000),
@@ -121,12 +128,33 @@ export const cartMergeSchema = z.strictObject({
       message: 'Each product must appear only once.',
     }),
 });
-export const checkoutSchema = z.strictObject({
-  addressId: id,
-  deliveryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  notes: z.string().trim().max(500).default(''),
-  paymentMethod: z.enum(['COD', 'ONLINE']),
+export const checkoutLineSchema = z.strictObject({
+  productId: id,
+  quantity: z.number().int().min(1).max(10000),
+  // What the phone showed. Only decides whether "Rate changed" is said; it never sets a price.
+  seenPricePaise: z.number().int().min(0).max(2000000000).optional(),
 });
+export const checkoutSchema = z
+  .strictObject({
+    addressId: id,
+    deliveryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    notes: z.string().trim().max(500).default(''),
+    paymentMethod: z.enum(['COD', 'ONLINE']),
+    // The list on the phone. Left out means the old way: the server's cart.
+    lines: z
+      .array(checkoutLineSchema)
+      .min(1)
+      .max(50)
+      .refine((lines) => new Set(lines.map((line) => line.productId)).size === lines.length, {
+        message: 'Each product must appear only once.',
+      })
+      .optional(),
+    // The customer's own earlier order. For measuring and for "Rate changed"; never for pricing.
+    repeatOfOrderId: id.optional(),
+  })
+  .refine((body) => !body.repeatOfOrderId || Boolean(body.lines), {
+    message: 'A repeat needs its lines.',
+  });
 export const placeOrderSchema = z.strictObject({ reviewId: id, idempotencyKey: z.string().uuid() });
 export const productSchema = z.strictObject({
   packSize: z.string().trim().max(100).default(''),
@@ -271,6 +299,13 @@ export type ReviewLine = {
   priceVersion: number;
   lineTotalPaise: number;
 };
+export type ReviewLeftOut = {
+  productId: string;
+  /** NOT_SOLD: gone from the list. QUANTITY: breaks its pack rule. ASK_SHOP: not that many now. */
+  reason: 'NOT_SOLD' | 'QUANTITY' | 'ASK_SHOP';
+  minQuantity?: number;
+  quantityStep?: number;
+};
 export type CheckoutReview = {
   id: string;
   expiresAt: string;
@@ -278,7 +313,12 @@ export type CheckoutReview = {
   subtotalPaise: number;
   deliveryFeePaise: number;
   totalPaise: number;
-  changes: { name: string; oldPricePaise: number; newPricePaise: number }[];
+  changes: { name: string; oldPricePaise: number; newPricePaise: number; productId?: string }[];
+  /** Set when the review came from the phone's list: placing it leaves the cart alone. */
+  fromLines?: boolean;
+  repeatOfOrderId?: string;
+  /** Lines left out of the total, with a reason and never a stock figure. */
+  unavailable?: ReviewLeftOut[];
   address: Address;
   deliveryDate: string;
   notes: string;
@@ -296,6 +336,8 @@ export type Payment = {
   razorpayPaymentId: string | null;
 };
 export type Order = {
+  /** Desk only. What a driver said they took at the door; null until they have. */
+  driverCollectedPaise?: number | null;
   locationId?: string;
   version?: number;
   confirmedAt?: string | null;
@@ -534,6 +576,8 @@ export const deliveryZoneSchema = z.strictObject({
     .min(1)
     .max(500)
     .refine((v) => new Set(v).size === v.length, 'Duplicate pincodes'),
+  // Area names for a new site's form. A pincode left out keeps the name it has.
+  areas: z.record(z.string().regex(/^[1-9]\d{5}$/), z.string().trim().max(120)).optional(),
   expectedVersion: z.number().int().min(1).optional(),
 });
 export type DeliveryZone = Omit<
@@ -556,6 +600,10 @@ export type SessionInfo = {
 };
 
 export * from './pricing';
+export * from './attendance';
+export * from './pay';
+export * from './tally';
+export * from './crm';
 export * from './rate-studio';
 export * from './i18n';
 export * from './labels';
@@ -569,8 +617,12 @@ export * from './cart';
 export * from './client';
 export * from './first-run';
 export * from './otp';
+export * from './advisor';
+export * from './whatsapp-text';
+export * from './estimates';
+export * from './glossary';
 
-export const orderSources = ['APP', 'WEB', 'PHONE', 'WALK_IN', 'QUOTE'] as const;
+export const orderSources = ['APP', 'WEB', 'PHONE', 'WALK_IN', 'QUOTE', 'WHATSAPP'] as const;
 export type OrderSource = (typeof orderSources)[number];
 export const ledgerKinds = [
   'SALE_ON_CREDIT',
@@ -726,6 +778,9 @@ export const locationUpdateSchema = z.strictObject({
   active: z.boolean().optional(),
   managerRateCapPercent: z.number().int().min(0).max(50).optional(),
 });
+// My people: who may order on a customer's account. Name and number only.
+export const personSchema = z.strictObject({ phone: phoneSchema, name: plainText(100) });
+export type Person = { id: string; phone: string; name: string; createdAt: string };
 export const pushAckSchema = z.strictObject({ token: z.string().min(20).max(100) });
 
 /** One word for customers, never a count or a shop. */
@@ -935,6 +990,7 @@ export const stockDamageSchema = z.strictObject({
   productId: id,
   quantity: stockQuantity,
   note: plainText(200),
+  evidenceId: id.optional(),
   idempotencyKey: z.string().uuid(),
 });
 export const approvalDecideSchema = z.strictObject({
@@ -979,6 +1035,103 @@ export const waThreadCreateSchema = z.strictObject({
 export const waPauseSchema = z.strictObject({ paused: z.boolean() });
 export const waTrySchema = z.strictObject({ text: z.string().trim().min(1).max(2000) });
 export const waAliasSchema = z.strictObject({ productId: id, alias: plainText(60) });
+// ---- WhatsApp replies, cards and the paste box -------------------------------------------------
+/** Who may hear from the AI. A move up is one step, by an owner, past the readiness check. */
+export const waStages = ['OFF', 'TEST_NUMBERS', 'KNOWN_CUSTOMERS', 'EVERYONE'] as const;
+export type WaStage = (typeof waStages)[number];
+export const waTestNumbersMax = 5;
+export const waStageMoveSchema = z.strictObject({
+  from: z.enum(waStages),
+  to: z.enum(waStages),
+});
+export const waReplySettingsSchema = z
+  .strictObject({
+    testNumbers: z
+      .array(phoneSchema)
+      .max(waTestNumbersMax)
+      .refine((list) => new Set(list).size === list.length, 'Each number once.')
+      .optional(),
+    // Decision 8: 30 to 60 minutes after Papa types.
+    quietMinutes: z.number().int().min(30).max(60).optional(),
+    nightFromHour: z.number().int().min(0).max(23).optional(),
+    nightToHour: z.number().int().min(0).max(23).optional(),
+  })
+  .refine((input) => Object.keys(input).length > 0, 'Nothing to change.');
+/** Paying is a person's call on the card: now, at delivery, or on a customer's udhaar. */
+export const waPayWhens = ['UNSET', 'PAID_NOW', 'AT_DELIVERY', 'UDHAAR'] as const;
+export type WaPayWhen = (typeof waPayWhens)[number];
+// Longer than the 2,000 kept, so a long paste is cut and flagged rather than refused.
+export const waPasteSchema = z.strictObject({
+  text: z.string().trim().min(1).max(20000),
+  idempotencyKey: z.string().uuid(),
+  phone: phoneSchema.optional(),
+  name: plainText(60).optional(),
+  locationId: id.optional(),
+});
+const waDraftLineSchema = z.strictObject({
+  // The customer's own words for this line, kept when a person corrects it.
+  rawText: z.string().trim().max(200).optional(),
+  productId: id.nullable(),
+  quantity: z.number().int().min(1).max(10000).nullable(),
+  unitWord: plainText(30).nullable().optional(),
+  // Picked from the family's list: the server works out quantity from these two, never the model.
+  loadSizeId: id.optional(),
+  loadCount: z.number().int().min(1).max(100).optional(),
+});
+export const waDraftEditSchema = z
+  .strictObject({
+    expectedVersion: z.number().int().min(1),
+    lines: z.array(waDraftLineSchema).max(20).optional(),
+    placeText: z.string().trim().max(120).optional(),
+    pincode: z
+      .string()
+      .regex(/^\d{6}$/)
+      .nullable()
+      .optional(),
+    fulfilment: z.enum(['PICKUP', 'DELIVERY', 'UNKNOWN']).optional(),
+    deliveryDate: z.iso.date().nullable().optional(),
+    orderedByName: z.string().trim().max(60).optional(),
+    orderedByPhone: phoneSchema.nullable().optional(),
+    payWhen: z.enum(waPayWhens).optional(),
+    // Found by number, as the person at the desk knows it. Empty clears it.
+    payerPhone: phoneSchema.nullable().optional(),
+  })
+  .refine((input) => Object.keys(input).length > 1, 'Nothing to change.');
+export const waDraftConfirmSchema = z.strictObject({
+  expectedVersion: z.number().int().min(1),
+  // The list rate each line showed when tapped, by version, so a rate moved since is caught.
+  priceVersions: z.record(z.string().max(100), z.number().int().min(0)),
+});
+export const waDraftRefuseSchema = z
+  .strictObject({
+    expectedVersion: z.number().int().min(1),
+    reason: z.enum(refusalReasons),
+    note: z.string().trim().max(120).optional(),
+  })
+  .refine((input) => input.reason !== 'OTHER' || !!input.note, {
+    path: ['note'],
+    message: 'Write what to tell the customer.',
+  });
+export const waLoadSizeSchema = z.strictObject({
+  productId: id,
+  label: plainText(40),
+  quantity: z.number().int().min(1).max(100000),
+});
+export const waLoadSizeChangeSchema = z
+  .strictObject({
+    label: plainText(40).optional(),
+    quantity: z.number().int().min(1).max(100000).optional(),
+    active: z.boolean().optional(),
+  })
+  .refine((input) => Object.keys(input).length > 0, 'Nothing to change.');
+/** The paper tally is copied in at baseline and at weeks 2, 4 and 8 (plan 07 section 9). */
+export const waTallyPeriods = ['BASELINE', 'WEEK_2', 'WEEK_4', 'WEEK_8'] as const;
+export type WaTallyPeriod = (typeof waTallyPeriods)[number];
+export const waTallySchema = z.strictObject({
+  days: z.number().int().min(1).max(31).default(3),
+  calls: z.number().int().min(0).max(100000),
+  orders: z.number().int().min(0).max(100000),
+});
 /** What the reader must reach on real messages before it may answer anyone (master plan). */
 export const waGate = {
   reviewed: 200,

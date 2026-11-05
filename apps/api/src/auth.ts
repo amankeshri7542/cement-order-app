@@ -50,7 +50,14 @@ import {
   refreshLifetime,
   verifyPassword,
 } from './security';
-import { PERMISSIONS_VERSION, accessFor, canDo, passphraseSetSchema } from '@shiv/shared';
+import {
+  PERMISSIONS_VERSION,
+  accessFor,
+  canDo,
+  passphraseSetSchema,
+  staffAppPermissions,
+  type Access,
+} from '@shiv/shared';
 import { tellOtherOwners } from './users';
 
 // One answer for every failed staff sign-in, whichever factor was wrong.
@@ -131,11 +138,33 @@ export class AuthGuard implements CanActivate {
     await assertSession(this.db, session);
     const { staffMemberships, ...user } = session.user;
     req.user = user;
+    let linked = true;
+    if (session.surface === 'STAFF_APP') {
+      const device = session.staffDeviceId
+        ? await this.db.staffDevice.findUnique({
+            where: { id: session.staffDeviceId },
+            select: { id: true, userId: true, publicKey: true, status: true },
+          })
+        : null;
+      // A phone cut off answers this on its next request, and wipes what it holds.
+      if (!device || !['ACTIVE', 'PENDING'].includes(device.status))
+        fail('DEVICE_REVOKED', 'This phone is no longer linked.', 401);
+      req.staffDevice = device;
+      linked = device.status === 'ACTIVE';
+    }
     // Read fresh on every request, so a changed role or a pause takes effect at once.
-    req.access =
+    const held =
       session.surface === 'CUSTOMER' || user.staffPausedAt || user.role !== 'ADMIN'
         ? {}
         : accessFor(staffMemberships);
+    req.access =
+      session.surface !== 'STAFF_APP'
+        ? atDesk(held)
+        : linked
+          ? (Object.fromEntries(
+              Object.entries(held).filter(([name]) => staffAppPermissions.includes(name)),
+            ) as typeof held)
+          : {};
     if (req.headers['x-shiv-account'] && req.headers['x-shiv-account'] !== session.user.id)
       fail('ACCOUNT_CHANGED', 'The signed-in account changed. Refresh before continuing.', 409);
     req.sessionId = session.id;
@@ -166,6 +195,19 @@ export class AuthGuard implements CanActivate {
     return true;
   }
 }
+
+/**
+ * What a sign-in by text message alone may do. Driving belongs to the linked phone, whose key is what
+ * a cut-off ends, and someone with no desk (a driver, a helper) holds nothing at one.
+ */
+function atDesk(held: Access): Access {
+  if (!held['desk.use']) return {};
+  const { 'trip.drive': _phoneOnly, ...rest } = held;
+  return rest;
+}
+
+/** A linked phone stays signed in while it keeps being used. Its key is what protects it. */
+export const staffAppSessionMs = 90 * 86400000;
 
 @Injectable()
 export class AuthService {
@@ -264,14 +306,8 @@ export class AuthService {
         : {}),
     };
   }
-  async verify(
-    phone: string,
-    code: string,
-    adminPassword?: string,
-    label = 'Unknown device',
-    ip = 'unknown',
-    surface?: 'CUSTOMER' | 'DESK',
-  ) {
+  /** Checks a code without using it up. The caller consumes it in its own transaction. */
+  async checkCode(phone: string, code: string) {
     const challenge = await this.db.otpChallenge.findUnique({ where: { phone } });
     if (
       !challenge ||
@@ -308,6 +344,24 @@ export class AuthService {
         fail('INVALID_OTP', 'Code expired or already used. Request a new one.', 401);
       fail('INVALID_OTP', staffRejection, 401);
     }
+    return challenge;
+  }
+  async consumeCode(tx: Prisma.TransactionClient, phone: string, codeHash: string) {
+    const consumed = await tx.otpChallenge.updateMany({
+      where: { phone, codeHash, consumed: false, expiresAt: { gt: new Date() } },
+      data: { consumed: true },
+    });
+    if (!consumed.count) fail('INVALID_OTP', 'Code already used. Request a new one.', 401);
+  }
+  async verify(
+    phone: string,
+    code: string,
+    adminPassword?: string,
+    label = 'Unknown device',
+    ip = 'unknown',
+    surface?: 'CUSTOMER' | 'DESK',
+  ) {
+    const challenge = await this.checkCode(phone, code);
     const existing = await this.db.user.findUnique({ where: { phone } });
     if (existing?.deletedAt) fail('UNAUTHORIZED', 'This account has been deleted.', 401);
     if (existing?.role === 'ADMIN' && getConfig().STAFF_PASSPHRASE_REQUIRED) {
@@ -317,16 +371,7 @@ export class AuthService {
     const accessToken = randomBytes(32).toString('base64url');
     const refreshToken = randomBytes(32).toString('base64url');
     return this.db.atomic(async (tx) => {
-      const consumed = await tx.otpChallenge.updateMany({
-        where: {
-          phone,
-          codeHash: challenge.codeHash,
-          consumed: false,
-          expiresAt: { gt: new Date() },
-        },
-        data: { consumed: true },
-      });
-      if (!consumed.count) fail('INVALID_OTP', 'Code already used. Request a new one.', 401);
+      await this.consumeCode(tx, phone, challenge.codeHash);
       const user = await tx.user.upsert({ where: { phone }, create: { phone }, update: {} });
       if (user.deletedAt) fail('UNAUTHORIZED', 'This account has been deleted.', 401);
       // Recheck inside the transaction in case staff credentials changed during verification.
@@ -361,7 +406,8 @@ export class AuthService {
       return { user, accessToken, refreshToken };
     });
   }
-  async refresh(token: string) {
+  /** A staff app session renews only through its phone's key, never with the token alone. */
+  async refresh(token: string, staffApp = false) {
     // The next pair is derived from the presented token, so a repeat of the same refresh (a lost
     // reply, or two tabs refreshing at once) gets the same pair instead of orphaning the other.
     const derive = (kind: string) =>
@@ -377,6 +423,8 @@ export class AuthService {
         include: { user: true },
       });
       if (!session || session.refreshExpiresAt < new Date())
+        fail('UNAUTHORIZED', 'Please sign in again.', 401);
+      if ((session.surface === 'STAFF_APP') !== staffApp)
         fail('UNAUTHORIZED', 'Please sign in again.', 401);
       const previous = session.refreshHash !== presented;
       if (
@@ -412,9 +460,11 @@ export class AuthService {
               }),
           expiresAt: new Date(Date.now() + 1800000),
           lastSeenAt: new Date(),
-          ...(session.user.role === 'ADMIN' && !getConfig().STAFF_PASSPHRASE_REQUIRED
-            ? { refreshExpiresAt: new Date(Date.now() + refreshLifetime('ADMIN')) }
-            : {}),
+          ...(session.surface === 'STAFF_APP'
+            ? { refreshExpiresAt: new Date(Date.now() + staffAppSessionMs) }
+            : session.user.role === 'ADMIN' && !getConfig().STAFF_PASSPHRASE_REQUIRED
+              ? { refreshExpiresAt: new Date(Date.now() + refreshLifetime('ADMIN')) }
+              : {}),
         },
       });
       return { user: session.user, accessToken, refreshToken };

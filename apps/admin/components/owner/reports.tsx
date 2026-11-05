@@ -1,5 +1,6 @@
 'use client';
 import { useState, type ReactNode } from 'react';
+import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { Download } from 'lucide-react';
 import { Button, EmptyState } from '@shiv/design';
@@ -605,6 +606,9 @@ function ReportPage() {
         </Button>
       </PageHeader>
       <Problem error={exportFile.error} />
+      <Link className={`${css.card} ${css.cardLink}`} href="/reports/hisaab">
+        {t('owner.crm.report.link')} <span aria-hidden="true">→</span>
+      </Link>
       <div className={own.ranges} role="group" aria-label={t('owner.reports.rangeLabel')}>
         {ranges.map((name) => (
           <Button

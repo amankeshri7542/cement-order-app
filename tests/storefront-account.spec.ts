@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import type { APIRequestContext, Page } from '@playwright/test';
-import { test, expect, verifyAndSkipName } from './fixtures';
+import { test, expect, isCancelledFetch, verifyAndSkipName } from './fixtures';
 
 // Website account parity with the Android app: profile, signed-in devices, account deletion
 // and sharing an order on WhatsApp. Each test signs in with its own 98888400xx number.
@@ -11,7 +11,9 @@ const errors = new WeakMap<Page, string[]>();
 test.beforeEach(async ({ page }) => {
   const list: string[] = [];
   errors.set(page, list);
-  page.on('pageerror', (error) => list.push(error.message));
+  page.on('pageerror', (error) => {
+    if (!isCancelledFetch(error.message)) list.push(error.message);
+  });
 });
 test.afterEach(async ({ page }) => expect(errors.get(page)).toEqual([]));
 function database() {
@@ -240,7 +242,7 @@ test('deleting the account is refused while an order is open', async ({ page }) 
   }
 });
 
-test('deleting an account with no open orders signs out and returns home', async ({ page }) => {
+test('deleting an account with no open orders signs out and says so', async ({ page }) => {
   const phone = '9888840004';
   await login(page, phone);
   const db = database();
@@ -250,7 +252,6 @@ test('deleting an account with no open orders signs out and returns home', async
     const deleted = page.waitForResponse((response) => response.url() === `${api}/me/delete`);
     await remove.click();
     expect((await deleted).ok()).toBe(true);
-    await expect(page).toHaveURL(`${site}/`);
     await expect(page.getByRole('status').filter({ hasText: 'Account deleted' })).toBeVisible();
     const user = await db.user.findUniqueOrThrow({ where: { id } });
     expect(user.deletedAt).not.toBeNull();
@@ -306,12 +307,13 @@ test('signing out removes private drafts from this browser but keeps recovery re
     (key) => `shiv_${key}_${id}`,
   );
   await page.evaluate(
-    ({ drafts, recovery, id }) => {
+    ({ drafts, recovery }) => {
       for (const key of [...drafts, ...recovery])
         localStorage.setItem(key, JSON.stringify({ notes: 'TEST private GSTIN note' }));
-      sessionStorage.setItem(`shiv_assistant_${id}`, JSON.stringify([]));
+      // Ask keeps no conversation in the browser, only this token, and that goes too.
+      localStorage.setItem('shiv_advisor_device_v1', 'TEST device token');
     },
-    { drafts, recovery, id },
+    { drafts, recovery },
   );
   await page.goto(`${site}/account`);
   await page.getByRole('button', { name: 'Sign out', exact: true }).click();
@@ -328,4 +330,5 @@ test('signing out removes private drafts from this browser but keeps recovery re
   expect(left.filter((key) => key !== `shiv_name_asked_${id}`).sort()).toEqual(
     [...recovery].sort(),
   );
+  expect(await page.evaluate(() => localStorage.getItem('shiv_advisor_device_v1'))).toBeNull();
 });

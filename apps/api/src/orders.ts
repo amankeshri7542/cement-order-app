@@ -25,8 +25,10 @@ import {
   orderStatusSchema,
   orderStatusText,
   placeOrderSchema,
+  quantityProblem,
   transitions,
   canDo,
+  type ReviewLeftOut,
 } from '@shiv/shared';
 import { Db } from './db';
 import {
@@ -49,9 +51,9 @@ import { getConfig, onlineReady } from './config';
 import { enqueueWhatsApp } from './alerts';
 import { clearHeldMessages, notifyCustomer, pushText } from './notify';
 import { workInclude } from './owner-work';
-import { itemsBeingCounted } from './blind-count';
 import { Events, stockFor } from './catalog';
-import { appendLedger } from './khata';
+import { postCreditSale, reverseCreditSale } from './khata';
+import { withShownPhones } from './crm/common';
 
 /**
  * What a stock keeper sees of an order: what to load and for which area. It lists what may be
@@ -109,6 +111,8 @@ export const customerOrderInclude = {
 };
 type CustomerRow = Prisma.OrderGetPayload<{ include: typeof customerOrderInclude }>;
 const decisionStatuses = ['CONFIRMED', 'CANCELLED', 'REFUND_PENDING'];
+/** What a driver or the desk wrote about a delivery is the shop's own note, not a customer message. */
+const deliveryNote = /^(REPORT|RETRY|RETURN):/;
 /**
  * What a customer may see of an order. While a decision can still be taken back it is still
  * waiting for them, and who at the shop decided is not theirs to know.
@@ -130,13 +134,16 @@ export function customerView(order: CustomerRow) {
       decisionStatuses.includes(history.at(-1)?.status ?? '')
     )
       history.pop();
-    else history.push(row);
+    else history.push(deliveryNote.test(row.note) ? { ...row, note: '' } : row);
   }
+  const deliveryAttempts = (order.deliveryAttempts ?? []).map(
+    ({ note: _note, actorId: _who, items: _items, ...attempt }) => ({ ...attempt, note: '' }),
+  );
   const items = order.items.map(
     ({ listPricePaise: _list, ruleId: _rule, ruleKind: _kind, rateChangedById: _who, ...item }) =>
       item,
   );
-  if (!hold || hold <= new Date()) return { ...rest, items, history };
+  if (!hold || hold <= new Date()) return { ...rest, items, history, deliveryAttempts };
   // Inside the hold nothing has happened yet: the order reads as it did before the decision.
   const lastDecision = history
     .map((row) => decisionStatuses.includes(row.status))
@@ -144,6 +151,7 @@ export function customerView(order: CustomerRow) {
   const held = {
     ...rest,
     items,
+    deliveryAttempts,
     status: 'AWAITING_CONFIRMATION' as const,
     confirmedAt: null,
     history: lastDecision < 0 ? history : history.slice(0, lastDecision),
@@ -216,6 +224,17 @@ export function validDelivery(date: string) {
   )
     fail('INVALID_DELIVERY_DATE', 'Choose a delivery date within the next 90 days.');
 }
+/** What a review works from, whichever door it came through. */
+type ReviewPick = {
+  cart: {
+    product: Prisma.ProductGetPayload<object>;
+    quantity: number;
+    seenPricePaise?: number;
+    seenPriceVersion?: number;
+  }[];
+  unavailable: ReviewLeftOut[];
+  listRateBefore: Map<string, number> | null;
+};
 @Injectable()
 export class OrdersService {
   constructor(
@@ -228,10 +247,13 @@ export class OrdersService {
       include: { product: { include: { category: true } } },
       orderBy: { productId: 'asc' },
     });
-    const counting = await itemsBeingCounted(db);
     return rows.map((row) => ({
       ...row,
-      product: { ...row.product, stock: stockFor(row.product, counting) },
+      product: {
+        ...row.product,
+        stock: stockFor(row.product),
+        pricePaise: row.product.sourcing === 'ON_REQUEST' ? null : row.product.pricePaise,
+      },
     }));
   }
   async setCart(userId: string, input: z.infer<typeof cartItemSchema>) {
@@ -242,7 +264,7 @@ export class OrdersService {
       }
       const product = await tx.product.findUnique({ where: { id: input.productId } });
       if (product) validateQuantity(product, input.quantity);
-      if (!product?.active || product.stock < input.quantity)
+      if (!product?.active || product.stock < input.quantity || product.sourcing === 'ON_REQUEST')
         fail('OUT_OF_STOCK', 'That quantity is not available.', 409);
       if (
         (await tx.cartItem.count({ where: { userId } })) >= 50 &&
@@ -298,7 +320,7 @@ export class OrdersService {
       for (const [productId, quantity] of quantities) {
         if (quantity > 10000) fail('INVALID_QUANTITY', 'A cart quantity cannot exceed 10000.');
         const product = products.get(productId);
-        if (!product?.active || product.stock < quantity)
+        if (!product?.active || product.stock < quantity || product.sourcing === 'ON_REQUEST')
           fail('OUT_OF_STOCK', 'That quantity is not available.', 409);
         validateQuantity(product, quantity);
       }
@@ -329,30 +351,104 @@ export class OrdersService {
       return this.cart(userId, tx);
     });
   }
+  private cartForReview(userId: string, tx: Prisma.TransactionClient) {
+    return tx.cartItem.findMany({
+      where: { userId },
+      include: { product: true },
+      orderBy: { productId: 'asc' },
+    });
+  }
+  /**
+   * The lines a phone sent, read against the server's own products. A line that cannot be sold now
+   * is left out with a word, so the rest can still be placed. Nothing here reveals a stock figure.
+   */
+  private async linesForReview(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    input: z.infer<typeof checkoutSchema>,
+  ) {
+    let listRateBefore: Map<string, number> | null = null;
+    if (input.repeatOfOrderId) {
+      // Missing and someone else's read the same, so this cannot be used to find other orders.
+      const earlier = await tx.order.findFirst({
+        where: { id: input.repeatOfOrderId, userId },
+        select: { items: { select: { productId: true, listPricePaise: true } } },
+      });
+      if (!earlier) fail('ORDER_NOT_FOUND', 'Order not found.', 404);
+      listRateBefore = new Map(earlier.items.map((item) => [item.productId, item.listPricePaise]));
+    }
+    const lines = [...input.lines!].sort((a, b) => a.productId.localeCompare(b.productId));
+    const products = new Map(
+      (await tx.product.findMany({ where: { id: { in: lines.map((l) => l.productId) } } })).map(
+        (product) => [product.id, product],
+      ),
+    );
+    const unavailable: ReviewLeftOut[] = [];
+    const cart: ReviewPick['cart'] = [];
+    for (const line of lines) {
+      const product = products.get(line.productId);
+      if (!product?.active) unavailable.push({ productId: line.productId, reason: 'NOT_SOLD' });
+      else if (quantityProblem(product, line.quantity))
+        unavailable.push({
+          productId: product.id,
+          reason: 'QUANTITY',
+          minQuantity: product.minQuantity,
+          quantityStep: product.quantityStep,
+        });
+      // An item with no public rate is never priced through here; the shop answers for it.
+      else if (product.stock < line.quantity || product.sourcing === 'ON_REQUEST')
+        unavailable.push({ productId: product.id, reason: 'ASK_SHOP' });
+      else cart.push({ product, quantity: line.quantity, seenPricePaise: line.seenPricePaise });
+    }
+    if (!cart.length)
+      fail('OUT_OF_STOCK', 'These cannot be ordered right now. Ask the shop.', 409, {
+        unavailable,
+      });
+    return { cart, unavailable, listRateBefore } satisfies ReviewPick;
+  }
+  /** What to say beside a line. A false seenPricePaise can only change these words. */
+  private linesChanged(
+    cart: { product: { id: string; name: string; pricePaise: number }; seenPricePaise?: number }[],
+    items: { productId: string; pricePaise: number }[],
+    listRateBefore: Map<string, number> | null,
+  ) {
+    return cart.flatMap(({ product, seenPricePaise }, index) => {
+      // A repeat compares list with list, so an order at an agreed rate shows no false jump.
+      const listBefore = listRateBefore?.get(product.id);
+      const [oldPricePaise, newPricePaise] =
+        listBefore !== undefined
+          ? [listBefore, product.pricePaise]
+          : [seenPricePaise, items[index]!.pricePaise];
+      return oldPricePaise === undefined || oldPricePaise === newPricePaise
+        ? []
+        : [{ name: product.name, productId: product.id, oldPricePaise, newPricePaise }];
+    });
+  }
   async review(userId: string, input: z.infer<typeof checkoutSchema>, ip = 'internal') {
     validDelivery(input.deliveryDate);
     return this.db.atomic(async (tx) => {
       await requestBudget(tx, 'review', userId, ip);
       const address = await tx.address.findFirst({ where: { id: input.addressId, userId } });
       if (!address) fail('INVALID_ADDRESS', 'Choose one of your saved addresses.');
-      const cart = await tx.cartItem.findMany({
-        where: { userId },
-        include: { product: true },
-        orderBy: { productId: 'asc' },
+      const buyer = await tx.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: { customerGroupId: true, role: true },
       });
+      if (buyer.role === 'ADMIN')
+        fail('STAFF_ACCOUNT', 'Use a customer number to place an order.', 403);
+      // From the phone's list, or the old way from the server's cart. The rest is one path.
+      const { cart, unavailable, listRateBefore }: ReviewPick = input.lines
+        ? await this.linesForReview(tx, userId, input)
+        : { cart: await this.cartForReview(userId, tx), unavailable: [], listRateBefore: null };
       if (!cart.length) fail('EMPTY_CART', 'Add a product before checkout.');
       const settings = await tx.storeSettings.findUniqueOrThrow({ where: { id: 'store' } });
       if (input.paymentMethod === 'ONLINE' && !(settings.onlinePaymentsEnabled && onlineReady()))
         fail('PAYMENTS_UNAVAILABLE', 'Online payment is unavailable. Choose cash on delivery.');
-      const buyer = await tx.user.findUniqueOrThrow({
-        where: { id: userId },
-        select: { customerGroupId: true },
-      });
       const rules = await activeRules(tx);
       const items = cart.map(({ product, quantity }) => {
         const priced = priceFor(product, quantity, userId, buyer.customerGroupId, rules);
         validateQuantity(product, quantity);
-        if (!product.active || product.stock < quantity)
+        if (!product.active || product.stock < quantity || product.sourcing === 'ON_REQUEST')
           fail('OUT_OF_STOCK', `${product.name} is not available in that quantity.`, 409);
         return {
           productId: product.id,
@@ -373,8 +469,9 @@ export class OrdersService {
         address.pincode,
         orderTotals(items, 0, null).subtotalPaise,
       );
+      const { lines: _lines, ...asked } = input;
       const snapshot = {
-        ...input,
+        ...asked,
         address,
         items,
         ...orderTotals(items, zone.deliveryFeePaise, zone.freeDeliveryAbovePaise),
@@ -382,13 +479,17 @@ export class OrdersService {
         deliveryZoneVersion: zone.version,
         deliveryEstimate: zone.estimate,
         settingsVersion: settings.version,
-        changes: cart
-          .filter((c) => c.seenPriceVersion !== c.product.priceVersion)
-          .map((c) => ({
-            name: c.product.name,
-            oldPricePaise: c.seenPricePaise,
-            newPricePaise: c.product.pricePaise,
-          })),
+        changes: input.lines
+          ? this.linesChanged(cart, items, listRateBefore)
+          : cart
+              .filter((c) => c.seenPriceVersion !== c.product.priceVersion)
+              .map((c) => ({
+                name: c.product.name,
+                productId: c.product.id,
+                oldPricePaise: c.seenPricePaise!,
+                newPricePaise: c.product.pricePaise,
+              })),
+        ...(input.lines ? { fromLines: true, unavailable } : {}),
       };
       const review = await tx.checkoutReview.create({
         data: {
@@ -440,12 +541,18 @@ export class OrdersService {
         fail('PRICE_CHANGED', 'Delivery charges changed. Review the updated total.', 409);
       if (snapshot.paymentMethod === 'ONLINE' && !(settings.onlinePaymentsEnabled && onlineReady()))
         fail('PAYMENTS_UNAVAILABLE', 'Online payment is unavailable.');
-      const cart = await tx.cartItem.findMany({ where: { userId }, orderBy: { productId: 'asc' } });
-      if (
-        JSON.stringify(cart.map((c) => [c.productId, c.quantity])) !==
-        JSON.stringify(snapshot.items.map((c) => [c.productId, c.quantity]))
-      )
-        fail('CART_CHANGED', 'Your cart changed. Review it again.', 409);
+      // A review from the phone's list stands by itself: the server's cart has no part in it.
+      if (!snapshot.fromLines) {
+        const cart = await tx.cartItem.findMany({
+          where: { userId },
+          orderBy: { productId: 'asc' },
+        });
+        if (
+          JSON.stringify(cart.map((c) => [c.productId, c.quantity])) !==
+          JSON.stringify(snapshot.items.map((c) => [c.productId, c.quantity]))
+        )
+          fail('CART_CHANGED', 'Your cart changed. Review it again.', 409);
+      }
       const zone = await deliveryFor(tx, snapshot.address.pincode, snapshot.subtotalPaise);
       if (zone.id !== snapshot.deliveryZoneId || zone.version !== snapshot.deliveryZoneVersion)
         fail('PRICE_CHANGED', 'Delivery policy changed. Review the updated total.', 409);
@@ -470,7 +577,7 @@ export class OrdersService {
             },
           );
         validateQuantity(product, line.quantity);
-        if (!product.active || product.stock < line.quantity)
+        if (!product.active || product.stock < line.quantity || product.sourcing === 'ON_REQUEST')
           fail('OUT_OF_STOCK', `${product.name} is no longer available in this quantity.`, 409);
         await moveStock(tx, {
           productId: product.id,
@@ -497,6 +604,7 @@ export class OrdersService {
           userId,
           reviewId: review.id,
           idempotencyKey: input.idempotencyKey,
+          repeatOfOrderId: snapshot.repeatOfOrderId ?? null,
           // Nobody has looked yet, so it waits for a person at the shop.
           status: online ? 'PENDING_PAYMENT' : 'AWAITING_CONFIRMATION',
           address: snapshot.address as unknown as Prisma.InputJsonValue,
@@ -523,8 +631,13 @@ export class OrdersService {
         },
         include: customerOrderInclude,
       });
-      await tx.cartItem.deleteMany({ where: { userId } });
+      if (!snapshot.fromLines) await tx.cartItem.deleteMany({ where: { userId } });
       await tx.user.update({ where: { id: userId }, data: { lastOrderAt: order.createdAt } });
+      // The site may have been removed since the review; the order keeps its own copy either way.
+      await tx.address.updateMany({
+        where: { id: snapshot.address.id, userId },
+        data: { lastUsedAt: order.createdAt },
+      });
       await tx.auditLog.create({
         data: {
           actorId: userId,
@@ -584,20 +697,15 @@ export class OrdersService {
       if (
         status === 'DELIVERED' &&
         order.payment?.method !== 'CREDIT' &&
-        order.payment?.status !== 'CAPTURED'
+        order.payment?.status !== 'CAPTURED' &&
+        // A driver who got less than was due has said so at the door. The rest stays owed, in the open.
+        !(await tx.driverCollection.count({ where: { orderId: id } }))
       )
         fail('PAYMENT_PENDING', 'Record payment received before completing delivery.', 409);
-      if (status === 'DELIVERED' && order.payment?.method === 'CREDIT')
-        await appendLedger(tx, {
-          locationId: order.locationId,
-          customerId: order.userId,
-          kind: 'SALE_ON_CREDIT',
-          amountPaise: order.totalPaise,
-          orderId: order.id,
-          actorId,
-          note: `Credit sale ${order.number}`,
-          occurredAt: new Date(),
-        });
+      if (status === 'OUT_FOR_DELIVERY' || status === 'DELIVERED')
+        await postCreditSale(tx, order, actorId);
+      if (status === 'CANCELLED')
+        await reverseCreditSale(tx, order.id, actorId, `Order cancel ${order.number}`);
       if (status === 'PREPARING' && !order.work?.acknowledgedAt)
         await tx.ownerWork.upsert({
           where: { orderId: id },
@@ -746,6 +854,14 @@ export class OrdersService {
       if (input.action === 'REPORT') {
         if (order.status !== 'OUT_FOR_DELIVERY' || !input.reason)
           fail('INVALID_DELIVERY_ACTION', 'Choose a reason for this dispatched delivery.', 409);
+        // A driver has already taken money here. Turning it back would leave that cash owed to
+        // nobody, so the way out is to finish the delivery.
+        if (await tx.driverCollection.count({ where: { orderId: id } }))
+          fail(
+            'INVALID_DELIVERY_ACTION',
+            'A driver took money for this. Finish the delivery.',
+            409,
+          );
         status = 'DELIVERY_EXCEPTION';
       } else {
         if (order.status !== 'DELIVERY_EXCEPTION')
@@ -785,6 +901,7 @@ export class OrdersService {
           status = order.payment?.status === 'CAPTURED' ? 'REFUND_PENDING' : 'CANCELLED';
           if (status === 'REFUND_PENDING')
             await tx.payment.update({ where: { orderId: id }, data: { status: 'REFUND_PENDING' } });
+          await reverseCreditSale(tx, id, actorId, `Maal wapas aaya ${order.number}`);
         }
       }
       await tx.order.update({
@@ -861,6 +978,7 @@ export class OrdersService {
         const quantity = item.quantity + (old?.quantity || 0);
         if (
           !item.product.active ||
+          item.product.sourcing === 'ON_REQUEST' ||
           item.product.stock < quantity ||
           quantity > 10000 ||
           quantity < item.product.minQuantity ||
@@ -1012,6 +1130,9 @@ export class OrdersController {
     // Someone who sees no customers or money must not learn them from what a filter matches.
     // A customer's balance and limit belong to the udhaar list, not to the order list.
     const seesCustomers = !!req.access['orders.read.money'];
+    // Part of a number is a way to discover numbers, for anyone who may not see them.
+    const searchesPhones =
+      canDo(req.access, 'customers.phone.read') || /^\+91[6-9]\d{9}$/.test(query.q ?? '');
     if (!seesCustomers && (customerId || queue === 'payments')) forbid(req, 'orders.read.money');
     const date = group === 'today' ? istToday() : undefined;
     const today = date ? new Date(`${date}T00:00:00+05:30`) : null;
@@ -1056,7 +1177,9 @@ export class OrdersController {
                   ...(seesCustomers
                     ? [
                         { user: { name: { contains: q, mode: 'insensitive' as const } } },
-                        { user: { phone: { contains: q, mode: 'insensitive' as const } } },
+                        ...(searchesPhones
+                          ? [{ user: { phone: { contains: q, mode: 'insensitive' as const } } }]
+                          : []),
                       ]
                     : []),
                 ],
@@ -1070,7 +1193,9 @@ export class OrdersController {
     // Someone may see money at one shop and only load goods at another.
     return page.finish(
       rows.map((row) =>
-        canDo(req.access, 'orders.read.money', row.locationId) ? row : loadingView(row),
+        canDo(req.access, 'orders.read.money', row.locationId)
+          ? withShownPhones(req, row)
+          : loadingView(row),
       ),
     );
   }
@@ -1081,7 +1206,18 @@ export class OrdersController {
       where: { id },
       include: { ...orderInclude, user: { select: orderPerson } },
     });
-    return canDo(req.access, 'orders.read.money', order.locationId) ? order : loadingView(order);
+    if (!canDo(req.access, 'orders.read.money', order.locationId)) return loadingView(order);
+    // Null until a driver has said what they got, so a real ₹0 is not mistaken for nothing yet.
+    const atTheDoor = await this.db.driverCollection.findMany({
+      where: { orderId: id },
+      select: { amountPaise: true },
+    });
+    return {
+      ...withShownPhones(req, order),
+      driverCollectedPaise: atTheDoor.length
+        ? atTheDoor.reduce((total, row) => total + row.amountPaise, 0)
+        : null,
+    };
   }
   @Can('orders.status', atOrder())
   @Patch('admin/orders/:id/status')

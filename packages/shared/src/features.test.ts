@@ -23,7 +23,7 @@ test('every customer feature is tested on both the app and the website', () => {
   for (const feature of customerFeatures) {
     assert.ok(!ids.has(feature.id), `duplicate feature ${feature.id}`);
     ids.add(feature.id);
-    assert.ok(feature.app.length, `${feature.id} has no app test`);
+    assert.ok(feature.app.length || feature.notOnApp, `${feature.id} has no app test`);
     assert.ok(feature.web.length, `${feature.id} has no website test`);
     for (const reference of [...feature.app, ...feature.web]) check(reference);
   }

@@ -13,7 +13,7 @@ export JAVA_HOME="${JAVA_HOME:-/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/
 export MAESTRO_CLI_NO_ANALYTICS=1 MAESTRO_CLI_ANALYSIS_NOTIFICATION_DISABLED=true
 adb="${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/adb -s $serial"
 flows="$root/apps/mobile/.maestro/drills"
-database="$(grep -E '^DATABASE_URL=' "$root/apps/api/.env" | cut -d= -f2-)"
+database="${DRILL_DATABASE_URL:-$(grep -E '^DATABASE_URL=' "$root/apps/api/.env" | cut -d= -f2-)}"
 sql() { LC_ALL=en_US.UTF-8 psql "$database" -Atc "$1"; }
 phone="98887$(printf '%05d' $((RANDOM % 100000)))"
 proxy_pid=""
@@ -82,11 +82,6 @@ sql "delete from \"Session\" where \"userId\" = (select id from \"User\" where p
 if run 40b-session-ended; then record "Session ended on the server" "pass"
 else record "Session ended on the server" "FAILED"; fi
 
-# 6. Microphone permission refused.
-$adb shell pm revoke in.shivcement.store android.permission.RECORD_AUDIO 2>/dev/null || true
-if run 50-mic-denied; then record "Microphone refused" "pass · typing still works"
-else record "Microphone refused" "FAILED"; fi
-
 # 7. Largest system font size.
 $adb shell settings put system font_scale 1.3
 if run 60-large-text; then record "Largest font (1.3×)" "pass · main actions visible"
@@ -104,7 +99,7 @@ if run 80-back-button; then record "Back button" "pass"
 else record "Back button" "FAILED"; fi
 
 # 10. TalkBack basics on the main screens: spoken names and 48dp touch targets.
-for screen in home materials product basket account; do
+for screen in home list product account; do
   run "90-a11y-$screen"
   if node "$root/scripts/android-a11y-audit.mjs" --name "$screen" --serial "$serial" >/dev/null; then
     record "Accessibility: $screen" "pass"

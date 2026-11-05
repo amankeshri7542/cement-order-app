@@ -18,6 +18,7 @@ import { Events } from './catalog';
 import { Db } from './db';
 import { AuthRequest, Can, Contract, fail, Input, requireAt, scoped, shopWhere } from './http';
 import { moveStock } from './inventory';
+import { evidenceExists } from './staff/evidence';
 
 type Tx = Prisma.TransactionClient;
 // Sold but still in the yard: the heap a person counts includes these.
@@ -528,6 +529,7 @@ export class StockService {
   /** Damage is reported here and written down only when an owner agrees. */
   async reportDamage(body: z.infer<typeof stockDamageSchema>, req: AuthRequest) {
     requireAt(req, 'stock.report', body.locationId);
+    if (body.evidenceId) await evidenceExists(this.db, body.evidenceId, req.user.id);
     return this.db.atomic(async (tx) => {
       const product = await tx.product.findUnique({
         where: { id: body.productId },
@@ -538,7 +540,11 @@ export class StockService {
         kind: 'STOCK_DAMAGE',
         locationId: body.locationId,
         amountPaise: product.pricePaise * body.quantity,
-        payload: { productId: body.productId, quantity: body.quantity },
+        payload: {
+          productId: body.productId,
+          quantity: body.quantity,
+          ...(body.evidenceId ? { evidenceId: body.evidenceId } : {}),
+        },
         note: body.note,
         requestedById: req.user.id,
         idempotencyKey: `damage:${body.idempotencyKey}`,

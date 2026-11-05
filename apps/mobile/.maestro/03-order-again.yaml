@@ -1,0 +1,34 @@
+# Runs after 02 as the same customer. Order again takes two taps and leaves a half-built list alone.
+appId: in.shivcement.store
+tags: [order]
+---
+- launchApp
+- extendedWaitUntil:
+    visible: Order again
+    timeout: 20000
+- assertVisible: Track
+- tapOn: Search
+- inputText: ACC
+- hideKeyboard
+- tapOn: Add ACC Gold Water Shield to your list
+- back
+- assertVisible: Your list, 1 items.*
+# Tap one.
+- tapOn:
+    text: Order again
+    index: 0
+- extendedWaitUntil:
+    visible: Place order.*
+    timeout: 15000
+- assertNotVisible: Ask for a rate
+# Tap two.
+- tapOn: Place order.*
+- extendedWaitUntil:
+    visible: Waiting for the shop
+    timeout: 15000
+- back
+# The list stayed exactly as it was.
+- assertVisible: Your list, 1 items.*
+- tapOn: Your list, 1 items.*
+- assertVisible: ACC Gold Water Shield
+- back

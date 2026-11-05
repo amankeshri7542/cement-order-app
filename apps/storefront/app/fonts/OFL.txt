@@ -1,0 +1,4 @@
+Hanken Grotesk is copyright The Hanken Grotesk Project Authors (https://github.com/marcologous/hanken-grotesk).
+This Font Software is licensed under the SIL Open Font License, Version 1.1:
+https://openfontlicense.org. The file here is a subset of the original (Basic Latin, the rupee sign
+and punctuation, weights 300 to 500).

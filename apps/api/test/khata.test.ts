@@ -416,9 +416,9 @@ describe('Phone orders and khata against PostgreSQL', () => {
     expect(await db.customerLedgerEntry.count()).toBe(0);
   });
 
-  it('records opening balance, signed adjustments and payments in one chain', async () => {
+  it('records signed adjustments and payments in one chain, with no pretend opening', async () => {
     const opening = await adjust(100000).expect(201);
-    expect(opening.body).toMatchObject({ kind: 'OPENING_BALANCE', balanceAfterPaise: 100000 });
+    expect(opening.body).toMatchObject({ kind: 'ADJUSTMENT', balanceAfterPaise: 100000 });
     await adjust(-20000).expect(201);
     const paid = await payment(entryInput(30000, { channel: 'UPI' })).expect(201);
     expect(paid.body).toMatchObject({

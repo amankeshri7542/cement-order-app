@@ -7,6 +7,7 @@ import { api } from '../../lib/api';
 import { useLanguage, useT } from '../../lib/i18n';
 import { useAction, useOwner } from '../../lib/owner';
 import { moneyInput, PageHeader, Problem, QueryStatus, rupeesToPaise } from './common';
+import { DriverCash } from './driver-cash';
 import css from './owner.module.css';
 
 type Sheet_ = {
@@ -16,6 +17,8 @@ type Sheet_ = {
   refunds: number;
   paidIn: number;
   paidOut: number;
+  /** Paid to staff from this drawer. Never with a name, so a cashier learns nobody's pay. */
+  staffPaid: number;
   expectedPaise: number;
   entries: { id: string; kind: string; amountPaise: number; reason: string; createdAt: string }[];
   carried: boolean;
@@ -91,6 +94,7 @@ export function Galla() {
         [t('owner.galla.paidIn'), data.paidIn],
         [t('owner.galla.refunds'), -data.refunds],
         [t('owner.galla.paidOut'), -data.paidOut],
+        [t('owner.galla.staffPaid'), -data.staffPaid],
       ]
     : [];
   const showForm = mayClose && data && (!data.close || correcting);
@@ -238,6 +242,9 @@ export function Galla() {
               </div>
             ))}
           </section>
+        )}
+        {locationId && can('cash.count', locationId) && (
+          <DriverCash locationId={locationId} sheetKey={key} />
         )}
       </div>
       {entry && locationId && (

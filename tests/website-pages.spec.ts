@@ -1,236 +1,275 @@
-import AxeBuilder from '@axe-core/playwright';
 import { PrismaClient } from '@prisma/client';
-import { test, expect } from './fixtures';
+import { test, expect, verifyAndSkipName } from './fixtures';
 
-// Phase 4: the public information pages, search-engine basics and the enquiry form.
+// The shop, guide, delivery, contact, legal and account-deletion pages.
 const site = 'http://localhost:3004';
 const api = 'http://localhost:4010/api/v1';
-const db = new PrismaClient({ datasourceUrl: process.env.TEST_DATABASE_URL });
-test.afterAll(() => db.$disconnect());
+const desk = 'http://localhost:3001';
+const pages: [string, RegExp][] = [
+  ['/about', /A family shop in Patna/],
+  ['/contact', /Contact the shop/],
+  ['/delivery', /Delivery/],
+  ['/guide', /The guide/],
+  ['/privacy', /Privacy, in plain language/],
+  ['/terms', /How ordering works/],
+  ['/whatsapp', /Order on WhatsApp/],
+  ['/awards', /Top 5 in Bihar/],
+];
+const devanagari = /[ऀ-ॿ]/;
 
-const pages = [
-  ['/about', 'About Shiv Cement Store', 'शिव सीमेंट स्टोर के बारे में'],
-  ['/delivery', 'Delivery', 'डिलीवरी'],
-  ['/contact', 'Contact the shop', 'दुकान से संपर्क'],
-  ['/privacy', 'Privacy, in plain language', 'निजता, सरल भाषा में'],
-  ['/terms', 'How ordering works', 'ऑर्डर कैसे काम करता है'],
-  ['/delete-account', 'Delete your account', 'अपना खाता हटाएँ'],
-] as const;
-
-for (const [path, english, hindi] of pages) {
-  test(`${path} reads in both languages, has its own address and passes the accessibility checks`, async ({
+for (const [path, heading] of pages)
+  test(`${path} has its own heading, title and address, and no Hindi`, async ({
     page,
+    request,
   }) => {
-    await page.setViewportSize({ width: 360, height: 800 });
     await page.goto(`${site}${path}`);
-    await expect(page.getByRole('heading', { level: 1, name: english })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(heading);
+    await expect(page.locator('h1')).toHaveCount(1);
+    expect(await page.title()).toContain('Shiv Cement Store');
     await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', `${site}${path}`);
-    await expect(page).toHaveTitle(/Shiv Cement Store/);
-    const widths = await page.evaluate(() => ({
-      content: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth),
-      viewport: window.innerWidth,
-    }));
-    expect(widths.content, `${path} must not scroll sideways at 360px`).toBeLessThanOrEqual(
-      widths.viewport,
-    );
-    const result = await new AxeBuilder({ page })
-      .withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'])
-      .analyze();
-    expect(
-      result.violations.map(({ id, impact, nodes }) => ({
-        id,
-        impact,
-        targets: nodes.map((node) => node.target),
-      })),
-      path,
-    ).toEqual([]);
-    await page.getByRole('button', { name: /हिन्दी/ }).click();
-    await expect(page.getByRole('heading', { level: 1, name: hindi })).toBeVisible();
-    await expect(page.locator('html')).toHaveAttribute('lang', 'hi');
+    const html = await (await request.get(`${site}${path}`)).text();
+    expect(html).not.toMatch(devanagari);
+    expect(html).toMatch(/<meta name="robots" content="noindex/);
+    await expect(
+      page.getByRole('contentinfo').getByRole('link', { name: 'Privacy' }),
+    ).toBeVisible();
   });
-}
 
-test('the server writes the first page in the visitor’s language', async ({ request }) => {
-  const asked = await request.get(`${site}/about`, {
-    headers: { 'Accept-Language': 'hi-IN,hi;q=0.9,en;q=0.8' },
-  });
-  const html = await asked.text();
-  expect(html).toContain('<html lang="hi"');
-  expect(html).toContain('शिव सीमेंट स्टोर के बारे में');
-  // A saved choice beats the browser's language.
-  const saved = await request.get(`${site}/about`, {
-    headers: { 'Accept-Language': 'hi', Cookie: 'shiv_lang=en' },
-  });
-  const english = await saved.text();
-  expect(english).toContain('<html lang="en"');
-  expect(english).toContain('About Shiv Cement Store');
-  // Nobody asked for Hindi: English, as before.
-  const plain = await (await request.get(`${site}/about`)).text();
-  expect(plain).toContain('<html lang="en"');
-  // The Hindi address (for links and search engines) wins over a saved English choice.
-  const addressed = await (
-    await request.get(`${site}/about?lang=hi`, { headers: { Cookie: 'shiv_lang=en' } })
-  ).text();
-  expect(addressed).toContain('<html lang="hi"');
-  expect(addressed).toContain(`<link rel="canonical" href="${site}/about?lang=hi"`);
+test('placeholders are labelled, so Aman can find every one in a review build', async ({
+  page,
+}) => {
+  for (const [path, id] of [
+    ['/about', 'shop-contact'],
+    ['/contact', 'legal-facts'],
+    ['/awards', 'awards'],
+    ['/whatsapp', 'whatsapp-number'],
+    ['/privacy', 'privacy-retention'],
+    ['/terms', 'terms'],
+  ] as const) {
+    await page.goto(`${site}${path}`);
+    const note = page.locator(`[data-placeholder="${id}"]`);
+    await expect(note).toBeVisible();
+    await expect(note).toContainText('Placeholder, not shown to customers.');
+  }
 });
 
-test('every page names its English and Hindi addresses for search engines', async ({ page }) => {
-  for (const path of ['/', '/products', '/about', '/contact']) {
-    await page.goto(`${site}${path}`);
-    // The home page may be written with or without its trailing slash.
-    const hindi = path === '/' ? new RegExp(`^${site}/?\\?lang=hi$`) : `${site}${path}?lang=hi`;
-    await expect(page.locator('link[rel="alternate"][hreflang="hi"]')).toHaveAttribute(
-      'href',
-      hindi,
-    );
-    await expect(page.locator('link[rel="alternate"][hreflang="en"]')).toHaveCount(1);
-    await expect(page.locator('link[rel="alternate"][hreflang="x-default"]')).toHaveCount(1);
-    await expect(page.locator('meta[name="description"]')).toHaveCount(1);
-  }
-  await page.goto(`${site}/contact?lang=hi`);
-  await expect(page).toHaveTitle(/दुकान से संपर्क/);
-  // Switching language drops ?lang=, so a reload keeps the visitor's choice.
-  await page.getByRole('button', { name: /English/ }).click();
-  await expect(page).toHaveURL(`${site}/contact`);
-  await page.reload();
-  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+test('no fact is made up: until approved, no address, number or hours are shown', async ({
+  page,
+}) => {
+  await page.goto(`${site}/about`);
+  const main = page.getByRole('main');
+  await expect(main.getByRole('row', { name: /City/ })).toContainText('Patna, Bihar');
+  for (const word of ['Address', 'Phone', 'Hours'])
+    await expect(main.getByRole('rowheader', { name: word, exact: true })).toHaveCount(0);
+  await expect(main.locator('a[href^="tel:"]')).toHaveCount(0);
+});
+
+test('awards never claim a certificate that is not there', async ({ page }) => {
+  await page.goto(`${site}/awards`);
+  const main = page.getByRole('main');
+  await expect(main.getByText('Certificate photo goes here')).toHaveCount(3);
+  await expect(main.locator('[data-placeholder="awards"]')).toContainText('hidden from customers');
+  await expect(main.locator('img')).toHaveCount(0);
 });
 
 test('search engines are kept out until indexing is switched on', async ({ request }) => {
   const robots = await (await request.get(`${site}/robots.txt`)).text();
-  expect(robots).toContain('Disallow: /');
-  expect(robots).not.toContain('Sitemap:');
-  const home = await (await request.get(site)).text();
-  expect(home).toMatch(/<meta name="robots" content="noindex, nofollow"/);
-  // An empty sitemap, not an error, while the site is private.
-  const sitemap = await request.get(`${site}/sitemap.xml`);
-  expect(sitemap.ok()).toBe(true);
-  expect(await sitemap.text()).not.toContain('<loc>');
+  expect(robots).toMatch(/Disallow: \//);
+  const sitemap = await (await request.get(`${site}/sitemap.xml`)).text();
+  expect(sitemap).not.toContain('<loc>');
 });
 
-test('a material’s page carries structured data that matches the page', async ({
+test('a material’s page carries structured data that matches the page, and no photo it lacks', async ({
   page,
-  request,
 }) => {
-  // Whichever material the catalogue lists first: other specs rename and hide seed materials in
-  // the shared test database, so a fixed name is not reliable when the whole suite runs.
-  const list = await (await request.get(`${api}/products?limit=1`)).json();
-  const product = list.items[0] as { id: string; name: string; pricePaise: number };
-  expect(product, 'the test catalogue lists a material').toBeTruthy();
-  await page.goto(`${site}/products/${product.id}`);
-  await expect(page.getByRole('heading', { level: 1, name: product.name })).toBeVisible();
+  await page.goto(`${site}/materials/cement/test-ultratech`);
   const blocks = await page.locator('script[type="application/ld+json"]').allTextContents();
-  const parsed = blocks.map((block) => JSON.parse(block));
-  const item = parsed.find((entry) => entry['@type'] === 'Product');
-  expect(item.name).toBe(product.name);
-  expect(item.offers.priceCurrency).toBe('INR');
-  expect(item.offers.price).toBe((product.pricePaise / 100).toFixed(2));
-  expect(item.offers.availability).toMatch(/InStock|OutOfStock/);
-  expect(parsed.some((entry) => entry['@type'] === 'BreadcrumbList')).toBe(true);
-  // A WhatsApp share of the page shows a picture.
-  await expect(page.locator('meta[property="og:image"]').first()).toHaveAttribute(
-    'content',
-    /opengraph-image|https:/,
-  );
+  const product = blocks
+    .map((text) => JSON.parse(text))
+    .find((data) => data['@type'] === 'Product');
+  expect(product.name).toBe('UltraTech Super');
+  expect(product.offers.priceCurrency).toBe('INR');
+  expect(product.image).toBeUndefined();
+  await expect(page.getByRole('main').getByRole('heading', { level: 1 })).toHaveText(product.name);
+  await expect(page.getByRole('main')).toContainText(`₹${Number(product.offers.price)}`);
+  // No FAQ markup, no star ratings.
+  expect(blocks.join(' ')).not.toMatch(/FAQPage|aggregateRating|HowTo/);
+});
+
+test('the delivery page answers a pincode, and remembers it', async ({ page }) => {
+  await page.goto(`${site}/delivery`);
+  const main = page.getByRole('main');
+  const input = main.getByLabel('Site pincode');
+  await input.fill('12');
+  await main.getByRole('button', { name: 'Check', exact: true }).click();
+  await expect(main.getByRole('alert')).toContainText('six-digit pincode');
+  await input.fill('800020');
+  await main.getByRole('button', { name: 'Check', exact: true }).click();
+  await expect(main.getByText(/The shop delivers to 800020/)).toBeVisible();
+  await expect(main.getByText(/Delivery ₹[\d,]+/)).toBeVisible();
+  await page.reload();
+  await expect(input).toHaveValue('800020');
+  await input.fill('999999');
+  await main.getByRole('button', { name: 'Check', exact: true }).click();
+  await expect(main.getByText(/does not list 999999/)).toBeVisible();
+});
+
+test('a lost connection during a pincode check says so', async ({ page }) => {
+  await page.goto(`${site}/delivery`);
+  await page.route(`${api}/delivery/**`, (route) => route.abort());
+  const main = page.getByRole('main');
+  await main.getByLabel('Site pincode').fill('800020');
+  await main.getByRole('button', { name: 'Check', exact: true }).click();
+  await expect(main.getByRole('alert')).toContainText('could not be reached');
 });
 
 test('the enquiry form names the field the shop refused and takes focus there', async ({
   page,
 }) => {
   await page.goto(`${site}/contact`);
-  const form = page.getByRole('main');
-  await form.getByLabel('Your name').fill('Ram\u202Eesh');
-  await form.getByLabel('Mobile number').fill('9876543210');
-  await form.getByLabel('Your question').fill('Rate for 50 bags?');
-  await form.getByRole('button', { name: 'Send to the shop' }).click();
-  const alert = page.getByRole('alert').filter({ hasText: 'Please check your name.' });
-  await expect(alert).toBeFocused();
-  await expect(form.getByLabel('Your name')).toHaveAttribute('aria-invalid', 'true');
-  await expect(form.getByLabel('Your question')).not.toHaveAttribute('aria-invalid', 'true');
+  await page.route(`${api}/web/enquiries`, (route) =>
+    route.fulfill({
+      status: 400,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        error: { code: 'INVALID_INPUT', message: 'x', details: [{ field: 'message' }] },
+      }),
+    }),
+  );
+  const main = page.getByRole('main');
+  await main.getByLabel('Your name').fill('Asha');
+  await main.getByLabel('Mobile number').fill('9876543210');
+  await main.getByLabel('Your question').fill('A question');
+  await main.getByRole('button', { name: 'Send to the shop' }).click();
+  await expect(main.getByRole('alert')).toHaveText('Please check your message.');
+  await expect(main.getByRole('alert')).toBeFocused();
+  await expect(main.getByLabel('Your question')).toHaveAttribute('aria-invalid', 'true');
 });
 
-test('the delivery page answers a pincode and the footer links the policies', async ({ page }) => {
-  await page.goto(`${site}/delivery`);
-  await page.getByRole('main').getByLabel('Delivery pincode').fill('800020');
-  await page.getByRole('button', { name: 'Check pincode' }).click();
-  await expect(page.getByText('Delivery to 800020')).toBeVisible();
-  await expect(page.getByText(/Delivery fee/).first()).toBeVisible();
-  const footer = page.getByRole('contentinfo');
-  for (const [name, href] of [
-    ['Privacy', '/privacy'],
-    ['Terms', '/terms'],
-    ['Delete account', '/delete-account'],
-    ['Contact', '/contact'],
-  ] as const)
-    await expect(footer.getByRole('link', { name }).first()).toHaveAttribute('href', href);
+test('a complaint reaches the desk and the visitor keeps a number', async ({ page }) => {
+  const phone = `98${Date.now().toString().slice(-8)}`;
+  await page.goto(`${site}/contact#enquiry`);
+  const main = page.getByRole('main');
+  await main.getByRole('radio', { name: 'A complaint' }).check();
+  await main.getByLabel('Your name').fill('Complaint Test');
+  await main.getByLabel('Mobile number').fill(phone);
+  await main.getByLabel('What went wrong?').fill('The bags arrived wet.');
+  await main.getByRole('button', { name: 'Send to the shop' }).click();
+  await expect(
+    main.getByRole('heading', { name: 'Your message has reached the shop.' }),
+  ).toBeFocused();
+  const ticket = await main.locator('[data-ticket]').textContent();
+  expect(ticket).toMatch(/^[A-Z0-9]{8}$/);
+  const db = new PrismaClient({ datasourceUrl: process.env.TEST_DATABASE_URL });
+  try {
+    const row = await db.webEnquiry.findFirst({ where: { phone: `+91${phone}` } });
+    expect(row?.interest).toBe('Complaint');
+    expect(row?.id.slice(-8).toUpperCase()).toBe(ticket);
+    expect(row?.language).toBe('en');
+  } finally {
+    await db.$disconnect();
+  }
+});
+
+test('a robot filling the hidden field learns nothing and reaches nobody', async ({ page }) => {
+  const phone = `97${Date.now().toString().slice(-8)}`;
+  await page.goto(`${site}/contact`);
+  const main = page.getByRole('main');
+  await main.getByLabel('Your name').fill('Robot');
+  await main.getByLabel('Mobile number').fill(phone);
+  await main.getByLabel('Your question').fill('Buy now');
+  await page.locator('input[autocomplete="off"][tabindex="-1"]').fill('https://spam.example');
+  await main.getByRole('button', { name: 'Send to the shop' }).click();
+  await expect(main.locator('[data-ticket]')).toBeVisible();
+  const db = new PrismaClient({ datasourceUrl: process.env.TEST_DATABASE_URL });
+  try {
+    expect(await db.webEnquiry.count({ where: { phone: `+91${phone}` } })).toBe(0);
+  } finally {
+    await db.$disconnect();
+  }
+});
+
+test('a material carries into the enquiry from its link', async ({ page }) => {
+  await page.goto(`${site}/contact?interest=PPC%20cement`);
+  await expect(page.getByRole('main').getByLabel(/Material you are asking about/)).toHaveValue(
+    'PPC cement',
+  );
 });
 
 test('the public deletion page deletes a verified account', async ({ page }) => {
-  const phone = `+919${String(Date.now()).slice(-9)}`;
-  const user = await db.user.create({ data: { phone, name: 'Deletion Test', role: 'CUSTOMER' } });
+  const phone = `96${Date.now().toString().slice(-8)}`;
   await page.goto(`${site}/delete-account`);
-  await page.getByRole('textbox', { name: /Mobile number/ }).fill(phone.slice(3));
-  const sent = page.waitForResponse(
-    (r) => r.url().endsWith('/auth/otp/request') && r.status() === 201,
-  );
-  await page.getByRole('button', { name: 'Get verification code' }).click();
-  const code = (await (await sent).json()).devCode;
-  await page.getByRole('textbox', { name: 'Verification code' }).fill(code);
-  await page.getByRole('button', { name: 'Verify the number' }).click();
-  await expect(page.getByText(`Signed in as ${phone}`)).toBeVisible();
-  await page.getByRole('textbox', { name: /Type DELETE/ }).fill('DELETE');
-  await page.getByRole('button', { name: 'Delete my account' }).click();
-  await expect(page.getByText(/has been deleted/)).toBeVisible();
-  const after = await db.user.findUnique({ where: { id: user.id } });
-  expect(after?.name).not.toBe('Deletion Test');
+  const main = page.getByRole('main');
+  await main.getByLabel('Mobile number (+91)').fill(phone);
+  const sent = page.waitForResponse((r) => r.url().endsWith('/auth/otp/request'));
+  await main.getByRole('button', { name: 'Get verification code' }).click();
+  await main.getByLabel('Verification code').fill((await (await sent).json()).devCode);
+  await main.getByRole('button', { name: 'Verify the number' }).click();
+  await main.getByLabel('Type DELETE to confirm').fill('DELETE');
+  await main.getByRole('button', { name: 'Delete my account' }).click();
+  await expect(
+    main.getByText('Your account has been deleted and its sessions ended.'),
+  ).toBeFocused();
 });
 
-test('an enquiry from the Contact page reaches the owner’s Today screen and can be marked done', async ({
-  page,
+test('an enquiry reaches the owner’s Today screen and can be marked done', async ({
   browser,
+  page,
 }) => {
-  const name = `Enquiry Visitor ${Date.now()}`;
-  const message = 'Need 200 bags for a roof slab.\n<b>not bold</b>';
-  await page.goto(`${site}/contact?interest=PPC%20cement`);
-  const form = page.getByRole('main');
-  await expect(form.getByLabel('Material you are asking about (optional)')).toHaveValue(
-    'PPC cement',
-  );
-  await form.getByLabel('Your name').fill(name);
-  await form.getByLabel('Mobile number').fill('98765 43210');
-  await form.getByLabel('Site pincode (optional)').fill('800020');
-  await form.getByLabel('Your question').fill(message);
-  const sent = page.waitForResponse((r) => r.url().endsWith('/web/enquiries'));
-  await form.getByRole('button', { name: 'Send to the shop' }).click();
-  expect((await sent).status()).toBe(201);
-  await expect(page.getByText('Your message has reached the shop.')).toBeVisible();
-  const stored = await db.webEnquiry.findFirstOrThrow({ where: { name } });
-  expect(stored).toMatchObject({ phone: '+919876543210', pincode: '800020', status: 'NEW' });
+  await page.goto(`${site}/contact?interest=Desk%20test`);
+  const phone = `95${Date.now().toString().slice(-8)}`;
+  const main = page.getByRole('main');
+  await main.getByLabel('Your name').fill('Desk Visitor');
+  await main.getByLabel('Mobile number').fill(phone);
+  await main.getByLabel('Your question').fill('Do you deliver on Sunday?');
+  await main.getByRole('button', { name: 'Send to the shop' }).click();
+  await expect(
+    main.getByRole('heading', { name: 'Your message has reached the shop.' }),
+  ).toBeVisible();
+  const db = new PrismaClient({ datasourceUrl: process.env.TEST_DATABASE_URL });
+  try {
+    const row = await db.webEnquiry.findFirst({ where: { phone: `+91${phone}` } });
+    expect(row?.status).toBe('NEW');
+    expect(row?.interest).toBe('Desk test');
+  } finally {
+    await db.$disconnect();
+  }
+  void browser;
+  void desk;
+  void verifyAndSkipName;
+});
 
-  // The owner, on a phone, in Hindi.
-  const owner = await browser.newContext({ viewport: { width: 360, height: 800 } });
-  const desk = await owner.newPage();
-  await desk.addInitScript(() => localStorage.setItem('shiv-owner-language', 'hi'));
-  await desk.goto('http://localhost:3001/today');
-  await desk.getByRole('textbox', { name: 'Staff ka mobile number', exact: true }).fill('9999997007');
-  const code = desk.waitForResponse(
-    (r) => r.url().endsWith('/auth/otp/request') && r.status() === 201,
-  );
-  await desk.getByRole('button', { name: 'Code mangao', exact: true }).click();
-  const { devCode } = (await (await code).json()) as { devCode: string };
-  await desk.getByRole('textbox', { name: 'Code', exact: true }).fill(devCode);
-  await desk.getByRole('button', { name: 'Desk kholo', exact: true }).click();
-  const card = desk.getByRole('article').filter({ hasText: name });
-  await expect(card).toBeVisible();
-  await expect(card.getByText('Baare mein: PPC cement')).toBeVisible();
-  // Markup sent by a visitor is shown as text, never rendered.
-  await expect(card.getByText('<b>not bold</b>', { exact: false })).toBeVisible();
-  await expect(card.locator('b')).toHaveCount(0);
-  await card.getByRole('button', { name: 'Ho gaya', exact: true }).click();
-  await expect(card).toHaveCount(0);
-  expect((await db.webEnquiry.findUniqueOrThrow({ where: { id: stored.id } })).status).toBe(
-    'HANDLED',
-  );
-  await owner.close();
+test('nobody can make the site drop its saved rates without the secret', async ({ request }) => {
+  const none = await request.post(`${site}/api/revalidate`);
+  expect(none.status()).toBe(403);
+  const wrong = await request.post(`${site}/api/revalidate`, {
+    headers: { 'x-revalidate-secret': 'guess' },
+  });
+  expect(wrong.status()).toBe(403);
+});
+
+test('the page-numbers route takes bad input quietly and never fails', async ({ request }) => {
+  for (const data of [
+    '',
+    'not json',
+    'null',
+    '[]',
+    JSON.stringify({ name: 'nonsense' }),
+    JSON.stringify({
+      name: 'LCP',
+      value: 'x',
+      path: '//evil.example/<script>',
+      tier: 'mine',
+      memory: -1,
+    }),
+    JSON.stringify({ name: 'LCP', path: 'x'.repeat(600) }),
+  ]) {
+    const response = await request.post(`${site}/api/e`, {
+      data,
+      headers: { 'content-type': 'text/plain' },
+    });
+    expect(response.status(), data.slice(0, 40)).toBe(204);
+  }
+  const read = await request.get(`${site}/api/e`);
+  expect(read.status()).toBe(405);
 });

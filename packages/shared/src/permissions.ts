@@ -3,7 +3,7 @@
  * mistake. The API enforces this table on every route, and the desk reads it to draw its menus.
  * Change PERMISSIONS_VERSION whenever a role's rights change; audit rows record it.
  */
-export const PERMISSIONS_VERSION = 4;
+export const PERMISSIONS_VERSION = 10;
 
 export const staffRoles = [
   'OWNER',
@@ -69,6 +69,10 @@ export const permissions = [
   'wa.ai.control',
   'wa.learn',
   'wa.admin',
+  // Order cards made from WhatsApp or the paste box, at one's own shop.
+  'wa.cards',
+  // Who may hear from the AI: the stage, test numbers and quiet rules. Owners only.
+  'wa.stage',
   'stock.count',
   'stock.transfer',
   'stock.report',
@@ -79,11 +83,65 @@ export const permissions = [
   'rates.read',
   'rates.ask',
   'pricing.edit',
+  // The staff app, hazri and the jobs done from it.
+  'staffapp.use',
+  'attendance.read',
+  'attendance.review',
+  'attendance.mark',
+  'attendance.correct',
+  'attendance.proof.read',
+  'device.approve.first',
+  'device.approve.change',
+  'screen.manage',
+  'stock.load',
+  'trip.assign',
+  'trip.drive',
+  'cash.count',
+  // Salary. Only owners move it; the accountant reads it; a manager never sees anyone's but his own.
+  'staff.salary.read',
+  'staff.salary.pay',
+  // Ask. Owners answer what customers ask; the operator reads numbers and can stop the AI.
+  'advisor.review',
+  'advisor.health',
+  'advisor.control',
+  // Tally, read-only. Its numbers are for owners and the accountant, nobody else.
+  'tally.read',
+  'tally.numbers.view',
+  'tally.match',
+  'tally.devices',
+  'tally.health',
+  // CRM. A shop's people see that shop's calls; the lists of who owes what stay with those who run it.
+  'customers.phone.read',
+  'crm.followups.read',
+  'crm.followups',
+  'crm.followups.assign',
+  'crm.remind',
+  'crm.dormant.read',
+  'crm.vasooli.read',
+  // The opening sheet. The accountant types what the paper book says; only an owner signs it.
+  'khata.opening.draft',
+  'khata.opening.approve',
 ] as const;
 export type Permission = (typeof permissions)[number];
 
 /** ALL means every shop. SHOP means only the shops on this person's memberships. */
 export type PermissionScope = 'ALL' | 'SHOP';
+
+/**
+ * All the staff app can ever do, whoever is holding it. It signs in with a code alone, so a phone
+ * holding it reaches no money, rates or other people, even when the person is an owner.
+ */
+export const staffAppPermissions: readonly string[] = [
+  'staffapp.use',
+  'stock.read',
+  'stock.receive',
+  'stock.count',
+  'stock.transfer',
+  'stock.report',
+  'stock.load',
+  'approvals.ask',
+  'trip.drive',
+];
 
 const everything = Object.fromEntries(permissions.map((name) => [name, 'ALL'])) as Record<
   Permission,
@@ -93,10 +151,28 @@ const everything = Object.fromEntries(permissions.map((name) => [name, 'ALL'])) 
 export const rolePermissions: Record<StaffRole, Partial<Record<Permission, PermissionScope>>> = {
   OWNER: everything,
   MANAGER: {
+    'customers.phone.read': 'ALL',
+    'crm.followups.read': 'SHOP',
+    'crm.followups': 'SHOP',
+    'crm.followups.assign': 'SHOP',
+    'crm.remind': 'SHOP',
+    'crm.dormant.read': 'SHOP',
+    'crm.vasooli.read': 'SHOP',
+    'staffapp.use': 'SHOP',
+    'attendance.read': 'SHOP',
+    'attendance.review': 'SHOP',
+    'attendance.mark': 'SHOP',
+    'attendance.correct': 'SHOP',
+    'device.approve.first': 'SHOP',
+    'screen.manage': 'SHOP',
+    'stock.load': 'SHOP',
+    'trip.assign': 'SHOP',
+    'cash.count': 'SHOP',
     'desk.use': 'ALL',
     'dashboard.read': 'SHOP',
     'orders.read': 'SHOP',
     'orders.read.money': 'SHOP',
+    'wa.cards': 'SHOP',
     'orders.create': 'SHOP',
     'orders.confirm': 'SHOP',
     'orders.confirm.credit': 'SHOP',
@@ -131,10 +207,18 @@ export const rolePermissions: Record<StaffRole, Partial<Record<Permission, Permi
     'staff.read': 'SHOP',
   },
   CASHIER: {
+    // Collection work: their shop's calls and reminders. The lists of who owes what are not theirs.
+    'customers.phone.read': 'ALL',
+    'crm.followups.read': 'SHOP',
+    'crm.followups': 'SHOP',
+    'crm.remind': 'SHOP',
+    'staffapp.use': 'SHOP',
+    'cash.count': 'SHOP',
     'desk.use': 'ALL',
     'dashboard.read': 'SHOP',
     'orders.read': 'SHOP',
     'orders.read.money': 'SHOP',
+    'wa.cards': 'SHOP',
     'orders.create': 'SHOP',
     // Cash orders only. An udhaar order waits for a manager or an owner.
     'orders.confirm': 'SHOP',
@@ -156,6 +240,17 @@ export const rolePermissions: Record<StaffRole, Partial<Record<Permission, Permi
     'delivery.read': 'ALL',
   },
   ACCOUNTANT: {
+    // Reads the lists, with no customer's number on them, and calls nobody.
+    'crm.followups.read': 'ALL',
+    'crm.dormant.read': 'ALL',
+    'crm.vasooli.read': 'ALL',
+    'khata.opening.draft': 'ALL',
+    'staff.salary.read': 'ALL',
+    'tally.read': 'ALL',
+    'tally.numbers.view': 'ALL',
+    // Linking a ledger to a customer writes nothing to Tally or the khata.
+    'tally.match': 'ALL',
+    'attendance.read': 'ALL',
     'desk.use': 'ALL',
     'dashboard.read': 'ALL',
     'orders.read': 'ALL',
@@ -172,6 +267,8 @@ export const rolePermissions: Record<StaffRole, Partial<Record<Permission, Permi
     'audit.read': 'ALL',
   },
   STOCK_KEEPER: {
+    'staffapp.use': 'SHOP',
+    'stock.load': 'SHOP',
     'desk.use': 'ALL',
     // Sees which goods to load, with no rupee values anywhere.
     'orders.read': 'SHOP',
@@ -183,15 +280,26 @@ export const rolePermissions: Record<StaffRole, Partial<Record<Permission, Permi
     'approvals.ask': 'SHOP',
   },
   // Drivers and helpers work in the staff app, which arrives in Phase 5. Nothing on the desk.
-  DRIVER: {},
-  HELPER: {},
+  DRIVER: {
+    'staffapp.use': 'SHOP',
+    'trip.drive': 'SHOP',
+  },
+  HELPER: {
+    'staffapp.use': 'SHOP',
+  },
   // The technical operator keeps the system healthy, and never touches orders, money or stock.
   TECH_OPERATOR: {
+    // Numbers only, never a customer's words, and a way to stop the AI.
+    'advisor.health': 'ALL',
+    'advisor.control': 'ALL',
     'desk.use': 'ALL',
     'alerts.manage': 'ALL',
     'system.ops': 'ALL',
     // Counts and connection state only. Customers' words need wa.read.
     'wa.admin': 'ALL',
+    // The shop PCs and whether they answer. No party, amount or Tally number.
+    'tally.devices': 'ALL',
+    'tally.health': 'ALL',
   },
 };
 

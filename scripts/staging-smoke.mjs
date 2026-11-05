@@ -109,9 +109,10 @@ export async function stagingSmoke(origins, request = fetch) {
       'nosniff',
       `${name}${path}: missing nosniff`,
     );
+    // The public website may be kept for Back and Forward; everything else is no-store.
     assert(
-      response.headers.get('cache-control')?.includes('no-store'),
-      `${name}${path}: missing no-store`,
+      /no-store|private, no-cache/.test(response.headers.get('cache-control') ?? ''),
+      `${name}${path}: missing a private cache rule`,
     );
     const html = await response.text();
     assert(html.includes('Shiv Cement Store'), `${name}${path}: wrong application`);

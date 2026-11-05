@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { loadTs } from './load-ts.mjs';
 
-const { withRetry, retryDelays } = loadTs('src/retry.ts', { setTimeout });
+const { withRetry, retryDelays } = loadTs('src/logic/retry.ts', { setTimeout });
 const transport = new Error('transport');
 const refusal = new Error('refusal');
 const retryable = (error) => error === transport;

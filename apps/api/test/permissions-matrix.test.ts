@@ -199,7 +199,13 @@ describe('every role against every route', () => {
     it(`${role} reaches only what the table gives them`, async () => {
       const wrong: string[] = [];
       for (const route of guarded) {
-        const allowed = !!rolePermissions[role][route.can!.permission as Permission];
+        const permission = route.can!.permission as Permission;
+        // These are desk sessions. Driving is the linked phone's alone, and someone with no desk
+        // holds nothing at one: a text message must not stand in for the phone's key.
+        const allowed =
+          !!rolePermissions[role][permission] &&
+          !!rolePermissions[role]['desk.use'] &&
+          permission !== 'trip.drive';
         // An open event stream never answers; refused streams are still checked.
         if (allowed && route.sse) continue;
         const { status } = await call(route, id);
@@ -611,6 +617,7 @@ describe('agreed prices at the counter', () => {
     await sale('cashier').expect(201);
   });
   it('a manager may agree a price, and it is logged next to the list price', async () => {
+    await db.location.update({ where: { id: SHOP_A }, data: { managerRateCapPercent: 5 } });
     const made = await sale('manager', { unitPricePaise: 39000 }).expect(201);
     const log = await db.auditLog.findFirstOrThrow({
       where: { event: 'COUNTER_SALE_RECORDED', entityId: made.body.id },
@@ -780,5 +787,23 @@ describe('changes take effect on the next request', () => {
       data: { endedAt: new Date(), endedById: 'owner' },
     });
     await request(server).get('/api/v1/admin/orders').set(as('endme')).expect(403);
+  });
+});
+
+describe('Tally numbers', () => {
+  it('reach owners and the accountant, and no other role, by any route', async () => {
+    const routesWithNumbers = routes().filter(
+      (route) => route.can?.permission === 'tally.numbers.view',
+    );
+    expect(routesWithNumbers.length).toBeGreaterThanOrEqual(3);
+    const allowed = new Set(['owner', 'accountant']);
+    const wrong: string[] = [];
+    for (const route of routesWithNumbers)
+      for (const { id } of staff) {
+        const { status } = await call(route, id);
+        if (allowed.has(id) ? status === 403 || status === 401 : status !== 403)
+          wrong.push(`${route.name}: ${status} for ${id}`);
+      }
+    expect(wrong).toEqual([]);
   });
 });

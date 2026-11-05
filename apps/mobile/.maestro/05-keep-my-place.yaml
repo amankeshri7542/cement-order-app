@@ -1,0 +1,31 @@
+# Scroll on Home survives a product and every tab, and back walks back, then leaves from Home.
+appId: in.shivcement.store
+tags: [smoke]
+---
+- launchApp
+- extendedWaitUntil:
+    visible: Today's rates
+    timeout: 20000
+- scrollUntilVisible:
+    element: Construction sand.*
+    timeout: 10000
+- tapOn: Construction sand.*
+- extendedWaitUntil:
+    visible: Added. See your list|Add · .*
+    timeout: 5000
+- back
+- assertVisible: Construction sand.*
+- tapOn:
+    text: Orders
+    index: 0
+- tapOn:
+    text: Home
+    index: 0
+- assertVisible: Construction sand.*
+- tapOn:
+    text: Account
+    index: 0
+- back
+- assertVisible: Construction sand.*
+- back
+- assertNotVisible: Construction sand.*
