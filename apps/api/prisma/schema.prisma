@@ -105,6 +105,9 @@ model User {
   name                 String                @default("")
   role                 Role                  @default(CUSTOMER)
   language             String                @default("en")
+  /// How this person's own screens look: { theme: auto|light|dark, textSize: normal|large|larger }.
+  /// Saved on the server so the choice follows them to another phone or computer.
+  preferences          Json                  @default("{}")
   staffTitle           String                @default("")
   whatsappAlerts       Boolean               @default(false)
   pushSubscriptions    PushSubscription[]

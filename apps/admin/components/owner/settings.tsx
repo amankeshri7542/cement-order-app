@@ -9,6 +9,12 @@ import { useAction, useOwner, useUnsavedGuard } from '../../lib/owner';
 import { chime, disablePush, enablePush, pushEnabled, pushSupported } from '../../lib/push';
 import { PageHeader, Problem, QueryStatus, moneyInput, rupeesToPaise } from './common';
 import { soundOn } from '../../lib/bell';
+import {
+  chooseAppearance,
+  currentAppearance,
+  type TextSize,
+  type ThemeChoice,
+} from '../../lib/appearance';
 import css from './owner.module.css';
 import own from './settings.module.css';
 
@@ -34,6 +40,53 @@ function LanguageSection() {
           <option value="en">{t('owner.english')}</option>
         </select>
       </Field>
+    </section>
+  );
+}
+
+/**
+ * Theme and "Bada akshar" (DESIGN.md): Auto follows the phone or computer; the choice is saved for
+ * this person, so it follows them to another device.
+ */
+function AppearanceSection() {
+  const t = useT();
+  const { notice } = useOwner();
+  const [look, setLook] = useState(currentAppearance);
+  const pick = (next: { theme?: ThemeChoice; textSize?: TextSize }) => {
+    setLook((was) => ({ ...was, ...next }));
+    chooseAppearance(next).catch(() => notice(t('owner.appearance.notSaved'), true));
+  };
+  return (
+    <section className={`${css.card} ${own.section}`}>
+      <h2>{t('owner.appearance.title')}</h2>
+      <fieldset className={own.choices}>
+        <legend>{t('owner.appearance.theme')}</legend>
+        {(['auto', 'light', 'dark'] as const).map((value) => (
+          <label key={value} className={own.choice}>
+            <input
+              type="radio"
+              name="theme"
+              checked={look.theme === value}
+              onChange={() => pick({ theme: value })}
+            />
+            {t(`owner.appearance.theme.${value}`)}
+          </label>
+        ))}
+      </fieldset>
+      <fieldset className={own.choices}>
+        <legend>{t('owner.appearance.textSize')}</legend>
+        {(['normal', 'large', 'larger'] as const).map((value) => (
+          <label key={value} className={own.choice}>
+            <input
+              type="radio"
+              name="textSize"
+              checked={look.textSize === value}
+              onChange={() => pick({ textSize: value })}
+            />
+            {t(`owner.appearance.textSize.${value}`)}
+          </label>
+        ))}
+      </fieldset>
     </section>
   );
 }
@@ -498,6 +551,7 @@ export function Settings() {
         <div className={`${own.column} ${shopSide ? '' : own.single}`}>
           <Logins />
           <LanguageSection />
+          <AppearanceSection />
           <ThisPhone />
         </div>
       </div>

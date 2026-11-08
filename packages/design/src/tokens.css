@@ -1,20 +1,235 @@
+/* Naksha 2 tokens, generated from packages/tokens by scripts/theme-css.mjs. Do not edit by hand. */
+:root,
+[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f6f4ee;
+  --surface: #fbfaf6;
+  --card: #ffffff;
+  --ink: #1f2322;
+  --ink-2: #4a4f4c;
+  --ink-3: #5b605d;
+  --rule: #d9d5c8;
+  --rule-strong: #8c877a;
+  --rail: #243331;
+  --rail-ink: #e9e6dc;
+  --rail-muted: #aeb8b4;
+  --accent: #e0a42b;
+  --accent-press: #c98c14;
+  --accent-ink: #7a4e00;
+  --on-accent: #1f2322;
+  --ok: #1f7a4d;
+  --ok-soft: #e8f4ec;
+  --warn: #8a5a00;
+  --warn-soft: #fbf1dc;
+  --danger: #b23a2f;
+  --danger-soft: #f8e6e3;
+  --info: #2f6db5;
+  --focus: #2f6db5;
+  --on-solid: #ffffff;
+  --scrim: rgba(31, 35, 34, 0.45);
+  --chart-1: #1f2322;
+  --chart-2: #4a4f4c;
+  --chart-3: #8c877a;
+  --chart-4: #b09b6e;
+  --chart-5: #cdbf9e;
+  --ramp-1: #d9d5c8;
+  --ramp-2: #b09b6e;
+  --ramp-3: #5b605d;
+  --ramp-4: #1f2322;
+  --on-ramp-1: #1f2322;
+  --on-ramp-2: #1f2322;
+  --on-ramp-3: #ffffff;
+  --on-ramp-4: #ffffff;
+}
+[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #141512;
+  --surface: #1a1c18;
+  --card: #20221e;
+  --ink: #ece8de;
+  --ink-2: #c9c4b8;
+  --ink-3: #a39e92;
+  --rule: #33352f;
+  --rule-strong: #73766c;
+  --rail: #0e0f0d;
+  --rail-ink: #e6e2d8;
+  --rail-muted: #9c978c;
+  --accent: #e8b04a;
+  --accent-press: #d49a2e;
+  --accent-ink: #f0c26a;
+  --on-accent: #141512;
+  --ok: #6cc596;
+  --ok-soft: #1d2b22;
+  --warn: #e9b85c;
+  --warn-soft: #2e2615;
+  --danger: #ee8a7c;
+  --danger-soft: #331d1a;
+  --info: #8db3ea;
+  --focus: #8db3ea;
+  --on-solid: #141512;
+  --scrim: rgba(0, 0, 0, 0.6);
+  --chart-1: #ece8de;
+  --chart-2: #c9c4b8;
+  --chart-3: #a39e92;
+  --chart-4: #b9a479;
+  --chart-5: #8c7a55;
+  --ramp-1: #33352f;
+  --ramp-2: #9c8a62;
+  --ramp-3: #c9b68a;
+  --ramp-4: #ece8de;
+  --on-ramp-1: #ece8de;
+  --on-ramp-2: #141512;
+  --on-ramp-3: #141512;
+  --on-ramp-4: #141512;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --bg: #141512;
+    --surface: #1a1c18;
+    --card: #20221e;
+    --ink: #ece8de;
+    --ink-2: #c9c4b8;
+    --ink-3: #a39e92;
+    --rule: #33352f;
+    --rule-strong: #73766c;
+    --rail: #0e0f0d;
+    --rail-ink: #e6e2d8;
+    --rail-muted: #9c978c;
+    --accent: #e8b04a;
+    --accent-press: #d49a2e;
+    --accent-ink: #f0c26a;
+    --on-accent: #141512;
+    --ok: #6cc596;
+    --ok-soft: #1d2b22;
+    --warn: #e9b85c;
+    --warn-soft: #2e2615;
+    --danger: #ee8a7c;
+    --danger-soft: #331d1a;
+    --info: #8db3ea;
+    --focus: #8db3ea;
+    --on-solid: #141512;
+    --scrim: rgba(0, 0, 0, 0.6);
+    --chart-1: #ece8de;
+    --chart-2: #c9c4b8;
+    --chart-3: #a39e92;
+    --chart-4: #b9a479;
+    --chart-5: #8c7a55;
+    --ramp-1: #33352f;
+    --ramp-2: #9c8a62;
+    --ramp-3: #c9b68a;
+    --ramp-4: #ece8de;
+    --on-ramp-1: #ece8de;
+    --on-ramp-2: #141512;
+    --on-ramp-3: #141512;
+    --on-ramp-4: #141512;
+  }
+}
+@media print {
+  :root,
+  [data-theme] {
+    color-scheme: light;
+    --bg: #f6f4ee;
+    --surface: #fbfaf6;
+    --card: #ffffff;
+    --ink: #1f2322;
+    --ink-2: #4a4f4c;
+    --ink-3: #5b605d;
+    --rule: #d9d5c8;
+    --rule-strong: #8c877a;
+    --rail: #243331;
+    --rail-ink: #e9e6dc;
+    --rail-muted: #aeb8b4;
+    --accent: #e0a42b;
+    --accent-press: #c98c14;
+    --accent-ink: #7a4e00;
+    --on-accent: #1f2322;
+    --ok: #1f7a4d;
+    --ok-soft: #e8f4ec;
+    --warn: #8a5a00;
+    --warn-soft: #fbf1dc;
+    --danger: #b23a2f;
+    --danger-soft: #f8e6e3;
+    --info: #2f6db5;
+    --focus: #2f6db5;
+    --on-solid: #ffffff;
+    --scrim: rgba(31, 35, 34, 0.45);
+    --chart-1: #1f2322;
+    --chart-2: #4a4f4c;
+    --chart-3: #8c877a;
+    --chart-4: #b09b6e;
+    --chart-5: #cdbf9e;
+    --ramp-1: #d9d5c8;
+    --ramp-2: #b09b6e;
+    --ramp-3: #5b605d;
+    --ramp-4: #1f2322;
+    --on-ramp-1: #1f2322;
+    --on-ramp-2: #1f2322;
+    --on-ramp-3: #ffffff;
+    --on-ramp-4: #ffffff;
+  }
+}
 :root {
-  --shiv-paper: #f6f4ee;
-  --shiv-card: #ffffff;
-  --shiv-line: #e3e1d9;
-  --shiv-ink: #1f2322;
-  --shiv-ink2: #5b605d;
-  --shiv-ink3: #8a8f8b;
-  --shiv-brand: #e0a42b;
-  --shiv-brand-ink: #1f2322;
-  --shiv-green: #1f7a4d;
-  --shiv-red: #b23a2f;
-  --shiv-blue: #2f6db5;
-  --shiv-navy: #243331;
-  --shiv-radius-sm: 0.5rem;
-  --shiv-radius-md: 0.75rem;
-  --shiv-radius-lg: 1rem;
-  --shiv-radius-pill: 999rem;
+  --text-micro: 0.75rem;
+  --text-meta: 0.8125rem;
+  --text-body: 0.875rem;
+  --text-lead: 1rem;
+  --text-title: 1.25rem;
+  --text-head: 1.5rem;
+  --text-figure: 1.75rem;
+  --leading: 1.35;
+  --space-2: 0.125rem;
+  --space-4: 0.25rem;
+  --space-8: 0.5rem;
+  --space-12: 0.75rem;
+  --space-16: 1rem;
+  --space-20: 1.25rem;
+  --space-24: 1.5rem;
+  --space-32: 2rem;
+  --space-40: 2.5rem;
+  --space-48: 3rem;
+  --space-64: 4rem;
+  --radius-none: 0px;
+  --radius-control: 4px;
+  --radius-sheet: 12px;
+  --radius-pill: 999px;
+  --motion-fast: 120ms;
+  --motion-sheet: 180ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --z-base: 0;
+  --z-sticky: 10;
+  --z-drawer: 20;
+  --z-popover: 30;
+  --z-toast: 40;
+  --z-modal: 50;
+  --touch: 3rem;
+  --font-sans:
+    var(--font-hanken, 'Hanken Grotesk'), var(--font-devanagari, 'Noto Sans Devanagari'), system-ui,
+    sans-serif;
+  --shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.18);
+  --print-paper: #ffffff;
+  --print-ink: #000000;
+  --m-kraft: #cdbf9e;
+  --m-steel: #5b6670;
+  --m-brick: #a9442c;
+  --m-sand: #c9a35b;
+  --m-stone: #8e9196;
+  --shiv-paper: var(--bg);
+  --shiv-card: var(--card);
+  --shiv-line: var(--rule);
+  --shiv-ink: var(--ink);
+  --shiv-ink2: var(--ink-2);
+  --shiv-ink3: var(--ink-3);
+  --shiv-brand: var(--accent);
+  --shiv-brand-ink: var(--on-accent);
+  --shiv-green: var(--ok);
+  --shiv-red: var(--danger);
+  --shiv-blue: var(--info);
+  --shiv-navy: var(--rail);
+  --shiv-radius-sm: var(--radius-control);
+  --shiv-radius-md: var(--radius-control);
+  --shiv-radius-lg: var(--radius-control);
+  --shiv-radius-pill: var(--radius-pill);
   --shiv-space-1: 0.25rem;
   --shiv-space-2: 0.5rem;
   --shiv-space-3: 0.75rem;
@@ -24,13 +239,30 @@
   --shiv-space-7: 2rem;
   --shiv-space-8: 2.5rem;
   --shiv-space-9: 3rem;
-  --shiv-display: 2rem;
-  --shiv-h1: 1.625rem;
-  --shiv-h2: 1.25rem;
-  --shiv-body: 1rem;
-  --shiv-small: 0.875rem;
-  --shiv-money: 1.75rem;
-  --shiv-font-display: var(--font-mukta), 'Noto Sans Devanagari', system-ui;
-  --shiv-font-body: var(--font-inter), var(--font-mukta), system-ui;
-  --shiv-font-mono: 'JetBrains Mono', monospace;
+  --shiv-display: var(--text-head);
+  --shiv-h1: var(--text-head);
+  --shiv-h2: var(--text-title);
+  --shiv-body: var(--text-lead);
+  --shiv-small: var(--text-body);
+  --shiv-money: var(--text-figure);
+  --shiv-font-display: var(--font-sans);
+  --shiv-font-body: var(--font-sans);
+  --shiv-font-mono: ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  /* A phone reads at 16 px body text, and "Bada akshar" scales on top (DESIGN.md, Layout). */
+  --device-scale: 1;
+  --text-scale: 1;
+}
+[data-text='large'] {
+  --text-scale: 1.125;
+}
+[data-text='larger'] {
+  --text-scale: 1.25;
+}
+@media (max-width: 599px) {
+  :root {
+    --device-scale: 1.1429;
+  }
+}
+html {
+  font-size: calc(100% * var(--device-scale) * var(--text-scale));
 }

@@ -779,6 +779,17 @@ const shopName = z
   .min(2)
   .max(60)
   .refine((value) => !/[<>]/.test(value), 'Use letters and numbers only.');
+/** A person's own look (plan v4 B1): theme and the "Bada akshar" text size. Either may be sent alone. */
+export const preferencesSchema = z
+  .strictObject({
+    theme: z.enum(['auto', 'light', 'dark']).optional(),
+    textSize: z.enum(['normal', 'large', 'larger']).optional(),
+  })
+  .refine((input) => Object.keys(input).length > 0, 'Send a theme or a text size.');
+export type Preferences = {
+  theme?: 'auto' | 'light' | 'dark';
+  textSize?: 'normal' | 'large' | 'larger';
+};
 export const locationCreateSchema = z.strictObject({
   name: shopName,
   // Which firm the shop belongs to. Needed once there is more than one; it never changes later.

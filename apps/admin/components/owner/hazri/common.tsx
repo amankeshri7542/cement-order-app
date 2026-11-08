@@ -13,6 +13,7 @@ import { qrPath, startCodeLoop } from './code-loop';
 import own from './hazri.module.css';
 import type { WallData } from './types';
 import { statusKey } from './words';
+import { print } from '@shiv/tokens';
 
 const looks: Record<DayStatus, { Mark: typeof Check; tone: string }> = {
   PRESENT: { Mark: Check, tone: own.toneOk! },
@@ -82,8 +83,9 @@ export function QrCode({ text, className }: { text: string; className?: string }
       aria-label={t('owner.screen.qrLabel')}
       shapeRendering="crispEdges"
     >
-      <rect width={box} height={box} fill="#ffffff" />
-      <path d={path} fill="#000000" />
+      {/* Black on a white plate in both themes, or a phone cannot read it. */}
+      <rect width={box} height={box} fill={print.paper} />
+      <path d={path} fill={print.ink} />
     </svg>
   );
 }

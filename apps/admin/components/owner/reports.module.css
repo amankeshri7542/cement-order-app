@@ -1,11 +1,8 @@
 /* The Report page's charts and the activity log. No gradients, no shadows, no animation: charts
    are drawn in ink, with the lamp colour only on today. */
 .page {
-  /* Light to dark as udhaar gets older. Each step also has words, so colour is never alone. */
-  --ramp-1: #9fa5a1;
-  --ramp-2: #707672;
-  --ramp-3: #4c514e;
-  --ramp-4: #191d1b;
+  /* Quieter to louder as udhaar gets older (--ramp-1 to --ramp-4 in tokens.css). Each step also
+     has words, so colour is never alone. */
   display: grid;
   gap: 1rem;
   min-inline-size: 0;
@@ -262,19 +259,19 @@
 }
 .ramp1 {
   background: var(--ramp-1);
-  color: var(--shiv-ink);
+  color: var(--on-ramp-1);
 }
 .ramp2 {
   background: var(--ramp-2);
-  color: var(--shiv-card);
+  color: var(--on-ramp-2);
 }
 .ramp3 {
   background: var(--ramp-3);
-  color: var(--shiv-card);
+  color: var(--on-ramp-3);
 }
 .ramp4 {
   background: var(--ramp-4);
-  color: var(--shiv-card);
+  color: var(--on-ramp-4);
 }
 .legend {
   display: grid;

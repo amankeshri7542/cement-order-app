@@ -76,6 +76,7 @@ async function signIn(page: Page, digits: string, path = '/today') {
 async function signedOpening(customerId: string, paise: number, locationId = MAIN) {
   const entry = await db.customerLedgerEntry.create({
     data: {
+      firmId: 'firm_main',
       customerId,
       kind: 'OPENING_BALANCE',
       amountPaise: paise,
@@ -89,6 +90,12 @@ async function signedOpening(customerId: string, paise: number, locationId = MAI
     },
   });
   await db.user.update({ where: { id: customerId }, data: { khataBalancePaise: paise } });
+  // Each firm's balance too, as appendLedger keeps it.
+  await db.customerFirmBalance.upsert({
+    where: { customerId_firmId: { customerId, firmId: 'firm_main' } },
+    create: { customerId, firmId: 'firm_main', balancePaise: paise },
+    update: { balancePaise: paise },
+  });
   await db.khataSignoff.create({
     data: {
       customerId,
@@ -131,6 +138,7 @@ const sold = async (customerId: string, daysAgo: number, locationId = MAIN) =>
   db.order.create({
     data: {
       number: `SC-CRM-${randomUUID().slice(0, 12)}`,
+      firmId: 'firm_main',
       userId: customerId,
       idempotencyKey: randomUUID(),
       status: 'DELIVERED',
@@ -274,6 +282,7 @@ test('when paper and Tally differ an owner can choose, and must say why', async 
   await db.khataOpeningDraft.create({
     data: {
       customerId: differs.id,
+      firmId: 'firm_main',
       locationId: MAIN,
       asOf: istToday(),
       paperPaise: 700000,
@@ -324,6 +333,7 @@ test('the reports read right, at a laptop and on a phone', async ({ browser }) =
       channel: 'CASH',
       amountPaise: 150000,
       locationId: MAIN,
+      firmId: 'firm_main',
       actorId: 'browser-fixture',
     },
   });
@@ -405,6 +415,7 @@ test('the accountant reads without numbers, types the sheet and signs nothing', 
   const waiting = await customer('Pending');
   await db.khataOpeningDraft.create({
     data: {
+      firmId: 'firm_main',
       customerId: waiting.id,
       locationId: MAIN,
       asOf: istToday(),

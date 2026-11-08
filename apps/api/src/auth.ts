@@ -22,6 +22,7 @@ import type { Response } from 'express';
 import { z } from 'zod';
 import { otpRequestSchema, otpResendSeconds, otpVerifySchema, refreshSchema } from '@shiv/shared';
 import { Db } from './db';
+import { readPreferences } from './preferences';
 import { sendBlocked } from './demo-lock';
 import { getConfig } from './config';
 import {
@@ -627,6 +628,8 @@ export class AuthController {
       permissionsVersion: PERMISSIONS_VERSION,
       locations,
       firms,
+      // The person's own look, so it follows them to another phone or computer.
+      preferences: readPreferences(req.user.preferences),
       hasPassphrase: req.access['desk.use']
         ? (await this.db.adminCredential.count({ where: { userId: req.user.id } })) > 0
         : false,

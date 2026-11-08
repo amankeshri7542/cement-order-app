@@ -68,3 +68,31 @@
     grid-column: 1 / -1;
   }
 }
+/* Theme and text size: a row of choices, each a 48 px target on a phone. */
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.choices > legend {
+  margin-block-end: var(--space-8);
+  color: var(--ink-2);
+  font-size: var(--text-meta);
+}
+.choice {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-block-size: var(--touch);
+  padding-inline: var(--space-12);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-control);
+  background: var(--card);
+}
+.choice:has(input:checked) {
+  border-color: var(--ink);
+  font-weight: 600;
+}

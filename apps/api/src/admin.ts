@@ -207,6 +207,13 @@ export class AdminController {
     const byFirm = (await firmNames(this.db))
       .filter((f) => mine === 'ALL' || mine.includes(f.id))
       .filter((f) => typeof firm.firmId !== 'string' || firm.firmId === f.id)
+      // A closed firm shows only while it still has figures.
+      .filter(
+        (f) =>
+          f.active ||
+          salesByFirm.some((r) => r.firmId === f.id) ||
+          khataDue.some((r) => r.firmId === f.id),
+      )
       .map((f) => ({
         firmId: f.id,
         name: f.name,

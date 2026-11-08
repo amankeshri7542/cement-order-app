@@ -168,6 +168,7 @@ async function khata(customerId: string, amountPaise: number, on: string) {
   const balance = user.khataBalancePaise + amountPaise;
   const row = await db.customerLedgerEntry.create({
     data: {
+      firmId: 'firm_main',
       customerId,
       kind: 'ADJUSTMENT',
       amountPaise,
@@ -178,6 +179,11 @@ async function khata(customerId: string, amountPaise: number, on: string) {
     },
   });
   await db.user.update({ where: { id: customerId }, data: { khataBalancePaise: balance } });
+  await db.customerFirmBalance.upsert({
+    where: { customerId_firmId: { customerId, firmId: 'firm_main' } },
+    create: { customerId, firmId: 'firm_main', balancePaise: amountPaise },
+    update: { balancePaise: { increment: amountPaise } },
+  });
   return row;
 }
 /** With Tally's sign: a sale is the party's debit, so negative. */

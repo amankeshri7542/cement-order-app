@@ -5,7 +5,7 @@ const config: NextConfig = {
   distDir: process.env.NEXT_DIST_DIR || '.next',
   output: 'standalone',
   outputFileTracingRoot: path.join(__dirname, '../..'),
-  transpilePackages: ['@shiv/shared', '@shiv/design', '@shiv/i18n'],
+  transpilePackages: ['@shiv/shared', '@shiv/design', '@shiv/i18n', '@shiv/tokens'],
   // Hosted demo only: serve the API on this origin, because the host's gateway answers CORS
   // preflights itself and never forwards them. Unset everywhere else.
   async rewrites() {

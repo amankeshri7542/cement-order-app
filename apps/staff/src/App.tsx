@@ -52,6 +52,7 @@ import {
 } from './screens/stock';
 import { Choice, Screen, Txt } from './ui';
 import { colors } from './ui/tokens';
+import { ThemeProvider } from './ui/theme';
 
 type Params = { params?: Record<string, unknown> };
 const routes: Record<string, ComponentType<Params>> = {
@@ -229,10 +230,13 @@ export default function App() {
     };
   }, []);
   return (
-    <SafeAreaProvider>
-      <NavProvider>
-        <Stage />
-      </NavProvider>
-    </SafeAreaProvider>
+    // Light until the screens move to useStyles (phases B5 and G1); then "auto" follows the phone.
+    <ThemeProvider choice="light">
+      <SafeAreaProvider>
+        <NavProvider>
+          <Stage />
+        </NavProvider>
+      </SafeAreaProvider>
+    </ThemeProvider>
   );
 }

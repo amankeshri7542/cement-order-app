@@ -376,6 +376,7 @@ export class KhataService {
   async summary(firms: 'ALL' | string[] = 'ALL') {
     return this.db.atomic(async (tx) => {
       const allowed = firms === 'ALL' ? (await firmNames(tx)).map((f) => f.id) : firms;
+      const open = new Set((await firmNames(tx)).filter((f) => f.active).map((f) => f.id));
       const names = new Map((await firmNames(tx)).map((f) => [f.id, f.name]));
       const perFirm = await tx.customerFirmBalance.groupBy({
         by: ['firmId'],
@@ -387,15 +388,17 @@ export class KhataService {
         _sum: { balancePaise: true },
         _count: true,
       });
-      const byFirm = allowed.map((firmId) => {
-        const row = perFirm.find((r) => r.firmId === firmId);
-        return {
-          firmId,
-          name: names.get(firmId) ?? firmId,
-          totalDuePaise: row?._sum.balancePaise ?? 0,
-          customersWithDue: row?._count ?? 0,
-        };
-      });
+      const byFirm = allowed
+        .filter((firmId) => open.has(firmId) || perFirm.some((r) => r.firmId === firmId))
+        .map((firmId) => {
+          const row = perFirm.find((r) => r.firmId === firmId);
+          return {
+            firmId,
+            name: names.get(firmId) ?? firmId,
+            totalDuePaise: row?._sum.balancePaise ?? 0,
+            customersWithDue: row?._count ?? 0,
+          };
+        });
       // Combined: each customer's balance over these firms, so one who owes one firm and is in
       // advance with the other counts once, by what they owe in all.
       const [combined] = await tx.$queryRaw<{ total: bigint | null; customers: bigint }[]>`

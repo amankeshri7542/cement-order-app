@@ -17,6 +17,7 @@
     "@react-native-community/netinfo": "11.5.2",
     "@shiv/i18n": "1.0.0",
     "@shiv/shared": "1.0.0",
+    "@shiv/tokens": "1.0.0",
     "expo": "~55.0.0",
     "expo-build-properties": "~55.0.18",
     "expo-camera": "~55.0.23",

@@ -1,31 +1,35 @@
+import { dark, light } from '@shiv/tokens';
+
 /**
- * Plan 02's token values for the staff app. packages/shared/src/theme.ts still holds the older
- * palette; when it moves to these names, this file becomes an import. Keep the values identical.
+ * Naksha 2 colours from packages/tokens (plan v4 B1), under this app's older names. Light values;
+ * screens move to useStyles(theme => …) from ./theme as phase G1 rebuilds them, and then follow dark.
  */
 export const colors = {
   /** The ground: paper. */
-  paper: '#F3F1EA',
+  paper: light.card,
   /** Wells and quiet buttons: one tone step, never a shadow. */
-  well: '#DEDACE',
-  ink: '#191D1B',
-  ink2: '#4A4F4B',
-  rule: 'rgba(25,29,27,0.16)',
-  night: '#121513',
-  nightUp: '#1D211E',
-  onNight: '#EAE7DE',
-  onNight2: '#B6B8AE',
+  well: light.rule,
+  /** A well while it is pressed. */
+  wellPress: light.ruleStrong,
+  ink: light.ink,
+  ink2: light.ink2,
+  rule: light.rule,
+  night: dark.bg,
+  nightUp: dark.card,
+  onNight: dark.ink,
+  onNight2: dark.ink2,
   /** The one bright button on a screen. Never text: too faint on paper. */
-  diya: '#F2A33A',
-  diyaPress: '#DC8C22',
-  onDiya: '#191D1B',
-  diyaInk: '#7A4E00',
-  ok: '#1B6C44',
-  okSoft: '#DFECE2',
-  warn: '#7A4E00',
-  warnSoft: '#F4E6C8',
-  danger: '#B23A2F',
-  dangerSoft: '#F4E0DA',
-  onSolid: '#FFFFFF',
+  diya: light.accent,
+  diyaPress: light.accentPress,
+  onDiya: light.onAccent,
+  diyaInk: light.accentInk,
+  ok: light.ok,
+  okSoft: light.okSoft,
+  warn: light.warn,
+  warnSoft: light.warnSoft,
+  danger: light.danger,
+  dangerSoft: light.dangerSoft,
+  onSolid: light.onSolid,
 } as const;
 
 /**

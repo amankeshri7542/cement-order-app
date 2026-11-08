@@ -2,6 +2,7 @@
 // scanned code through a hook that only exists when the test switch was set at build time.
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { colors } from '../ui/tokens';
 
 export type CameraAccess = 'asking' | 'ok' | 'ask' | 'blocked';
 type TestHost = {
@@ -26,7 +27,10 @@ export function QrCamera(props: { onCode(text: string): void; torch: boolean; ac
     };
   }, []);
   return (
-    <View testID="camera-stub" style={[StyleSheet.absoluteFill, { backgroundColor: '#121513' }]} />
+    <View
+      testID="camera-stub"
+      style={[StyleSheet.absoluteFill, { backgroundColor: colors.night }]}
+    />
   );
 }
 export type PhotoHandle = { take(): Promise<string | null> };
@@ -39,14 +43,17 @@ export const PhotoCamera = forwardRef<PhotoHandle, { facing: 'front' | 'back' }>
         canvas.height = 64;
         const draw = canvas.getContext('2d');
         if (draw) {
-          draw.fillStyle = '#808080';
+          draw.fillStyle = colors.ink2;
           draw.fillRect(0, 0, 64, 64);
         }
         return canvas.toDataURL('image/jpeg', 0.8);
       },
     }));
     return (
-      <View testID="photo-stub" style={[StyleSheet.absoluteFill, { backgroundColor: '#121513' }]} />
+      <View
+        testID="photo-stub"
+        style={[StyleSheet.absoluteFill, { backgroundColor: colors.night }]}
+      />
     );
   },
 );

@@ -107,7 +107,7 @@ export function Today() {
               <dd>
                 {money(row.todayMoneyInPaise)}
                 {can('khata.read.list')
-                  ? ` · ${t('owner.totalDue')} ${money(row.khataDuePaise)}`
+                  ? ` · ${t('owner.khata.firmDue', { amount: money(row.khataDuePaise) })}`
                   : ''}
               </dd>
             </div>

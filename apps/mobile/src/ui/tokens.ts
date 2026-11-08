@@ -1,38 +1,41 @@
 import type { TextStyle } from 'react-native';
 import { fonts } from '../platform/fonts';
 
+import { dark as nightLedger, light as paper } from '@shiv/tokens';
+
 /**
- * Plan 02's token values, "Naksha": paper, ink and one lamp. packages/shared/src/theme.ts still
- * holds the older palette; when it moves to these names, this file becomes an import. Keep the
- * values the same as apps/staff/src/ui/tokens.ts.
+ * Naksha 2 colours from packages/tokens (plan v4 B1), under this app's older names so its screens
+ * keep compiling. These are the light values; screens move to useStyles(theme => …) from ./theme as
+ * the native kit rebuilds them (phase B5), and then follow dark too.
  */
 export const C = {
   /** The page. */
-  ground: '#EAE7DE',
+  ground: paper.bg,
   /** Panels, rows that hold money, inputs. A step in tone, never a shadow. */
-  up: '#F3F1EA',
+  up: paper.card,
   /** Wells and quiet buttons. */
-  down: '#DEDACE',
-  ink: '#191D1B',
-  ink2: '#4A4F4B',
-  rule: 'rgba(25,29,27,0.16)',
-  night: '#121513',
-  nightUp: '#1D211E',
-  onNight: '#EAE7DE',
-  onNight2: '#B6B8AE',
-  ruleNight: 'rgba(234,231,222,0.16)',
+  down: paper.rule,
+  ink: paper.ink,
+  ink2: paper.ink2,
+  rule: paper.rule,
+  /** The dark surfaces the light theme still has (toasts, solid buttons): the night ledger's. */
+  night: nightLedger.bg,
+  nightUp: nightLedger.card,
+  onNight: nightLedger.ink,
+  onNight2: nightLedger.ink2,
+  ruleNight: nightLedger.rule,
   /** Added, the list and Place order. At most one on a screen. Never text on paper. */
-  diya: '#F2A33A',
-  diyaPress: '#DC8C22',
-  onDiya: '#191D1B',
-  diyaInk: '#7A4E00',
-  ok: '#1B6C44',
-  okSoft: '#DFECE2',
-  warn: '#7A4E00',
-  warnSoft: '#F4E6C8',
-  danger: '#B23A2F',
-  dangerSoft: '#F4E0DA',
-  scrim: 'rgba(18,21,19,0.45)',
+  diya: paper.accent,
+  diyaPress: paper.accentPress,
+  onDiya: paper.onAccent,
+  diyaInk: paper.accentInk,
+  ok: paper.ok,
+  okSoft: paper.okSoft,
+  warn: paper.warn,
+  warnSoft: paper.warnSoft,
+  danger: paper.danger,
+  dangerSoft: paper.dangerSoft,
+  scrim: paper.scrim,
 } as const;
 
 export const space = { 1: 4, 2: 8, 3: 12, 4: 16, 5: 24, 6: 32, 7: 48 } as const;

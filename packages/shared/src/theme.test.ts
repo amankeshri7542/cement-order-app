@@ -1,6 +1,4 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import test from 'node:test';
 import { colors, cssVariableName, cssVariables, palette, radius, textSize } from './theme';
 
@@ -121,22 +119,6 @@ test('every text pair is 4.5:1 or better and the focus ring is 3:1 on every grou
       contrast(palette.blue, palette[ground]) >= 3,
       `focus ring on ${ground} is ${contrast(palette.blue, palette[ground]).toFixed(2)}:1`,
     );
-});
-
-test('the owner desk tokens in packages/design match this palette', () => {
-  const source = readFileSync(resolve(import.meta.dirname, '../../design/src/tokens.ts'), 'utf8');
-  const design = (key: string) =>
-    source.match(new RegExp(`\\b${key}:\\s*'(#[0-9A-Fa-f]{6})'`))?.[1]?.toUpperCase();
-  assert.equal(design('paper'), palette.ground);
-  assert.equal(design('card'), palette.paper);
-  assert.equal(design('ink'), palette.ink);
-  assert.equal(design('ink2'), palette.muted);
-  assert.equal(design('brand'), palette.accent);
-  assert.equal(design('brandInk'), palette.onAccent);
-  assert.equal(design('green'), palette.ok);
-  assert.equal(design('red'), palette.danger);
-  assert.equal(design('blue'), palette.blue);
-  assert.equal(design('navy'), palette.ink2);
 });
 
 test('one control radius and no type below 14', () => {

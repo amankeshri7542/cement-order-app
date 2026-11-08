@@ -13,6 +13,7 @@
     "@shiv/design": "1.0.0",
     "@shiv/i18n": "1.0.0",
     "@shiv/shared": "1.0.0",
+    "@shiv/tokens": "1.0.0",
     "@tanstack/react-query": "^5.104.5",
     "lucide-react": "^0.468.0",
     "next": "^16.4.5",

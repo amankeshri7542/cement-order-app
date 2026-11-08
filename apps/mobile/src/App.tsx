@@ -42,6 +42,7 @@ import { Toast } from './ui/Toast';
 import { useKeyboardHeight } from './ui/useKeyboard';
 import { C, motion, space, T } from './ui/tokens';
 import { w } from './words';
+import { ThemeProvider } from './ui/theme';
 
 // Staging, preview and development builds say so, so a test install is never mistaken for the real
 // shop.
@@ -267,13 +268,16 @@ function Shell() {
 
 export default function App() {
   return (
-    <SafeAreaProvider>
-      <ErrorBoundary>
-        <UpdateGate>
-          <Shell />
-        </UpdateGate>
-      </ErrorBoundary>
-    </SafeAreaProvider>
+    // Light until the screens move to useStyles (phases B5 and G1); then "auto" follows the phone.
+    <ThemeProvider choice="light">
+      <SafeAreaProvider>
+        <ErrorBoundary>
+          <UpdateGate>
+            <Shell />
+          </UpdateGate>
+        </ErrorBoundary>
+      </SafeAreaProvider>
+    </ThemeProvider>
   );
 }
 

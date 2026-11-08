@@ -181,7 +181,7 @@
   margin: 0;
   padding: 0.75rem 1rem;
   background: var(--shiv-navy);
-  color: var(--shiv-card);
+  color: var(--rail-ink);
   text-align: center;
 }
 .chips {
@@ -551,7 +551,7 @@
   margin: 0;
   padding: 0.25rem 1rem;
   background: var(--shiv-red);
-  color: var(--shiv-card);
+  color: var(--on-solid);
   text-align: center;
   font-weight: 700;
 }

@@ -168,7 +168,7 @@ components:
 
 Read [PRODUCT.md](PRODUCT.md) first for who uses these screens and the rules they must respect. This file is the visual law for the owner desk (`apps/admin`), the customer app (`apps/mobile`) and the staff app (`apps/staff`). The customer website (`apps/storefront`) keeps its own look for now.
 
-**Status, November 2026.** This is the target, and the code is moving to it in stages. Today the desk reads `packages/design/src/tokens.css` (Inter, Mukta, 8–16 px radii) and each Expo app keeps its own token copy. Next, one token package will generate the desk's CSS variables and the apps' TypeScript objects, in light and dark. Until then, new work follows this file and adds no new legacy values.
+**Status, November 2026.** The tokens below live in `packages/tokens`, in light and dark. `npm run theme:css` writes the desk's `packages/design/src/tokens.css` from them, and both Expo apps import them. The desk follows dark, and is on Hanken Grotesk. The old `--shiv-*` names are aliases of the new ones; new CSS uses the new names. The apps' screens stay light until they move to `useStyles` (phases B5 and G1). `scripts/design-guards.test.mjs` refuses any raw colour or px font size outside the tokens.
 
 ## Overview
 

@@ -39,6 +39,8 @@ async function order(locationId = MAIN, area = 'Kankarbagh') {
     data: {
       number: `SC-T-${randomUUID().slice(0, 8)}`,
       locationId,
+      // An order carries its shop's firm (plan v4 A3; the database checks it).
+      firmId: (await db.location.findUniqueOrThrow({ where: { id: locationId } })).firmId,
       userId: customer.id,
       source: 'PHONE',
       createdById: boss.id,

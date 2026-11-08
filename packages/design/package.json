@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@shiv/shared": "1.0.0"
+    "@shiv/shared": "1.0.0",
+    "@shiv/tokens": "1.0.0"
   },
   "peerDependencies": {
     "react": ">=19"

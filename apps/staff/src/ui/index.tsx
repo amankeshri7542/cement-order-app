@@ -122,7 +122,7 @@ const btnStyle: Record<BtnKind, { fill: string; press: string; text: string; bor
   lamp: { fill: colors.diya, press: colors.diyaPress, text: colors.onDiya },
   solid: { fill: colors.ink, press: colors.ink2, text: colors.paper },
   line: { fill: 'transparent', press: colors.well, text: colors.ink, border: colors.ink },
-  quiet: { fill: colors.well, press: '#CFCABC', text: colors.ink },
+  quiet: { fill: colors.well, press: colors.wellPress, text: colors.ink },
   white: { fill: colors.onSolid, press: colors.well, text: colors.ink },
 };
 export function Btn(props: {
@@ -190,7 +190,7 @@ export function Choice(props: {
       style={({ pressed }) => [
         {
           minHeight: touchStaff,
-          backgroundColor: props.chosen ? colors.ink : pressed ? '#CFCABC' : colors.well,
+          backgroundColor: props.chosen ? colors.ink : pressed ? colors.wellPress : colors.well,
           borderRadius: radiusControl,
           paddingHorizontal: space.md,
           paddingVertical: space.sm,

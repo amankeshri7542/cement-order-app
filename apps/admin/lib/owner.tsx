@@ -45,9 +45,17 @@ import {
   Scale,
 } from 'lucide-react';
 import { BottomNav, Button, Confirm, Field, PhoneField, Skeleton, Toast } from '@shiv/design';
-import { canDo, phoneDigits, type Access, type Permission, type User } from '@shiv/shared';
+import {
+  canDo,
+  phoneDigits,
+  type Access,
+  type Permission,
+  type Preferences,
+  type User,
+} from '@shiv/shared';
 import type { MessageKey } from '@shiv/i18n';
 import { API_URL, ApiError, api } from './api';
+import { syncAppearance } from './appearance';
 import { LanguageProvider, useLanguage, useT, useWords } from './i18n';
 import { homeFor, pathAllowed } from './nav';
 import { ringBell, soundOn } from './bell';
@@ -70,6 +78,7 @@ type DeskSession = {
   permissionsVersion: number;
   locations: Shop[];
   firms?: Firm[];
+  preferences?: Preferences;
   hasPassphrase: boolean;
 };
 type Confirmation = { title: string; body: string; confirmLabel: string; noteLabel?: string };
@@ -332,6 +341,9 @@ function OwnerShell({ children }: { children: ReactNode }) {
   }, [toast]);
   const access = auth.data?.access;
   const onDesk = !!access?.['desk.use'];
+  // The theme and text size this person chose, from any device, win once the session is known.
+  const savedLook = auth.data?.preferences;
+  useEffect(() => syncAppearance(savedLook), [savedLook]);
   // Large text makes the tabs taller, and anything resting on them must rise with them.
   useEffect(() => {
     const nav = document.querySelector<HTMLElement>('nav[data-owner-tabs]');

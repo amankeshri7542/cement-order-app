@@ -45,6 +45,7 @@ import { AuthController, AuthGuard, AuthService } from './auth';
 import { AccountController, CatalogController, Events } from './catalog';
 import { Db } from './db';
 import { FirmSettingsController } from './firm-settings';
+import { PreferencesController } from './preferences';
 import { assertDemoSinks } from './demo-lock';
 import { OwnerWorkController, OwnerWorkService } from './owner-work';
 import { Errors, Public, cookie, fail, hash } from './http';
@@ -129,6 +130,7 @@ class HealthController {
     WebEnquiriesController,
     UsersController,
     FirmSettingsController,
+    PreferencesController,
     InboxController,
     WaWebhookController,
     WaDeskController,
