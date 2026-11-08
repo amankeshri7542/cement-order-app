@@ -17,7 +17,7 @@ import {
   payTermsSchema,
   workOutPay,
 } from '@shiv/shared';
-import { t } from '@shiv/i18n';
+import { t, readLanguage } from '@shiv/i18n';
 import type { Response } from 'express';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
@@ -1020,8 +1020,8 @@ export class Salary {
           data: owners.map((owner) => ({
             userId: owner.id,
             dedupeKey: `pay-not-got:${id}:${owner.id}`,
-            title: t('owner.salary.notGotTitle', {}, owner.language === 'en' ? 'en' : 'hi'),
-            body: t('owner.salary.notGotBody', {}, owner.language === 'en' ? 'en' : 'hi'),
+            title: t('owner.salary.notGotTitle', {}, readLanguage(owner.language)),
+            body: t('owner.salary.notGotBody', {}, readLanguage(owner.language)),
           })),
           skipDuplicates: true,
         });

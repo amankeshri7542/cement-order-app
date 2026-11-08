@@ -4,6 +4,13 @@
 export type Language = 'en' | 'hi';
 export type Bilingual = readonly [english: string, hindi: string];
 
+/**
+ * The customer-facing words here (statuses, errors, the glossary) are English or Devanagari Hindi.
+ * The desk and the staff app speak 'hinglish', 'en' or 'hi' (plan v4 B2); everything but English
+ * reads these labels as before.
+ */
+export const siteLanguage = (language: string): Language => (language === 'en' ? 'en' : 'hi');
+
 export const pick = (language: Language, text: Bilingual): string =>
   text[language === 'hi' ? 1 : 0];
 

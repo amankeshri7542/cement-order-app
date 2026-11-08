@@ -309,15 +309,15 @@ async function openOrder(owner: Page, order: Order) {
     owner.getByRole('heading', { name: `Order ${order.number}`, exact: true }),
   ).toBeVisible();
 }
-async function ownerLanguage(owner: Page, language: 'hi' | 'en', returnTo = owner.url()) {
+async function ownerLanguage(owner: Page, language: 'hinglish' | 'en', returnTo = owner.url()) {
   await owner.goto('http://localhost:3001/more?view=language');
-  await owner.getByRole('combobox').selectOption(language);
-  await expect(owner.locator('html')).toHaveAttribute('lang', language);
+  await owner.getByRole('radio', { name: en[`language.${language}`], exact: true }).check();
+  await expect(owner.locator('html')).toHaveAttribute('lang', language === 'en' ? 'en' : 'hi-Latn');
   await owner.goto(returnTo);
 }
 async function hindiScreenshot(owner: Page, path: string) {
   const returnTo = owner.url();
-  await ownerLanguage(owner, 'hi', returnTo);
+  await ownerLanguage(owner, 'hinglish', returnTo);
   await owner.screenshot({ path, fullPage: true });
   await ownerLanguage(owner, 'en', returnTo);
 }
@@ -377,7 +377,7 @@ test('phone COD: automatic owner queue, acknowledgment, actual collection, deliv
   try {
     await ownerLogin(owner, 31);
     await owner.goto('http://localhost:3001/today');
-    await ownerLanguage(owner, 'hi');
+    await ownerLanguage(owner, 'hinglish');
     await owner.reload();
     await expect(owner.getByRole('heading', { name: 'Aaj', exact: true })).toBeVisible();
     await ownerLanguage(owner, 'en');

@@ -15,7 +15,7 @@ import { activeFirm } from './firms';
 import { AuthRequest, Can, Contract, fail, Input, MAIN_LOCATION } from './http';
 import { requireStepUp } from './security';
 import { randomUUID } from 'node:crypto';
-import { t, type Language, type MessageKey } from '@shiv/i18n';
+import { readLanguage, t, type MessageKey } from '@shiv/i18n';
 
 const userSelect = {
   id: true,
@@ -134,8 +134,8 @@ export async function tellOtherOwners(
     await tx.notification.createMany({
       data: owners.map((owner) => ({
         userId: owner.id,
-        title: t('owner.alert.accessChanged', {}, owner.language as Language),
-        body: t(message, { name }, owner.language as Language),
+        title: t('owner.alert.accessChanged', {}, readLanguage(owner.language)),
+        body: t(message, { name }, readLanguage(owner.language)),
         dedupeKey: `people:${randomUUID()}`,
       })),
     });
@@ -199,7 +199,7 @@ export class UsersController {
             data: { role: 'ADMIN', name: body.name, staffPausedAt: null },
           })
         : await tx.user.create({
-            data: { phone: body.phone, name: body.name, role: 'ADMIN', language: 'hi' },
+            data: { phone: body.phone, name: body.name, role: 'ADMIN', language: 'hinglish' },
           });
       // Anything left from before starts again with a fresh sign-in. Their customer app carries on.
       await tx.session.deleteMany({ where: { userId: user.id, surface: { not: 'CUSTOMER' } } });

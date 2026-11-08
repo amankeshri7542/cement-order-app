@@ -4,6 +4,7 @@ import Script from 'next/script';
 import type { Metadata, Viewport } from 'next';
 import { Hanken_Grotesk, Noto_Sans_Devanagari } from 'next/font/google';
 import { dark, light } from '@shiv/tokens';
+import { htmlLang, readLanguage } from '@shiv/i18n';
 import '@shiv/design/tokens.css';
 import './owner-base.css';
 
@@ -45,12 +46,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const jar = await cookies();
   const theme = themes.find((value) => value === jar.get('shiv_theme')?.value);
   const size = sizes.find((value) => value === jar.get('shiv_text')?.value);
-  // Hindi is the desk's default; the language switch updates this on the page.
+  // Hinglish is the desk's default; the language switch updates this on the page.
+  const language = readLanguage(jar.get('shiv_lang')?.value);
   return (
-    // translate="no": the desk has its own Hindi/English switch, and Chrome's page translation
+    // translate="no": the desk has its own language switch, and Chrome's page translation
     // rewrites text React keeps updating (countdowns flicker between languages).
     <html
-      lang="hi"
+      lang={htmlLang(language)}
       translate="no"
       className={`${sans.variable} ${devanagari.variable}`}
       data-theme={theme}

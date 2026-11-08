@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { test, expect } from './fixtures';
+import { test, expect, deskLanguage } from './fixtures';
 import { productSchema, type DeliveryZone, type Order } from '@shiv/shared';
 import { en } from '@shiv/i18n';
 import {
@@ -17,7 +17,7 @@ async function mobileLogin(page: Page, phone: string) {
   await appLogin(page, phone);
 }
 async function adminLogin(page: Page, phone = '9999997007') {
-  await page.addInitScript(() => localStorage.setItem('shiv-owner-language', 'en'));
+  await deskLanguage(page.context(), 'en');
   await page.goto('http://localhost:3001/today');
   await page.getByRole('textbox', { name: en['owner.loginPhone'] }).fill(phone);
   const response = page.waitForResponse(

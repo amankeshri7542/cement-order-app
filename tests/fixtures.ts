@@ -44,17 +44,28 @@ export const isCancelledFetch = (message: string) =>
   /due to access control checks\.?$/.test(message);
 
 /**
- * The app asks for a language on first launch and the owner desk opens in Hindi. Journeys run
+ * The desk's language in this browser, as its language switch leaves it: the shiv_lang cookie the
+ * server draws each page in (apps/admin/lib/i18n.tsx). A person's saved choice still wins at sign-in.
+ */
+export async function deskLanguage(
+  context: BrowserContext,
+  language: 'hinglish' | 'en' | 'hi',
+  url = 'http://localhost:3001',
+) {
+  await context.addCookies([{ name: 'shiv_lang', value: language, url }]);
+}
+
+/**
+ * The app asks for a language on first launch and the owner desk opens in Hinglish. Journeys run
  * both in English unless a test chooses otherwise, so they start past the chooser. Apply to extra contexts with `skipLanguageChooser`.
  */
 export async function skipLanguageChooser(context: BrowserContext) {
+  // The owner desk opens in Hinglish; journeys drive it in English unless a test picks another.
+  await deskLanguage(context, 'en');
   await context.addInitScript(() => {
     try {
       if (location.port === '8082' && !localStorage.getItem('shiv_language'))
         localStorage.setItem('shiv_language', '"en"');
-      // The owner desk opens in Hindi; journeys drive it in English unless a test picks Hindi.
-      if (location.port === '3001' && !localStorage.getItem('shiv-owner-language'))
-        localStorage.setItem('shiv-owner-language', 'en');
     } catch {
       /* Storage blocked: the chooser appears instead. */
     }

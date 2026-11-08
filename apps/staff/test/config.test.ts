@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import en from '../../../packages/i18n/src/en.json';
-import hi from '../../../packages/i18n/src/hi.json';
+import hinglish from '../../../packages/i18n/src/hinglish.json';
 import { colors, minTextSize, staffType, touchStaff } from '../src/ui/tokens';
 
 const root = join(__dirname, '..');
@@ -142,14 +142,14 @@ test('no Devanagari anywhere in the app', () => {
   assert.deepEqual(found, []);
 });
 test('no Devanagari in any staff word, and both catalogues hold each one', () => {
-  const words = hi as Record<string, string>;
-  for (const [key, value] of staffWords(hi)) assert.ok(!hindiScript.test(value), key);
-  for (const [key] of staffWords(en)) assert.ok(words[key], `missing in hi: ${key}`);
-  assert.ok(staffWords(hi).length > 300);
+  const words = hinglish as Record<string, string>;
+  for (const [key, value] of staffWords(hinglish)) assert.ok(!hindiScript.test(value), key);
+  for (const [key] of staffWords(en)) assert.ok(words[key], `missing in hinglish: ${key}`);
+  assert.ok(staffWords(hinglish).length > 300);
 });
 test('the spellings the shop uses', () => {
   const banned = /\b(udhar|baki|paka|dukan|nahin|kripya|hisab)\b/i;
-  const found = staffWords(hi).filter(([, value]) => banned.test(value));
+  const found = staffWords(hinglish).filter(([, value]) => banned.test(value));
   assert.deepEqual(found, []);
 });
 test('every word a screen names exists', () => {

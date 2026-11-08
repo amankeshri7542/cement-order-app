@@ -1,4 +1,4 @@
-import { t, type Language } from '@shiv/i18n';
+import { t, type Language, readLanguage } from '@shiv/i18n';
 import { Controller, Get, Inject, Injectable, Param, Post, Req, Sse } from '@nestjs/common';
 import { Subject, concatMap, interval, map, merge, takeUntil, takeWhile } from 'rxjs';
 import { assertSession } from './security';
@@ -142,7 +142,7 @@ export class OwnerWorkService {
                 userId: owner.id,
                 dedupeKey: `owner:${work.id}:${owner.id}`,
                 ...(alerted
-                  ? orderAlertWords(alerted, owner.language === 'en' ? 'en' : 'hi')
+                  ? orderAlertWords(alerted, readLanguage(owner.language))
                   : { title: t('owner.newWorkAlert'), body: t('owner.openQuoteAlert') }),
                 orderId: work.orderId,
               },

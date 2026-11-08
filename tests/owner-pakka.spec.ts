@@ -2,9 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { request as apiRequest } from '@playwright/test';
 import type { Browser, BrowserContext, Page } from '@playwright/test';
-import { hi } from '@shiv/i18n';
+import { hinglish } from '@shiv/i18n';
 import type { StaffRole } from '@shiv/shared';
-import { test, expect } from './fixtures';
+import { test, expect, deskLanguage } from './fixtures';
 import { addPerson, tokenFor } from '../apps/api/test/staff-helper';
 
 // Pakka karo, on the real desk. The server's rules are in apps/api/test/confirm.test.ts; these
@@ -95,24 +95,24 @@ async function open(
 ): Promise<{ context: BrowserContext; page: Page }> {
   const context = await browser.newContext({ viewport });
   const page = await context.newPage();
-  await page.addInitScript(() => localStorage.setItem('shiv-owner-language', 'hi'));
+  await deskLanguage(page.context(), 'hinglish');
   return { context, page };
 }
 async function signIn(page: Page, digits: string, path = '/inbox') {
   await page.goto(`${desk}${path}`);
-  await page.getByRole('textbox', { name: hi['owner.loginPhone'] }).fill(digits);
+  await page.getByRole('textbox', { name: hinglish['owner.loginPhone'] }).fill(digits);
   const sent = page.waitForResponse(
     (r) => r.url().endsWith('/auth/otp/request') && r.status() === 201,
   );
-  await page.getByRole('button', { name: hi['owner.sendCode'] }).click();
+  await page.getByRole('button', { name: hinglish['owner.sendCode'] }).click();
   await page
-    .getByRole('textbox', { name: hi['owner.code'], exact: true })
+    .getByRole('textbox', { name: hinglish['owner.code'], exact: true })
     .fill((await (await sent).json()).devCode);
-  await page.getByRole('button', { name: hi['owner.signIn'] }).click();
+  await page.getByRole('button', { name: hinglish['owner.signIn'] }).click();
 }
 const cardOf = (page: Page, name: string) => page.locator('article', { hasText: name });
 const pakka = (scope: Page | ReturnType<Page['locator']>) =>
-  scope.getByRole('button', { name: hi['owner.pakka.confirm'], exact: true });
+  scope.getByRole('button', { name: hinglish['owner.pakka.confirm'], exact: true });
 
 test('one tap confirms, the customer hears nothing for 10 seconds, and Wapas lo puts it back', async ({
   browser,
@@ -125,7 +125,7 @@ test('one tap confirms, the customer hears nothing for 10 seconds, and Wapas lo 
     await signIn(page, owner.digits);
     const card = cardOf(page, order.customerName);
     await expect(card).toBeVisible();
-    await expect(card).toContainText(hi['owner.pakka.fromApp']);
+    await expect(card).toContainText(hinglish['owner.pakka.fromApp']);
 
     await pakka(card).click();
     const undo = page.getByRole('button', { name: /^Wapas lo \d+$/ });
@@ -156,7 +156,7 @@ test('one tap confirms, the customer hears nothing for 10 seconds, and Wapas lo 
     await pakka(cardOf(page, order.customerName)).click();
     await expect(page.getByRole('button', { name: /^Wapas lo \d+$/ })).toBeVisible();
     // The hold runs out, and undo is gone.
-    await expect(page.getByText(hi['owner.pakka.sent'])).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText(hinglish['owner.pakka.sent'])).toBeVisible({ timeout: 15000 });
     await expect(page.getByRole('button', { name: /^Wapas lo \d+$/ })).toHaveCount(0);
   } finally {
     await context.close();
@@ -215,7 +215,7 @@ test('when two owners act, the second is told who did it, not shown an error', a
     await pakka(cardOf(b.page, order.customerName)).click();
     await expect(b.page.getByText(new RegExp(`${first.name} ne .* par kar diya`))).toBeVisible();
     await expect(
-      b.page.getByRole('alert').filter({ hasText: hi['error.ALREADY_DECIDED'] }),
+      b.page.getByRole('alert').filter({ hasText: hinglish['error.ALREADY_DECIDED'] }),
     ).toHaveCount(0);
     expect((await db.order.findUniqueOrThrow({ where: { id: order.id } })).confirmedById).toBe(
       first.id,
@@ -234,10 +234,10 @@ test('Badal kar pakka karo shows the exact message and the new amount', async ({
   try {
     await signIn(page, owner.digits);
     const card = cardOf(page, order.customerName);
-    await card.getByRole('button', { name: hi['owner.pakka.change'] }).click();
+    await card.getByRole('button', { name: hinglish['owner.pakka.change'] }).click();
     const sheet = page.getByRole('dialog');
     await sheet.getByRole('button', { name: /badhao$/ }).click();
-    const rate = sheet.getByRole('textbox', { name: hi['owner.change.rate'] });
+    const rate = sheet.getByRole('textbox', { name: hinglish['owner.change.rate'] });
     await rate.fill('300');
     await expect(sheet.getByText(`${order.customerName} ko yeh jayega`)).toBeVisible();
     await expect(sheet.getByText(/kuch badlav ke saath/)).toBeVisible();
@@ -270,14 +270,16 @@ test('a manager beyond the cap is told to ask an owner, and cannot confirm it th
   try {
     await signIn(page, manager.digits);
     await cardOf(page, order.customerName)
-      .getByRole('button', { name: hi['owner.pakka.change'] })
+      .getByRole('button', { name: hinglish['owner.pakka.change'] })
       .click();
     const sheet = page.getByRole('dialog');
-    await sheet.getByRole('textbox', { name: hi['owner.change.rate'] }).fill('1');
+    await sheet.getByRole('textbox', { name: hinglish['owner.change.rate'] }).fill('1');
     // The way forward is to ask, and only to ask.
-    await expect(sheet.getByRole('button', { name: hi['owner.change.askOwner'] })).toBeEnabled();
     await expect(
-      sheet.getByRole('button', { name: hi['error.RATE_CAP'], exact: true }),
+      sheet.getByRole('button', { name: hinglish['owner.change.askOwner'] }),
+    ).toBeEnabled();
+    await expect(
+      sheet.getByRole('button', { name: hinglish['error.RATE_CAP'], exact: true }),
     ).toBeDisabled();
   } finally {
     await db.location.update({ where: { id: MAIN }, data: { managerRateCapPercent: 0 } });
@@ -297,16 +299,22 @@ test('a cashier has no rate field and no udhaar, and an udhaar card is not their
   try {
     await signIn(page, cashier.digits, '/inbox');
     const card = cardOf(page, udhaar.customerName);
-    await expect(card).toContainText(hi['owner.pakka.onlyManagers']);
+    await expect(card).toContainText(hinglish['owner.pakka.onlyManagers']);
     await expect(pakka(card)).toHaveCount(0);
 
     await cardOf(page, cash.customerName)
-      .getByRole('button', { name: hi['owner.pakka.change'] })
+      .getByRole('button', { name: hinglish['owner.pakka.change'] })
       .click();
     const sheet = page.getByRole('dialog');
-    await expect(sheet.getByRole('textbox', { name: hi['owner.change.rate'] })).toHaveCount(0);
-    await expect(sheet.getByRole('textbox', { name: hi['owner.change.delivery'] })).toHaveCount(0);
-    await expect(sheet.getByRole('combobox', { name: hi['owner.change.payment'] })).toHaveCount(0);
+    await expect(sheet.getByRole('textbox', { name: hinglish['owner.change.rate'] })).toHaveCount(
+      0,
+    );
+    await expect(
+      sheet.getByRole('textbox', { name: hinglish['owner.change.delivery'] }),
+    ).toHaveCount(0);
+    await expect(
+      sheet.getByRole('combobox', { name: hinglish['owner.change.payment'] }),
+    ).toHaveCount(0);
   } finally {
     await context.close();
   }
@@ -325,11 +333,11 @@ test('Nahi ho payega is one tap on a reason, and can be taken back', async ({ br
   try {
     await signIn(page, owner.digits);
     await cardOf(page, order.customerName)
-      .getByRole('button', { name: hi['owner.pakka.cannot'] })
+      .getByRole('button', { name: hinglish['owner.pakka.cannot'] })
       .click();
     await page
       .getByRole('dialog')
-      .getByRole('button', { name: hi['owner.refuse.OUT_OF_STOCK'] })
+      .getByRole('button', { name: hinglish['owner.refuse.OUT_OF_STOCK'] })
       .click();
     await expect(page.getByText(`${order.customerName} ko bata rahe hain`)).toBeVisible();
     expect((await db.order.findUniqueOrThrow({ where: { id: order.id } })).status).toBe(
@@ -364,7 +372,7 @@ test('with no internet the buttons are off, and nothing is queued for later', as
     const card = cardOf(page, order.customerName);
     await expect(pakka(card)).toBeEnabled();
     await context.setOffline(true);
-    await expect(page.getByText(hi['owner.offline'])).toBeVisible();
+    await expect(page.getByText(hinglish['owner.offline'])).toBeVisible();
     await expect(pakka(card)).toBeDisabled();
     await context.setOffline(false);
     await expect(pakka(card)).toBeEnabled();
@@ -405,13 +413,15 @@ test('the order page of a waiting order leads to the card, and old status button
     await signIn(page, owner.digits);
     // Leaving before sign-in finishes would cancel it.
     await expect(
-      page.getByRole('navigation', { name: hi['owner.desk'], exact: true }),
+      page.getByRole('navigation', { name: hinglish['owner.desk'], exact: true }),
     ).toBeVisible();
     await page.goto(`${desk}/orders/${order.id}`);
     await expect(
-      page.getByRole('link', { name: new RegExp(hi['owner.pakka.confirm']) }),
+      page.getByRole('link', { name: new RegExp(hinglish['owner.pakka.confirm']) }),
     ).toBeVisible();
-    await expect(page.getByRole('button', { name: hi['owner.startPreparing'] })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: hinglish['owner.startPreparing'] })).toHaveCount(
+      0,
+    );
   } finally {
     await context.close();
   }

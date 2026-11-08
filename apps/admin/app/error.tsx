@@ -1,5 +1,6 @@
 'use client';
 import { useEffect } from 'react';
+import { htmlLang, languages } from '@shiv/i18n';
 import { LanguageProvider, useLanguage, useT } from '../lib/i18n';
 
 // The desk's last line of defence: one malformed reply must not leave staff with a blank page.
@@ -25,9 +26,18 @@ function Recovery({ retry }: { retry: () => void }) {
       <button className="primary" onClick={retry}>
         {t('owner.retry')}
       </button>
-      <button className="secondary" onClick={() => setLanguage(language === 'hi' ? 'en' : 'hi')}>
-        {language === 'hi' ? 'English' : 'Hinglish'}
-      </button>
+      {languages
+        .filter((value) => value !== language)
+        .map((value) => (
+          <button
+            key={value}
+            className="secondary"
+            lang={htmlLang(value)}
+            onClick={() => setLanguage(value)}
+          >
+            {t(`language.${value}`)}
+          </button>
+        ))}
     </div>
   );
 }

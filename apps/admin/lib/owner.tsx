@@ -53,10 +53,10 @@ import {
   type Preferences,
   type User,
 } from '@shiv/shared';
-import type { MessageKey } from '@shiv/i18n';
+import { htmlLang, type Language, type MessageKey } from '@shiv/i18n';
 import { API_URL, ApiError, api } from './api';
 import { syncAppearance } from './appearance';
-import { LanguageProvider, useLanguage, useT, useWords } from './i18n';
+import { LanguageProvider, useLanguage, useSyncLanguage, useT, useWords } from './i18n';
 import { homeFor, pathAllowed } from './nav';
 import { ringBell, soundOn } from './bell';
 import { registerWorker } from './push';
@@ -113,7 +113,14 @@ export function useOwner() {
   return value;
 }
 
-export function OwnerProvider({ children }: { children: ReactNode }) {
+export function OwnerProvider({
+  children,
+  language,
+}: {
+  children: ReactNode;
+  /** The language the server drew this page in, from the shiv_lang cookie. */
+  language?: Language;
+}) {
   const [client] = useState(
     () =>
       new QueryClient({
@@ -128,7 +135,7 @@ export function OwnerProvider({ children }: { children: ReactNode }) {
       }),
   );
   return (
-    <LanguageProvider>
+    <LanguageProvider initial={language}>
       <QueryClientProvider client={client}>
         <OwnerShell>{children}</OwnerShell>
       </QueryClientProvider>
@@ -344,6 +351,8 @@ function OwnerShell({ children }: { children: ReactNode }) {
   // The theme and text size this person chose, from any device, win once the session is known.
   const savedLook = auth.data?.preferences;
   useEffect(() => syncAppearance(savedLook), [savedLook]);
+  // The same for the language: the one saved for this person wins (lib/i18n.tsx).
+  useSyncLanguage(savedLook?.language, !!auth.data);
   // Large text makes the tabs taller, and anything resting on them must rise with them.
   useEffect(() => {
     const nav = document.querySelector<HTMLElement>('nav[data-owner-tabs]');
@@ -871,8 +880,8 @@ function Login() {
         )}
       </form>
       <p className={css.hint}>{t('owner.sessionHelp')}</p>
-      <span className={css.languageMarker} lang={language}>
-        {t('owner.hindi')}
+      <span className={css.languageMarker} lang={htmlLang(language)}>
+        {t(`language.${language}`)}
       </span>
     </div>
   );

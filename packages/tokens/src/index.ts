@@ -26,6 +26,8 @@ export const phoneType = {
 } as const;
 /** Line height: 1.35 for Latin, 1.5 when Hindi is shown (vowel marks clip at 1.35). */
 export const lineHeight = { latin: 1.35, devanagari: 1.5 } as const;
+/** Short labels (bottom tabs, chips): tight in Latin, opened up for Devanagari's vowel marks. */
+export const lineHeightTight = { latin: 1.2, devanagari: 1.45 } as const;
 export const fontFamily = {
   /** Hanken Grotesk for Latin, Noto Sans Devanagari for Hindi. */
   sans: 'Hanken Grotesk',
@@ -112,6 +114,7 @@ export function cssVariables() {
   const rest = [
     ...Object.entries(deskType).map(([name, size]) => `  --text-${name}: ${size}rem;`),
     `  --leading: ${lineHeight.latin};`,
+    `  --leading-tight: ${lineHeightTight.latin};`,
     ...space.map((step) => `  --space-${step}: ${step / 16}rem;`),
     ...Object.entries(radius).map(
       ([name, value]) => `  --radius-${name}: ${value === 999 ? '999px' : `${value}px`};`,
@@ -156,6 +159,11 @@ ${rest}
   /* A phone reads at 16 px body text, and "Bada akshar" scales on top (DESIGN.md, Layout). */
   --device-scale: 1;
   --text-scale: 1;
+}
+/* Hindi in Devanagari: vowel marks above and below clip at Latin line heights (plan v4 B2). */
+:root[lang='hi'] {
+  --leading: ${lineHeight.devanagari};
+  --leading-tight: ${lineHeightTight.devanagari};
 }
 [data-text='large'] {
   --text-scale: ${textScale.large};

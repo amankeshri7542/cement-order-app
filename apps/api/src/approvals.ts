@@ -2,7 +2,7 @@ import { Controller, Get, Inject, Injectable, Param, Post, Query, Req } from '@n
 import { ApiTags } from '@nestjs/swagger';
 import { Prisma } from '@prisma/client';
 import { approvalDecideSchema, canDo, orderAskOwnerSchema, type OrderChanges } from '@shiv/shared';
-import { t } from '@shiv/i18n';
+import { t, readLanguage } from '@shiv/i18n';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { Events } from './catalog';
@@ -79,7 +79,7 @@ export async function askApproval(
     select: { id: true, language: true },
   });
   for (const owner of owners) {
-    const language = owner.language === 'en' ? 'en' : 'hi';
+    const language = readLanguage(owner.language);
     await tx.notification.create({
       data: {
         userId: owner.id,

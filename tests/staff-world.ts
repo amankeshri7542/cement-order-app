@@ -1,11 +1,11 @@
 import { generateKeyPairSync, randomUUID, sign } from 'node:crypto';
 import type { Browser, BrowserContextOptions, Page } from '@playwright/test';
 import { PrismaClient } from '@prisma/client';
-import { hi } from '@shiv/i18n';
+import { hinglish } from '@shiv/i18n';
 import { istToday, punchMessage, staffNoticeVersion, type StaffRole } from '@shiv/shared';
 import sharp from 'sharp';
 import { addPerson, clearShopWork, tokenFor } from '../apps/api/test/staff-helper';
-import { expect } from './fixtures';
+import { expect, deskLanguage } from './fixtures';
 
 // The real API and database, as the staff desk specs meet them: people with sessions, phones with
 // real P-256 keys, shop screens, and scans signed the way the Android Keystore signs them.
@@ -19,10 +19,10 @@ export const database = () => new PrismaClient({ datasourceUrl: process.env.TEST
 export type Db = ReturnType<typeof database>;
 
 /** A catalogue sentence with its gaps filled, as the screen shows it. */
-export function say(key: keyof typeof hi, params: Record<string, string | number> = {}) {
+export function say(key: keyof typeof hinglish, params: Record<string, string | number> = {}) {
   return Object.entries(params).reduce(
     (text, [name, value]) => text.replaceAll(`{${name}}`, String(value)),
-    hi[key] as string,
+    hinglish[key] as string,
   );
 }
 
@@ -220,17 +220,17 @@ export async function signIn(
     ...rest,
   });
   const page = await context.newPage();
-  await page.addInitScript(() => localStorage.setItem('shiv-owner-language', 'hi'));
+  await deskLanguage(context, 'hinglish', desk);
   await page.goto(`${desk}${path}`);
-  await page.getByRole('textbox', { name: hi['owner.loginPhone'] }).fill(who.digits);
+  await page.getByRole('textbox', { name: hinglish['owner.loginPhone'] }).fill(who.digits);
   const sent = page.waitForResponse(
     (response) => response.url().endsWith('/auth/otp/request') && response.status() === 201,
   );
-  await page.getByRole('button', { name: hi['owner.sendCode'] }).click();
+  await page.getByRole('button', { name: hinglish['owner.sendCode'] }).click();
   await page
-    .getByRole('textbox', { name: hi['owner.code'], exact: true })
+    .getByRole('textbox', { name: hinglish['owner.code'], exact: true })
     .fill((await (await sent).json()).devCode);
-  await page.getByRole('button', { name: hi['owner.signIn'] }).click();
+  await page.getByRole('button', { name: hinglish['owner.signIn'] }).click();
   return { context, page };
 }
 export async function signedInDesk(
@@ -240,13 +240,13 @@ export async function signedInDesk(
 ) {
   const signed = await signIn(browser, who, options);
   await expect(
-    signed.page.getByRole('navigation', { name: hi['owner.desk'], exact: true }),
+    signed.page.getByRole('navigation', { name: hinglish['owner.desk'], exact: true }),
   ).toBeVisible();
   return signed;
 }
 export const go = (page: Page, path: string) => page.goto(`${desk}${path}`);
-export const tab = (page: Page, key: keyof typeof hi) =>
-  page.getByRole('tab', { name: new RegExp(`^${hi[key]}`) });
+export const tab = (page: Page, key: keyof typeof hinglish) =>
+  page.getByRole('tab', { name: new RegExp(`^${hinglish[key]}`) });
 /** A notice on the desk's toast, and not an error: it is good news that says what happened. */
 export const toast = (page: Page, text: string) =>
   page.getByRole('status').filter({ hasText: text });
@@ -254,5 +254,5 @@ export const today = () => istToday();
 /** A sentence that means "the page does not belong to you", and that the page really is refused. */
 export async function refusedPage(page: Page, path: string) {
   await go(page, path);
-  await expect(page.getByRole('heading', { name: hi['owner.notYourPage'] })).toBeVisible();
+  await expect(page.getByRole('heading', { name: hinglish['owner.notYourPage'] })).toBeVisible();
 }

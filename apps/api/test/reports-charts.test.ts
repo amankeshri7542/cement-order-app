@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { loadEnvFile } from 'node:process';
 import type { INestApplication } from '@nestjs/common';
 import type { LedgerKind, OrderSource, OrderStatus } from '@prisma/client';
-import { en, hi } from '@shiv/i18n';
+import { en, hinglish } from '@shiv/i18n';
 import { istToday } from '@shiv/shared';
 import request from 'supertest';
 import { Db } from '../src/db';
@@ -729,10 +729,11 @@ describe('every event has plain words on the desk', () => {
   });
   it('has a sentence for each, in both languages, with no script the desk cannot show', () => {
     const missing = [...written(), ...built].filter(
-      (name) => !(`owner.activity.event.${name}` in en) || !(`owner.activity.event.${name}` in hi),
+      (name) =>
+        !(`owner.activity.event.${name}` in en) || !(`owner.activity.event.${name}` in hinglish),
     );
     expect(missing).toEqual([]);
-    for (const [key, words] of Object.entries(hi))
+    for (const [key, words] of Object.entries(hinglish))
       if (key.startsWith('owner.activity.')) expect(words).not.toMatch(/[ऀ-ॿ]/);
   });
 });

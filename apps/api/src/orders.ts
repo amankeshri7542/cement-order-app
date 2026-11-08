@@ -29,6 +29,7 @@ import {
   transitions,
   canDo,
   type ReviewLeftOut,
+  siteLanguage,
 } from '@shiv/shared';
 import { Db } from './db';
 import { firmOfLocation } from './firms';
@@ -766,7 +767,7 @@ export class OrdersService {
         order.userId,
         pushText('orderStatus', (language) => ({
           number: order.number,
-          status: orderStatusText(next, language),
+          status: orderStatusText(next, siteLanguage(language)),
         })),
         id,
       );
@@ -938,7 +939,7 @@ export class OrdersService {
         order.userId,
         pushText('delivery', (language) => ({
           number: order.number,
-          status: orderStatusText(status, language),
+          status: orderStatusText(status, siteLanguage(language)),
         })),
         id,
       );

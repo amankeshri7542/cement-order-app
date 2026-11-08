@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { hi } from '@shiv/i18n';
+import { hinglish } from '@shiv/i18n';
 import type { Browser, Page } from '@playwright/test';
 import { qrPath, qrSymbol } from '../apps/admin/components/owner/hazri/code-loop';
 import { test, expect } from './fixtures';
@@ -67,14 +67,14 @@ async function watch(page: Page) {
     localStorage.setItem('shiv-owner-language', 'hi');
   });
 }
-const qr = (page: Page) => page.getByRole('img', { name: hi['owner.screen.qrLabel'] });
+const qr = (page: Page) => page.getByRole('img', { name: hinglish['owner.screen.qrLabel'] });
 const pathOf = (page: Page) => qr(page).locator('path').getAttribute('d');
 const wallAnswer = (page: Page) =>
   page.waitForResponse((response) => response.url().endsWith('/screen/today') && response.ok());
 async function pair(page: Page, code: string) {
-  await page.getByRole('textbox', { name: hi['owner.screen.digits'] }).fill(code);
+  await page.getByRole('textbox', { name: hinglish['owner.screen.digits'] }).fill(code);
   const answered = wallAnswer(page);
-  await page.getByRole('button', { name: hi['owner.screen.pair'] }).click();
+  await page.getByRole('button', { name: hinglish['owner.screen.pair'] }).click();
   return answered;
 }
 const newCode = async () =>
@@ -87,17 +87,19 @@ test('pairs with six digits, and a wrong code is told plainly', async ({ browser
   const { context, page } = await wallPage(browser);
   try {
     await page.goto(`${desk}/shop-screen`);
-    await expect(page.getByRole('heading', { name: hi['owner.screen.pairTitle'] })).toBeVisible();
-    await expect(page.getByRole('textbox', { name: hi['owner.loginPhone'] })).toHaveCount(0);
-    const digits = page.getByRole('textbox', { name: hi['owner.screen.digits'] });
-    const button = page.getByRole('button', { name: hi['owner.screen.pair'] });
+    await expect(
+      page.getByRole('heading', { name: hinglish['owner.screen.pairTitle'] }),
+    ).toBeVisible();
+    await expect(page.getByRole('textbox', { name: hinglish['owner.loginPhone'] })).toHaveCount(0);
+    const digits = page.getByRole('textbox', { name: hinglish['owner.screen.digits'] });
+    const button = page.getByRole('button', { name: hinglish['owner.screen.pair'] });
     await digits.fill('12a');
     await expect(digits).toHaveValue('12');
     await expect(button).toBeDisabled();
     await digits.fill('000000');
     await button.click();
     await expect(
-      page.getByRole('alert').filter({ hasText: hi['error.SCREEN_BAD_CODE'] }),
+      page.getByRole('alert').filter({ hasText: hinglish['error.SCREEN_BAD_CODE'] }),
     ).toBeVisible();
     await pair(page, await newCode());
     await expect(qr(page)).toBeVisible();
@@ -263,7 +265,7 @@ test('with no internet it says the code cannot change, keeps showing it, and rec
     await expect(qr(page)).toBeVisible();
     const before = await pathOf(page);
     await context.setOffline(true);
-    const band = page.getByText(hi['owner.screen.offline']);
+    const band = page.getByText(hinglish['owner.screen.offline']);
     await expect(band).toBeVisible();
     await expect(qr(page)).toBeVisible();
     expect(await pathOf(page)).toBe(before);
@@ -311,13 +313,13 @@ test('turned off from the desk, it asks to be paired again, clearly, and can be'
     await ok(boss.token, 'POST', `/admin/screens/${row.id}/revoke`, {});
     await look(page);
     await expect(
-      page.getByRole('alert').filter({ hasText: hi['owner.screen.gone'] }),
+      page.getByRole('alert').filter({ hasText: hinglish['owner.screen.gone'] }),
     ).toBeVisible();
     await expect(qr(page)).toHaveCount(0);
     expect(await page.evaluate(() => localStorage.getItem('shiv-shop-screen'))).toBeNull();
     await pair(page, await newCode());
     await expect(qr(page)).toBeVisible();
-    await expect(page.getByText(hi['owner.screen.gone'])).toHaveCount(0);
+    await expect(page.getByText(hinglish['owner.screen.gone'])).toHaveCount(0);
   } finally {
     await context.close();
   }
@@ -328,8 +330,10 @@ test('a token someone made up gets nothing, and the page asks to pair', async ({
   try {
     await page.addInitScript(() => localStorage.setItem('shiv-shop-screen', 'made-up-token'));
     await page.goto(`${desk}/shop-screen`);
-    await expect(page.getByRole('heading', { name: hi['owner.screen.pairTitle'] })).toBeVisible();
-    await expect(page.getByText(hi['owner.screen.gone'])).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: hinglish['owner.screen.pairTitle'] }),
+    ).toBeVisible();
+    await expect(page.getByText(hinglish['owner.screen.gone'])).toBeVisible();
     await expect(qr(page)).toHaveCount(0);
   } finally {
     await context.close();
@@ -342,7 +346,9 @@ test('someone signed in on the same browser lends the screen nothing', async ({ 
     await watch(page);
     const seen = page.waitForRequest((request) => request.url().endsWith('/screen/pair'));
     await page.goto(`${desk}/shop-screen`);
-    await expect(page.getByRole('heading', { name: hi['owner.screen.pairTitle'] })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: hinglish['owner.screen.pairTitle'] }),
+    ).toBeVisible();
     const code = await newCode();
     const answer = pair(page, code);
     expect((await (await seen).allHeaders()).cookie).toBeUndefined();
@@ -360,7 +366,7 @@ test('says so when hazri has not started at this shop', async ({ browser }) => {
   try {
     await page.goto(`${desk}/shop-screen`);
     await pair(page, await newCode());
-    await expect(page.getByText(hi['owner.screen.notStarted'])).toBeVisible();
+    await expect(page.getByText(hinglish['owner.screen.notStarted'])).toBeVisible();
     // The code still shows, because linking a new phone needs it before hazri starts.
     await expect(qr(page)).toBeVisible();
   } finally {

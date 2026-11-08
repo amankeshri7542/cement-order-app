@@ -62,7 +62,7 @@ export function tickText(minutes: number, t: Say) {
 }
 /** Selling units in the desk's own words. The shared label turns them into Devanagari. */
 export function unitWord(unit: string, language: Language) {
-  return language === 'hi' ? unit.replace(/\bbags?\b/gi, 'bori') : unit;
+  return language !== 'en' ? unit.replace(/\bbags?\b/gi, 'bori') : unit;
 }
 /** Machines by name, and the API's word for someone with no name, in the desk's own words. */
 export function nameOf(name: string, t: Say) {

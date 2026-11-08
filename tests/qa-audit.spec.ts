@@ -1,7 +1,7 @@
 import { type Page } from '@playwright/test';
 import { PrismaClient } from '@prisma/client';
 import { hashPassword } from '../apps/api/src/security';
-import { test, expect } from './fixtures';
+import { test, expect, deskLanguage } from './fixtures';
 import { grantOwners } from '../apps/api/test/staff-helper';
 
 test('catalogue and material details render without View text-node warnings', async ({ page }) => {
@@ -43,7 +43,7 @@ test.beforeAll(async () => {
 test.afterAll(() => db.$disconnect());
 
 async function requestOwnerCode(page: Page, phone: string) {
-  await page.addInitScript(() => localStorage.setItem('shiv-owner-language', 'en'));
+  await deskLanguage(page.context(), 'en');
   await page.goto('http://localhost:3001/today');
   await page.getByRole('textbox', { name: 'Staff mobile number' }).fill(phone);
   const sent = page.waitForResponse((r) => r.url().endsWith('/auth/otp/request'));
@@ -136,7 +136,7 @@ test('revoked owner session returns to OTP login without a page reload', async (
 });
 test('owner login fits 360px with doubled text sizes', async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 800 });
-  await page.addInitScript(() => localStorage.setItem('shiv-owner-language', 'en'));
+  await deskLanguage(page.context(), 'en');
   await page.goto('http://localhost:3001/today');
   await expect(page.getByRole('button', { name: 'Get verification code' })).toBeVisible();
   // Text enlargement simulation, not an actual phone accessibility setting or browser zoom.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { orderStatusText } from '@shiv/shared';
+import { orderStatusText, siteLanguage } from '@shiv/shared';
 import { notifyCustomer, pushText } from '../src/notify';
 
 function fakeTx(language: string | null) {
@@ -37,7 +37,7 @@ describe('customer notifications', () => {
     ]);
   });
 
-  it('default to Hindi when the customer never chose or the account is unknown', async () => {
+  it('default to Hinglish when the customer never chose or the account is unknown', async () => {
     for (const language of [null, '', 'fr']) {
       const { created, tx } = fakeTx(language);
       await notifyCustomer(tx, 'u1', pushText('quoteReady', { number: 'Q-9' }));
@@ -48,7 +48,7 @@ describe('customer notifications', () => {
   it('says the order status in the reader’s own words', async () => {
     const words = pushText('orderStatus', (language) => ({
       number: 'SC-2',
-      status: orderStatusText('OUT_FOR_DELIVERY', language),
+      status: orderStatusText('OUT_FOR_DELIVERY', siteLanguage(language)),
     }));
     expect(words('hi')).toEqual({
       title: 'Order ka haal',

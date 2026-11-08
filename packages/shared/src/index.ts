@@ -404,7 +404,10 @@ const inr = new Intl.NumberFormat('en-IN', {
   maximumFractionDigits: 2,
 });
 export const money = (value: number) => inr.format(value / 100);
-export const statusLabel = (value: string, language: 'hi' | 'en' = 'hi') => {
+export const statusLabel = (
+  value: string,
+  language: import('@shiv/i18n').Language = 'hinglish',
+) => {
   const key = `status.${value}`;
   return isMessageKey(key) ? translate(key, {}, language) : value;
 };
@@ -779,16 +782,21 @@ const shopName = z
   .min(2)
   .max(60)
   .refine((value) => !/[<>]/.test(value), 'Use letters and numbers only.');
-/** A person's own look (plan v4 B1): theme and the "Bada akshar" text size. Either may be sent alone. */
+/**
+ * A person's own look and language (plan v4 B1, B2): theme, the "Bada akshar" text size, and the
+ * language their screens and the shop's messages to them use. Any of them may be sent alone.
+ */
 export const preferencesSchema = z
   .strictObject({
     theme: z.enum(['auto', 'light', 'dark']).optional(),
     textSize: z.enum(['normal', 'large', 'larger']).optional(),
+    language: z.enum(['hinglish', 'en', 'hi']).optional(),
   })
-  .refine((input) => Object.keys(input).length > 0, 'Send a theme or a text size.');
+  .refine((input) => Object.keys(input).length > 0, 'Send a theme, a text size or a language.');
 export type Preferences = {
   theme?: 'auto' | 'light' | 'dark';
   textSize?: 'normal' | 'large' | 'larger';
+  language?: import('@shiv/i18n').Language;
 };
 export const locationCreateSchema = z.strictObject({
   name: shopName,

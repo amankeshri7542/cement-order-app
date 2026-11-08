@@ -252,7 +252,7 @@ On a phone the desk switches to its own minimums: body text at least 16 px and f
 
 **The No Light Prices Rule.** Prices and money are never set below weight 400 or in a muted colour.
 
-**The Devanagari Breathing Rule.** When Hindi is active, line height goes from 1.35 to 1.5, so vowel marks do not clip. Check it at Android's largest font size.
+**The Devanagari Breathing Rule.** When Hindi is active, line height goes from 1.35 to 1.5 (`--leading`), and short labels such as tabs and chips from 1.2 to 1.45 (`--leading-tight`), so vowel marks do not clip. `<html lang="hi">` switches both. Check it at Android's largest font size.
 
 ## Layout
 

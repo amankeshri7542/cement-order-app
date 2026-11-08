@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { en, hi } from './index';
+import { en, hinglish } from './index';
 
 const root = join(__dirname, '../../..');
 const hindiScript = new RegExp('[\\u0900-\\u097F]');
@@ -33,14 +33,14 @@ test('no screen falls back on the old pair of words', () => {
     .filter((file) => /\bt\('[^']*',\s*'[^']*'\)/.test(readFileSync(file, 'utf8')));
   assert.deepEqual(found, []);
 });
-test('every desk word exists in both catalogues, in Roman script', () => {
-  const words = hi as Record<string, string>;
+test('every desk word exists in Hinglish, in Roman script', () => {
+  const words = hinglish as Record<string, string>;
   for (const key of Object.keys(en)) {
     assert.ok(words[key], `missing: ${key}`);
     if (key.startsWith('owner.')) assert.ok(!hindiScript.test(words[key]!), key);
   }
   assert.deepEqual(
-    Object.keys(hi).filter((key) => !(key in en)),
+    Object.keys(hinglish).filter((key) => !(key in en)),
     [],
   );
 });
@@ -52,7 +52,7 @@ test('none of the old hashed words remain', () => {
 });
 test('fixed spellings', () => {
   const banned = /\b(udhar|baki|paka|dukan|nahin|maal-|kripya)\b/i;
-  const found = Object.entries(hi as Record<string, string>)
+  const found = Object.entries(hinglish as Record<string, string>)
     .filter(([key, value]) => key.startsWith('owner.') && banned.test(value))
     .map(([key]) => key);
   assert.deepEqual(found, []);

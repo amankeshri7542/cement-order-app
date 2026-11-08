@@ -63,6 +63,8 @@ const refusal = new Set([
 export function NewOrder() {
   const t = useT();
   const { language } = useLanguage();
+  // Product names as the shop wrote them: the Hindi name in Hinglish and Hindi, as before B2.
+  const productLanguage = language === 'en' ? 'en' : 'hi';
   const { me, offline } = useOwner();
   const router = useRouter();
   const params = useSearchParams();
@@ -423,7 +425,7 @@ export function NewOrder() {
               {(products.data?.pages.flatMap((page) => page.items) ?? []).map((product) => (
                 <article key={product.id} className={css.product}>
                   <div>
-                    <h3>{productName(product, language)}</h3>
+                    <h3>{productName(product, productLanguage)}</h3>
                     <p>
                       {product.packSize || product.unit} · <MoneyText value={product.pricePaise} />
                     </p>
@@ -434,13 +436,17 @@ export function NewOrder() {
                     </p>
                   </div>
                   <QuantityStepper
-                    label={`${t('owner.quantity')} ${productName(product, language)}`}
+                    label={`${t('owner.quantity')} ${productName(product, productLanguage)}`}
                     value={draft.quantities[product.id] || 0}
                     min={product.minQuantity}
                     step={product.quantityStep}
                     max={product.stock ?? undefined}
-                    decreaseLabel={t('owner.decrease', { name: productName(product, language) })}
-                    increaseLabel={t('owner.increase', { name: productName(product, language) })}
+                    decreaseLabel={t('owner.decrease', {
+                      name: productName(product, productLanguage),
+                    })}
+                    increaseLabel={t('owner.increase', {
+                      name: productName(product, productLanguage),
+                    })}
                     onChange={(quantity) =>
                       change({ quantities: { ...draft.quantities, [product.id]: quantity } })
                     }
@@ -639,7 +645,7 @@ export function NewOrder() {
             <div key={line.product.id} className={css.summary}>
               <div>
                 <span>
-                  {productName(line.product, language)} × {line.quantity}
+                  {productName(line.product, productLanguage)} × {line.quantity}
                 </span>
                 <MoneyText value={line.pricePaise * line.quantity} />
               </div>

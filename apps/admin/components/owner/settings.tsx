@@ -4,7 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import { Button, EmptyState, Field, MoneyText, Sheet } from '@shiv/design';
 import { momentLabel, type DeliveryZone, type SessionInfo, type StoreSettings } from '@shiv/shared';
 import { api } from '../../lib/api';
-import { useLanguage, useT, useWords } from '../../lib/i18n';
+import { htmlLang, languages, type Language } from '@shiv/i18n';
+import { useChooseLanguage, useLanguage, useT, useWords } from '../../lib/i18n';
 import { useAction, useOwner, useUnsavedGuard } from '../../lib/owner';
 import { chime, disablePush, enablePush, pushEnabled, pushSupported } from '../../lib/push';
 import { PageHeader, Problem, QueryStatus, moneyInput, rupeesToPaise } from './common';
@@ -27,19 +28,28 @@ export { soundOn };
 
 function LanguageSection() {
   const t = useT();
-  const { language, setLanguage } = useLanguage();
+  const { notice } = useOwner();
+  const { language } = useLanguage();
+  const choose = useChooseLanguage();
+  const pick = (next: Language) =>
+    choose(next).catch(() => notice(t('owner.appearance.notSaved'), true));
   return (
     <section className={`${css.card} ${own.section}`}>
       <h2>{t('owner.settings.language')}</h2>
-      <Field label={t('owner.settings.language')}>
-        <select
-          value={language}
-          onChange={(event) => setLanguage(event.target.value === 'en' ? 'en' : 'hi')}
-        >
-          <option value="hi">{t('owner.hindi')}</option>
-          <option value="en">{t('owner.english')}</option>
-        </select>
-      </Field>
+      <fieldset className={own.choices}>
+        <legend>{t('owner.settings.languageHelp')}</legend>
+        {languages.map((value) => (
+          <label key={value} className={own.choice} lang={htmlLang(value)}>
+            <input
+              type="radio"
+              name="language"
+              checked={language === value}
+              onChange={() => void pick(value)}
+            />
+            {t(`language.${value}`)}
+          </label>
+        ))}
+      </fieldset>
     </section>
   );
 }

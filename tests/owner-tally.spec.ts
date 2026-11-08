@@ -3,10 +3,10 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import type { Browser, BrowserContext, Page } from '@playwright/test';
-import { hi, t as translate, type MessageKey } from '@shiv/i18n';
+import { hinglish, t as translate, type MessageKey } from '@shiv/i18n';
 import { addDays, istToday, type StaffRole } from '@shiv/shared';
 import { clearTally } from '../apps/api/test/tally-helper';
-import { test, expect } from './fixtures';
+import { test, expect, deskLanguage } from './fixtures';
 
 // The Tally page and the customer's two numbers on the real desk, API and database, as each role.
 // The mirror is seeded the way apps/api/test/tally-helper.ts seeds it: no Tally and no PC are called.
@@ -21,7 +21,7 @@ const PAST_SAFE_SHOWN = '₹90,07,19,92,54,74,099.31';
 let counter = 0;
 const freshPhone = () => `9${String(Date.now()).slice(-8)}${counter++ % 10}`;
 const say = (key: MessageKey, params?: Record<string, string | number>) =>
-  translate(key, params, 'hi');
+  translate(key, params, 'hinglish');
 const today = istToday();
 const daysAgo = (days: number) => addDays(today, -days);
 const COPY_FROM = daysAgo(200);
@@ -67,22 +67,22 @@ async function customer(name: string) {
 async function open(browser: Browser, width: number, height: number) {
   const context = await browser.newContext({ viewport: { width, height } });
   const page = await context.newPage();
-  await page.addInitScript(() => localStorage.setItem('shiv-owner-language', 'hi'));
+  await deskLanguage(page.context(), 'hinglish');
   return { context, page };
 }
 const laptop = (browser: Browser) => open(browser, 1440, 900);
 const phone = (browser: Browser) => open(browser, 390, 844);
 async function signIn(page: Page, digits: string, path: string) {
   await page.goto(`${desk}${path}`);
-  await page.getByRole('textbox', { name: hi['owner.loginPhone'] }).fill(digits);
+  await page.getByRole('textbox', { name: hinglish['owner.loginPhone'] }).fill(digits);
   const sent = page.waitForResponse(
     (r) => r.url().endsWith('/auth/otp/request') && r.status() === 201,
   );
-  await page.getByRole('button', { name: hi['owner.sendCode'] }).click();
+  await page.getByRole('button', { name: hinglish['owner.sendCode'] }).click();
   await page
-    .getByRole('textbox', { name: hi['owner.code'], exact: true })
+    .getByRole('textbox', { name: hinglish['owner.code'], exact: true })
     .fill((await (await sent).json()).devCode);
-  await page.getByRole('button', { name: hi['owner.signIn'] }).click();
+  await page.getByRole('button', { name: hinglish['owner.signIn'] }).click();
 }
 /** What the API itself says to this person, past whatever the screen hides. */
 const asked = (context: BrowserContext, path: string) => context.request.get(`${api}${path}`);
@@ -237,9 +237,9 @@ test('not connected yet: each person is told what comes next, and no number is m
   const { context, page } = await laptop(browser);
   await signIn(page, owner.digits, '/tally');
   const main = page.locator('main');
-  await expect(main.getByRole('heading', { name: hi['owner.crm.tally.notConnected'] })).toBeVisible(
-    { timeout: 60000 },
-  );
+  await expect(
+    main.getByRole('heading', { name: hinglish['owner.crm.tally.notConnected'] }),
+  ).toBeVisible({ timeout: 60000 });
   for (const key of [
     'owner.tally.empty.body',
     'owner.tally.empty.step1',
@@ -247,33 +247,35 @@ test('not connected yet: each person is told what comes next, and no number is m
     'owner.tally.empty.step3',
     'owner.tally.empty.step4',
   ] as const)
-    await expect(main.getByText(hi[key])).toBeVisible();
-  await expect(main.getByRole('button', { name: hi['owner.tally.connect'] })).toBeVisible();
+    await expect(main.getByText(hinglish[key])).toBeVisible();
+  await expect(main.getByRole('button', { name: hinglish['owner.tally.connect'] })).toBeVisible();
   await expect(main.getByText(/₹/)).toHaveCount(0);
   await shot(page, 'empty-owner-laptop');
-  await page.getByRole('tab', { name: hi['owner.tally.tab.party'] }).click();
-  await expect(main.getByText(hi['owner.crm.tally.notConnected'])).toBeVisible();
-  await expect(main.getByRole('link', { name: hi['owner.tally.goHaal'] })).toBeVisible();
-  await page.getByRole('tab', { name: hi['owner.tally.tab.farq'] }).click();
+  await page.getByRole('tab', { name: hinglish['owner.tally.tab.party'] }).click();
+  await expect(main.getByText(hinglish['owner.crm.tally.notConnected'])).toBeVisible();
+  await expect(main.getByRole('link', { name: hinglish['owner.tally.goHaal'] })).toBeVisible();
+  await page.getByRole('tab', { name: hinglish['owner.tally.tab.farq'] }).click();
   await expect(page).toHaveURL(/tab=farq/);
-  await expect(main.getByText(hi['owner.crm.tally.notConnected'])).toBeVisible();
+  await expect(main.getByText(hinglish['owner.crm.tally.notConnected'])).toBeVisible();
   // The customer page keeps working, and says the same.
   await page.goto(`${desk}/customers/${someone.id}`);
   await expect(page.getByRole('heading', { name: someone.name, exact: true })).toBeVisible();
-  await expect(main.getByText(hi['owner.crm.tally.notConnected'])).toBeVisible();
-  await page.getByRole('tab', { name: hi['owner.tally.numbers.tab'] }).click();
-  const panel = main.getByRole('region', { name: hi['owner.tally.numbers.title'] });
-  await expect(panel.getByText(hi['owner.crm.tally.notConnected'])).toBeVisible();
-  await expect(panel.getByRole('link', { name: hi['owner.tally.goHaal'] })).toBeVisible();
+  await expect(main.getByText(hinglish['owner.crm.tally.notConnected'])).toBeVisible();
+  await page.getByRole('tab', { name: hinglish['owner.tally.numbers.tab'] }).click();
+  const panel = main.getByRole('region', { name: hinglish['owner.tally.numbers.title'] });
+  await expect(panel.getByText(hinglish['owner.crm.tally.notConnected'])).toBeVisible();
+  await expect(panel.getByRole('link', { name: hinglish['owner.tally.goHaal'] })).toBeVisible();
   await context.close();
 
   const accountant = await staff('ACCOUNTANT');
   const second = await phone(browser);
   await signIn(second.page, accountant.digits, '/tally');
   const hers = second.page.locator('main');
-  await expect(hers.getByText(hi['owner.tally.empty.notYours'])).toBeVisible({ timeout: 30000 });
-  await expect(hers.getByText(hi['owner.tally.port.prime'])).toBeVisible();
-  await expect(hers.getByRole('button', { name: hi['owner.tally.connect'] })).toHaveCount(0);
+  await expect(hers.getByText(hinglish['owner.tally.empty.notYours'])).toBeVisible({
+    timeout: 30000,
+  });
+  await expect(hers.getByText(hinglish['owner.tally.port.prime'])).toBeVisible();
+  await expect(hers.getByRole('button', { name: hinglish['owner.tally.connect'] })).toHaveCount(0);
   await fitsWidth(second.page);
   await shot(second.page, 'empty-accountant-phone');
   await second.context.close();
@@ -287,11 +289,15 @@ test('an owner connects a PC with a code shown once, says which file is real, st
   const { context, page } = await laptop(browser);
   await signIn(page, owner.digits, '/tally');
   const main = page.locator('main');
-  await main.getByRole('button', { name: hi['owner.tally.connect'] }).click();
-  const sheet = page.getByRole('dialog', { name: hi['owner.tally.connect'] });
-  await expect(sheet.getByRole('button', { name: hi['owner.tally.pair.make'] })).toBeDisabled();
-  await sheet.getByRole('textbox', { name: hi['owner.tally.pair.name'] }).fill('Sample Counter PC');
-  await sheet.getByRole('button', { name: hi['owner.tally.pair.make'] }).click();
+  await main.getByRole('button', { name: hinglish['owner.tally.connect'] }).click();
+  const sheet = page.getByRole('dialog', { name: hinglish['owner.tally.connect'] });
+  await expect(
+    sheet.getByRole('button', { name: hinglish['owner.tally.pair.make'] }),
+  ).toBeDisabled();
+  await sheet
+    .getByRole('textbox', { name: hinglish['owner.tally.pair.name'] })
+    .fill('Sample Counter PC');
+  await sheet.getByRole('button', { name: hinglish['owner.tally.pair.make'] }).click();
   const made = page.getByRole('dialog', {
     name: say('owner.tally.pair.codeTitle', { pc: 'Sample Counter PC' }),
   });
@@ -303,13 +309,13 @@ test('an owner connects a PC with a code shown once, says which file is real, st
   // Only its keyed hash is kept, and once this closes nobody can read it again.
   const stored = await db.tallyPairingCode.findFirstOrThrow({ where: { createdById: owner.id } });
   expect(stored.hash).not.toContain(code);
-  await made.getByRole('button', { name: hi['owner.tally.pair.done'] }).click();
+  await made.getByRole('button', { name: hinglish['owner.tally.pair.done'] }).click();
   await expect(page.getByText(code)).toHaveCount(0);
-  await main.getByRole('button', { name: hi['owner.tally.connect'] }).click();
+  await main.getByRole('button', { name: hinglish['owner.tally.connect'] }).click();
   await expect(page.getByTestId('pair-code')).toHaveCount(0);
   await page
-    .getByRole('dialog', { name: hi['owner.tally.connect'] })
-    .getByRole('button', { name: hi['owner.close'] })
+    .getByRole('dialog', { name: hinglish['owner.tally.connect'] })
+    .getByRole('button', { name: hinglish['owner.close'] })
     .click();
 
   // The PC pairs itself and reports a company, which waits for a person.
@@ -325,65 +331,67 @@ test('an owner connects a PC with a code shown once, says which file is real, st
   await page.reload();
   const pcCard = main.locator('article').filter({ hasText: 'Sample Counter PC' });
   const firm = main.locator('article').filter({ hasText: 'Sample New Books' });
-  await expect(pcCard.getByText(hi['owner.tally.state.OK'], { exact: true })).toBeVisible();
-  await expect(firm.getByText(hi['owner.tally.role.PENDING'], { exact: true })).toBeVisible();
-  await expect(firm.getByText(hi['owner.tally.company.pendingBody'])).toBeVisible();
+  await expect(pcCard.getByText(hinglish['owner.tally.state.OK'], { exact: true })).toBeVisible();
+  await expect(firm.getByText(hinglish['owner.tally.role.PENDING'], { exact: true })).toBeVisible();
+  await expect(firm.getByText(hinglish['owner.tally.company.pendingBody'])).toBeVisible();
   await shot(page, 'company-pending-laptop');
   // Saying no leaves it alone. Nothing starts without a yes.
-  const primary = firm.getByRole('button', { name: hi['owner.tally.company.setPrimary'] });
+  const primary = firm.getByRole('button', { name: hinglish['owner.tally.company.setPrimary'] });
   await primary.click();
   const startAsk = page.getByRole('dialog', {
     name: say('owner.tally.company.primaryTitle', { name: 'Sample New Books' }),
   });
-  await startAsk.getByRole('button', { name: hi['owner.keepEditing'] }).click();
+  await startAsk.getByRole('button', { name: hinglish['owner.keepEditing'] }).click();
   await expect(startAsk).toBeHidden();
   expect((await db.tallyCompany.findUniqueOrThrow({ where: { id: waiting.id } })).role).toBe(
     'PENDING',
   );
   await primary.click();
-  await startAsk.getByRole('button', { name: hi['owner.tally.company.primaryYes'] }).click();
-  await expect(firm.getByText(hi['owner.tally.role.PRIMARY'], { exact: true })).toBeVisible();
+  await startAsk.getByRole('button', { name: hinglish['owner.tally.company.primaryYes'] }).click();
+  await expect(firm.getByText(hinglish['owner.tally.role.PRIMARY'], { exact: true })).toBeVisible();
   expect(await db.tallyCompany.findUniqueOrThrow({ where: { id: waiting.id } })).toMatchObject({
     role: 'PRIMARY',
     copyFrom: expect.any(String),
   });
-  await expect(firm.getByText(hi['owner.tally.phase.MASTERS'])).toBeVisible();
-  await expect(firm.getByText(hi['owner.tally.neverFresh'])).toBeVisible();
+  await expect(firm.getByText(hinglish['owner.tally.phase.MASTERS'])).toBeVisible();
+  await expect(firm.getByText(hinglish['owner.tally.neverFresh'])).toBeVisible();
 
   // Bridge roko, and back on.
-  await main.getByRole('button', { name: hi['owner.tally.pauseAll'] }).click();
-  const stop = page.getByRole('dialog', { name: hi['owner.tally.pauseAllTitle'] });
-  await stop.getByRole('button', { name: hi['owner.tally.pauseAllYes'] }).click();
-  await expect(pcCard.getByText(hi['owner.tally.state.PAUSED'], { exact: true })).toBeVisible();
+  await main.getByRole('button', { name: hinglish['owner.tally.pauseAll'] }).click();
+  const stop = page.getByRole('dialog', { name: hinglish['owner.tally.pauseAllTitle'] });
+  await stop.getByRole('button', { name: hinglish['owner.tally.pauseAllYes'] }).click();
+  await expect(
+    pcCard.getByText(hinglish['owner.tally.state.PAUSED'], { exact: true }),
+  ).toBeVisible();
   expect((await db.tallyDevice.findUniqueOrThrow({ where: { id: counter.id } })).pausedAt).not.toBe(
     null,
   );
-  await main.getByRole('button', { name: hi['owner.tally.resumeAll'] }).click();
-  await expect(pcCard.getByText(hi['owner.tally.state.OK'], { exact: true })).toBeVisible();
+  await main.getByRole('button', { name: hinglish['owner.tally.resumeAll'] }).click();
+  await expect(pcCard.getByText(hinglish['owner.tally.state.OK'], { exact: true })).toBeVisible();
   expect((await db.tallyDevice.findUniqueOrThrow({ where: { id: counter.id } })).pausedAt).toBe(
     null,
   );
 
   // Cutting off asks first, and "no" means no.
-  await pcCard.getByRole('button', { name: hi['owner.tally.cutOff'] }).click();
+  await pcCard.getByRole('button', { name: hinglish['owner.tally.cutOff'] }).click();
   const cutAsk = page.getByRole('dialog', {
     name: say('owner.tally.cutOffTitle', { pc: 'Sample Counter PC' }),
   });
-  await expect(cutAsk.getByText(hi['owner.tally.cutOffBody'])).toBeVisible();
-  await cutAsk.getByRole('button', { name: hi['owner.keepEditing'] }).click();
+  await expect(cutAsk.getByText(hinglish['owner.tally.cutOffBody'])).toBeVisible();
+  await cutAsk.getByRole('button', { name: hinglish['owner.keepEditing'] }).click();
   expect((await db.tallyDevice.findUniqueOrThrow({ where: { id: counter.id } })).revokedAt).toBe(
     null,
   );
-  await pcCard.getByRole('button', { name: hi['owner.tally.cutOff'] }).click();
-  await cutAsk.getByRole('button', { name: hi['owner.tally.cutOffYes'] }).click();
+  await pcCard.getByRole('button', { name: hinglish['owner.tally.cutOff'] }).click();
+  await cutAsk.getByRole('button', { name: hinglish['owner.tally.cutOffYes'] }).click();
   await expect(main.getByText(say('owner.tally.cutPcs', { count: 1 }))).toBeVisible();
   expect(
     (await db.tallyDevice.findUniqueOrThrow({ where: { id: counter.id } })).revokedAt,
   ).not.toBe(null);
   // Nothing is left to copy this file, and the page says so with what to do next.
-  await expect(firm.getByText(hi['owner.tally.company.pcGone'])).toBeVisible();
-  await expect(main.getByText(hi['owner.tally.noPc'])).toBeVisible();
-  await expect(main.getByText(hi['owner.tally.empty.step2'])).toBeVisible();
+  await expect(firm.getByText(hinglish['owner.tally.company.pcGone'])).toBeVisible();
+  await expect(main.getByText(hinglish['owner.tally.noPc'])).toBeVisible();
+  await expect(main.getByText(hinglish['owner.tally.empty.step2'])).toBeVisible();
   await context.close();
 });
 
@@ -440,31 +448,31 @@ test('each PC and company state reads in plain words, and a sleeping PC is no al
   // In shop hours a silent PC needs someone. After closing it is expected, and costs nobody a look.
   if (hours >= 8 && hours < 20)
     await expect(
-      card('Sample Quiet PC').getByText(hi['owner.tally.state.PC_SILENT'], { exact: true }),
+      card('Sample Quiet PC').getByText(hinglish['owner.tally.state.PC_SILENT'], { exact: true }),
     ).toBeVisible();
   else {
     await expect(
-      card('Sample Quiet PC').getByText(hi['owner.tally.state.PC_ASLEEP'], { exact: true }),
+      card('Sample Quiet PC').getByText(hinglish['owner.tally.state.PC_ASLEEP'], { exact: true }),
     ).toBeVisible();
     await expect(card('Sample Quiet PC').getByText(/Aapko kuch nahi karna/)).toBeVisible();
   }
   await expect(
-    card('Sample Port PC').getByText(hi['owner.tally.state.PORT_OFF'], { exact: true }),
+    card('Sample Port PC').getByText(hinglish['owner.tally.state.PORT_OFF'], { exact: true }),
   ).toBeVisible();
-  await expect(card('Sample Port PC').getByText(hi['owner.tally.port.prime'])).toBeVisible();
-  await expect(card('Sample Port PC').getByText(hi['owner.tally.port.erp9'])).toBeVisible();
+  await expect(card('Sample Port PC').getByText(hinglish['owner.tally.port.prime'])).toBeVisible();
+  await expect(card('Sample Port PC').getByText(hinglish['owner.tally.port.erp9'])).toBeVisible();
   await expect(
-    card('Sample Closed PC').getByText(hi['owner.tally.state.TALLY_CLOSEDBody']),
+    card('Sample Closed PC').getByText(hinglish['owner.tally.state.TALLY_CLOSEDBody']),
   ).toBeVisible();
   await expect(
-    card('Sample Licence PC').getByText(hi['owner.tally.state.EDUCATIONALBody']),
+    card('Sample Licence PC').getByText(hinglish['owner.tally.state.EDUCATIONALBody']),
   ).toBeVisible();
   // Busy is the technical person's to watch, not an owner's.
   await expect(
-    card('Sample Busy PC').getByText(hi['owner.tally.state.OK'], { exact: true }),
+    card('Sample Busy PC').getByText(hinglish['owner.tally.state.OK'], { exact: true }),
   ).toBeVisible();
   await expect(
-    card('Sample Busy PC').getByText(hi['owner.tally.state.BUSY'], { exact: true }),
+    card('Sample Busy PC').getByText(hinglish['owner.tally.state.BUSY'], { exact: true }),
   ).toHaveCount(0);
   await expect(card('Sample Full PC').getByText(/disk bhar rahi hai/)).toBeVisible();
   await expect(card('Sample Full PC').getByText(/doosre computer ki hai/)).toBeVisible();
@@ -486,31 +494,31 @@ test('each PC and company state reads in plain words, and a sleeping PC is no al
   await expect(oldCard.getByText(/Yeh copy purani hai/)).toBeVisible();
   await expect(oldCard.getByText(/baar baar ruk raha hai/)).toBeVisible();
   await expect(
-    card('Sample Rewritten File').getByText(hi['owner.tally.tie.REWRITTEN']),
+    card('Sample Rewritten File').getByText(hinglish['owner.tally.tie.REWRITTEN']),
   ).toBeVisible();
   await expect(
-    card('Sample Twin File').getByText(hi['owner.tally.company.sameName']),
+    card('Sample Twin File').getByText(hinglish['owner.tally.company.sameName']),
   ).toBeVisible();
   await expect(
-    card('Sample Copy File').getByText(hi['owner.tally.role.BRANCH_COPY'], { exact: true }),
+    card('Sample Copy File').getByText(hinglish['owner.tally.role.BRANCH_COPY'], { exact: true }),
   ).toBeVisible();
   await expect(card('Sample Copy File').getByText(/Tally copy ho raha hai/)).toHaveCount(0);
   await shot(page, 'haal-states-laptop');
   // Taking a file out of the count asks first.
   await card('Sample Copy File')
-    .getByRole('button', { name: hi['owner.tally.company.change'] })
+    .getByRole('button', { name: hinglish['owner.tally.company.change'] })
     .click();
   const change = page.getByRole('dialog', {
     name: say('owner.tally.company.changeTitle', { name: 'Sample Copy File' }),
   });
   await expect(
-    change.getByRole('button', { name: hi['owner.tally.company.setCopy'] }),
+    change.getByRole('button', { name: hinglish['owner.tally.company.setCopy'] }),
   ).toHaveAttribute('aria-pressed', 'true');
-  await change.getByRole('button', { name: hi['owner.tally.company.setIgnore'] }).click();
+  await change.getByRole('button', { name: hinglish['owner.tally.company.setIgnore'] }).click();
   await expect(
-    card('Sample Copy File').getByText(hi['owner.tally.role.IGNORE'], { exact: true }),
+    card('Sample Copy File').getByText(hinglish['owner.tally.role.IGNORE'], { exact: true }),
   ).toBeVisible();
-  await change.getByRole('button', { name: hi['owner.close'] }).last().click();
+  await change.getByRole('button', { name: hinglish['owner.close'] }).last().click();
   await context.close();
 
   const small = await phone(browser);
@@ -549,14 +557,16 @@ test('the accountant links parties, biggest first, by one tap, by search and by 
   await expect(main.getByText('₹0 of ₹1,03,030 udhaar juda, 0 of 4 party')).toBeVisible();
   await expect(row('Sample Big Party').getByText('₹90,000', { exact: true })).toBeVisible();
   await expect(
-    row('Sample Big Party').getByText(hi['owner.tally.party.owes'], { exact: true }),
+    row('Sample Big Party').getByText(hinglish['owner.tally.party.owes'], { exact: true }),
   ).toBeVisible();
   await expect(row('Sample Big Party').getByText(/ tak$/)).toBeVisible();
-  await expect(row('Sample Doubtful Party').getByText(hi['owner.crm.tally.notSure'])).toBeVisible();
+  await expect(
+    row('Sample Doubtful Party').getByText(hinglish['owner.crm.tally.notSure']),
+  ).toBeVisible();
   // The suggestion gives its reason, and an accountant reads no customer's whole number.
   const ashaCard = row('Sample Asha Traders');
   await expect(ashaCard.getByText(asha.name)).toBeVisible();
-  await expect(ashaCard.getByText(new RegExp(hi['owner.tally.party.byPHONE']))).toBeVisible();
+  await expect(ashaCard.getByText(new RegExp(hinglish['owner.tally.party.byPHONE']))).toBeVisible();
   await expect(
     ashaCard.getByText(`XXXXXXX${asha.digits.slice(-3)}`, { exact: false }),
   ).toBeVisible();
@@ -564,7 +574,7 @@ test('the accountant links parties, biggest first, by one tap, by search and by 
   await shot(page, 'party-accountant-laptop');
 
   // One tap, then undo.
-  const yes = `${hi['owner.tally.yes']}: ${asha.name}`;
+  const yes = `${hinglish['owner.tally.yes']}: ${asha.name}`;
   await ashaCard.getByRole('button', { name: yes }).click();
   await expect(
     main.getByText(
@@ -582,7 +592,7 @@ test('the accountant links parties, biggest first, by one tap, by search and by 
     confirmedById: accountant.id,
   });
   await shot(page, 'party-undo-laptop');
-  await main.getByRole('button', { name: hi['owner.tally.undo'] }).click();
+  await main.getByRole('button', { name: hinglish['owner.tally.undo'] }).click();
   await expect(row('Sample Asha Traders')).toBeVisible();
   await expect(main.getByText('₹0 of ₹1,03,030 udhaar juda, 0 of 4 party')).toBeVisible();
   expect((await db.tallyPartyLink.findFirstOrThrow({ where: { guid: ashaRow.guid } })).status).toBe(
@@ -592,7 +602,9 @@ test('the accountant links parties, biggest first, by one tap, by search and by 
   // Link again, and undo from the Jude hue list as well.
   await row('Sample Asha Traders').getByRole('button', { name: yes }).click();
   await expect(row('Sample Asha Traders')).toHaveCount(0);
-  await main.getByRole('button', { name: hi['owner.tally.party.linked'], exact: true }).click();
+  await main
+    .getByRole('button', { name: hinglish['owner.tally.party.linked'], exact: true })
+    .click();
   const linkedRow = row('Sample Asha Traders');
   await expect(linkedRow.getByRole('link', { name: asha.name })).toBeVisible();
   await expect(linkedRow.getByRole('link', { name: asha.name })).toHaveAttribute(
@@ -600,43 +612,49 @@ test('the accountant links parties, biggest first, by one tap, by search and by 
     `/customers/${asha.id}?tab=tally`,
   );
   await linkedRow
-    .getByRole('button', { name: `${hi['owner.tally.undo']}: Sample Asha Traders` })
+    .getByRole('button', { name: `${hinglish['owner.tally.undo']}: Sample Asha Traders` })
     .click();
-  await expect(main.getByText(hi['owner.tally.party.noneLinked'])).toBeVisible();
-  await main.getByRole('button', { name: hi['owner.tally.party.todo'] }).click();
+  await expect(main.getByText(hinglish['owner.tally.party.noneLinked'])).toBeVisible();
+  await main.getByRole('button', { name: hinglish['owner.tally.party.todo'] }).click();
 
   // Search for someone already here.
-  await row('Sample Big Party').getByRole('button', { name: hi['owner.tally.party.find'] }).click();
+  await row('Sample Big Party')
+    .getByRole('button', { name: hinglish['owner.tally.party.find'] })
+    .click();
   const sheet = page.getByRole('dialog', {
     name: say('owner.tally.link.title', { party: 'Sample Big Party' }),
   });
   await sheet
-    .getByRole('searchbox', { name: hi['owner.tally.link.search'] })
+    .getByRole('searchbox', { name: hinglish['owner.tally.link.search'] })
     .fill('Nobody By This Name');
-  await expect(sheet.getByText(hi['owner.tally.link.none'])).toBeVisible();
-  await sheet.getByRole('searchbox', { name: hi['owner.tally.link.search'] }).fill(mohan.name);
+  await expect(sheet.getByText(hinglish['owner.tally.link.none'])).toBeVisible();
+  await sheet
+    .getByRole('searchbox', { name: hinglish['owner.tally.link.search'] })
+    .fill(mohan.name);
   await expect(sheet.getByText(`XXXXXXX${mohan.digits.slice(-3)}`, { exact: false })).toBeVisible();
   await shot(page, 'party-search-laptop');
-  await sheet.getByRole('button', { name: `${hi['owner.tally.yes']}: ${mohan.name}` }).click();
+  await sheet
+    .getByRole('button', { name: `${hinglish['owner.tally.yes']}: ${mohan.name}` })
+    .click();
   await expect(sheet).toBeHidden();
   await expect(row('Sample Big Party')).toHaveCount(0);
 
   // A new person, by phone. A wrong number cannot be sent.
   await row('Sample Doubtful Party')
-    .getByRole('button', { name: hi['owner.tally.party.find'] })
+    .getByRole('button', { name: hinglish['owner.tally.party.find'] })
     .click();
   const fresh = page.getByRole('dialog', {
     name: say('owner.tally.link.title', { party: 'Sample Doubtful Party' }),
   });
-  const save = fresh.getByRole('button', { name: hi['owner.tally.link.save'] });
-  await expect(fresh.getByRole('textbox', { name: hi['owner.tally.link.name'] })).toHaveValue(
+  const save = fresh.getByRole('button', { name: hinglish['owner.tally.link.save'] });
+  await expect(fresh.getByRole('textbox', { name: hinglish['owner.tally.link.name'] })).toHaveValue(
     'Sample Doubtful Party',
   );
   await expect(save).toBeDisabled();
-  await fresh.getByRole('textbox', { name: hi['owner.tally.link.phone'] }).fill('12345');
+  await fresh.getByRole('textbox', { name: hinglish['owner.tally.link.phone'] }).fill('12345');
   await expect(save).toBeDisabled();
   const newDigits = freshPhone();
-  await fresh.getByRole('textbox', { name: hi['owner.tally.link.phone'] }).fill(newDigits);
+  await fresh.getByRole('textbox', { name: hinglish['owner.tally.link.phone'] }).fill(newDigits);
   await save.click();
   await expect(fresh).toBeHidden();
   expect(await db.user.findUniqueOrThrow({ where: { phone: `+91${newDigits}` } })).toMatchObject({
@@ -646,45 +664,54 @@ test('the accountant links parties, biggest first, by one tap, by search and by 
 
   // "Grahak nahi", and its undo.
   await row('Sample Cash Sales')
-    .getByRole('button', { name: hi['owner.tally.party.notCustomer'] })
+    .getByRole('button', { name: hinglish['owner.tally.party.notCustomer'] })
     .click();
   await expect(
     main.getByText(say('owner.tally.party.markedLine', { party: 'Sample Cash Sales' })),
   ).toBeVisible();
   await expect(row('Sample Cash Sales')).toHaveCount(0);
-  const show = main.getByRole('group', { name: hi['owner.tally.party.show'] });
-  await show.getByRole('button', { name: hi['owner.tally.party.notCustomers'] }).click();
-  await expect(row('Sample Cash Sales').getByText(hi['owner.tally.party.marked'])).toBeVisible();
-  await main.getByRole('button', { name: hi['owner.tally.undo'], exact: true }).first().click();
+  const show = main.getByRole('group', { name: hinglish['owner.tally.party.show'] });
+  await show.getByRole('button', { name: hinglish['owner.tally.party.notCustomers'] }).click();
+  await expect(
+    row('Sample Cash Sales').getByText(hinglish['owner.tally.party.marked']),
+  ).toBeVisible();
+  await main
+    .getByRole('button', { name: hinglish['owner.tally.undo'], exact: true })
+    .first()
+    .click();
   await expect(row('Sample Cash Sales')).toHaveCount(0);
 
   // Someone else got there first: said in words, and the row shows the truth.
-  await show.getByRole('button', { name: hi['owner.tally.party.todo'] }).click();
+  await show.getByRole('button', { name: hinglish['owner.tally.party.todo'] }).click();
   await expect(row('Sample Asha Traders').getByRole('button', { name: yes })).toBeVisible();
   await db.tallyPartyLink.update({
     where: { companyId_guid: { companyId: firm.id, guid: ashaRow.guid } },
     data: { userId: mohan.id, status: 'LINKED' },
   });
   await row('Sample Asha Traders').getByRole('button', { name: yes }).click();
-  await expect(page.getByText(hi['error.TALLY_LINK_TAKEN'])).toBeVisible();
+  await expect(page.getByText(hinglish['error.TALLY_LINK_TAKEN'])).toBeVisible();
   await expect(row('Sample Asha Traders')).toHaveCount(0);
 
   // The last one, and the to-do list says it is done.
   await row('Sample Cash Sales')
-    .getByRole('button', { name: hi['owner.tally.party.notCustomer'] })
+    .getByRole('button', { name: hinglish['owner.tally.party.notCustomer'] })
     .click();
-  await expect(main.getByText(hi['owner.tally.party.allDone'])).toBeVisible();
+  await expect(main.getByText(hinglish['owner.tally.party.allDone'])).toBeVisible();
 
   // A search that finds nothing says so.
-  await main.getByRole('searchbox', { name: hi['owner.tally.party.search'] }).fill('Zzz Nobody');
-  await expect(main.getByText(hi['owner.tally.party.noMatch'])).toBeVisible();
-  await main.getByRole('searchbox', { name: hi['owner.tally.party.search'] }).fill('');
+  await main
+    .getByRole('searchbox', { name: hinglish['owner.tally.party.search'] })
+    .fill('Zzz Nobody');
+  await expect(main.getByText(hinglish['owner.tally.party.noMatch'])).toBeVisible();
+  await main.getByRole('searchbox', { name: hinglish['owner.tally.party.search'] }).fill('');
 
   // A supplier's dues past 2^53 show to the paisa.
-  await main.getByRole('button', { name: hi['owner.tally.party.creditors'] }).click();
+  await main.getByRole('button', { name: hinglish['owner.tally.party.creditors'] }).click();
   const supplier = row('Sample Cement Supplier');
   await expect(supplier.getByText(PAST_SAFE_SHOWN)).toBeVisible();
-  await expect(supplier.getByText(hi['owner.tally.party.toPay'], { exact: true })).toBeVisible();
+  await expect(
+    supplier.getByText(hinglish['owner.tally.party.toPay'], { exact: true }),
+  ).toBeVisible();
   await shot(page, 'party-big-number-laptop');
   // Nothing here reached the books or the khata.
   expect(await db.tallyLedger.count({ where: { closingPaise: -1250000n } })).toBe(1);
@@ -710,9 +737,9 @@ test('a party’s name is only ever text, whatever Tally holds, in Hindi too', a
     await page.evaluate(() => (window as unknown as { pwned?: number }).pwned),
   ).toBeUndefined();
   // The same in its own search: nothing a person types reaches the database as anything but text.
-  const search = main.getByRole('searchbox', { name: hi['owner.tally.party.search'] });
+  const search = main.getByRole('searchbox', { name: hinglish['owner.tally.party.search'] });
   await search.fill(`' OR 1=1 --`);
-  await expect(main.getByText(hi['owner.tally.party.noMatch'])).toBeVisible();
+  await expect(main.getByText(hinglish['owner.tally.party.noMatch'])).toBeVisible();
   await search.fill('सैंपल');
   await expect(main.getByRole('heading', { name: 'सैंपल पार्टी' })).toBeVisible();
   await expect(main.locator('article')).toHaveCount(1);
@@ -768,12 +795,11 @@ test('both numbers, each line in words, adding up on screen, with one-tap matche
   const { context, page } = await laptop(browser);
   await signIn(page, owner.digits, `/customers/${ramesh.id}?tab=tally`);
   const main = page.locator('main');
-  const panel = main.getByRole('region', { name: hi['owner.tally.numbers.title'] });
+  const panel = main.getByRole('region', { name: hinglish['owner.tally.numbers.title'] });
   await expect(panel).toBeVisible({ timeout: 60000 });
-  await expect(page.getByRole('tab', { name: hi['owner.tally.numbers.tab'] })).toHaveAttribute(
-    'aria-selected',
-    'true',
-  );
+  await expect(
+    page.getByRole('tab', { name: hinglish['owner.tally.numbers.tab'] }),
+  ).toHaveAttribute('aria-selected', 'true');
   // Khata ₹1,998, Tally ₹1,548 with its time, so a difference of ₹450.
   await expect(panel.getByText('₹1,998', { exact: true })).toBeVisible();
   await expect(panel.getByText('₹1,548', { exact: true })).toBeVisible();
@@ -783,7 +809,7 @@ test('both numbers, each line in words, adding up on screen, with one-tap matche
   await expect(main.getByText(/^Tally ₹1,548 · /)).toBeVisible();
   await expect(main.getByText(/Khate se farq ₹450/)).toBeVisible();
 
-  const why = panel.getByRole('region', { name: hi['owner.tally.numbers.why'] });
+  const why = panel.getByRole('region', { name: hinglish['owner.tally.numbers.why'] });
   for (const key of [
     'owner.tally.line.OPENING',
     'owner.tally.line.TIMING',
@@ -792,8 +818,8 @@ test('both numbers, each line in words, adding up on screen, with one-tap matche
     'owner.tally.line.AMOUNT',
     'owner.tally.line.unexplained',
   ] as const)
-    await expect(why.getByText(hi[key]).first()).toBeVisible();
-  await expect(why.getByText(hi['owner.tally.numbers.addsUp'])).toBeVisible();
+    await expect(why.getByText(hinglish[key]).first()).toBeVisible();
+  await expect(why.getByText(hinglish['owner.tally.numbers.addsUp'])).toBeVisible();
   // What the screen shows must itself add up: every line, to the total under it, read off the page.
   const amounts = async () =>
     ((await why.innerText()).match(/[+-]₹[\d,.]+/g) ?? []).map((shown) => {
@@ -810,15 +836,17 @@ test('both numbers, each line in words, adding up on screen, with one-tap matche
   // The line a person can act on carries its own number and date.
   await expect(why.getByText(/SAMPLE-ONLY/)).toBeVisible();
   // A fact about a matched voucher, adding nothing to the sum.
-  const changes = panel.getByRole('region', { name: hi['owner.tally.numbers.changes'] });
+  const changes = panel.getByRole('region', { name: hinglish['owner.tally.numbers.changes'] });
   await expect(changes.getByText(/₹1,000 se ₹950/)).toBeVisible();
-  await expect(panel.getByText(hi['owner.crm.tally.notSure']).first()).toBeVisible();
+  await expect(panel.getByText(hinglish['owner.crm.tally.notSure']).first()).toBeVisible();
   await shot(page, 'customer-numbers-laptop');
 
   // A suggestion is one tap, changes neither book, and can be taken back.
-  const suggestions = panel.getByRole('region', { name: hi['owner.tally.numbers.suggest'] });
+  const suggestions = panel.getByRole('region', { name: hinglish['owner.tally.numbers.suggest'] });
   await expect(suggestions.getByText(/SAMPLE-NEAR/)).toBeVisible();
-  await suggestions.getByRole('button', { name: new RegExp(`^${hi['owner.tally.yes']}`) }).click();
+  await suggestions
+    .getByRole('button', { name: new RegExp(`^${hinglish['owner.tally.yes']}`) })
+    .click();
   await expect(suggestions).toHaveCount(0);
   await expect(why.getByText(/SAMPLE-NEAR/)).toHaveCount(0);
   await expect(panel.getByText('₹450', { exact: true })).toBeVisible();
@@ -835,24 +863,24 @@ test('both numbers, each line in words, adding up on screen, with one-tap matche
   const newTotal = again.pop()!;
   expect(again.reduce((sum, value) => sum + value, 0n)).toBe(newTotal);
   expect(newTotal).toBe(45000n);
-  const matches = panel.getByRole('region', { name: hi['owner.tally.numbers.matches'] });
+  const matches = panel.getByRole('region', { name: hinglish['owner.tally.numbers.matches'] });
   await expect(matches.getByRole('listitem')).toHaveCount(2);
   await matches.getByRole('button', { name: /SAMPLE-NEAR/ }).click();
   await expect(matches.getByRole('listitem')).toHaveCount(1);
   await expect(
-    panel.getByRole('region', { name: hi['owner.tally.numbers.suggest'] }),
+    panel.getByRole('region', { name: hinglish['owner.tally.numbers.suggest'] }),
   ).toBeVisible();
   // A row in the log, never an edit: both the match and its undo stay.
   expect(await db.khataVoucherMatch.count()).toBe(3);
 
   // Undoing a link asks first, and then it is simply not linked.
-  await panel.getByRole('button', { name: hi['owner.tally.numbers.unlink'] }).click();
+  await panel.getByRole('button', { name: hinglish['owner.tally.numbers.unlink'] }).click();
   const ask = page.getByRole('dialog', {
     name: say('owner.tally.numbers.unlinkTitle', { party: 'Sample Ramesh Ledger' }),
   });
-  await ask.getByRole('button', { name: hi['owner.tally.numbers.unlinkYes'] }).click();
-  await expect(panel.getByText(hi['owner.crm.tally.notLinked'])).toBeVisible();
-  await expect(panel.getByRole('link', { name: hi['owner.tally.goParty'] })).toBeVisible();
+  await ask.getByRole('button', { name: hinglish['owner.tally.numbers.unlinkYes'] }).click();
+  await expect(panel.getByText(hinglish['owner.crm.tally.notLinked'])).toBeVisible();
+  await expect(panel.getByRole('link', { name: hinglish['owner.tally.goParty'] })).toBeVisible();
   await context.close();
 });
 
@@ -895,11 +923,11 @@ test('money past 2^53 shows exactly on the customer page and on the Farq list, a
   await shot(page, 'farq-laptop');
   // Opening one customer goes straight to their numbers.
   await rows.first().getByRole('link', { name: large.name }).click();
-  const panel = main.getByRole('region', { name: hi['owner.tally.numbers.title'] });
+  const panel = main.getByRole('region', { name: hinglish['owner.tally.numbers.title'] });
   await expect(panel).toBeVisible();
   await expect(panel.getByText(PAST_SAFE_SHOWN, { exact: true })).toBeVisible();
   await expect(panel.getByText(`-${PAST_SAFE_SHOWN}`, { exact: true }).first()).toBeVisible();
-  await expect(panel.getByText(hi['owner.tally.numbers.addsUp'])).toBeVisible();
+  await expect(panel.getByText(hinglish['owner.tally.numbers.addsUp'])).toBeVisible();
   await expect(main.getByText(`Tally ${PAST_SAFE_SHOWN}`, { exact: false })).toBeVisible();
   await shot(page, 'customer-big-number-laptop');
   await context.close();
@@ -961,21 +989,23 @@ test('while Tally copies no difference shows anywhere, and an old number says it
   const { context, page } = await laptop(browser);
   await signIn(page, owner.digits, `/customers/${copying.id}?tab=tally`);
   const main = page.locator('main');
-  const panel = main.getByRole('region', { name: hi['owner.tally.numbers.title'] });
+  const panel = main.getByRole('region', { name: hinglish['owner.tally.numbers.title'] });
   await expect(panel).toBeVisible({ timeout: 60000 });
   // Both numbers and the time show. What is between them does not, until the copy is done.
   await expect(panel.getByText('₹70', { exact: true })).toBeVisible();
   await expect(panel.getByText('₹50', { exact: true })).toBeVisible();
-  await expect(panel.getByText(hi['owner.crm.tally.copying'])).toBeVisible();
-  await expect(panel.getByText(hi['owner.tally.line.total'])).toHaveCount(0);
-  await expect(panel.getByRole('region', { name: hi['owner.tally.numbers.why'] })).toHaveCount(0);
+  await expect(panel.getByText(hinglish['owner.crm.tally.copying'])).toBeVisible();
+  await expect(panel.getByText(hinglish['owner.tally.line.total'])).toHaveCount(0);
+  await expect(
+    panel.getByRole('region', { name: hinglish['owner.tally.numbers.why'] }),
+  ).toHaveCount(0);
   await expect(main.getByText(/Khate se farq/)).toHaveCount(0);
   await expect(main.getByText('₹20', { exact: true })).toHaveCount(0);
   const response = await asked(context, `/admin/tally/customers/${copying.id}/numbers`);
   expect((await response.json()).tally.differencePaise).toBeNull();
   await shot(page, 'customer-copying-laptop');
   await page.goto(`${desk}/tally?tab=farq`);
-  await expect(main.getByText(hi['owner.tally.farq.copying'])).toBeVisible();
+  await expect(main.getByText(hinglish['owner.tally.farq.copying'])).toBeVisible();
   await expect(main.getByRole('link', { name: copying.name })).toHaveCount(0);
   await page.goto(`${desk}/tally?tab=haal`);
   await expect(main.getByText(/Tally copy ho raha hai: 49%/)).toBeVisible();
@@ -989,7 +1019,7 @@ test('while Tally copies no difference shows anywhere, and an old number says it
   await page.goto(`${desk}/customers/${copying.id}?tab=tally`);
   await expect(panel.getByText(/Yeh Tally number purana hai: .* tak ka\./)).toBeVisible();
   await expect(main.getByText(/Yeh Tally number purana hai: .* tak ka\./)).toHaveCount(2);
-  await expect(panel.getByText(hi['owner.tally.line.total'])).not.toHaveCount(0);
+  await expect(panel.getByText(hinglish['owner.tally.line.total'])).not.toHaveCount(0);
   await shot(page, 'customer-stale-laptop');
   await page.goto(`${desk}/tally?tab=haal`);
   await expect(main.getByText(/Yeh copy purani hai/)).toBeVisible();
@@ -1003,8 +1033,8 @@ test('while Tally copies no difference shows anywhere, and an old number says it
     data: { phase: 'MASTERS', rewrittenAt: new Date(), freshAt: new Date() },
   });
   await page.goto(`${desk}/customers/${copying.id}?tab=tally`);
-  await expect(panel.getByText(hi['owner.tally.numbers.rewritten'])).toBeVisible();
-  await expect(panel.getByText(hi['owner.tally.numbers.tied'])).toHaveCount(0);
+  await expect(panel.getByText(hinglish['owner.tally.numbers.rewritten'])).toBeVisible();
+  await expect(panel.getByText(hinglish['owner.tally.numbers.tied'])).toHaveCount(0);
   await context.close();
 });
 
@@ -1033,22 +1063,23 @@ test('a manager and a cashier see no Tally number anywhere, and the API refuses 
       timeout: 60000,
     });
     // An address cannot open what the job does not include.
-    await expect(page.getByRole('tab', { name: hi['owner.crm.tab.everything'] })).toHaveAttribute(
-      'aria-selected',
-      'true',
+    await expect(
+      page.getByRole('tab', { name: hinglish['owner.crm.tab.everything'] }),
+    ).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('tab', { name: hinglish['owner.tally.numbers.tab'] })).toHaveCount(
+      0,
     );
-    await expect(page.getByRole('tab', { name: hi['owner.tally.numbers.tab'] })).toHaveCount(0);
     await expect(main.getByText(/Tally/)).toHaveCount(0);
     await expect(page.getByText('76,543')).toHaveCount(0);
-    await expect(page.getByRole('link', { name: hi['owner.tally.nav'], exact: true })).toHaveCount(
-      0,
-    );
+    await expect(
+      page.getByRole('link', { name: hinglish['owner.tally.nav'], exact: true }),
+    ).toHaveCount(0);
     await page.goto(`${desk}/tally`);
-    await expect(page.getByRole('heading', { name: hi['owner.notYourPage'] })).toBeVisible();
+    await expect(page.getByRole('heading', { name: hinglish['owner.notYourPage'] })).toBeVisible();
     await page.goto(`${desk}/more`);
-    await expect(page.getByRole('link', { name: hi['owner.tally.nav'], exact: true })).toHaveCount(
-      0,
-    );
+    await expect(
+      page.getByRole('link', { name: hinglish['owner.tally.nav'], exact: true }),
+    ).toHaveCount(0);
     for (const path of [
       '/admin/tally/status',
       '/admin/tally/health',
@@ -1069,7 +1100,9 @@ test('a manager and a cashier see no Tally number anywhere, and the API refuses 
   const keeper = await staff('STOCK_KEEPER');
   const third = await phone(browser);
   await signIn(third.page, keeper.digits, '/tally');
-  await expect(third.page.getByRole('heading', { name: hi['owner.notYourPage'] })).toBeVisible({
+  await expect(
+    third.page.getByRole('heading', { name: hinglish['owner.notYourPage'] }),
+  ).toBeVisible({
     timeout: 30000,
   });
   await expect(third.page.getByText(/Tally/)).toHaveCount(0);
@@ -1092,14 +1125,18 @@ test('a manager and a cashier see no Tally number anywhere, and the API refuses 
   });
   await signIn(fourth.page, tech.digits, '/tally?tab=farq');
   const hisMain = fourth.page.locator('main');
-  await expect(hisMain.getByText(hi['owner.tally.techOnly'])).toBeVisible({ timeout: 30000 });
+  await expect(hisMain.getByText(hinglish['owner.tally.techOnly'])).toBeVisible({ timeout: 30000 });
   await expect(fourth.page.getByRole('tab')).toHaveCount(0);
-  await expect(hisMain.getByText(hi['owner.tally.state.BUSY'], { exact: true })).toBeVisible();
+  await expect(
+    hisMain.getByText(hinglish['owner.tally.state.BUSY'], { exact: true }),
+  ).toBeVisible();
   await expect(hisMain.getByText(say('owner.tally.state.BUSYBody', { seconds: 45 }))).toBeVisible();
-  await expect(hisMain.getByRole('button', { name: hi['owner.tally.connect'] })).toBeVisible();
+  await expect(
+    hisMain.getByRole('button', { name: hinglish['owner.tally.connect'] }),
+  ).toBeVisible();
   await expect(hisMain.getByText(/₹/)).toHaveCount(0);
   await expect(fourth.page.getByText('76,543')).toHaveCount(0);
-  await hisMain.getByText(hi['owner.tally.tech.title']).click();
+  await hisMain.getByText(hinglish['owner.tally.tech.title']).click();
   await expect(hisMain.getByRole('cell', { name: 'MASTERS' })).toBeVisible();
   await shot(fourth.page, 'haal-tech-laptop');
   expect((await asked(fourth.context, '/admin/tally/status')).status()).toBe(403);
@@ -1120,8 +1157,8 @@ test('a manager and a cashier see no Tally number anywhere, and the API refuses 
     'owner.tally.cutOff',
     'owner.tally.company.change',
   ] as const)
-    await expect(herMain.getByRole('button', { name: hi[word] })).toHaveCount(0);
-  await expect(herMain.getByText(hi['owner.tally.tech.title'])).toHaveCount(0);
+    await expect(herMain.getByRole('button', { name: hinglish[word] })).toHaveCount(0);
+  await expect(herMain.getByText(hinglish['owner.tally.tech.title'])).toHaveCount(0);
   expect((await posted(fifth.context, '/admin/tally/pause', { paused: true })).status()).toBe(403);
   expect((await asked(fifth.context, '/admin/tally/status')).status()).toBe(200);
   expect((await asked(fifth.context, '/admin/tally/health')).status()).toBe(403);
@@ -1130,9 +1167,9 @@ test('a manager and a cashier see no Tally number anywhere, and the API refuses 
     data: { guid: randomUUID(), name: 'Sample Waiting File', ownerDeviceId: firm.ownerDeviceId },
   });
   await fifth.page.reload();
-  await expect(herMain.getByText(hi['owner.tally.company.pendingNotYours'])).toBeVisible();
+  await expect(herMain.getByText(hinglish['owner.tally.company.pendingNotYours'])).toBeVisible();
   await expect(
-    herMain.getByRole('button', { name: hi['owner.tally.company.setPrimary'] }),
+    herMain.getByRole('button', { name: hinglish['owner.tally.company.setPrimary'] }),
   ).toHaveCount(0);
   await fifth.context.close();
 });
@@ -1171,44 +1208,50 @@ test('a phone holds every Tally screen with nothing off the side', async ({ brow
   await expect(main.locator('article').first()).toBeVisible({ timeout: 60000 });
   await fitsWidth(page);
   await shot(page, 'haal-phone');
-  await page.getByRole('tab', { name: hi['owner.tally.tab.party'] }).click();
+  await page.getByRole('tab', { name: hinglish['owner.tally.tab.party'] }).click();
   await expect(main.getByText(PAST_SAFE_SHOWN)).toBeVisible();
   await fitsWidth(page);
   await shot(page, 'party-phone');
   // With no connection the band says so, and a tap that could only fail is not offered.
   const plain = main.locator('article').filter({ hasText: 'Sample Plain Ledger' });
   await context.setOffline(true);
-  await expect(page.getByText(hi['owner.offline'])).toBeVisible();
+  await expect(page.getByText(hinglish['owner.offline'])).toBeVisible();
   await expect(
-    plain.getByRole('button', { name: hi['owner.tally.party.notCustomer'] }),
+    plain.getByRole('button', { name: hinglish['owner.tally.party.notCustomer'] }),
   ).toBeDisabled();
-  await expect(plain.getByRole('button', { name: hi['owner.tally.party.find'] })).toBeDisabled();
+  await expect(
+    plain.getByRole('button', { name: hinglish['owner.tally.party.find'] }),
+  ).toBeDisabled();
   await context.setOffline(false);
-  await expect(plain.getByRole('button', { name: hi['owner.tally.party.find'] })).toBeEnabled();
+  await expect(
+    plain.getByRole('button', { name: hinglish['owner.tally.party.find'] }),
+  ).toBeEnabled();
   await main
     .locator('article')
     .filter({ hasText: 'Sample Plain Ledger' })
-    .getByRole('button', { name: hi['owner.tally.party.find'] })
+    .getByRole('button', { name: hinglish['owner.tally.party.find'] })
     .click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await fitsWidth(page);
   await shot(page, 'party-search-phone');
-  await page.getByRole('dialog').getByRole('button', { name: hi['owner.close'] }).click();
-  await page.getByRole('tab', { name: hi['owner.tally.tab.farq'] }).click();
+  await page.getByRole('dialog').getByRole('button', { name: hinglish['owner.close'] }).click();
+  await page.getByRole('tab', { name: hinglish['owner.tally.tab.farq'] }).click();
   await expect(main.getByRole('link', { name: linked.name })).toBeVisible();
   await expect(main.locator('table')).toHaveCount(0);
   await fitsWidth(page);
   await shot(page, 'farq-phone');
   await main.getByRole('link', { name: linked.name }).click();
-  const panel = main.getByRole('region', { name: hi['owner.tally.numbers.title'] });
+  const panel = main.getByRole('region', { name: hinglish['owner.tally.numbers.title'] });
   await expect(panel).toBeVisible();
-  await expect(panel.getByRole('region', { name: hi['owner.tally.numbers.why'] })).toBeVisible();
+  await expect(
+    panel.getByRole('region', { name: hinglish['owner.tally.numbers.why'] }),
+  ).toBeVisible();
   // It sits under the facts on a phone, so whoever came for it is taken to it.
   await expect(panel).toBeInViewport();
   await fitsWidth(page);
   await shot(page, 'customer-numbers-phone');
   await page.goto(`${desk}/customers/${linked.id}`);
-  const see = main.getByRole('button', { name: hi['owner.tally.see'], exact: true });
+  const see = main.getByRole('button', { name: hinglish['owner.tally.see'], exact: true });
   await see.click();
   await expect(panel).toBeInViewport();
   await page.evaluate(() => window.scrollTo(0, 0));
@@ -1217,7 +1260,7 @@ test('a phone holds every Tally screen with nothing off the side', async ({ brow
   await expect(panel).toBeInViewport();
   // A phone reaches the page through Aur.
   await page.goto(`${desk}/more`);
-  await page.getByRole('link', { name: hi['owner.tally.nav'], exact: true }).last().click();
+  await page.getByRole('link', { name: hinglish['owner.tally.nav'], exact: true }).last().click();
   await expect(page).toHaveURL(/\/tally/);
   await context.close();
 });
@@ -1240,17 +1283,17 @@ test('a PC’s program version is set by a person, and a bad one is refused in w
   const { context, page } = await laptop(browser);
   await signIn(page, tech.digits, '/tally');
   const main = page.locator('main');
-  await main.getByText(hi['owner.tally.tech.title']).click({ timeout: 30000 });
+  await main.getByText(hinglish['owner.tally.tech.title']).click({ timeout: 30000 });
   const field = main.getByRole('textbox', {
     name: say('owner.tally.tech.versionFor', { pc: 'Sample Version PC' }),
   });
-  const save = main.getByRole('button', { name: hi['owner.tally.tech.versionSave'] });
+  const save = main.getByRole('button', { name: hinglish['owner.tally.tech.versionSave'] });
   await field.fill('nonsense');
   await save.click();
-  await expect(main.getByText(hi['owner.tally.tech.versionBad'])).toBeVisible();
+  await expect(main.getByText(hinglish['owner.tally.tech.versionBad'])).toBeVisible();
   await field.fill('9.9.9');
   await save.click();
-  await expect(main.getByText(hi['error.BRIDGE_NO_RELEASE'])).toBeVisible();
+  await expect(main.getByText(hinglish['error.BRIDGE_NO_RELEASE'])).toBeVisible();
   expect((await db.tallyDevice.findUniqueOrThrow({ where: { id: device.id } })).targetVersion).toBe(
     null,
   );
@@ -1262,13 +1305,13 @@ test('a PC’s program version is set by a person, and a bad one is refused in w
   expect((await db.tallyDevice.findUniqueOrThrow({ where: { id: device.id } })).targetVersion).toBe(
     '1.1.0',
   );
-  const upload = main.getByLabel(hi['owner.tally.tech.releaseFile']);
+  const upload = main.getByLabel(hinglish['owner.tally.tech.releaseFile']);
   await upload.setInputFiles({
     name: 'release.json',
     mimeType: 'application/json',
     buffer: Buffer.from('this is not json'),
   });
-  await expect(page.getByText(hi['owner.tally.tech.releaseBad'])).toBeVisible();
+  await expect(page.getByText(hinglish['owner.tally.tech.releaseBad'])).toBeVisible();
   await upload.setInputFiles({
     name: 'release.json',
     mimeType: 'application/json',

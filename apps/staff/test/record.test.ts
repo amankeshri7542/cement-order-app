@@ -11,7 +11,7 @@ import {
 } from '../src/logic/record';
 import { makeTr } from '../src/logic/words';
 
-const hi = makeTr('hi');
+const hi = makeTr('hinglish');
 const row = (extra: Partial<MonthDay>): MonthDay => ({
   day: '2026-11-02',
   status: 'PRESENT',

@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { PrismaClient } from '@prisma/client';
 import type { Page } from '@playwright/test';
-import { en, hi } from '@shiv/i18n';
+import { en, hinglish } from '@shiv/i18n';
 import { money, type Order } from '@shiv/shared';
-import { test, expect } from './fixtures';
+import { test, expect, deskLanguage } from './fixtures';
 
 const db = new PrismaClient({ datasourceUrl: process.env.TEST_DATABASE_URL });
 const desk = 'http://localhost:3001';
@@ -49,21 +49,33 @@ async function signIn(
 test('the desk opens in Hindi with no pre-filled number and switches to English', async ({
   page,
 }) => {
-  await page.addInitScript(() => localStorage.setItem('shiv-owner-language', 'hi'));
+  await deskLanguage(page.context(), 'hinglish');
   await page.goto(`${desk}/today`);
-  await expect(page.getByRole('heading', { name: hi['owner.loginTitle'] })).toBeVisible();
-  const phone = page.getByRole('textbox', { name: hi['owner.loginPhone'] });
+  await expect(page.getByRole('heading', { name: hinglish['owner.loginTitle'] })).toBeVisible();
+  const phone = page.getByRole('textbox', { name: hinglish['owner.loginPhone'] });
   await expect(phone).toHaveValue('');
   await phone.fill('9999997013');
-  await signIn(page, { send: hi['owner.sendCode'], open: hi['owner.signIn'] });
-  await expect(page.getByRole('heading', { name: hi['owner.today'], exact: true })).toBeVisible();
-  await expect(page.getByRole('region', { name: hi['owner.nextWork'], exact: true })).toBeVisible();
-  await expect(page.locator('html')).toHaveAttribute('lang', 'hi');
+  await signIn(page, { send: hinglish['owner.sendCode'], open: hinglish['owner.signIn'] });
+  await expect(
+    page.getByRole('heading', { name: hinglish['owner.today'], exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('region', { name: hinglish['owner.nextWork'], exact: true }),
+  ).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'hi-Latn');
   await page.goto(`${desk}/more?view=language`);
-  await page.getByLabel(hi['owner.language']).selectOption('en');
+  await page.getByRole('radio', { name: en['language.en'], exact: true }).check();
   await page.getByRole('link', { name: new RegExp(`^${en['owner.today']}( \\d+)?$`) }).click();
   await expect(page.getByRole('heading', { name: en['owner.today'], exact: true })).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+  await expect
+    .poll(
+      async () =>
+        (await db.user.findUniqueOrThrow({ where: { phone: '+919999997013' } })).preferences,
+    )
+    .toEqual({ language: 'en' });
+  // The choice is saved for this shared test owner; other tests pick their own language.
+  await db.user.update({ where: { phone: '+919999997013' }, data: { preferences: {} } });
 });
 
 test.describe('signed in', () => {

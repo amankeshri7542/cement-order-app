@@ -283,7 +283,7 @@ export async function writeStaff(ctx: SeedContext, bulk: Bulk, staff: readonly S
       phone: s.phone,
       name: s.name,
       role: 'ADMIN',
-      language: 'hi',
+      language: 'hinglish',
       area: '',
       tags: [],
       creditAllowed: false,

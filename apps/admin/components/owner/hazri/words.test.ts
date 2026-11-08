@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { en, hi } from '@shiv/i18n';
+import { en, hinglish } from '@shiv/i18n';
 import { attendanceProblems, offlineAfterMs, type DayStatus } from '@shiv/shared';
 import {
   correctionProblem,
@@ -29,7 +29,7 @@ const facts = (extra: object) => ({
 const said = (key: string, params: Record<string, string | number> = {}) =>
   Object.entries(params).reduce(
     (text, [name, value]) => text.replace(`{${name}}`, String(value)),
-    hi[key as keyof typeof hi],
+    hinglish[key as keyof typeof hinglish],
   );
 
 test('every code a scan or a card can carry has words in both catalogues', () => {
@@ -53,26 +53,26 @@ test('every code a scan or a card can carry has words in both catalogues', () =>
   ];
   assert.deepEqual([...reasonCodes].sort(), expected.sort());
   for (const code of reasonCodes) {
-    const [line] = reasonLines(facts({ reasons: [code], distanceM: 1200 }), 'hi');
+    const [line] = reasonLines(facts({ reasons: [code], distanceM: 1200 }), 'hinglish');
     assert.ok(line, code);
-    assert.ok(hi[line.key], code);
+    assert.ok(hinglish[line.key], code);
     assert.ok(en[line.key], code);
   }
 });
 
 test('a far scan with a fresh code reads as the owners say it', () => {
-  const [line] = reasonLines(facts({ reasons: ['FAR'], distanceM: 1200 }), 'hi');
+  const [line] = reasonLines(facts({ reasons: ['FAR'], distanceM: 1200 }), 'hinglish');
   assert.equal(said(line!.key, line!.params), 'Fresh QR, lekin dukaan se door, 1.2 km');
-  const [old] = reasonLines(facts({ reasons: ['FAR', 'OLD_QR'], distanceM: 400 }), 'hi');
+  const [old] = reasonLines(facts({ reasons: ['FAR', 'OLD_QR'], distanceM: 400 }), 'hinglish');
   assert.equal(said(old!.key, old!.params), 'Dukaan se door, 400 m');
 });
 
 test('a fake-location mark and a clock mismatch read plainly', () => {
-  const [mock] = reasonLines(facts({ reasons: ['MOCKED'] }), 'hi');
+  const [mock] = reasonLines(facts({ reasons: ['MOCKED'] }), 'hinglish');
   assert.equal(said(mock!.key), 'Apna phone. Nakli location ka nishan mila.');
   const lines = reasonLines(
     facts({ reasons: ['TIME_MISMATCH'], qrShownAt: '2026-11-05T03:30:00.000Z' }),
-    'hi',
+    'hinglish',
   );
   assert.equal(said(lines[0]!.key), 'Phone ka time aur QR ka time alag hain.');
   assert.equal(said(lines[1]!.key, lines[1]!.params), 'Yeh QR 09:00 par screen par tha.');
@@ -85,7 +85,7 @@ test('an offline scan shows both times', () => {
       serverAt: '2026-11-05T06:00:00.000Z',
       claimedAgeMs: 2 * 3600000,
     }),
-    'hi',
+    'hinglish',
   );
   assert.equal(
     said(line!.key, line!.params),
@@ -100,39 +100,39 @@ test('an offline scan carried over midnight says which day each time was', () =>
       serverAt: '2026-11-05T04:00:00.000Z',
       claimedAgeMs: 24 * 3600000,
     }),
-    'hi',
+    'hinglish',
   );
   assert.match(String(line!.params!.taken), /4 Nov/);
   assert.match(String(line!.params!.server), /5 Nov/);
-  assert.equal(stamp('2026-11-05T04:00:00Z', '2026-11-05T06:00:00Z', 'hi'), '09:30');
+  assert.equal(stamp('2026-11-05T04:00:00Z', '2026-11-05T06:00:00Z', 'hinglish'), '09:30');
 });
 
 test('a code nobody has words for never reaches the page as a code', () => {
-  const lines = reasonLines(facts({ reasons: ['SOMETHING_NEW', 'ANOTHER_NEW'] }), 'hi');
+  const lines = reasonLines(facts({ reasons: ['SOMETHING_NEW', 'ANOTHER_NEW'] }), 'hinglish');
   assert.equal(lines.length, 1);
   assert.equal(lines[0]!.key, 'owner.hazri.why.other');
 });
 
 test('the same finding is said once', () => {
-  assert.equal(reasonLines(facts({ reasons: ['MOCKED', 'MOCKED'] }), 'hi').length, 1);
+  assert.equal(reasonLines(facts({ reasons: ['MOCKED', 'MOCKED'] }), 'hinglish').length, 1);
 });
 
 test('nothing on a card, flag or status accuses anybody', () => {
   const accusing =
     /\b(chor|chori|fraud|dhokha|dhokhebaaz|jhooth|jhootha|theft|cheat|cheating|shortage|fine|penalty)\b/i;
-  for (const [key, value] of [...Object.entries(hi), ...Object.entries(en)])
+  for (const [key, value] of [...Object.entries(hinglish), ...Object.entries(en)])
     if (/^owner\.(hazri|cash|trips|screen|salary)\./.test(key))
       assert.doesNotMatch(value, accusing, key);
 });
 
 test('every flag and status has words, and today a missing way out only means still at work', () => {
-  for (const flag of flagCodes) assert.ok(hi[flagKey(flag, false)!], flag);
+  for (const flag of flagCodes) assert.ok(hinglish[flagKey(flag, false)!], flag);
   assert.equal(flagKey('NO_OUT', true), 'owner.hazri.flag.stillHere');
   assert.equal(flagKey('NO_OUT', false), 'owner.hazri.flag.NO_OUT');
   assert.equal(flagKey('toString', false), null);
   assert.equal(flagKey('UNKNOWN', false), null);
   for (const status of ['PRESENT', 'REVIEW', 'ABSENT', 'WEEKLY_OFF'] as DayStatus[])
-    assert.ok(hi[statusKey[status]]);
+    assert.ok(hinglish[statusKey[status]]);
 });
 
 test('distance reads in metres, then kilometres', () => {

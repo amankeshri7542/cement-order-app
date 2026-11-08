@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import type { Browser, BrowserContext, Page } from '@playwright/test';
-import { hi, t as words, type MessageKey } from '@shiv/i18n';
+import { hinglish, t as words, type MessageKey } from '@shiv/i18n';
 import type { StaffRole } from '@shiv/shared';
-import { test, expect } from './fixtures';
+import { test, expect, deskLanguage } from './fixtures';
 
 // List and Maal ki list, walked through as each role on the real desk. The API refuses these writes
 // on its own; these journeys check each person sees only their job and that a refusal reaches them
@@ -16,7 +16,7 @@ const DAY = 86400000;
 let counter = 0;
 const freshPhone = () => `9${String(Date.now()).slice(-8)}${counter++ % 10}`;
 const say = (key: MessageKey, params: Record<string, string | number> = {}) =>
-  words(key, params, 'hi');
+  words(key, params, 'hinglish');
 /** A calendar day in Patna, this many days from today. */
 const dayAhead = (days: number) =>
   new Date(Date.now() + days * DAY + 5.5 * 3600000).toISOString().slice(0, 10);
@@ -47,23 +47,23 @@ async function staff(role: StaffRole, shops: string[] = [MAIN]) {
 async function open(browser: Browser): Promise<{ context: BrowserContext; page: Page }> {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const page = await context.newPage();
-  await page.addInitScript(() => localStorage.setItem('shiv-owner-language', 'hi'));
+  await deskLanguage(page.context(), 'hinglish');
   return { context, page };
 }
 async function signIn(page: Page, digits: string, path = '/lists') {
   await page.goto(`${desk}${path}`);
-  await page.getByRole('textbox', { name: hi['owner.loginPhone'] }).fill(digits);
+  await page.getByRole('textbox', { name: hinglish['owner.loginPhone'] }).fill(digits);
   const sent = page.waitForResponse(
     (r) => r.url().endsWith('/auth/otp/request') && r.status() === 201,
   );
-  await page.getByRole('button', { name: hi['owner.sendCode'] }).click();
+  await page.getByRole('button', { name: hinglish['owner.sendCode'] }).click();
   await page
-    .getByRole('textbox', { name: hi['owner.code'], exact: true })
+    .getByRole('textbox', { name: hinglish['owner.code'], exact: true })
     .fill((await (await sent).json()).devCode);
   const verified = page.waitForResponse((r) => r.url().endsWith('/auth/otp/verify'));
-  await page.getByRole('button', { name: hi['owner.signIn'] }).click();
+  await page.getByRole('button', { name: hinglish['owner.signIn'] }).click();
   expect((await verified).ok()).toBe(true);
-  await expect(page.getByRole('textbox', { name: hi['owner.loginPhone'] })).toHaveCount(0);
+  await expect(page.getByRole('textbox', { name: hinglish['owner.loginPhone'] })).toHaveCount(0);
 }
 /** What the API itself says to this signed-in person, whatever the screen offers. */
 function ask(page: Page, method: string, path: string, body: unknown = {}) {
@@ -144,7 +144,7 @@ async function aList(agreed?: { day?: string }) {
 type Listed = Awaited<ReturnType<typeof aList>>;
 const rowOf = (page: Page, number: string) => page.locator('article', { hasText: number });
 const button = (page: Page, key: MessageKey) =>
-  page.getByRole('button', { name: hi[key], exact: true });
+  page.getByRole('button', { name: hinglish[key], exact: true });
 const rateBox = (page: Page, { product }: Listed) =>
   page.getByRole('textbox', {
     name: say('owner.lists.rateLabel', {
@@ -159,11 +159,17 @@ const openList = (page: Page, { quote }: Listed) =>
 /** Types rates and delivery cost, without sending. */
 async function fillRates(page: Page, list: Listed, rate = '380', freight = '750') {
   await rateBox(page, list).fill(rate);
-  await page.getByRole('textbox', { name: hi['owner.lists.freight'], exact: true }).fill(freight);
-  await page.getByRole('checkbox', { name: hi['owner.lists.checked'] }).check();
+  await page
+    .getByRole('textbox', { name: hinglish['owner.lists.freight'], exact: true })
+    .fill(freight);
+  await page.getByRole('checkbox', { name: hinglish['owner.lists.checked'] }).check();
 }
 async function confirmSheet(page: Page, key: MessageKey) {
-  await page.getByRole('dialog').last().getByRole('button', { name: hi[key], exact: true }).click();
+  await page
+    .getByRole('dialog')
+    .last()
+    .getByRole('button', { name: hinglish[key], exact: true })
+    .click();
 }
 
 test('an owner gives rates, writes down the customer’s yes, and makes one order', async ({
@@ -177,19 +183,22 @@ test('an owner gives rates, writes down the customer’s yes, and makes one orde
   try {
     await signIn(page, owner.digits);
     await expect(
-      page.getByRole('heading', { name: hi['owner.lists.title'], exact: true }),
+      page.getByRole('heading', { name: hinglish['owner.lists.title'], exact: true }),
     ).toBeVisible();
     const row = rowOf(page, quote.number);
-    await expect(row).toContainText(hi['owner.lists.state.REQUESTED']);
-    await expect(row).toContainText(hi['owner.lists.noTotal']);
-    await expect(row.getByRole('link', { name: hi['owner.call'] })).toHaveAttribute(
+    await expect(row).toContainText(hinglish['owner.lists.state.REQUESTED']);
+    await expect(row).toContainText(hinglish['owner.lists.noTotal']);
+    await expect(row.getByRole('link', { name: hinglish['owner.call'] })).toHaveAttribute(
       'href',
       `tel:${phone}`,
     );
 
     // Rate do, with the total adding up on screen as it is typed.
     await row
-      .getByRole('button', { name: `${hi['owner.lists.rateDo']} ${quote.number}`, exact: true })
+      .getByRole('button', {
+        name: `${hinglish['owner.lists.rateDo']} ${quote.number}`,
+        exact: true,
+      })
       .click();
     await expect(page).toHaveURL(new RegExp(`/lists\\?id=${quote.id}$`));
     await expect(page.getByRole('heading', { name: quote.number })).toBeVisible();
@@ -201,8 +210,8 @@ test('an owner gives rates, writes down the customer’s yes, and makes one orde
     await confirmSheet(page, 'owner.lists.send');
 
     await expect(page).toHaveURL(`${desk}/lists`);
-    await expect(page.getByText(hi['owner.lists.sent'])).toBeVisible();
-    await expect(row).toContainText(hi['owner.lists.state.SENT']);
+    await expect(page.getByText(hinglish['owner.lists.sent'])).toBeVisible();
+    await expect(row).toContainText(hinglish['owner.lists.state.SENT']);
     const sent = await db.quote.findUniqueOrThrow({
       where: { id: quote.id },
       include: { items: true },
@@ -218,17 +227,21 @@ test('an owner gives rates, writes down the customer’s yes, and makes one orde
 
     // The note is needed: who said yes, how and when.
     await row
-      .getByRole('button', { name: `${hi['owner.lists.open']} ${quote.number}`, exact: true })
+      .getByRole('button', { name: `${hinglish['owner.lists.open']} ${quote.number}`, exact: true })
       .click();
     await button(page, 'owner.lists.recordYes').click();
     const sheet = page.getByRole('dialog');
-    await sheet.getByRole('button', { name: hi['owner.lists.recordYes'], exact: true }).click();
-    await expect(sheet.getByText(hi['owner.lists.recordNeeded'])).toBeVisible();
+    await sheet
+      .getByRole('button', { name: hinglish['owner.lists.recordYes'], exact: true })
+      .click();
+    await expect(sheet.getByText(hinglish['owner.lists.recordNeeded'])).toBeVisible();
     expect((await db.quote.findUniqueOrThrow({ where: { id: quote.id } })).status).toBe('SENT');
     await sheet
-      .getByRole('textbox', { name: hi['owner.lists.recordNote'] })
+      .getByRole('textbox', { name: hinglish['owner.lists.recordNote'] })
       .fill('Ramesh ji ne phone par kaha, 4 baje');
-    await sheet.getByRole('button', { name: hi['owner.lists.recordYes'], exact: true }).click();
+    await sheet
+      .getByRole('button', { name: hinglish['owner.lists.recordYes'], exact: true })
+      .click();
     await expect(page).toHaveURL(`${desk}/lists`);
     await expect
       .poll(async () => (await db.quote.findUniqueOrThrow({ where: { id: quote.id } })).status)
@@ -240,9 +253,12 @@ test('an owner gives rates, writes down the customer’s yes, and makes one orde
 
     // Order banao, at exactly the agreed rates.
     await row
-      .getByRole('button', { name: `${hi['owner.lists.makeOrder']} ${quote.number}`, exact: true })
+      .getByRole('button', {
+        name: `${hinglish['owner.lists.makeOrder']} ${quote.number}`,
+        exact: true,
+      })
       .click();
-    await expect(page.locator('main')).toContainText(hi['owner.lists.acceptedNote']);
+    await expect(page.locator('main')).toContainText(hinglish['owner.lists.acceptedNote']);
     await button(page, 'owner.lists.makeOrder').click();
     const converted = page.waitForResponse(
       (r) => r.url().endsWith(`/quotes/${quote.id}/convert`) && r.request().method() === 'POST',
@@ -284,12 +300,12 @@ test('changing agreed rates needs a fresh yes, and no order is made meanwhile', 
   try {
     await signIn(page, owner.digits);
     await openList(page, list);
-    await expect(page.locator('main')).toContainText(hi['owner.lists.saidInApp']);
+    await expect(page.locator('main')).toContainText(hinglish['owner.lists.saidInApp']);
     await expect(page.locator('main')).toContainText('₹4,550');
     await expect(rateBox(page, list)).toHaveCount(0);
 
     await button(page, 'owner.lists.changeRates').click();
-    await expect(page.getByText(hi['owner.lists.changeWarn'])).toBeVisible();
+    await expect(page.getByText(hinglish['owner.lists.changeWarn'])).toBeVisible();
     await expect(button(page, 'owner.lists.makeOrder')).toHaveCount(0);
     await expect(rateBox(page, list)).toHaveValue('380');
     await rateBox(page, list).fill('390');
@@ -322,7 +338,9 @@ test('when the agreed day has passed, the order asks for a new day', async ({ br
   try {
     await signIn(page, owner.digits);
     await openList(page, list);
-    await page.getByRole('combobox', { name: hi['owner.lists.newDay'] }).selectOption(dayAhead(3));
+    await page
+      .getByRole('combobox', { name: hinglish['owner.lists.newDay'] })
+      .selectOption(dayAhead(3));
     await button(page, 'owner.lists.makeOrder').click();
     await confirmSheet(page, 'owner.lists.makeOrder');
     await expect(page).toHaveURL(/\/orders\//);
@@ -355,8 +373,8 @@ test('a list that changed elsewhere refuses the send and keeps what was typed', 
     });
     await button(page, 'owner.lists.send').click();
     await confirmSheet(page, 'owner.lists.send');
-    await expect(page.getByText(hi['error.QUOTE_CHANGED'])).toBeVisible();
-    await expect(page.getByText(hi['owner.lists.changedElsewhere'])).toBeVisible();
+    await expect(page.getByText(hinglish['error.QUOTE_CHANGED'])).toBeVisible();
+    await expect(page.getByText(hinglish['owner.lists.changedElsewhere'])).toBeVisible();
     await expect(rateBox(page, list)).toHaveValue('380');
     expect(await db.quote.findUniqueOrThrow({ where: { id: list.quote.id } })).toMatchObject({
       revision: 1,
@@ -376,13 +394,13 @@ test('leaving with typed rates asks first', async ({ browser }) => {
     await signIn(page, owner.digits);
     await openList(page, list);
     await rateBox(page, list).fill('380');
-    await page.getByRole('link', { name: hi['owner.back'] }).click();
-    await expect(page.getByRole('heading', { name: hi['owner.unsavedTitle'] })).toBeVisible();
+    await page.getByRole('link', { name: hinglish['owner.back'] }).click();
+    await expect(page.getByRole('heading', { name: hinglish['owner.unsavedTitle'] })).toBeVisible();
     await confirmSheet(page, 'owner.keepEditing');
     await expect(page).toHaveURL(/\?id=/);
     await expect(rateBox(page, list)).toHaveValue('380');
 
-    await page.getByRole('link', { name: hi['owner.back'] }).click();
+    await page.getByRole('link', { name: hinglish['owner.back'] }).click();
     await confirmSheet(page, 'owner.discard');
     await expect(page).toHaveURL(`${desk}/lists`);
     await expect(rowOf(page, list.quote.number)).toBeVisible();
@@ -419,17 +437,21 @@ test('bad rates, delivery cost and times are explained, and nothing is sent', as
     await expect(page.getByText(badRate)).toBeVisible();
 
     await rateBox(page, list).fill('380');
-    await page.getByRole('textbox', { name: hi['owner.lists.freight'], exact: true }).fill('-5');
+    await page
+      .getByRole('textbox', { name: hinglish['owner.lists.freight'], exact: true })
+      .fill('-5');
     await button(page, 'owner.lists.send').click();
-    await expect(page.getByText(hi['owner.lists.badFreight'])).toBeVisible();
+    await expect(page.getByText(hinglish['owner.lists.badFreight'])).toBeVisible();
 
-    await page.getByRole('textbox', { name: hi['owner.lists.freight'], exact: true }).fill('750');
-    await page.getByLabel(hi['owner.lists.validUntil']).fill('2020-01-01T10:00');
+    await page
+      .getByRole('textbox', { name: hinglish['owner.lists.freight'], exact: true })
+      .fill('750');
+    await page.getByLabel(hinglish['owner.lists.validUntil']).fill('2020-01-01T10:00');
     await button(page, 'owner.lists.send').click();
-    await expect(page.getByText(hi['owner.lists.badExpiry'])).toBeVisible();
+    await expect(page.getByText(hinglish['owner.lists.badExpiry'])).toBeVisible();
 
     // A decimal typed with a trailing space stays the amount it looks like.
-    await page.getByLabel(hi['owner.lists.validUntil']).fill(`${dayAhead(5)}T10:00`);
+    await page.getByLabel(hinglish['owner.lists.validUntil']).fill(`${dayAhead(5)}T10:00`);
     await rateBox(page, list).fill('380.5 ');
     await expect(page.locator('main')).toContainText('₹4,555');
     expect(offers).toEqual([]);
@@ -450,7 +472,7 @@ test('an owner takes the list, gives it to someone, and sends a failed alert aga
   try {
     await signIn(page, owner.digits);
     await openList(page, list);
-    await expect(page.getByText(hi['owner.lists.nobody'])).toBeVisible();
+    await expect(page.getByText(hinglish['owner.lists.nobody'])).toBeVisible();
     await button(page, 'owner.lists.take').click();
     await expect(page.getByText(say('owner.lists.holder', { name: owner.name }))).toBeVisible();
     await expect(button(page, 'owner.lists.take')).toHaveCount(0);
@@ -458,7 +480,7 @@ test('an owner takes the list, gives it to someone, and sends a failed alert aga
       assignedToId: owner.id,
     });
 
-    const give = page.getByRole('combobox', { name: hi['owner.lists.giveTo'] });
+    const give = page.getByRole('combobox', { name: hinglish['owner.lists.giveTo'] });
     await expect(give.locator('option', { hasText: manager.name })).toHaveCount(1);
     await give.selectOption(manager.id);
     await expect(page.getByText(say('owner.lists.holder', { name: manager.name }))).toBeVisible();
@@ -476,7 +498,7 @@ test('an owner takes the list, gives it to someone, and sends a failed alert aga
     );
     await button(page, 'owner.lists.alertAgain').click();
     expect((await retried).status()).toBe(201);
-    await expect(page.getByText(hi['owner.lists.alertSent'])).toBeVisible();
+    await expect(page.getByText(hinglish['owner.lists.alertSent'])).toBeVisible();
   } finally {
     await context.close();
   }
@@ -494,7 +516,7 @@ test('an accountant reads a list and has nothing to press; the API refuses them 
     await expect(rowOf(page, list.quote.number)).toContainText('₹4,550');
     await expect(
       rowOf(page, list.quote.number).getByRole('button', {
-        name: `${hi['owner.lists.open']} ${list.quote.number}`,
+        name: `${hinglish['owner.lists.open']} ${list.quote.number}`,
         exact: true,
       }),
     ).toBeVisible();
@@ -531,13 +553,15 @@ test('a cashier may take a list and give it on, but gives no rates', async ({ br
     await signIn(page, cashier.digits);
     await expect(
       rowOf(page, list.quote.number).getByRole('button', {
-        name: `${hi['owner.lists.open']} ${list.quote.number}`,
+        name: `${hinglish['owner.lists.open']} ${list.quote.number}`,
         exact: true,
       }),
     ).toBeVisible();
     await openList(page, list);
     await expect(button(page, 'owner.lists.take')).toBeVisible();
-    await expect(page.getByRole('combobox', { name: hi['owner.lists.giveTo'] })).toBeVisible();
+    await expect(
+      page.getByRole('combobox', { name: hinglish['owner.lists.giveTo'] }),
+    ).toBeVisible();
     await expect(page.locator('main').getByRole('textbox')).toHaveCount(0);
     await expect(button(page, 'owner.lists.send')).toHaveCount(0);
     const refused = await ask(page, 'POST', `/admin/quotes/${list.quote.id}/offer`, {
@@ -568,11 +592,11 @@ test('a manager at another shop does not see this shop’s list', async ({ brows
   try {
     await signIn(page, manager.digits);
     await expect(
-      page.getByRole('heading', { name: hi['owner.lists.title'], exact: true }),
+      page.getByRole('heading', { name: hinglish['owner.lists.title'], exact: true }),
     ).toBeVisible();
     await expect(rowOf(page, list.quote.number)).toHaveCount(0);
     await openList(page, list);
-    await expect(page.getByText(hi['owner.lists.notFound'])).toBeVisible();
+    await expect(page.getByText(hinglish['owner.lists.notFound'])).toBeVisible();
     await expect(page.locator('main')).not.toContainText(list.name);
     const refused = await ask(page, 'POST', `/admin/quotes/${list.quote.id}/acknowledge`);
     expect(refused.status).toBe(403);
@@ -593,8 +617,10 @@ for (const role of ['STOCK_KEEPER', 'TECH_OPERATOR'] as const)
     });
     try {
       await signIn(page, person.digits);
-      await expect(page.getByText(hi['owner.notYourPage'])).toBeVisible();
-      await expect(page.getByRole('heading', { name: hi['owner.lists.title'] })).toHaveCount(0);
+      await expect(page.getByText(hinglish['owner.notYourPage'])).toBeVisible();
+      await expect(page.getByRole('heading', { name: hinglish['owner.lists.title'] })).toHaveCount(
+        0,
+      );
       expect(asked).toEqual([]);
     } finally {
       await context.close();
@@ -604,15 +630,17 @@ for (const role of ['STOCK_KEEPER', 'TECH_OPERATOR'] as const)
 /** The Maal ki list tab on the Stock page. */
 async function openMaal(page: Page) {
   await page.goto(`${desk}/stock`);
-  await page.getByRole('tab', { name: hi['owner.stockPage.tab.maal'], exact: true }).click();
-  await expect(page.getByRole('button', { name: hi['owner.maal.add'], exact: true })).toBeVisible();
+  await page.getByRole('tab', { name: hinglish['owner.stockPage.tab.maal'], exact: true }).click();
+  await expect(
+    page.getByRole('button', { name: hinglish['owner.maal.add'], exact: true }),
+  ).toBeVisible();
 }
 async function fillGoods(page: Page, name: string, category: string) {
   const sheet = page.getByRole('dialog');
-  const box = (key: MessageKey) => sheet.getByRole('textbox', { name: hi[key], exact: true });
+  const box = (key: MessageKey) => sheet.getByRole('textbox', { name: hinglish[key], exact: true });
   await box('owner.maal.name').fill(name);
   await box('owner.maal.brand').fill('Test Brand');
-  await sheet.getByRole('combobox', { name: hi['owner.maal.category'] }).selectOption({
+  await sheet.getByRole('combobox', { name: hinglish['owner.maal.category'] }).selectOption({
     label: category,
   });
   await box('owner.maal.type').fill('PPC Cement');
@@ -637,38 +665,39 @@ test('an owner adds a category and goods, with no way to type a stock balance', 
     await signIn(page, owner.digits, '/stock');
     await openMaal(page);
 
-    const newCategory = page.getByRole('textbox', { name: hi['owner.maal.newCategory'] });
+    const newCategory = page.getByRole('textbox', { name: hinglish['owner.maal.newCategory'] });
     await newCategory.fill(category);
-    await page.getByRole('button', { name: hi['owner.maal.addCategory'] }).click();
-    await expect(page.getByText(hi['owner.maal.categoryAdded'])).toBeVisible();
+    await page.getByRole('button', { name: hinglish['owner.maal.addCategory'] }).click();
+    await expect(page.getByText(hinglish['owner.maal.categoryAdded'])).toBeVisible();
     await expect(newCategory).toHaveValue('');
     expect(await db.category.count({ where: { name: category } })).toBe(1);
     // The same name again is explained, not treated as someone else's edit.
     await newCategory.fill(category);
-    await page.getByRole('button', { name: hi['owner.maal.addCategory'] }).click();
-    await expect(page.getByText(hi['owner.maal.categoryExists'])).toBeVisible();
+    await page.getByRole('button', { name: hinglish['owner.maal.addCategory'] }).click();
+    await expect(page.getByText(hinglish['owner.maal.categoryExists'])).toBeVisible();
     await newCategory.fill('');
 
-    await page.getByRole('button', { name: hi['owner.maal.add'], exact: true }).click();
+    await page.getByRole('button', { name: hinglish['owner.maal.add'], exact: true }).click();
     const sheet = await fillGoods(page, name, category);
-    await expect(sheet).toContainText(hi['owner.maal.stockNew']);
+    await expect(sheet).toContainText(hinglish['owner.maal.stockNew']);
     await expect(sheet.getByRole('spinbutton')).toHaveCount(0);
     await expect(sheet.getByRole('textbox', { name: /stock/i })).toHaveCount(0);
 
     // Refused before anything is sent.
-    const box = (key: MessageKey) => sheet.getByRole('textbox', { name: hi[key], exact: true });
+    const box = (key: MessageKey) =>
+      sheet.getByRole('textbox', { name: hinglish[key], exact: true });
     await box('owner.maal.price').fill('sasta');
-    await sheet.getByRole('button', { name: hi['owner.save'], exact: true }).click();
-    await expect(sheet.getByText(hi['owner.maal.badPrice'])).toBeVisible();
+    await sheet.getByRole('button', { name: hinglish['owner.save'], exact: true }).click();
+    await expect(sheet.getByText(hinglish['owner.maal.badPrice'])).toBeVisible();
     await box('owner.maal.price').fill('410');
     await box('owner.maal.minQuantity').fill('3');
     await box('owner.maal.quantityStep').fill('2');
-    await sheet.getByRole('button', { name: hi['owner.save'], exact: true }).click();
-    await expect(sheet.getByText(hi['owner.maal.badStep'])).toBeVisible();
+    await sheet.getByRole('button', { name: hinglish['owner.save'], exact: true }).click();
+    await expect(sheet.getByText(hinglish['owner.maal.badStep'])).toBeVisible();
     await box('owner.maal.minQuantity').fill('4');
 
-    await sheet.getByRole('button', { name: hi['owner.save'], exact: true }).click();
-    await expect(page.getByText(hi['owner.maal.saved'])).toBeVisible();
+    await sheet.getByRole('button', { name: hinglish['owner.save'], exact: true }).click();
+    await expect(page.getByText(hinglish['owner.maal.saved'])).toBeVisible();
     const product = await db.product.findFirstOrThrow({ where: { name } });
     expect(product).toMatchObject({
       stock: 0,
@@ -680,14 +709,14 @@ test('an owner adds a category and goods, with no way to type a stock balance', 
     expect(await db.inventoryMovement.count({ where: { productId: product.id } })).toBe(0);
 
     // The filters find it, and leave the rest out.
-    const filter = page.getByRole('combobox', { name: hi['owner.maal.filter'] });
+    const filter = page.getByRole('combobox', { name: hinglish['owner.maal.filter'] });
     await filter.selectOption({ label: category });
     await expect(page.locator('article', { hasText: name })).toBeVisible();
     await expect(page.locator('article')).toHaveCount(1);
-    await filter.selectOption({ label: hi['owner.maal.allCategories'] });
-    await page.getByRole('searchbox', { name: hi['owner.maal.search'] }).fill(`${suffix}x`);
-    await expect(page.getByText(hi['owner.maal.empty'])).toBeVisible();
-    await page.getByRole('searchbox', { name: hi['owner.maal.search'] }).fill(suffix);
+    await filter.selectOption({ label: hinglish['owner.maal.allCategories'] });
+    await page.getByRole('searchbox', { name: hinglish['owner.maal.search'] }).fill(`${suffix}x`);
+    await expect(page.getByText(hinglish['owner.maal.empty'])).toBeVisible();
+    await page.getByRole('searchbox', { name: hinglish['owner.maal.search'] }).fill(suffix);
     await expect(page.locator('article', { hasText: name })).toBeVisible();
   } finally {
     await context.close();
@@ -717,18 +746,23 @@ test('changing goods keeps the stock as it is, and a stale edit is refused', asy
     },
   });
   const { context, page } = await open(browser);
-  const edit = page.getByRole('button', { name: `${hi['owner.maal.edit']} ${name}`, exact: true });
+  const edit = page.getByRole('button', {
+    name: `${hinglish['owner.maal.edit']} ${name}`,
+    exact: true,
+  });
   try {
     await signIn(page, owner.digits, '/stock');
     await openMaal(page);
-    await page.getByRole('searchbox', { name: hi['owner.maal.search'] }).fill(suffix);
+    await page.getByRole('searchbox', { name: hinglish['owner.maal.search'] }).fill(suffix);
     await edit.click();
     const sheet = page.getByRole('dialog');
     await expect(sheet).toContainText(say('owner.maal.stockNow', { count: 0 }));
     await expect(sheet.getByRole('spinbutton')).toHaveCount(0);
-    await sheet.getByRole('textbox', { name: hi['owner.maal.price'], exact: true }).fill('425.50');
-    await sheet.getByRole('button', { name: hi['owner.save'], exact: true }).click();
-    await expect(page.getByText(hi['owner.maal.saved'])).toBeVisible();
+    await sheet
+      .getByRole('textbox', { name: hinglish['owner.maal.price'], exact: true })
+      .fill('425.50');
+    await sheet.getByRole('button', { name: hinglish['owner.save'], exact: true }).click();
+    await expect(page.getByText(hinglish['owner.maal.saved'])).toBeVisible();
     expect(await db.product.findUniqueOrThrow({ where: { id: product.id } })).toMatchObject({
       pricePaise: 42550,
       version: 2,
@@ -740,17 +774,19 @@ test('changing goods keeps the stock as it is, and a stale edit is refused', asy
     await expect(edit).toBeVisible();
     await edit.click();
     await db.product.update({ where: { id: product.id }, data: { version: { increment: 1 } } });
-    await sheet.getByRole('textbox', { name: hi['owner.maal.price'], exact: true }).fill('500');
-    await sheet.getByRole('button', { name: hi['owner.save'], exact: true }).click();
-    await expect(sheet.getByText(hi['error.CONFLICT'])).toBeVisible();
-    await expect(sheet.getByText(hi['owner.maal.changedElsewhere'])).toBeVisible();
+    await sheet
+      .getByRole('textbox', { name: hinglish['owner.maal.price'], exact: true })
+      .fill('500');
+    await sheet.getByRole('button', { name: hinglish['owner.save'], exact: true }).click();
+    await expect(sheet.getByText(hinglish['error.CONFLICT'])).toBeVisible();
+    await expect(sheet.getByText(hinglish['owner.maal.changedElsewhere'])).toBeVisible();
     expect((await db.product.findUniqueOrThrow({ where: { id: product.id } })).pricePaise).toBe(
       42550,
     );
 
     // Leaving with changes asks first.
-    await sheet.getByRole('button', { name: hi['owner.close'], exact: true }).click();
-    await expect(page.getByRole('heading', { name: hi['owner.unsavedTitle'] })).toBeVisible();
+    await sheet.getByRole('button', { name: hinglish['owner.close'], exact: true }).click();
+    await expect(page.getByRole('heading', { name: hinglish['owner.unsavedTitle'] })).toBeVisible();
     await confirmSheet(page, 'owner.discard');
     await expect(sheet).toHaveCount(0);
   } finally {
@@ -783,34 +819,36 @@ test('a photo comes only from an upload, shows at once, and can be taken off', a
   try {
     await signIn(page, owner.digits, '/stock');
     await openMaal(page);
-    await page.getByRole('button', { name: hi['owner.maal.add'], exact: true }).click();
+    await page.getByRole('button', { name: hinglish['owner.maal.add'], exact: true }).click();
     const sheet = await fillGoods(page, `Test maal ${suffix}`, category);
-    const file = sheet.getByLabel(hi['owner.maal.photoUpload']);
+    const file = sheet.getByLabel(hinglish['owner.maal.photoUpload']);
     // A file that is not a photo goes nowhere.
     await file.setInputFiles({
       name: 'list.pdf',
       mimeType: 'application/pdf',
       buffer: Buffer.from('%PDF'),
     });
-    await expect(sheet.getByText(hi['error.INVALID_IMAGE'])).toBeVisible();
+    await expect(sheet.getByText(hinglish['error.INVALID_IMAGE'])).toBeVisible();
     await file.setInputFiles({
       name: 'bori.png',
       mimeType: 'image/png',
       buffer: Buffer.from('89504e470d0a1a0a', 'hex'),
     });
-    await expect(sheet.getByRole('img', { name: hi['owner.maal.photoAlt'] })).toHaveAttribute(
+    await expect(sheet.getByRole('img', { name: hinglish['owner.maal.photoAlt'] })).toHaveAttribute(
       'src',
       publicUrl,
     );
     // The API takes only photos it stored itself.
-    await sheet.getByRole('button', { name: hi['owner.save'], exact: true }).click();
-    await expect(sheet.getByText(hi['owner.maal.photoNotOurs'])).toBeVisible();
+    await sheet.getByRole('button', { name: hinglish['owner.save'], exact: true }).click();
+    await expect(sheet.getByText(hinglish['owner.maal.photoNotOurs'])).toBeVisible();
     expect(await db.product.count({ where: { name: `Test maal ${suffix}` } })).toBe(0);
 
-    await sheet.getByRole('button', { name: hi['owner.maal.photoRemove'], exact: true }).click();
-    await expect(sheet.getByRole('img', { name: hi['owner.maal.photoAlt'] })).toHaveCount(0);
-    await sheet.getByRole('button', { name: hi['owner.save'], exact: true }).click();
-    await expect(page.getByText(hi['owner.maal.saved'])).toBeVisible();
+    await sheet
+      .getByRole('button', { name: hinglish['owner.maal.photoRemove'], exact: true })
+      .click();
+    await expect(sheet.getByRole('img', { name: hinglish['owner.maal.photoAlt'] })).toHaveCount(0);
+    await sheet.getByRole('button', { name: hinglish['owner.save'], exact: true }).click();
+    await expect(page.getByText(hinglish['owner.maal.saved'])).toBeVisible();
     expect(
       (await db.product.findFirstOrThrow({ where: { name: `Test maal ${suffix}` } })).images,
     ).toEqual([]);
@@ -827,10 +865,12 @@ for (const role of ['MANAGER', 'CASHIER', 'STOCK_KEEPER'] as const)
     try {
       await signIn(page, person.digits, '/stock');
       await expect(
-        page.getByRole('heading', { name: hi['owner.stock'], exact: true }),
+        page.getByRole('heading', { name: hinglish['owner.stock'], exact: true }),
       ).toBeVisible();
-      await expect(page.getByRole('tab', { name: hi['owner.stockPage.tab.maal'] })).toHaveCount(0);
-      await expect(page.getByRole('button', { name: hi['owner.maal.add'] })).toHaveCount(0);
+      await expect(
+        page.getByRole('tab', { name: hinglish['owner.stockPage.tab.maal'] }),
+      ).toHaveCount(0);
+      await expect(page.getByRole('button', { name: hinglish['owner.maal.add'] })).toHaveCount(0);
       const made = await ask(page, 'POST', '/admin/products', { name: 'Chupke se' });
       expect(made.status).toBe(403);
       const category = await ask(page, 'POST', '/admin/categories', { name: 'Chupke', slug: 'x' });

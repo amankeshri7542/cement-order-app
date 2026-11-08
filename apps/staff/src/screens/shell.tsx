@@ -27,7 +27,7 @@ export function TopBar() {
       <Pressable
         testID="language-switch"
         accessibilityRole="button"
-        onPress={() => void setLanguage(language === 'hi' ? 'en' : 'hi')}
+        onPress={() => void setLanguage(language === 'en' ? 'hinglish' : 'en')}
         hitSlop={8}
         style={{ minHeight: 48, justifyContent: 'center', paddingLeft: space.md }}
       >

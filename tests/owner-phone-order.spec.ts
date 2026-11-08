@@ -1,8 +1,8 @@
 import AxeBuilder from '@axe-core/playwright';
 import { PrismaClient } from '@prisma/client';
 import type { Page } from '@playwright/test';
-import { test, expect } from './fixtures';
-import { hi } from '@shiv/i18n';
+import { test, expect, deskLanguage } from './fixtures';
+import { hinglish } from '@shiv/i18n';
 import type { Order } from '@shiv/shared';
 
 const db = new PrismaClient({ datasourceUrl: process.env.TEST_DATABASE_URL });
@@ -63,13 +63,7 @@ test.beforeAll(async () => {
 test.afterAll(() => db.$disconnect());
 
 async function signInHindi(page: Page) {
-  await page.addInitScript(() => {
-    try {
-      localStorage.setItem('shiv-owner-language', 'hi');
-    } catch {
-      /* Storage may be disabled. */
-    }
-  });
+  await deskLanguage(page.context(), 'hinglish');
   await page.goto(desk + '/today');
   await expect(page.getByRole('heading', { name: 'Namaste.' })).toBeVisible();
   await page
@@ -83,7 +77,7 @@ async function signInHindi(page: Page) {
   await page.getByRole('textbox', { name: 'Code', exact: true }).fill(challenge.devCode);
   await page.getByRole('button', { name: 'Desk kholo', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Aaj', exact: true })).toBeVisible();
-  await expect(page.locator('html')).toHaveAttribute('lang', 'hi');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'hi-Latn');
 }
 
 async function accessibleAtLargeText(page: Page, screen: string) {
@@ -119,8 +113,8 @@ test('Hindi phone order survives a lost receipt and completes cash delivery once
   await expect(page.getByText('Aaj ki vasooli', { exact: true })).toBeVisible();
   await accessibleAtLargeText(page, 'Aaj');
   await page
-    .getByRole('navigation', { name: hi['owner.desk'], exact: true })
-    .getByRole('link', { name: hi['owner.newOrder'], exact: true })
+    .getByRole('navigation', { name: hinglish['owner.desk'], exact: true })
+    .getByRole('link', { name: hinglish['owner.newOrder'], exact: true })
     .click();
   await expect(page).toHaveURL(/\/orders\/new$/);
   await expect(page.getByRole('heading', { name: 'Naya order', exact: true })).toBeVisible();
@@ -134,7 +128,7 @@ test('Hindi phone order survives a lost receipt and completes cash delivery once
   await page.getByRole('searchbox', { name: 'Maal dhoondo', exact: true }).fill(productName);
   await expect(page.getByRole('heading', { name: productNameHi, exact: true })).toBeVisible();
   await page
-    .getByRole('textbox', { name: `${hi['owner.quantity']} ${productNameHi}`, exact: true })
+    .getByRole('textbox', { name: `${hinglish['owner.quantity']} ${productNameHi}`, exact: true })
     .fill(String(quantity));
   await page.getByRole('button', { name: 'Aage badho', exact: true }).click();
   await page
@@ -239,27 +233,29 @@ test('Hindi phone order survives a lost receipt and completes cash delivery once
 async function draftPhoneOrder(page: Page, phone: string, name: string) {
   await signInHindi(page);
   await page
-    .getByRole('navigation', { name: hi['owner.desk'], exact: true })
-    .getByRole('link', { name: hi['owner.newOrder'], exact: true })
+    .getByRole('navigation', { name: hinglish['owner.desk'], exact: true })
+    .getByRole('link', { name: hinglish['owner.newOrder'], exact: true })
     .click();
-  await page.getByRole('textbox', { name: hi['owner.phone'], exact: true }).fill(phone.slice(3));
-  await page.getByRole('textbox', { name: hi['owner.name'], exact: true }).fill(name);
-  await page.getByRole('button', { name: hi['owner.continue'], exact: true }).click();
   await page
-    .getByRole('searchbox', { name: hi['owner.searchProducts'], exact: true })
+    .getByRole('textbox', { name: hinglish['owner.phone'], exact: true })
+    .fill(phone.slice(3));
+  await page.getByRole('textbox', { name: hinglish['owner.name'], exact: true }).fill(name);
+  await page.getByRole('button', { name: hinglish['owner.continue'], exact: true }).click();
+  await page
+    .getByRole('searchbox', { name: hinglish['owner.searchProducts'], exact: true })
     .fill(productName);
   await page
-    .getByRole('textbox', { name: `${hi['owner.quantity']} ${productNameHi}`, exact: true })
+    .getByRole('textbox', { name: `${hinglish['owner.quantity']} ${productNameHi}`, exact: true })
     .fill(String(quantity));
-  await page.getByRole('button', { name: hi['owner.continue'], exact: true }).click();
+  await page.getByRole('button', { name: hinglish['owner.continue'], exact: true }).click();
   await page
-    .getByRole('textbox', { name: hi['owner.addressLine'], exact: true })
+    .getByRole('textbox', { name: hinglish['owner.addressLine'], exact: true })
     .fill('प्लॉट ७२, मुख्य सड़क');
   await page
-    .getByRole('textbox', { name: hi['owner.area'], exact: true })
+    .getByRole('textbox', { name: hinglish['owner.area'], exact: true })
     .fill('फ़ोन अभ्यास इलाका');
-  await page.getByRole('textbox', { name: hi['owner.pincode'], exact: true }).fill('800071');
-  await expect(page.getByText(hi['owner.serviceable'], { exact: false })).toBeVisible();
+  await page.getByRole('textbox', { name: hinglish['owner.pincode'], exact: true }).fill('800071');
+  await expect(page.getByText(hinglish['owner.serviceable'], { exact: false })).toBeVisible();
   const checked = await page.request.get('http://localhost:4010/api/v1/delivery/800071');
   expect(checked.ok()).toBe(true);
   return checked.json();
@@ -310,30 +306,30 @@ test('switching a credit limit override back to COD sends no override or khata c
   );
   releaseProfile();
   await profileReturned;
-  await expect(page.getByRole('textbox', { name: hi['owner.pincode'], exact: true })).toHaveValue(
-    '800071',
-  );
+  await expect(
+    page.getByRole('textbox', { name: hinglish['owner.pincode'], exact: true }),
+  ).toHaveValue('800071');
 
-  const credit = page.getByRole('button', { name: hi['owner.credit'], exact: true });
+  const credit = page.getByRole('button', { name: hinglish['owner.credit'], exact: true });
   await expect(credit).toBeEnabled();
   await credit.click();
-  await page.getByRole('checkbox', { name: hi['owner.override'], exact: true }).check();
-  await page.getByRole('button', { name: hi['owner.cash'], exact: true }).click();
-  await expect(page.getByRole('checkbox', { name: hi['owner.override'], exact: true })).toHaveCount(
-    0,
-  );
+  await page.getByRole('checkbox', { name: hinglish['owner.override'], exact: true }).check();
+  await page.getByRole('button', { name: hinglish['owner.cash'], exact: true }).click();
+  await expect(
+    page.getByRole('checkbox', { name: hinglish['owner.override'], exact: true }),
+  ).toHaveCount(0);
   await credit.click();
   await expect(
-    page.getByRole('checkbox', { name: hi['owner.override'], exact: true }),
+    page.getByRole('checkbox', { name: hinglish['owner.override'], exact: true }),
   ).not.toBeChecked();
-  await page.getByRole('button', { name: hi['owner.cash'], exact: true }).click();
-  await page.getByRole('button', { name: hi['owner.reviewOrder'], exact: true }).click();
+  await page.getByRole('button', { name: hinglish['owner.cash'], exact: true }).click();
+  await page.getByRole('button', { name: hinglish['owner.reviewOrder'], exact: true }).click();
   const created = page.waitForResponse(
     (r) => r.url().endsWith('/admin/orders/phone') && r.request().method() === 'POST',
   );
   await page
     .getByRole('dialog')
-    .getByRole('button', { name: hi['owner.placeOrder'], exact: true })
+    .getByRole('button', { name: hinglish['owner.placeOrder'], exact: true })
     .click();
   const response = await created;
   expect(response.status()).toBe(201);
@@ -370,23 +366,23 @@ test('a loaded delivery minimum does not block switching a phone draft to counte
     const check = await draftPhoneOrder(page, '+919100000703', 'काउंटर न्यूनतम परीक्षण');
     expect(check.zone.minimumOrderPaise).toBe(1000000);
     await expect(
-      page.getByRole('button', { name: hi['owner.reviewOrder'], exact: true }),
+      page.getByRole('button', { name: hinglish['owner.reviewOrder'], exact: true }),
     ).toBeDisabled();
-    await page.getByRole('button', { name: hi['owner.back'], exact: true }).click();
-    await page.getByRole('button', { name: hi['owner.back'], exact: true }).click();
-    await page.getByRole('button', { name: hi['owner.walkIn'], exact: true }).click();
-    await page.getByRole('button', { name: hi['owner.continue'], exact: true }).click();
-    await page.getByRole('button', { name: hi['owner.continue'], exact: true }).click();
+    await page.getByRole('button', { name: hinglish['owner.back'], exact: true }).click();
+    await page.getByRole('button', { name: hinglish['owner.back'], exact: true }).click();
+    await page.getByRole('button', { name: hinglish['owner.walkIn'], exact: true }).click();
+    await page.getByRole('button', { name: hinglish['owner.continue'], exact: true }).click();
+    await page.getByRole('button', { name: hinglish['owner.continue'], exact: true }).click();
     await expect(
-      page.getByRole('button', { name: hi['owner.reviewOrder'], exact: true }),
+      page.getByRole('button', { name: hinglish['owner.reviewOrder'], exact: true }),
     ).toBeEnabled();
-    await page.getByRole('button', { name: hi['owner.reviewOrder'], exact: true }).click();
+    await page.getByRole('button', { name: hinglish['owner.reviewOrder'], exact: true }).click();
     const created = page.waitForResponse(
       (r) => r.url().endsWith('/admin/orders/phone') && r.request().method() === 'POST',
     );
     await page
       .getByRole('dialog')
-      .getByRole('button', { name: hi['owner.placeOrder'], exact: true })
+      .getByRole('button', { name: hinglish['owner.placeOrder'], exact: true })
       .click();
     const response = await created;
     expect(response.status()).toBe(201);
@@ -415,8 +411,8 @@ test('a loaded delivery minimum does not block switching a phone draft to counte
 test('the new-order tab is one tap away on every desk screen', async ({ page }) => {
   await signInHindi(page);
   const newOrder = page
-    .getByRole('navigation', { name: hi['owner.desk'], exact: true })
-    .getByRole('link', { name: hi['owner.newOrder'], exact: true });
+    .getByRole('navigation', { name: hinglish['owner.desk'], exact: true })
+    .getByRole('link', { name: hinglish['owner.newOrder'], exact: true });
   for (const route of ['/today', '/orders', '/customers', '/udhaar', '/stock', '/more']) {
     await page.goto(desk + route);
     await expect(newOrder, route).toBeVisible();
@@ -424,7 +420,7 @@ test('the new-order tab is one tap away on every desk screen', async ({ page }) 
   await newOrder.click();
   await expect(page).toHaveURL(/\/orders\/new$/);
   await expect(
-    page.getByRole('heading', { name: hi['owner.newOrder'], exact: true }),
+    page.getByRole('heading', { name: hinglish['owner.newOrder'], exact: true }),
   ).toBeVisible();
   await expect(newOrder).toHaveAttribute('aria-current', 'page');
 });

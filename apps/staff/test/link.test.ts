@@ -53,7 +53,7 @@ test('a phone waiting that is cut off was refused; a working one was cut off', (
   assert.equal(revokedScreen(false), 'CUT_OFF');
 });
 test('each sign-in error has plain words, and an unknown one still reads', () => {
-  const hi = makeTr('hi');
+  const hi = makeTr('hinglish');
   for (const code of [
     'RATE_LIMITED',
     'OTP_UNAVAILABLE',

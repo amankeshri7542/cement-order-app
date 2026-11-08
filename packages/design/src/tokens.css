@@ -178,6 +178,7 @@
   --text-head: 1.5rem;
   --text-figure: 1.75rem;
   --leading: 1.35;
+  --leading-tight: 1.2;
   --space-2: 0.125rem;
   --space-4: 0.25rem;
   --space-8: 0.5rem;
@@ -251,6 +252,11 @@
   /* A phone reads at 16 px body text, and "Bada akshar" scales on top (DESIGN.md, Layout). */
   --device-scale: 1;
   --text-scale: 1;
+}
+/* Hindi in Devanagari: vowel marks above and below clip at Latin line heights (plan v4 B2). */
+:root[lang='hi'] {
+  --leading: 1.5;
+  --leading-tight: 1.45;
 }
 [data-text='large'] {
   --text-scale: 1.125;

@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { Prisma } from '@prisma/client';
-import { t, type Language } from '@shiv/i18n';
+import { t, type Language, readLanguage } from '@shiv/i18n';
 import {
   accessFor,
   canDo,
@@ -29,6 +29,7 @@ import {
   type OrderChanges,
   type Permission,
   type RefusalReason,
+  siteLanguage,
 } from '@shiv/shared';
 import { z } from 'zod';
 import { enqueueWhatsApp } from './alerts';
@@ -109,7 +110,7 @@ const refused = () => fail('FORBIDDEN', 'You do not have access to this.', 403);
 function need(actor: Actor, permission: Permission, locationId: string) {
   if (!canDo(actor.access, permission, locationId)) refused();
 }
-const languageOf = (value: string): Language => (value === 'en' ? 'en' : 'hi');
+const languageOf = (value: string): Language => readLanguage(value);
 const snapshotOf = (order: FullOrder): Snapshot => ({
   lines: order.items.map((item) => ({
     productId: item.productId,
@@ -503,7 +504,7 @@ export class ConfirmService {
         userId: order.userId,
         phone,
         template: 'shiv_order_status',
-        params: [order.number, orderStatusText(status, languageOf(order.user.language))],
+        params: [order.number, orderStatusText(status, siteLanguage(order.user.language))],
         dedupeKey: `wa:decision:${order.id}:${version}`,
         sendAfter,
       });

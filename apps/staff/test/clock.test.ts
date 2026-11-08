@@ -11,7 +11,7 @@ import {
   timeText,
 } from '../src/logic/time';
 
-const hi = makeTr('hi');
+const hi = makeTr('hinglish');
 const en = makeTr('en');
 // 3 Nov 2026, 9:02 AM in Patna.
 const at = Date.parse('2026-11-03T03:32:00.000Z');

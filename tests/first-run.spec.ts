@@ -1,7 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import type { Browser, Page } from '@playwright/test';
-import { test, expect } from './fixtures';
-import { hi } from '@shiv/i18n';
+import { test, expect, deskLanguage } from './fixtures';
+import { hinglish } from '@shiv/i18n';
 import { grantOwners } from '../apps/api/test/staff-helper';
 
 // Phase 11 first run. A brand-new customer on the website (the app's is in customer-app.spec.ts), from a fresh install
@@ -91,22 +91,24 @@ test('website first run: pincode, list, sign-in with name, order, what happens n
 
 /** A new owner signs in with OTP and the default Hindi interface. */
 async function deskSignIn(page: Page, phone: string) {
-  await page.addInitScript(() => localStorage.setItem('shiv-owner-language', 'hi'));
+  await deskLanguage(page.context(), 'hinglish');
   await page.goto(`${desk}/today`);
-  const mobile = page.getByRole('textbox', { name: hi['owner.loginPhone'] });
+  const mobile = page.getByRole('textbox', { name: hinglish['owner.loginPhone'] });
   await expect(mobile).toHaveValue('');
   await mobile.fill(phone);
   await expect(page.locator('input[type=password]')).toHaveCount(0);
   const sent = page.waitForResponse(
     (r) => r.url().endsWith('/auth/otp/request') && r.status() === 201,
   );
-  await page.getByRole('button', { name: hi['owner.sendCode'] }).click();
+  await page.getByRole('button', { name: hinglish['owner.sendCode'] }).click();
   await page
-    .getByRole('textbox', { name: hi['owner.code'], exact: true })
+    .getByRole('textbox', { name: hinglish['owner.code'], exact: true })
     .fill((await (await sent).json()).devCode);
-  await page.getByRole('button', { name: hi['owner.signIn'] }).click();
-  await expect(page.getByRole('heading', { name: hi['owner.today'], exact: true })).toBeVisible();
-  await expect(page.locator('html')).toHaveAttribute('lang', 'hi');
+  await page.getByRole('button', { name: hinglish['owner.signIn'] }).click();
+  await expect(
+    page.getByRole('heading', { name: hinglish['owner.today'], exact: true }),
+  ).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'hi-Latn');
 }
 test('owner first run: Hindi setup routes save store information on the server', async ({
   page,
@@ -118,18 +120,18 @@ test('owner first run: Hindi setup routes save store information on the server',
   await grantOwners(db);
   await deskSignIn(page, phone);
   expect(await db.adminCredential.count({ where: { userId: owner.id } })).toBe(0);
-  const navigation = page.getByRole('navigation', { name: hi['owner.desk'], exact: true });
-  await navigation.getByRole('link', { name: hi['owner.more'], exact: true }).click();
-  await page.getByRole('link', { name: hi['owner.settings.title'], exact: true }).click();
+  const navigation = page.getByRole('navigation', { name: hinglish['owner.desk'], exact: true });
+  await navigation.getByRole('link', { name: hinglish['owner.more'], exact: true }).click();
+  await page.getByRole('link', { name: hinglish['owner.settings.title'], exact: true }).click();
   await expect(page).toHaveURL(/\/settings$/);
   await expect(page.getByRole('listitem').filter({ hasText: '800020' }).first()).toBeVisible();
   const before = await db.storeSettings.findUniqueOrThrow({ where: { id: 'store' } });
-  const information = page.getByLabel(hi['owner.deliveryMessage'], { exact: true });
+  const information = page.getByLabel(hinglish['owner.deliveryMessage'], { exact: true });
   await expect(information).toHaveValue(before.deliveryMessage);
   const saved = page.waitForResponse(
     (r) => r.url().endsWith('/admin/store') && r.request().method() === 'PATCH',
   );
-  await page.getByRole('button', { name: hi['owner.save'], exact: true }).click();
+  await page.getByRole('button', { name: hinglish['owner.save'], exact: true }).click();
   const response = await saved;
   expect(response.status()).toBe(200);
   const after = await db.storeSettings.findUniqueOrThrow({ where: { id: 'store' } });
@@ -143,9 +145,9 @@ test('owner first run: Hindi setup routes save store information on the server',
   });
   await page.reload();
   await expect(information).toHaveValue(after.deliveryMessage);
-  await expect(page.locator('html')).toHaveAttribute('lang', 'hi');
-  await navigation.getByRole('link', { name: hi['owner.more'], exact: true }).click();
-  await page.getByRole('link', { name: hi['owner.staff'], exact: true }).click();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'hi-Latn');
+  await navigation.getByRole('link', { name: hinglish['owner.more'], exact: true }).click();
+  await page.getByRole('link', { name: hinglish['owner.staff'], exact: true }).click();
   await expect(page).toHaveURL(/\/staff$/);
   await expect(page.getByText(/First-run owner/).first()).toBeVisible();
 });

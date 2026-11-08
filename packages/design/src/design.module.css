@@ -291,7 +291,7 @@
   font-size: var(--shiv-small);
   text-decoration: none;
   text-align: center;
-  line-height: 1.2;
+  line-height: var(--leading-tight);
   /* Words wrap whole: "Grahak" must never break in the middle at large text. */
   overflow-wrap: normal;
   min-inline-size: 0;

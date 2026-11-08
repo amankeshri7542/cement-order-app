@@ -628,7 +628,7 @@ export class AuthController {
       permissionsVersion: PERMISSIONS_VERSION,
       locations,
       firms,
-      // The person's own look, so it follows them to another phone or computer.
+      // The person's own look and language, so they follow them to another phone or computer.
       preferences: readPreferences(req.user.preferences),
       hasPassphrase: req.access['desk.use']
         ? (await this.db.adminCredential.count({ where: { userId: req.user.id } })) > 0

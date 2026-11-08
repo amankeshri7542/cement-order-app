@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import type { Page } from '@playwright/test';
-import { test, expect } from './fixtures';
+import { test, expect, deskLanguage } from './fixtures';
 
 // Hindi product names: the owner can add a Hindi name on the desk. The website and the customer
 // app have one language, so they never print the name, but website search still finds it.
@@ -53,7 +53,7 @@ test.beforeAll(async () => {
 });
 
 async function deskLogin(page: Page) {
-  await page.addInitScript(() => localStorage.setItem('shiv-owner-language', 'en'));
+  await deskLanguage(page.context(), 'en');
   await page.goto(desk);
   await page.getByRole('textbox', { name: 'Staff mobile number' }).fill('9999997007');
   const sent = page.waitForResponse((r) => r.url().endsWith('/auth/otp/request'));

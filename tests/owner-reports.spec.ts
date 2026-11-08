@@ -1,8 +1,8 @@
 import { PrismaClient } from '@prisma/client';
 import type { Browser, BrowserContext, Page } from '@playwright/test';
-import { hi } from '@shiv/i18n';
+import { hinglish } from '@shiv/i18n';
 import type { StaffRole } from '@shiv/shared';
-import { test, expect } from './fixtures';
+import { test, expect, deskLanguage } from './fixtures';
 
 // The Report, Kisne kya kiya, Settings and System pages as each job sees them. The API refuses all
 // of this on its own (see reports-charts.test.ts); this checks the desk says so politely.
@@ -37,22 +37,24 @@ async function open(
 ): Promise<{ context: BrowserContext; page: Page }> {
   const context = await browser.newContext({ viewport: { width, height: 844 } });
   const page = await context.newPage();
-  await page.addInitScript(() => localStorage.setItem('shiv-owner-language', 'hi'));
+  await deskLanguage(page.context(), 'hinglish');
   return { context, page };
 }
 async function signIn(page: Page, digits: string, path: string) {
   await page.goto(`${desk}${path}`);
-  await page.getByRole('textbox', { name: hi['owner.loginPhone'] }).fill(digits);
+  await page.getByRole('textbox', { name: hinglish['owner.loginPhone'] }).fill(digits);
   const sent = page.waitForResponse(
     (r) => r.url().endsWith('/auth/otp/request') && r.status() === 201,
   );
-  await page.getByRole('button', { name: hi['owner.sendCode'] }).click();
+  await page.getByRole('button', { name: hinglish['owner.sendCode'] }).click();
   await page
-    .getByRole('textbox', { name: hi['owner.code'], exact: true })
+    .getByRole('textbox', { name: hinglish['owner.code'], exact: true })
     .fill((await (await sent).json()).devCode);
-  await page.getByRole('button', { name: hi['owner.signIn'] }).click();
+  await page.getByRole('button', { name: hinglish['owner.signIn'] }).click();
   // Leaving before the session is written would land on the sign-in page again.
-  await expect(page.getByRole('navigation', { name: hi['owner.desk'], exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('navigation', { name: hinglish['owner.desk'], exact: true }),
+  ).toBeVisible();
 }
 const heading = (page: Page, name: string) => page.getByRole('heading', { name, exact: true });
 
@@ -63,40 +65,44 @@ test('an owner reads the report: ranges, figures, charts, tables and the CSV', a
   const { context, page } = await open(browser, 1280);
   try {
     await signIn(page, owner.digits, '/reports');
-    await expect(heading(page, hi['owner.reports.title'])).toBeVisible();
-    await expect(page.getByText(hi['owner.reports.subtitle'])).toBeVisible();
+    await expect(heading(page, hinglish['owner.reports.title'])).toBeVisible();
+    await expect(page.getByText(hinglish['owner.reports.subtitle'])).toBeVisible();
     for (const key of ['7', '30', 'month'] as const)
       await expect(
-        page.getByRole('button', { name: hi[`owner.reports.range.${key}`], exact: true }),
+        page.getByRole('button', { name: hinglish[`owner.reports.range.${key}`], exact: true }),
       ).toBeVisible();
     for (const key of ['moneyIn', 'orders', 'given', 'back'] as const)
       await expect(
-        page.getByText(hi[`owner.reports.figure.${key}`], { exact: true }).first(),
+        page.getByText(hinglish[`owner.reports.figure.${key}`], { exact: true }).first(),
       ).toBeVisible();
-    await page.getByRole('button', { name: hi['owner.reports.range.7'], exact: true }).click();
+    await page
+      .getByRole('button', { name: hinglish['owner.reports.range.7'], exact: true })
+      .click();
     await expect(
-      page.getByRole('button', { name: hi['owner.reports.range.7'], exact: true }),
+      page.getByRole('button', { name: hinglish['owner.reports.range.7'], exact: true }),
     ).toHaveAttribute('aria-pressed', 'true');
 
-    const items = page.getByRole('figure').filter({ hasText: hi['owner.reports.items'] });
-    await items.getByRole('button', { name: hi['owner.reports.seeTable'] }).click();
+    const items = page.getByRole('figure').filter({ hasText: hinglish['owner.reports.items'] });
+    await items.getByRole('button', { name: hinglish['owner.reports.seeTable'] }).click();
     await expect(items.getByRole('table')).toBeVisible();
-    await items.getByRole('button', { name: hi['owner.reports.seeChart'] }).click();
+    await items.getByRole('button', { name: hinglish['owner.reports.seeChart'] }).click();
     await expect(items.getByRole('table')).toHaveCount(0);
 
     for (const key of ['moneyByDay', 'sources', 'age', 'confirm'] as const)
-      await expect(heading(page, hi[`owner.reports.${key}`])).toBeVisible();
+      await expect(heading(page, hinglish[`owner.reports.${key}`])).toBeVisible();
     // The seeded shop may be new, so either the columns or the thin-data note shows.
-    const byDay = page.getByRole('figure').filter({ hasText: hi['owner.reports.moneyByDay'] });
+    const byDay = page
+      .getByRole('figure')
+      .filter({ hasText: hinglish['owner.reports.moneyByDay'] });
     await expect(
       byDay
-        .getByText(hi['owner.reports.thin'])
+        .getByText(hinglish['owner.reports.thin'])
         .or(byDay.getByRole('button', { name: /: ₹/ }))
         .first(),
     ).toBeVisible();
 
     const file = page.waitForEvent('download');
-    await page.getByRole('button', { name: hi['owner.reports.csv'] }).click();
+    await page.getByRole('button', { name: hinglish['owner.reports.csv'] }).click();
     expect((await file).suggestedFilename()).toMatch(/^shiv-\d{4}-\d{2}-\d{2}-.*\.csv$/);
   } finally {
     await context.close();
@@ -110,9 +116,9 @@ test('a manager reads the report for their shop and has no shop comparison', asy
   const { context, page } = await open(browser);
   try {
     await signIn(page, manager.digits, '/reports');
-    await expect(heading(page, hi['owner.reports.title'])).toBeVisible();
-    await expect(heading(page, hi['owner.reports.confirm'])).toBeVisible();
-    await expect(heading(page, hi['owner.reports.shops'])).toHaveCount(0);
+    await expect(heading(page, hinglish['owner.reports.title'])).toBeVisible();
+    await expect(heading(page, hinglish['owner.reports.confirm'])).toBeVisible();
+    await expect(heading(page, hinglish['owner.reports.shops'])).toHaveCount(0);
   } finally {
     await context.close();
   }
@@ -131,19 +137,19 @@ test('the log reads in plain sentences, never event names, and says it cannot be
   const { context, page } = await open(browser, 1280);
   try {
     await signIn(page, owner.digits, '/activity');
-    await expect(heading(page, hi['owner.activity.title'])).toBeVisible();
-    await expect(page.getByText(hi['owner.activity.subtitle'])).toBeVisible();
+    await expect(heading(page, hinglish['owner.activity.title'])).toBeVisible();
+    await expect(page.getByText(hinglish['owner.activity.subtitle'])).toBeVisible();
     const table = page.getByRole('table');
     await expect(
-      table.getByText(hi['owner.activity.event.RATES_REAFFIRMED']).first(),
+      table.getByText(hinglish['owner.activity.event.RATES_REAFFIRMED']).first(),
     ).toBeVisible();
-    await expect(table.getByText(hi['owner.activity.unknown']).first()).toBeVisible();
+    await expect(table.getByText(hinglish['owner.activity.unknown']).first()).toBeVisible();
     await expect(page.getByText('RATES_REAFFIRMED')).toHaveCount(0);
     await expect(page.getByText('SOMETHING_NEW_LATER')).toHaveCount(0);
-    await page.getByLabel(hi['owner.activity.filter.person']).selectOption(owner.id);
-    await expect(table.getByText(hi['owner.activity.unknown'])).toHaveCount(0);
-    await page.getByLabel(hi['owner.activity.filter.day']).fill('2020-01-01');
-    await expect(page.getByText(hi['owner.activity.empty'])).toBeVisible();
+    await page.getByLabel(hinglish['owner.activity.filter.person']).selectOption(owner.id);
+    await expect(table.getByText(hinglish['owner.activity.unknown'])).toHaveCount(0);
+    await page.getByLabel(hinglish['owner.activity.filter.day']).fill('2020-01-01');
+    await expect(page.getByText(hinglish['owner.activity.empty'])).toBeVisible();
   } finally {
     await context.close();
   }
@@ -157,9 +163,11 @@ test('an owner sees every part of settings, and turning the bell off stays off',
   try {
     await signIn(page, owner.digits, '/settings');
     for (const key of ['shop', 'zones', 'logins', 'language', 'thisPhone'] as const)
-      await expect(heading(page, hi[`owner.settings.${key}`])).toBeVisible();
-    await expect(page.getByRole('button', { name: hi['owner.settings.testAlert'] })).toBeVisible();
-    const bell = page.getByRole('checkbox', { name: hi['owner.settings.bell'] });
+      await expect(heading(page, hinglish[`owner.settings.${key}`])).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: hinglish['owner.settings.testAlert'] }),
+    ).toBeVisible();
+    const bell = page.getByRole('checkbox', { name: hinglish['owner.settings.bell'] });
     await bell.uncheck();
     await page.reload();
     await expect(bell).not.toBeChecked();
@@ -176,10 +184,12 @@ test('a cashier gets their own settings only, and no shop settings or test alert
   try {
     await signIn(page, cashier.digits, '/settings');
     for (const key of ['logins', 'language', 'thisPhone'] as const)
-      await expect(heading(page, hi[`owner.settings.${key}`])).toBeVisible();
+      await expect(heading(page, hinglish[`owner.settings.${key}`])).toBeVisible();
     for (const key of ['shop', 'zones'] as const)
-      await expect(heading(page, hi[`owner.settings.${key}`])).toHaveCount(0);
-    await expect(page.getByRole('button', { name: hi['owner.settings.testAlert'] })).toHaveCount(0);
+      await expect(heading(page, hinglish[`owner.settings.${key}`])).toHaveCount(0);
+    await expect(
+      page.getByRole('button', { name: hinglish['owner.settings.testAlert'] }),
+    ).toHaveCount(0);
   } finally {
     await context.close();
   }
@@ -192,10 +202,10 @@ test('the technical operator reads the system page, and it says it changes no mo
   const { context, page } = await open(browser, 1280);
   try {
     await signIn(page, tech.digits, '/system');
-    await expect(heading(page, hi['owner.system.title'])).toBeVisible();
-    await expect(page.getByText(hi['owner.system.subtitle'])).toBeVisible();
+    await expect(heading(page, hinglish['owner.system.title'])).toBeVisible();
+    await expect(page.getByText(hinglish['owner.system.subtitle'])).toBeVisible();
     for (const key of ['work', 'lanes', 'warnings', 'whatsapp', 'messages'] as const)
-      await expect(heading(page, hi[`owner.system.${key}`])).toBeVisible();
+      await expect(heading(page, hinglish[`owner.system.${key}`])).toBeVisible();
   } finally {
     await context.close();
   }
@@ -217,7 +227,7 @@ test('each job is refused the pages that are not theirs, politely', async ({ bro
       await signIn(page, person.digits, paths[0]!);
       for (const path of paths) {
         await page.goto(`${desk}${path}`);
-        await expect(page.getByText(hi['owner.notYourPage'])).toBeVisible();
+        await expect(page.getByText(hinglish['owner.notYourPage'])).toBeVisible();
       }
     } finally {
       await context.close();

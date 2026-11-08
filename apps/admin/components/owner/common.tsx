@@ -192,7 +192,7 @@ export function ContactActions({
 export function orderShare(
   order: import('@shiv/shared').Order,
   t: ReturnType<typeof useT>,
-  language: Language = 'hi',
+  language: Language = 'hinglish',
 ) {
   return t('owner.orderShare', {
     number: order.number,

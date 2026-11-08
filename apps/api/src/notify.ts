@@ -1,4 +1,4 @@
-import { t, type Language, type MessageKey, type Params } from '@shiv/i18n';
+import { t, type Language, type MessageKey, type Params, readLanguage } from '@shiv/i18n';
 import type { Prisma } from '@prisma/client';
 
 type Tx = Pick<Prisma.TransactionClient, 'user' | 'notification'>;
@@ -51,7 +51,7 @@ export async function notifyCustomer(
   orderId?: string,
 ) {
   const user = await tx.user.findUnique({ where: { id: userId }, select: { language: true } });
-  const { title, body } = words(user?.language === 'en' ? 'en' : 'hi');
+  const { title, body } = words(readLanguage(user?.language));
   await tx.notification.create({
     data: { userId, title, body, ...(orderId ? { orderId } : {}) },
   });

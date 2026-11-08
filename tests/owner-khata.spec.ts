@@ -1,8 +1,8 @@
-import { hi } from '@shiv/i18n';
+import { hinglish } from '@shiv/i18n';
 import { PrismaClient } from '@prisma/client';
 import { money } from '@shiv/shared';
 import type { Page } from '@playwright/test';
-import { test, expect } from './fixtures';
+import { test, expect, deskLanguage } from './fixtures';
 
 const db = new PrismaClient({ datasourceUrl: process.env.TEST_DATABASE_URL });
 const desk = 'http://localhost:3001';
@@ -87,13 +87,7 @@ test.beforeAll(async () => {
 test.afterAll(() => db.$disconnect());
 
 async function signInHindi(page: Page) {
-  await page.addInitScript(() => {
-    try {
-      localStorage.setItem('shiv-owner-language', 'hi');
-    } catch {
-      /* Storage may be disabled. */
-    }
-  });
+  await deskLanguage(page.context(), 'hinglish');
   await page.goto(desk + '/today');
   await page
     .getByRole('textbox', { name: 'Staff ka mobile number', exact: true })
@@ -106,7 +100,7 @@ async function signInHindi(page: Page) {
   await page.getByRole('textbox', { name: 'Code', exact: true }).fill(challenge.devCode);
   await page.getByRole('button', { name: 'Desk kholo', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Aaj', exact: true })).toBeVisible();
-  await expect(page.locator('html')).toHaveAttribute('lang', 'hi');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'hi-Latn');
 }
 
 test('Hindi customer settings, credit delivery, payment and reversal preserve the khata', async ({
@@ -155,7 +149,7 @@ test('Hindi customer settings, credit delivery, payment and reversal preserve th
 
   await page
     .locator('#owner-main')
-    .getByRole('link', { name: hi['owner.newOrder'], exact: true })
+    .getByRole('link', { name: hinglish['owner.newOrder'], exact: true })
     .click();
   await expect(page).toHaveURL(new RegExp(`/orders/new\\?customer=${customerId}$`));
   await expect(page.getByRole('textbox', { name: 'Mobile number', exact: true })).toHaveValue(
@@ -168,7 +162,7 @@ test('Hindi customer settings, credit delivery, payment and reversal preserve th
   await page.getByRole('searchbox', { name: 'Maal dhoondo', exact: true }).fill(productName);
   await expect(page.getByRole('heading', { name: productNameHi, exact: true })).toBeVisible();
   await page
-    .getByRole('textbox', { name: `${hi['owner.quantity']} ${productNameHi}`, exact: true })
+    .getByRole('textbox', { name: `${hinglish['owner.quantity']} ${productNameHi}`, exact: true })
     .fill('2');
   await page.getByRole('button', { name: 'Aage badho', exact: true }).click();
   await page
@@ -185,7 +179,7 @@ test('Hindi customer settings, credit delivery, payment and reversal preserve th
   await page.getByRole('button', { name: 'Order dekho', exact: true }).click();
   const review = page.getByRole('dialog', { name: 'Order dekho', exact: true });
   await expect(
-    review.getByText(`${hi['owner.balanceAfter']}: ${money(totalPaise)}`, { exact: true }),
+    review.getByText(`${hinglish['owner.balanceAfter']}: ${money(totalPaise)}`, { exact: true }),
   ).toBeVisible();
   const created = page.waitForResponse(
     (response) =>
@@ -319,20 +313,19 @@ test('Hindi customer settings, credit delivery, payment and reversal preserve th
 test('unsaved customer notes survive cancelled payment and tab navigation', async ({ page }) => {
   await signInHindi(page);
   await page.goto(`${desk}/customers/${customerId}`);
-  await page.getByRole('tab', { name: hi['owner.customerNotes'], exact: true }).click();
-  const note = page.getByRole('textbox', { name: hi['owner.notePlaceholder'], exact: true });
+  await page.getByRole('tab', { name: hinglish['owner.customerNotes'], exact: true }).click();
+  const note = page.getByRole('textbox', { name: hinglish['owner.notePlaceholder'], exact: true });
   await note.fill('अभी सहेजा नहीं गया नोट');
-  await page.getByRole('button', { name: hi['owner.receiveMoney'], exact: true }).click();
-  const warning = page.getByRole('dialog', { name: hi['owner.unsavedTitle'], exact: true });
-  await warning.getByRole('button', { name: hi['owner.keepEditing'], exact: true }).click();
+  await page.getByRole('button', { name: hinglish['owner.receiveMoney'], exact: true }).click();
+  const warning = page.getByRole('dialog', { name: hinglish['owner.unsavedTitle'], exact: true });
+  await warning.getByRole('button', { name: hinglish['owner.keepEditing'], exact: true }).click();
   await expect(note).toHaveValue('अभी सहेजा नहीं गया नोट');
-  await page.getByRole('tab', { name: hi['owner.khata'], exact: true }).click();
+  await page.getByRole('tab', { name: hinglish['owner.khata'], exact: true }).click();
   await expect(warning).toBeVisible();
-  await warning.getByRole('button', { name: hi['owner.discard'], exact: true }).click();
-  await expect(page.getByRole('tab', { name: hi['owner.khata'], exact: true })).toHaveAttribute(
-    'aria-selected',
-    'true',
-  );
+  await warning.getByRole('button', { name: hinglish['owner.discard'], exact: true }).click();
+  await expect(
+    page.getByRole('tab', { name: hinglish['owner.khata'], exact: true }),
+  ).toHaveAttribute('aria-selected', 'true');
   expect(
     await db.customerNote.count({ where: { customerId, body: 'अभी सहेजा नहीं गया नोट' } }),
   ).toBe(0);

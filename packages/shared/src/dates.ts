@@ -1,16 +1,36 @@
-import type { Language } from './i18n';
+import { t } from '@shiv/i18n';
+import type { Language as SiteLanguage } from './i18n';
 
-// All shop dates are Patna time, in Roman script in both languages. A fixed 24-hour time avoids
-// day-period differences between engines (server render, WebKit, Android's Hermes).
+/**
+ * The website and the customer app pass 'en' or 'hi'; the desk and the staff app pass their own
+ * language, where Hinglish is 'hinglish' (plan v4 B2). 'hi' is Devanagari everywhere. Digits are
+ * Latin in every language; month, weekday and age words come from the catalogue, so every engine
+ * (server render, WebKit, Android's Hermes) prints the same words.
+ */
+type Language = SiteLanguage | 'hinglish';
+
+// All shop dates are Patna time. A fixed 24-hour time avoids day-period differences between engines.
 const ZONE = 'Asia/Kolkata';
+const parts = new Intl.DateTimeFormat('en-GB', {
+  day: 'numeric',
+  month: 'numeric',
+  year: 'numeric',
+  timeZone: ZONE,
+});
+/** Day, month (1 to 12) and year of a moment, in Patna. */
+function patna(value: string | Date) {
+  const got = Object.fromEntries(
+    parts.formatToParts(new Date(value)).map((part) => [part.type, part.value]),
+  );
+  return { day: Number(got.day), month: Number(got.month), year: Number(got.year) };
+}
+const month = (value: number, language: Language) =>
+  t(`date.month.${value}` as 'date.month.1', {}, language);
 
-export function dateLabel(value: string | Date, _language: Language): string {
-  return new Intl.DateTimeFormat('en-IN', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    timeZone: ZONE,
-  }).format(new Date(value));
+/** "16 Oct 2026", "16 अक्तू॰ 2026". */
+export function dateLabel(value: string | Date, language: Language): string {
+  const { day, month: m, year } = patna(value);
+  return `${day} ${month(m, language)} ${year}`;
 }
 export function timeLabel(value: string | Date): string {
   return new Intl.DateTimeFormat('en-GB', {
@@ -29,20 +49,14 @@ export function momentLabel(value: string, language: Language): string {
 }
 
 const noon = (day: string) => new Date(`${day}T12:00:00+05:30`);
-const weekdays = ['Itvaar', 'Somvar', 'Mangalvar', 'Budhvar', 'Guruvar', 'Shukravar', 'Shanivar'];
-/** "Thu" / "Guruvar" for a YYYY-MM-DD delivery day. */
+/** "Thu" / "Guruvar" / "गुरुवार" for a YYYY-MM-DD delivery day. */
 export function weekdayLabel(day: string, language: Language): string {
-  return language === 'hi'
-    ? weekdays[noon(day).getUTCDay()]!
-    : new Intl.DateTimeFormat('en-IN', { weekday: 'short', timeZone: ZONE }).format(noon(day));
+  return t(`date.weekday.${noon(day).getUTCDay()}` as 'date.weekday.0', {}, language);
 }
 /** "16 Oct" for a YYYY-MM-DD delivery day. */
-export function shortDayLabel(day: string, _language: Language): string {
-  return new Intl.DateTimeFormat('en-IN', {
-    day: 'numeric',
-    month: 'short',
-    timeZone: ZONE,
-  }).format(noon(day));
+export function shortDayLabel(day: string, language: Language): string {
+  const { day: d, month: m } = patna(noon(day));
+  return `${d} ${month(m, language)}`;
 }
 /** Today's calendar date in Patna as YYYY-MM-DD. */
 export function istToday(now: Date = new Date()): string {
@@ -56,14 +70,10 @@ export function deliveryDateOptions(now: Date = new Date(), leadDays = 1, count 
     return day.toISOString().slice(0, 10);
   });
 }
-/** "2 ghante / 3 din" style age for owner queues and order cards. */
+/** "15 min", "2 ghante", "3 दिन": age for owner queues and order cards. */
 export function ageLabel(since: string | Date, language: Language, now: Date = new Date()): string {
   const minutes = Math.max(0, Math.floor((now.getTime() - new Date(since).getTime()) / 60000));
-  const [value, unit] =
-    minutes < 60
-      ? [minutes, language === 'hi' ? 'minute' : 'min']
-      : minutes < 1440
-        ? [Math.floor(minutes / 60), language === 'hi' ? 'ghante' : 'h']
-        : [Math.floor(minutes / 1440), language === 'hi' ? 'din' : 'd'];
-  return language === 'hi' ? `${value} ${unit}` : `${value}${unit === 'min' ? ' min' : unit}`;
+  if (minutes < 60) return t('date.age.minutes', { count: minutes }, language);
+  if (minutes < 1440) return t('date.age.hours', { count: Math.floor(minutes / 60) }, language);
+  return t('date.age.days', { count: Math.floor(minutes / 1440) }, language);
 }

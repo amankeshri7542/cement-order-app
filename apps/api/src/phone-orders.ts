@@ -20,9 +20,13 @@ import {
 } from './http';
 import { Events } from './catalog';
 import { getConfig } from './config';
+import { t } from '@shiv/i18n';
 import { deliveryFor, moveStock, orderTotals, validateQuantity } from './inventory';
 import { khataCustomer } from './khata';
 import { orderInclude, reference, validDelivery } from './orders';
+
+// The one name the counter's walk-in account carries, written once and shown as it is stored.
+const counterName = t('customer.counterName', {}, 'hi');
 
 @Injectable()
 export class PhoneOrdersService {
@@ -72,7 +76,7 @@ export class PhoneOrdersService {
       where: { phone: customerPhone },
       create: {
         phone: customerPhone,
-        name: input.customerName ?? (input.customerPhone ? '' : 'काउंटर ग्राहक'),
+        name: input.customerName ?? (input.customerPhone ? '' : counterName),
         role: 'CUSTOMER',
         language: 'hi',
       },
@@ -179,7 +183,7 @@ export class PhoneOrdersService {
     // Preserve the address snapshot shape for existing consumers, including store pickup.
     const address = input.address ?? {
       label: 'Store pickup',
-      name: customer.name || input.customerPhone || 'काउंटर ग्राहक',
+      name: customer.name || input.customerPhone || counterName,
       phone: input.customerPhone ?? '',
       line1: 'Store pickup',
       area: '',

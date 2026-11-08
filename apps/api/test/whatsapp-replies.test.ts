@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { loadEnvFile } from 'node:process';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { en, hi } from '@shiv/i18n';
+import { en, hinglish } from '@shiv/i18n';
 import { waStages, type StaffRole } from '@shiv/shared';
 import { getConfig } from '../src/config';
 import { Db } from '../src/db';
@@ -448,7 +448,7 @@ describe('moving a stage', () => {
     expect(audit).toMatchObject({ actorId: 'papa', entityId: 'wa' });
     expect(audit.details).toMatchObject({ from: 'OFF', to: 'TEST_NUMBERS', reviewed: 200 });
     expect(en['owner.activity.event.WA_STAGE_MOVED']).toBeTruthy();
-    expect(hi['owner.activity.event.WA_STAGE_MOVED']).toBeTruthy();
+    expect(hinglish['owner.activity.event.WA_STAGE_MOVED']).toBeTruthy();
   });
   it('cannot jump a stage', async () => {
     await passGate();

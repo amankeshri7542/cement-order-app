@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { hi } from '@shiv/i18n';
+import { hinglish } from '@shiv/i18n';
 import { distanceMeters } from '@shiv/shared';
 import { test, expect } from './fixtures';
 import {
@@ -75,56 +75,64 @@ test('an owner reads the day: a scan, a hand mark with no time to choose, and a 
   const { context, page } = await signedInDesk(browser, boss);
   try {
     await go(page, '/hazri');
-    await expect(page.getByRole('heading', { name: hi['owner.hazri.title'] })).toBeVisible();
+    await expect(page.getByRole('heading', { name: hinglish['owner.hazri.title'] })).toBeVisible();
 
     // A status has a shape as well as a colour.
-    await expect(stateOf(page, came.name)).toHaveText(hi['owner.hazri.status.PRESENT']);
+    await expect(stateOf(page, came.name)).toHaveText(hinglish['owner.hazri.status.PRESENT']);
     await expect(stateOf(page, came.name).locator('svg')).toBeVisible();
     const handRow = line(page, handMarked.name);
-    await expect(stateOf(page, handMarked.name)).toHaveText(hi['owner.hazri.status.ABSENT']);
+    await expect(stateOf(page, handMarked.name)).toHaveText(hinglish['owner.hazri.status.ABSENT']);
 
     // The sheet asks why, and has nowhere to choose a time.
     await page
       .getByRole('button', { name: say('owner.hazri.mark.for', { name: handMarked.name }) })
       .click();
     const sheet = page.getByRole('dialog');
-    await expect(sheet.getByText(hi['owner.hazri.mark.body'])).toBeVisible();
+    await expect(sheet.getByText(hinglish['owner.hazri.mark.body'])).toBeVisible();
     await expect(sheet.locator('input[type="time"], input[type="date"]')).toHaveCount(0);
-    await sheet.getByRole('textbox', { name: hi['owner.hazri.mark.why'] }).fill('Phone toota hai');
+    await sheet
+      .getByRole('textbox', { name: hinglish['owner.hazri.mark.why'] })
+      .fill('Phone toota hai');
     // Tapped twice, marked once.
-    await sheet.getByRole('button', { name: hi['owner.hazri.mark.in'], exact: true }).dblclick();
-    await expect(handRow.getByText(hi['owner.hazri.flag.MANUAL'])).toBeVisible();
+    await sheet
+      .getByRole('button', { name: hinglish['owner.hazri.mark.in'], exact: true })
+      .dblclick();
+    await expect(handRow.getByText(hinglish['owner.hazri.flag.MANUAL'])).toBeVisible();
     const marks = await db.attendanceEvent.findMany({ where: { userId: handMarked.id } });
     expect(marks.map((row) => [row.kind, row.actorId])).toEqual([['MANUAL_IN', boss.id]]);
     // Now the same button sends them home.
     await expect(
       page.getByRole('button', { name: say('owner.hazri.mark.for', { name: handMarked.name }) }),
-    ).toHaveText(hi['owner.hazri.mark.out']);
+    ).toHaveText(hinglish['owner.hazri.mark.out']);
 
     // A person's whole day.
     await openDay(page, came.name);
     const day = page.getByRole('dialog');
-    await expect(day.getByText(hi['owner.hazri.event.IN'], { exact: true })).toBeVisible();
-    await day.getByRole('combobox', { name: hi['owner.hazri.fix.which'] }).selectOption('IN');
-    const time = day.getByRole('textbox', { name: hi['owner.hazri.fix.time'] });
+    await expect(day.getByText(hinglish['owner.hazri.event.IN'], { exact: true })).toBeVisible();
+    await day.getByRole('combobox', { name: hinglish['owner.hazri.fix.which'] }).selectOption('IN');
+    const time = day.getByRole('textbox', { name: hinglish['owner.hazri.fix.time'] });
     // A time still to come is refused here, before it can sit on the record for good.
     if (isoMinute() < '23:30') {
       await time.fill('23:59');
-      await expect(day.getByText(hi['owner.hazri.fix.future'])).toBeVisible();
+      await expect(day.getByText(hinglish['owner.hazri.fix.future'])).toBeVisible();
       await expect(
-        day.getByRole('button', { name: hi['owner.hazri.fix.save'], exact: true }),
+        day.getByRole('button', { name: hinglish['owner.hazri.fix.save'], exact: true }),
       ).toBeDisabled();
     }
     const earlier = minutesBack(5);
     await time.fill(earlier);
-    await day.getByRole('textbox', { name: hi['owner.hazri.fix.reason'] }).fill('Galat time tha');
-    await day.getByRole('button', { name: hi['owner.hazri.fix.save'], exact: true }).click();
-    await expect(day.getByText(hi['owner.hazri.event.CORRECTION'], { exact: true })).toBeVisible();
+    await day
+      .getByRole('textbox', { name: hinglish['owner.hazri.fix.reason'] })
+      .fill('Galat time tha');
+    await day.getByRole('button', { name: hinglish['owner.hazri.fix.save'], exact: true }).click();
+    await expect(
+      day.getByText(hinglish['owner.hazri.event.CORRECTION'], { exact: true }),
+    ).toBeVisible();
     await expect(
       day.getByText(say('owner.hazri.person.note', { note: 'Galat time tha' })),
     ).toBeVisible();
     // The original is still there, beside the correction.
-    await expect(day.getByText(hi['owner.hazri.event.IN'], { exact: true })).toBeVisible();
+    await expect(day.getByText(hinglish['owner.hazri.event.IN'], { exact: true })).toBeVisible();
     const rows = await db.attendanceEvent.findMany({
       where: { userId: came.id },
       orderBy: { seq: 'asc' },
@@ -132,9 +140,9 @@ test('an owner reads the day: a scan, a hand mark with no time to choose, and a 
     expect(rows.map((row) => row.kind)).toEqual(['IN', 'CORRECTION']);
 
     // Owners also see the proof, and what it does and does not prove.
-    await expect(day.getByText(hi['owner.hazri.proof.ok'])).toBeVisible();
-    await expect(day.getByText(hi['owner.hazri.proof.noCode'])).toBeVisible();
-    await expect(day.getByText(hi['owner.hazri.proof.means'])).toBeVisible();
+    await expect(day.getByText(hinglish['owner.hazri.proof.ok'])).toBeVisible();
+    await expect(day.getByText(hinglish['owner.hazri.proof.noCode'])).toBeVisible();
+    await expect(day.getByText(hinglish['owner.hazri.proof.means'])).toBeVisible();
   } finally {
     await context.close();
   }
@@ -166,7 +174,7 @@ test('the proof shows the night’s code, and says so when the record no longer 
     await expect(
       day.getByText(say('owner.hazri.proof.code', { code: 'abcdef1234' })),
     ).toBeVisible();
-    await expect(day.getByText(hi['owner.hazri.proof.means'])).toBeVisible();
+    await expect(day.getByText(hinglish['owner.hazri.proof.means'])).toBeVisible();
   } finally {
     await context.close();
     await db.proofAnchor.delete({ where: { day: today() } });
@@ -181,10 +189,12 @@ test('a day can be looked back on, with no hand marking in the past', async ({ b
     await expect(
       page.getByRole('button', { name: say('owner.hazri.mark.for', { name: who.name }) }),
     ).toBeVisible();
-    await page.getByRole('textbox', { name: hi['owner.hazri.day'] }).fill('2026-10-01');
+    await page.getByRole('textbox', { name: hinglish['owner.hazri.day'] }).fill('2026-10-01');
     await expect(line(page, who.name)).toBeVisible();
     await expect(page.getByRole('button', { name: /ki hazri haath se$/ })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: hi['owner.hazri.here.button'] })).toHaveCount(0);
+    await expect(
+      page.getByRole('button', { name: hinglish['owner.hazri.here.button'] }),
+    ).toHaveCount(0);
   } finally {
     await context.close();
   }
@@ -240,7 +250,7 @@ test('each card says what the checks saw in plain words, with no codes and no ac
     await expect(
       farCard.getByText(say('owner.hazri.review.weakMonth', { count: 1 })),
     ).toBeVisible();
-    const map = farCard.getByRole('link', { name: hi['owner.hazri.review.map'] });
+    const map = farCard.getByRole('link', { name: hinglish['owner.hazri.review.map'] });
     await expect(map).toHaveAttribute('href', new RegExp(`query=${place.lat},${place.lng}$`));
 
     await expect(
@@ -257,10 +267,10 @@ test('each card says what the checks saw in plain words, with no codes and no ac
     await expect(late.getByText(/Sahi maanne par .* ginega/)).toBeVisible();
 
     const problem = card(asked.who.name);
-    await expect(problem.getByText(hi['owner.hazri.why.PROBLEM_NO_QR'])).toBeVisible();
+    await expect(problem.getByText(hinglish['owner.hazri.why.PROBLEM_NO_QR'])).toBeVisible();
     await expect(problem.getByText('Screen kharab hai')).toBeVisible();
     // The photo is read with a session, and has no address of its own.
-    const photo = problem.getByRole('img', { name: hi['owner.evidence.alt'] });
+    const photo = problem.getByRole('img', { name: hinglish['owner.evidence.alt'] });
     await expect(photo).toBeVisible();
     await expect(photo).toHaveAttribute('src', /^blob:/);
     await expect
@@ -268,7 +278,7 @@ test('each card says what the checks saw in plain words, with no codes and no ac
       .toBeGreaterThan(0);
     expect(photos.length).toBeGreaterThan(0);
 
-    await expect(card(query.who.name).getByText(hi['owner.hazri.why.QUERY'])).toBeVisible();
+    await expect(card(query.who.name).getByText(hinglish['owner.hazri.why.QUERY'])).toBeVisible();
 
     const words = await page.locator('main').innerText();
     for (const code of [
@@ -289,14 +299,14 @@ test('each card says what the checks saw in plain words, with no codes and no ac
 
     // Three buttons on each, in the owners' words.
     await expect(
-      card(mocked.who.name).getByRole('button', { name: hi['owner.hazri.review.accept'] }),
+      card(mocked.who.name).getByRole('button', { name: hinglish['owner.hazri.review.accept'] }),
     ).toBeVisible();
     await expect(
-      card(mocked.who.name).getByRole('button', { name: hi['owner.hazri.review.reject'] }),
+      card(mocked.who.name).getByRole('button', { name: hinglish['owner.hazri.review.reject'] }),
     ).toBeVisible();
     // An owner has nobody to send it up to; a manager does, as the next test shows.
     await expect(
-      card(mocked.who.name).getByRole('button', { name: hi['owner.hazri.review.toOwner'] }),
+      card(mocked.who.name).getByRole('button', { name: hinglish['owner.hazri.review.toOwner'] }),
     ).toHaveCount(0);
   } finally {
     await context.close();
@@ -320,15 +330,19 @@ test('Sahi hai settles it, and the second person sees it was already done, not a
     const card = (page: import('@playwright/test').Page) =>
       page.locator('article').filter({ hasText: who.name });
     await expect(card(second.page)).toBeVisible();
-    await card(first.page).getByRole('button', { name: hi['owner.hazri.review.accept'] }).click();
+    await card(first.page)
+      .getByRole('button', { name: hinglish['owner.hazri.review.accept'] })
+      .click();
     await expect(
       toast(first.page, say('owner.hazri.review.accepted', { name: who.name })),
     ).toBeVisible();
     await expect(card(first.page)).toHaveCount(0);
 
     // The stale card on the other desk.
-    await card(second.page).getByRole('button', { name: hi['owner.hazri.review.accept'] }).click();
-    await expect(toast(second.page, hi['owner.hazri.alreadyDone'])).toBeVisible();
+    await card(second.page)
+      .getByRole('button', { name: hinglish['owner.hazri.review.accept'] })
+      .click();
+    await expect(toast(second.page, hinglish['owner.hazri.alreadyDone'])).toBeVisible();
     await expect(second.page.locator('main').getByRole('alert')).toHaveCount(0);
     await expect(card(second.page)).toHaveCount(0);
 
@@ -351,16 +365,19 @@ test('Galat hai asks why, keeps the entry on record, and the day does not count 
   try {
     await go(page, '/hazri?tab=reviews');
     const card = page.locator('article').filter({ hasText: who.name });
-    await card.getByRole('button', { name: hi['owner.hazri.review.reject'] }).click();
+    await card.getByRole('button', { name: hinglish['owner.hazri.review.reject'] }).click();
     const sheet = page.getByRole('dialog');
-    const send = sheet.getByRole('button', { name: hi['owner.hazri.review.reject'], exact: true });
+    const send = sheet.getByRole('button', {
+      name: hinglish['owner.hazri.review.reject'],
+      exact: true,
+    });
     await send.click();
     // The reason is required, so nothing has moved yet.
     expect((await db.attendanceReview.findFirstOrThrow({ where: { userId: who.id } })).status).toBe(
       'OPEN',
     );
     await sheet
-      .getByRole('textbox', { name: hi['owner.hazri.review.rejectWhy'] })
+      .getByRole('textbox', { name: hinglish['owner.hazri.review.rejectWhy'] })
       .fill('Dukaan par nahi tha');
     await send.click();
     await expect(toast(page, say('owner.hazri.review.rejected', { name: who.name }))).toBeVisible();
@@ -388,22 +405,30 @@ test('Malik ko bhejo moves it up: gone from the manager, there for the owner, an
     for (const { page } of [one, two]) await go(page, '/hazri?tab=reviews');
     const card = (page: import('@playwright/test').Page) =>
       page.locator('article').filter({ hasText: who.name });
-    await card(one.page).getByRole('button', { name: hi['owner.hazri.review.toOwner'] }).click();
+    await card(one.page)
+      .getByRole('button', { name: hinglish['owner.hazri.review.toOwner'] })
+      .click();
     await expect(
       toast(one.page, say('owner.hazri.review.sentUp', { name: who.name })),
     ).toBeVisible();
     await expect(card(one.page)).toHaveCount(0);
 
     // The other manager still has it on the screen. Their tap is refused, plainly.
-    await card(two.page).getByRole('button', { name: hi['owner.hazri.review.accept'] }).click();
-    await expect(toast(two.page, hi['owner.hazri.review.movedOn'])).toBeVisible();
+    await card(two.page)
+      .getByRole('button', { name: hinglish['owner.hazri.review.accept'] })
+      .click();
+    await expect(toast(two.page, hinglish['owner.hazri.review.movedOn'])).toBeVisible();
     expect((await db.attendanceReview.findFirstOrThrow({ where: { userId: who.id } })).status).toBe(
       'OPEN',
     );
 
     await go(owner.page, '/hazri?tab=reviews');
-    await expect(card(owner.page).getByText(hi['owner.hazri.review.withOwner'])).toBeVisible();
-    await card(owner.page).getByRole('button', { name: hi['owner.hazri.review.accept'] }).click();
+    await expect(
+      card(owner.page).getByText(hinglish['owner.hazri.review.withOwner']),
+    ).toBeVisible();
+    await card(owner.page)
+      .getByRole('button', { name: hinglish['owner.hazri.review.accept'] })
+      .click();
     await expect(card(owner.page)).toHaveCount(0);
   } finally {
     await one.context.close();
@@ -454,11 +479,11 @@ test('net band tha: many accepted with one reason, ticking only what is plainly 
   const second = await signedInDesk(browser, other);
   try {
     await go(first.page, '/hazri?tab=reviews');
-    await first.page.getByRole('button', { name: hi['owner.hazri.bulk.title'] }).click();
+    await first.page.getByRole('button', { name: hinglish['owner.hazri.bulk.title'] }).click();
     const sheet = first.page.getByRole('dialog');
-    await expect(sheet.getByRole('textbox', { name: hi['owner.hazri.bulk.reason'] })).toHaveValue(
-      'Dukaan ka net band tha',
-    );
+    await expect(
+      sheet.getByRole('textbox', { name: hinglish['owner.hazri.bulk.reason'] }),
+    ).toHaveValue('Dukaan ka net band tha');
     const tick = (name: string) => sheet.getByRole('checkbox', { name: new RegExp(name) });
     await expect(tick(a.who.name)).toBeChecked();
     await expect(tick(b.who.name)).toBeChecked();
@@ -508,28 +533,35 @@ test('the count shows on Today, on the side bar and under Aur on a phone, and go
       name: say('owner.hazri.toLookLink', { count: 1 }),
     });
     await expect(link).toBeVisible();
-    const side = laptop.page.getByRole('navigation', { name: hi['owner.desk'], exact: true });
-    await expect(side.getByRole('link', { name: `${hi['owner.hazri.title']} 1` })).toBeVisible();
+    const side = laptop.page.getByRole('navigation', { name: hinglish['owner.desk'], exact: true });
+    await expect(
+      side.getByRole('link', { name: `${hinglish['owner.hazri.title']} 1` }),
+    ).toBeVisible();
     // The five phone tabs are the same five.
-    const tabs = handset.page.getByRole('navigation', { name: hi['owner.desk'], exact: true });
+    const tabs = handset.page.getByRole('navigation', {
+      name: hinglish['owner.desk'],
+      exact: true,
+    });
     await expect(tabs.locator('a:visible')).toHaveCount(5);
-    await expect(tabs.getByRole('link', { name: hi['owner.more'], exact: true })).toBeVisible();
+    await expect(
+      tabs.getByRole('link', { name: hinglish['owner.more'], exact: true }),
+    ).toBeVisible();
     await go(handset.page, '/more');
     await expect(
       handset.page
         .getByRole('main')
-        .getByRole('link', { name: new RegExp(`${hi['owner.hazri.title']} \\(1\\)`) }),
+        .getByRole('link', { name: new RegExp(`${hinglish['owner.hazri.title']} \\(1\\)`) }),
     ).toBeVisible();
     await link.click();
     await expect(tab(laptop.page, 'owner.hazri.tab.reviews')).toHaveAttribute(
       'aria-selected',
       'true',
     );
-    await laptop.page.getByRole('button', { name: hi['owner.hazri.review.accept'] }).click();
-    await expect(laptop.page.getByText(hi['owner.hazri.review.empty'])).toBeVisible();
+    await laptop.page.getByRole('button', { name: hinglish['owner.hazri.review.accept'] }).click();
+    await expect(laptop.page.getByText(hinglish['owner.hazri.review.empty'])).toBeVisible();
     await go(laptop.page, '/today');
     await expect(
-      laptop.page.getByRole('heading', { name: hi['owner.today'], exact: true }),
+      laptop.page.getByRole('heading', { name: hinglish['owner.today'], exact: true }),
     ).toBeVisible();
     await expect(laptop.page.getByRole('link', { name: /Hazri dekhna hai/ })).toHaveCount(0);
   } finally {
@@ -582,8 +614,12 @@ test('a manager has their own shop only: another shop’s data is refused at the
     // A manager reads no proof, and no proof block shows on a day.
     await tab(page, 'owner.hazri.tab.today').click();
     await openDay(page, here.name);
-    await expect(page.getByRole('dialog').getByText(hi['owner.hazri.fix.title'])).toBeVisible();
-    await expect(page.getByRole('dialog').getByText(hi['owner.hazri.proof.title'])).toHaveCount(0);
+    await expect(
+      page.getByRole('dialog').getByText(hinglish['owner.hazri.fix.title']),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('dialog').getByText(hinglish['owner.hazri.proof.title']),
+    ).toHaveCount(0);
   } finally {
     await context.close();
   }
@@ -599,7 +635,9 @@ test('nobody corrects or marks their own hazri', async ({ browser }) => {
       page.getByRole('button', { name: say('owner.hazri.mark.for', { name: manager.name }) }),
     ).toHaveCount(0);
     await openDay(page, manager.name);
-    await expect(page.getByRole('dialog').getByText(hi['owner.hazri.fix.title'])).toHaveCount(0);
+    await expect(page.getByRole('dialog').getByText(hinglish['owner.hazri.fix.title'])).toHaveCount(
+      0,
+    );
     expect(
       (
         await call(manager.token, 'POST', '/admin/attendance/manual', {
@@ -629,8 +667,12 @@ test('the accountant reads the day and the night, and can change nothing', async
     await expect(line(page, worker.name).first()).toBeVisible();
     await expect(page.getByRole('button', { name: /ki hazri haath se$/ })).toHaveCount(0);
     await openDay(page, worker.name);
-    await expect(page.getByRole('dialog').getByText(hi['owner.hazri.fix.title'])).toHaveCount(0);
-    await expect(page.getByRole('dialog').getByText(hi['owner.hazri.proof.title'])).toHaveCount(0);
+    await expect(page.getByRole('dialog').getByText(hinglish['owner.hazri.fix.title'])).toHaveCount(
+      0,
+    );
+    await expect(
+      page.getByRole('dialog').getByText(hinglish['owner.hazri.proof.title']),
+    ).toHaveCount(0);
     for (const [method, path, body] of [
       ['GET', '/admin/attendance/reviews'],
       ['GET', '/admin/device-requests'],
@@ -654,8 +696,8 @@ for (const role of ['CASHIER', 'STOCK_KEEPER'] as const)
     const { context, page } = await signedInDesk(browser, who);
     try {
       await refusedPage(page, '/hazri');
-      const side = page.getByRole('navigation', { name: hi['owner.desk'], exact: true });
-      await expect(side.getByRole('link', { name: hi['owner.hazri.title'] })).toHaveCount(0);
+      const side = page.getByRole('navigation', { name: hinglish['owner.desk'], exact: true });
+      await expect(side.getByRole('link', { name: hinglish['owner.hazri.title'] })).toHaveCount(0);
       for (const path of [
         `/admin/attendance/day?locationId=${MAIN}`,
         '/admin/attendance/reviews',
@@ -673,8 +715,8 @@ test('a driver has no desk at all', async ({ browser }) => {
   const driver = await person(db, 'DRIVER');
   const { context, page } = await signIn(browser, driver, { path: '/hazri' });
   try {
-    await expect(page.getByText(hi['owner.noDeskAccess'])).toBeVisible();
-    await expect(page.getByRole('heading', { name: hi['owner.hazri.title'] })).toHaveCount(0);
+    await expect(page.getByText(hinglish['owner.noDeskAccess'])).toBeVisible();
+    await expect(page.getByRole('heading', { name: hinglish['owner.hazri.title'] })).toHaveCount(0);
     expect(
       (await call(driver.token, 'GET', `/admin/attendance/day?locationId=${MAIN}`)).status,
     ).toBe(403);
@@ -695,18 +737,19 @@ test('a first phone: a manager decides, with old, new and the shop code on the c
   try {
     for (const { page } of [first, second]) {
       await go(page, '/hazri?tab=phones');
-      await expect(page.getByRole('tab', { name: hi['owner.hazri.tab.phones'] })).toHaveAttribute(
-        'aria-selected',
-        'true',
-      );
+      await expect(
+        page.getByRole('tab', { name: hinglish['owner.hazri.tab.phones'] }),
+      ).toHaveAttribute('aria-selected', 'true');
     }
     const card = (page: import('@playwright/test').Page) =>
       page.locator('article').filter({ hasText: who.name });
-    await expect(card(first.page).getByText(hi['owner.hazri.phone.first'])).toBeVisible();
+    await expect(card(first.page).getByText(hinglish['owner.hazri.phone.first'])).toBeVisible();
     await expect(
       card(first.page).getByText(say('owner.hazri.phone.new', { model: 'Redmi 12' })),
     ).toBeVisible();
-    await expect(card(first.page).getByText(hi['owner.hazri.phone.notScanned'])).toBeVisible();
+    await expect(
+      card(first.page).getByText(hinglish['owner.hazri.phone.notScanned']),
+    ).toBeVisible();
     await expect(card(first.page).getByText('Pehli baar')).toBeVisible();
 
     // Scanning the shop's code from the new phone shows on the card.
@@ -716,16 +759,20 @@ test('a first phone: a manager decides, with old, new and the shop code on the c
       signature: phone.key.sign(`link|${qr}`),
     });
     await go(first.page, '/hazri?tab=phones');
-    await expect(card(first.page).getByText(hi['owner.hazri.phone.scanned'])).toBeVisible();
+    await expect(card(first.page).getByText(hinglish['owner.hazri.phone.scanned'])).toBeVisible();
 
-    await card(first.page).getByRole('button', { name: hi['owner.hazri.phone.approve'] }).click();
+    await card(first.page)
+      .getByRole('button', { name: hinglish['owner.hazri.phone.approve'] })
+      .click();
     await expect(
       toast(first.page, say('owner.hazri.phone.approved', { name: who.name })),
     ).toBeVisible();
     // The other manager's card is stale, and they are told it is done.
     await expect(card(second.page)).toBeVisible();
-    await card(second.page).getByRole('button', { name: hi['owner.hazri.phone.refuse'] }).click();
-    await expect(toast(second.page, hi['owner.hazri.alreadyDone'])).toBeVisible();
+    await card(second.page)
+      .getByRole('button', { name: hinglish['owner.hazri.phone.refuse'] })
+      .click();
+    await expect(toast(second.page, hinglish['owner.hazri.alreadyDone'])).toBeVisible();
     expect(
       (await db.deviceLinkRequest.findUniqueOrThrow({ where: { id: phone.requestId } })).status,
     ).toBe('APPROVED');
@@ -747,7 +794,7 @@ test('changing a phone is an owner’s call: the manager does not even see it', 
   try {
     await go(managerDesk.page, '/hazri?tab=phones');
     await expect(
-      managerDesk.page.getByRole('heading', { name: hi['owner.hazri.phone.asked'] }),
+      managerDesk.page.getByRole('heading', { name: hinglish['owner.hazri.phone.asked'] }),
     ).toBeVisible();
     await expect(managerDesk.page.locator('article').filter({ hasText: who.name })).toHaveCount(0);
     expect(
@@ -760,7 +807,7 @@ test('changing a phone is an owner’s call: the manager does not even see it', 
 
     await go(ownerDesk.page, '/hazri?tab=phones');
     const card = ownerDesk.page.locator('article').filter({ hasText: who.name });
-    await expect(card.getByText(hi['owner.hazri.phone.change'])).toBeVisible();
+    await expect(card.getByText(hinglish['owner.hazri.phone.change'])).toBeVisible();
     await expect(
       card.getByText(new RegExp(say('owner.hazri.phone.old', { model: 'Purana Phone' }))),
     ).toBeVisible();
@@ -768,7 +815,7 @@ test('changing a phone is an owner’s call: the manager does not even see it', 
       card.getByText(say('owner.hazri.phone.new', { model: 'Naya Phone Model' })),
     ).toBeVisible();
     await expect(card.getByText('Purana toot gaya')).toBeVisible();
-    await card.getByRole('button', { name: hi['owner.hazri.phone.refuse'] }).click();
+    await card.getByRole('button', { name: hinglish['owner.hazri.phone.refuse'] }).click();
     await expect(
       toast(ownerDesk.page, say('owner.hazri.phone.refused', { name: who.name })),
     ).toBeVisible();
@@ -797,17 +844,17 @@ test('Phone kho gaya: a confirm, then it stops at once', async ({ browser }) => 
     await expect(
       sheet.getByText(say('owner.hazri.phone.cutBody', { name: who.name })),
     ).toBeVisible();
-    await sheet.getByRole('button', { name: hi['owner.keepEditing'] }).click();
+    await sheet.getByRole('button', { name: hinglish['owner.keepEditing'] }).click();
     expect(await db.staffDevice.count({ where: { userId: who.id, status: 'ACTIVE' } })).toBe(1);
 
     await cut.click();
     await page
       .getByRole('dialog')
-      .getByRole('button', { name: hi['owner.hazri.phone.cutYes'] })
+      .getByRole('button', { name: hinglish['owner.hazri.phone.cutYes'] })
       .click();
     await expect(toast(page, say('owner.hazri.phone.cutDone', { name: who.name }))).toBeVisible();
     expect(await db.staffDevice.count({ where: { userId: who.id, status: 'ACTIVE' } })).toBe(0);
-    await expect(row.getByText(hi['owner.hazri.today.notLinked'])).toBeVisible();
+    await expect(row.getByText(hinglish['owner.hazri.today.notLinked'])).toBeVisible();
     await expect(cut).toHaveCount(0);
     // The phone's next scan is refused.
     const qr = await liveQr(screen.token);
@@ -902,22 +949,22 @@ test('Raat ka hisaab: numbers by shop, then names, and plain about what the code
   try {
     await go(page, '/hazri?tab=night');
     await expect(page.getByRole('cell', { name: 'Doosri dukaan' })).toBeVisible();
-    const byHand = page.getByRole('region', { name: hi['owner.hazri.night.byHand'] });
+    const byHand = page.getByRole('region', { name: hinglish['owner.hazri.night.byHand'] });
     await expect(
       byHand.getByText(new RegExp(`${marked.name}, .* par aaye, ${manager.name} ne lagayi`)),
     ).toBeVisible();
     await expect(
       page
-        .getByRole('region', { name: hi['owner.hazri.night.accepted'] })
+        .getByRole('region', { name: hinglish['owner.hazri.night.accepted'] })
         .getByText(new RegExp(`${far.name}, ${manager.name} ne sahi mana · Kaam par bahar tha`)),
     ).toBeVisible();
     await expect(
       page
-        .getByRole('region', { name: hi['owner.hazri.night.corrections'] })
+        .getByRole('region', { name: hinglish['owner.hazri.night.corrections'] })
         .getByText(/Pehle aaya tha/),
     ).toBeVisible();
     await expect(
-      page.getByRole('region', { name: hi['owner.hazri.night.managerCode'] }).getByText(
+      page.getByRole('region', { name: hinglish['owner.hazri.night.managerCode'] }).getByText(
         say('owner.hazri.night.managerCodeRow', {
           name: 'Phone Code Wala',
           codeOf: manager.name,
@@ -925,7 +972,7 @@ test('Raat ka hisaab: numbers by shop, then names, and plain about what the code
       ),
     ).toBeVisible();
     await expect(
-      page.getByRole('region', { name: hi['owner.hazri.night.setupTitle'] }).getByText(
+      page.getByRole('region', { name: hinglish['owner.hazri.night.setupTitle'] }).getByText(
         say('owner.hazri.night.setup.position', {
           by: manager.name,
           shop: 'Shiv Cement',
@@ -934,11 +981,11 @@ test('Raat ka hisaab: numbers by shop, then names, and plain about what the code
     ).toHaveCount(0);
     await expect(
       page
-        .getByRole('region', { name: hi['owner.hazri.night.setupTitle'] })
+        .getByRole('region', { name: hinglish['owner.hazri.night.setupTitle'] })
         .getByText(new RegExp(`${manager.name} ne .* ki jagah badli`)),
     ).toBeVisible();
     await expect(
-      page.getByRole('region', { name: hi['owner.hazri.night.collections'] }).getByText(
+      page.getByRole('region', { name: hinglish['owner.hazri.night.collections'] }).getByText(
         say('owner.hazri.night.collectionRow', {
           driver: driver.name,
           due: '₹5,000.00',
@@ -947,7 +994,7 @@ test('Raat ka hisaab: numbers by shop, then names, and plain about what the code
       ),
     ).toBeVisible();
     await expect(
-      page.getByRole('region', { name: hi['owner.hazri.night.cash'] }).getByText(
+      page.getByRole('region', { name: hinglish['owner.hazri.night.cash'] }).getByText(
         say('owner.hazri.night.cashRow', {
           driver: driver.name,
           collected: '₹4,500.00',
@@ -957,13 +1004,15 @@ test('Raat ka hisaab: numbers by shop, then names, and plain about what the code
       ),
     ).toBeVisible();
     await expect(page.getByText('1a2b3c4d5e', { exact: true })).toBeVisible();
-    await expect(page.getByText(hi['owner.hazri.proof.means'])).toBeVisible();
+    await expect(page.getByText(hinglish['owner.hazri.proof.means'])).toBeVisible();
     await expect(page.getByText(/imaandaari/)).toBeVisible();
 
     // Another day has its own record.
-    await page.getByRole('textbox', { name: hi['owner.hazri.day'] }).fill('2026-10-01');
-    await expect(page.getByText(hi['owner.hazri.night.noCode'])).toBeVisible();
-    await expect(page.getByRole('region', { name: hi['owner.hazri.night.byHand'] })).toHaveCount(0);
+    await page.getByRole('textbox', { name: hinglish['owner.hazri.day'] }).fill('2026-10-01');
+    await expect(page.getByText(hinglish['owner.hazri.night.noCode'])).toBeVisible();
+    await expect(
+      page.getByRole('region', { name: hinglish['owner.hazri.night.byHand'] }),
+    ).toHaveCount(0);
   } finally {
     await context.close();
     await db.proofAnchor.delete({ where: { day: today() } });
@@ -985,13 +1034,13 @@ test.describe('Setup', () => {
     });
     try {
       // Moving between pages keeps the first page's document, and its permission policy with it.
-      const side = page.getByRole('navigation', { name: hi['owner.desk'], exact: true });
-      await side.getByRole('link', { name: hi['owner.hazri.title'] }).click();
+      const side = page.getByRole('navigation', { name: hinglish['owner.desk'], exact: true });
+      await side.getByRole('link', { name: hinglish['owner.hazri.title'] }).click();
       await tab(page, 'owner.hazri.tab.setup').click();
       await expect(tab(page, 'owner.hazri.tab.setup')).toHaveAttribute('aria-selected', 'true');
       const card = page.getByRole('region', { name: 'Doosri dukaan' });
-      await expect(card.getByText(hi['owner.hazri.setup.noPosition'])).toBeVisible();
-      await card.getByRole('button', { name: hi['owner.hazri.setup.takeHere'] }).click();
+      await expect(card.getByText(hinglish['owner.hazri.setup.noPosition'])).toBeVisible();
+      await card.getByRole('button', { name: hinglish['owner.hazri.setup.takeHere'] }).click();
       await expect(card.getByText(say('owner.hazri.setup.result', { count: 10 }))).toBeVisible({
         timeout: 30000,
       });
@@ -1003,7 +1052,10 @@ test.describe('Setup', () => {
       ).toBeVisible();
       // Nothing is saved until someone agrees.
       expect((await db.location.findUniqueOrThrow({ where: { id: SECOND } })).lat).toBeNull();
-      await card.getByRole('button', { name: hi['owner.hazri.setup.savePin'] }).first().click();
+      await card
+        .getByRole('button', { name: hinglish['owner.hazri.setup.savePin'] })
+        .first()
+        .click();
       await expect(
         card.getByText(say('owner.hazri.setup.positionIs', { lat: 26.2, lng: 85.5 })),
       ).toBeVisible();
@@ -1035,37 +1087,39 @@ test.describe('Setup', () => {
       });
       await go(page, '/hazri?tab=setup');
       const card = page.getByRole('region', { name: 'Doosri dukaan' });
-      await card.getByRole('button', { name: hi['owner.hazri.setup.takeHere'] }).click();
-      await expect(card.getByText(hi['owner.hazri.setup.refused'])).toBeVisible();
+      await card.getByRole('button', { name: hinglish['owner.hazri.setup.takeHere'] }).click();
+      await expect(card.getByText(hinglish['owner.hazri.setup.refused'])).toBeVisible();
 
       // Hazri cannot start with no position, and the refusal says what to do.
-      await card.getByRole('checkbox', { name: hi['owner.hazri.setup.on'] }).click();
-      await expect(card.getByText(hi['error.PIN_NEEDED'])).toBeVisible();
+      await card.getByRole('checkbox', { name: hinglish['owner.hazri.setup.on'] }).click();
+      await expect(card.getByText(hinglish['error.PIN_NEEDED'])).toBeVisible();
       expect((await db.location.findUniqueOrThrow({ where: { id: SECOND } })).attendanceOn).toBe(
         false,
       );
 
-      await card.getByText(hi['owner.hazri.setup.typeIt']).click();
-      const save = card.getByRole('button', { name: hi['owner.hazri.setup.savePin'] });
-      await card.getByRole('textbox', { name: hi['owner.hazri.setup.lat'] }).fill('95');
-      await card.getByRole('textbox', { name: hi['owner.hazri.setup.lng'] }).fill('85.4');
-      await expect(card.getByText(hi['owner.hazri.setup.badFigures'])).toBeVisible();
+      await card.getByText(hinglish['owner.hazri.setup.typeIt']).click();
+      const save = card.getByRole('button', { name: hinglish['owner.hazri.setup.savePin'] });
+      await card.getByRole('textbox', { name: hinglish['owner.hazri.setup.lat'] }).fill('95');
+      await card.getByRole('textbox', { name: hinglish['owner.hazri.setup.lng'] }).fill('85.4');
+      await expect(card.getByText(hinglish['owner.hazri.setup.badFigures'])).toBeVisible();
       await expect(save).toBeDisabled();
-      await card.getByRole('textbox', { name: hi['owner.hazri.setup.lat'] }).fill('26.1');
+      await card.getByRole('textbox', { name: hinglish['owner.hazri.setup.lat'] }).fill('26.1');
       await save.click();
       await expect(
         card.getByText(say('owner.hazri.setup.positionIs', { lat: 26.1, lng: 85.4 })),
       ).toBeVisible();
 
       // Now it starts, and turning it off asks first.
-      const on = card.getByRole('checkbox', { name: hi['owner.hazri.setup.on'] });
+      const on = card.getByRole('checkbox', { name: hinglish['owner.hazri.setup.on'] });
       await on.click();
       await expect(on).toBeChecked();
-      await expect(card.getByText(hi['owner.hazri.setup.stateOn'], { exact: true })).toBeVisible();
+      await expect(
+        card.getByText(hinglish['owner.hazri.setup.stateOn'], { exact: true }),
+      ).toBeVisible();
       await on.click();
       await page
         .getByRole('dialog')
-        .getByRole('button', { name: hi['owner.hazri.setup.offYes'] })
+        .getByRole('button', { name: hinglish['owner.hazri.setup.offYes'] })
         .click();
       await expect(on).not.toBeChecked();
     } finally {
@@ -1084,12 +1138,12 @@ test.describe('Setup', () => {
       });
       await radius.fill('20');
       await expect(
-        card.getByRole('button', { name: hi['owner.save'], exact: true }),
+        card.getByRole('button', { name: hinglish['owner.save'], exact: true }),
       ).toBeDisabled();
       await radius.fill('150');
-      await card.getByRole('spinbutton', { name: hi['owner.hazri.setup.grace'] }).fill('15');
-      await card.getByRole('button', { name: hi['owner.save'], exact: true }).click();
-      await expect(toast(page, hi['owner.saved'])).toBeVisible();
+      await card.getByRole('spinbutton', { name: hinglish['owner.hazri.setup.grace'] }).fill('15');
+      await card.getByRole('button', { name: hinglish['owner.save'], exact: true }).click();
+      await expect(toast(page, hinglish['owner.saved'])).toBeVisible();
       expect(await db.location.findUniqueOrThrow({ where: { id: SECOND } })).toMatchObject({
         radiusM: 150,
         graceMinutes: 15,
@@ -1110,25 +1164,28 @@ test.describe('Setup', () => {
     try {
       await go(page, '/hazri?tab=setup');
       const card = page.getByRole('region', { name: 'Doosri dukaan' });
-      await card.getByRole('button', { name: hi['owner.hazri.setup.addScreen'] }).click();
+      await card.getByRole('button', { name: hinglish['owner.hazri.setup.addScreen'] }).click();
       await page
         .getByRole('dialog')
-        .getByRole('textbox', { name: hi['owner.hazri.setup.screenLabel'] })
+        .getByRole('textbox', { name: hinglish['owner.hazri.setup.screenLabel'] })
         .fill('Counter ke peeche');
       await page
         .getByRole('dialog')
-        .getByRole('button', { name: hi['owner.hazri.setup.makeCode'] })
+        .getByRole('button', { name: hinglish['owner.hazri.setup.makeCode'] })
         .click();
-      const shown = page.getByRole('dialog').getByLabel(hi['owner.hazri.setup.codeTitle']).last();
+      const shown = page
+        .getByRole('dialog')
+        .getByLabel(hinglish['owner.hazri.setup.codeTitle'])
+        .last();
       await expect(shown).toHaveText(/^\d{6}$/);
       const code = await shown.innerText();
       await expect(page.getByRole('dialog').getByText(/shop-screen/)).toBeVisible();
       await page
         .getByRole('dialog')
-        .getByRole('button', { name: hi['owner.close'] })
+        .getByRole('button', { name: hinglish['owner.close'] })
         .last()
         .click();
-      await expect(card.getByText(hi['owner.hazri.setup.notPaired'])).toBeVisible();
+      await expect(card.getByText(hinglish['owner.hazri.setup.notPaired'])).toBeVisible();
       // Gone once closed: the page never holds it again.
       await expect(page.getByText(code, { exact: true })).toHaveCount(0);
 
@@ -1138,11 +1195,11 @@ test.describe('Setup', () => {
       await expect(card.getByText(/Aakhri baar/)).toBeVisible();
 
       // Stand-in for a dead screen.
-      await card.getByRole('button', { name: hi['owner.hazri.here.button'] }).click();
+      await card.getByRole('button', { name: hinglish['owner.hazri.here.button'] }).click();
       const here = page.getByRole('dialog');
-      await expect(here.getByRole('img', { name: hi['owner.screen.qrLabel'] })).toBeVisible();
-      await expect(here.getByText(hi['owner.hazri.here.body'])).toBeVisible();
-      await here.getByRole('button', { name: hi['owner.close'] }).click();
+      await expect(here.getByRole('img', { name: hinglish['owner.screen.qrLabel'] })).toBeVisible();
+      await expect(here.getByText(hinglish['owner.hazri.here.body'])).toBeVisible();
+      await here.getByRole('button', { name: hinglish['owner.close'] }).click();
 
       await page
         .getByRole('button', {
@@ -1151,9 +1208,9 @@ test.describe('Setup', () => {
         .click();
       await page
         .getByRole('dialog')
-        .getByRole('button', { name: hi['owner.hazri.setup.screenOffYes'] })
+        .getByRole('button', { name: hinglish['owner.hazri.setup.screenOffYes'] })
         .click();
-      await expect(toast(page, hi['owner.hazri.setup.screenOff'])).toBeVisible();
+      await expect(toast(page, hinglish['owner.hazri.setup.screenOff'])).toBeVisible();
       await expect(card.getByText('Counter ke peeche')).toHaveCount(0);
       const after = await call(null, 'GET', '/screen/today', undefined, { 'x-shop-screen': token });
       expect(after.status).toBe(401);
@@ -1175,22 +1232,22 @@ test('an owner sets a shift from a date: a new row, with the old one left alone'
       .getByRole('button', { name: say('owner.shift.openFor', { name: who.name }) })
       .click();
     const sheet = page.getByRole('dialog');
-    await expect(sheet.getByText(hi['owner.shift.none'])).toBeVisible();
-    const start = sheet.getByRole('textbox', { name: hi['owner.shift.start'] });
-    const end = sheet.getByRole('textbox', { name: hi['owner.shift.end'] });
-    const save = sheet.getByRole('button', { name: hi['owner.shift.save'] });
+    await expect(sheet.getByText(hinglish['owner.shift.none'])).toBeVisible();
+    const start = sheet.getByRole('textbox', { name: hinglish['owner.shift.start'] });
+    const end = sheet.getByRole('textbox', { name: hinglish['owner.shift.end'] });
+    const save = sheet.getByRole('button', { name: hinglish['owner.shift.save'] });
     // Ending before it starts is said out loud, and not sent.
     await start.fill('19:00');
     await end.fill('09:00');
-    await expect(sheet.getByText(hi['owner.shift.backwards'])).toBeVisible();
+    await expect(sheet.getByText(hinglish['owner.shift.backwards'])).toBeVisible();
     await expect(save).toBeDisabled();
     await start.fill('09:30');
     await end.fill('18:30');
-    await sheet.getByRole('spinbutton', { name: hi['owner.shift.break'] }).fill('45');
+    await sheet.getByRole('spinbutton', { name: hinglish['owner.shift.break'] }).fill('45');
     await sheet.getByRole('checkbox', { name: 'Itvaar' }).uncheck();
     await sheet.getByRole('checkbox', { name: 'Mangalvar' }).check();
     // An earlier date would rewrite days already counted.
-    const from = sheet.getByRole('textbox', { name: hi['owner.shift.from'] });
+    const from = sheet.getByRole('textbox', { name: hinglish['owner.shift.from'] });
     await from.fill('2026-01-01');
     await expect(save).toBeDisabled();
     await from.fill('2030-01-01');
@@ -1216,7 +1273,7 @@ test('an owner sets a shift from a date: a new row, with the old one left alone'
     expect(first.startMinute).toBe(570);
 
     // The no-phone switch, and its mark on the roster.
-    const noPhone = sheet.getByRole('checkbox', { name: hi['owner.shift.noPhone'] });
+    const noPhone = sheet.getByRole('checkbox', { name: hinglish['owner.shift.noPhone'] });
     await noPhone.click();
     await expect(toast(page, say('owner.shift.noPhoneOn', { name: who.name }))).toBeVisible();
     await expect(noPhone).toBeChecked();
@@ -1224,7 +1281,9 @@ test('an owner sets a shift from a date: a new row, with the old one left alone'
       true,
     );
     await go(page, '/hazri');
-    await expect(line(page, who.name).getByText(hi['owner.hazri.today.noPhone'])).toBeVisible();
+    await expect(
+      line(page, who.name).getByText(hinglish['owner.hazri.today.noPhone']),
+    ).toBeVisible();
 
     // Nobody else moves a shift or a switch.
     for (const [path, body] of [
@@ -1277,8 +1336,8 @@ test('a damage report’s photo shows in Manzoori, read with the session and nev
   try {
     await go(page, '/manzoori');
     const card = page.locator('article').filter({ hasText: 'Bori phat gayi' });
-    await expect(card.getByText(hi['owner.approval.kind.STOCK_DAMAGE'])).toBeVisible();
-    const photo = card.getByRole('img', { name: hi['owner.evidence.alt'] });
+    await expect(card.getByText(hinglish['owner.approval.kind.STOCK_DAMAGE'])).toBeVisible();
+    const photo = card.getByRole('img', { name: hinglish['owner.evidence.alt'] });
     await expect(photo).toBeVisible();
     await expect(photo).toHaveAttribute('src', /^blob:/);
     await expect
@@ -1300,7 +1359,7 @@ test('a damage report’s photo shows in Manzoori, read with the session and nev
       page
         .locator('article')
         .filter({ hasText: 'Bori phat gayi' })
-        .getByText(hi['owner.evidence.gone']),
+        .getByText(hinglish['owner.evidence.gone']),
     ).toBeVisible();
   } finally {
     await context.close();

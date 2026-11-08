@@ -48,7 +48,7 @@ import {
   type Access,
   type DayEvent,
 } from '@shiv/shared';
-import { t } from '@shiv/i18n';
+import { t, readLanguage } from '@shiv/i18n';
 import { randomBytes, randomInt } from 'node:crypto';
 import { z } from 'zod';
 import { budget, budgetUsed } from '../abuse';
@@ -1472,7 +1472,7 @@ export class Attendance {
       const present = await tx.attendanceDay.count({ where: { day, firstInAt: { not: null } } });
       const open = await tx.attendanceReview.count({ where: { status: 'OPEN' } });
       for (const owner of owners) {
-        const language = owner.language === 'en' ? 'en' : 'hi';
+        const language = readLanguage(owner.language);
         await tx.notification.create({
           data: {
             userId: owner.id,
@@ -1509,8 +1509,8 @@ export class Attendance {
       data: owners.map((owner) => ({
         userId: owner.id,
         dedupeKey: `${key}:${owner.id}`,
-        title: t('owner.hazri.nightTitle', {}, owner.language === 'en' ? 'en' : 'hi'),
-        body: t('owner.hazri.chainBroken', params, owner.language === 'en' ? 'en' : 'hi'),
+        title: t('owner.hazri.nightTitle', {}, readLanguage(owner.language)),
+        body: t('owner.hazri.chainBroken', params, readLanguage(owner.language)),
       })),
       skipDuplicates: true,
     });
@@ -1548,11 +1548,11 @@ export class Attendance {
         data: people.map((person) => ({
           userId: person.id,
           dedupeKey: `screen:${screen.locationId}:${stamp}:${person.id}`,
-          title: t('owner.hazri.screenTitle', {}, person.language === 'en' ? 'en' : 'hi'),
+          title: t('owner.hazri.screenTitle', {}, readLanguage(person.language)),
           body: t(
             'owner.hazri.screenBody',
             { shop: screen.location.name },
-            person.language === 'en' ? 'en' : 'hi',
+            readLanguage(person.language),
           ),
         })),
         skipDuplicates: true,

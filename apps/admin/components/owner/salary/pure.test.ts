@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { hi } from '@shiv/i18n';
+import { hinglish } from '@shiv/i18n';
 import {
   adjustmentRows,
   cashDayLimitPaise,
@@ -107,7 +107,7 @@ test('the last word on recovery is the one that stands', () => {
 });
 
 test('every kind of ledger entry has words', () => {
-  for (const key of Object.values(ledgerWords)) assert.ok(hi[key], key);
+  for (const key of Object.values(ledgerWords)) assert.ok(hinglish[key], key);
 });
 test('where money came from is one value, and reads back the same', () => {
   assert.equal(sourceValue({ paidFrom: 'OWNER' }), 'OWNER');

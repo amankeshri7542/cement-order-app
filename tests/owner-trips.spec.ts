@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { hi } from '@shiv/i18n';
+import { hinglish } from '@shiv/i18n';
 import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures';
 import {
@@ -98,14 +98,14 @@ test('a manager sets the stops in order, picks a driver and a vehicle, and it is
   try {
     await go(page, '/trips');
     await expect(
-      page.getByRole('heading', { name: hi['owner.trips.title'], exact: true }),
+      page.getByRole('heading', { name: hinglish['owner.trips.title'], exact: true }),
     ).toBeVisible();
     await expect(pick(page, first.number)).toBeVisible();
     await expect(page.locator('label').filter({ hasText: first.number })).toContainText(
-      hi['owner.trips.loaded'],
+      hinglish['owner.trips.loaded'],
     );
     await expect(page.locator('label').filter({ hasText: second.number })).toContainText(
-      hi['owner.trips.notLoaded'],
+      hinglish['owner.trips.notLoaded'],
     );
     // No rate, money or udhaar on the list.
     expect(await page.locator('main').innerText()).not.toContain('₹');
@@ -113,7 +113,7 @@ test('a manager sets the stops in order, picks a driver and a vehicle, and it is
     await pick(page, first.number).check();
     await pick(page, second.number).check();
     await pick(page, third.number).check();
-    await expect(page.getByText(hi['owner.trips.loadFirst'])).toBeVisible();
+    await expect(page.getByText(hinglish['owner.trips.loadFirst'])).toBeVisible();
     await page
       .getByRole('button', { name: say('owner.trips.moveUp', { number: second.number }) })
       .click();
@@ -123,12 +123,12 @@ test('a manager sets the stops in order, picks a driver and a vehicle, and it is
     await pick(page, third.number).uncheck();
 
     await page
-      .getByRole('combobox', { name: hi['owner.trips.driver'] })
+      .getByRole('combobox', { name: hinglish['owner.trips.driver'] })
       .selectOption({ label: driver.name });
     await page
-      .getByRole('combobox', { name: hi['owner.trips.helper'] })
+      .getByRole('combobox', { name: hinglish['owner.trips.helper'] })
       .selectOption({ label: helper.name });
-    await page.getByRole('textbox', { name: hi['owner.trips.vehicle'] }).fill('BR01AB1234');
+    await page.getByRole('textbox', { name: hinglish['owner.trips.vehicle'] }).fill('BR01AB1234');
     // Tapped twice, made once.
     await page.getByRole('button', { name: say('owner.trips.create', { count: 2 }) }).dblclick();
     await expect(toast(page, say('owner.trips.created', { name: driver.name }))).toBeVisible();
@@ -146,10 +146,10 @@ test('a manager sets the stops in order, picks a driver and a vehicle, and it is
     });
 
     const card = tripCard(page, driver.name);
-    await expect(card.getByText(hi['owner.trips.status.PLANNED'])).toBeVisible();
+    await expect(card.getByText(hinglish['owner.trips.status.PLANNED'])).toBeVisible();
     await expect(card.getByRole('listitem')).toHaveCount(2);
     await expect(card.getByRole('listitem').first()).toContainText(second.number);
-    await expect(card.getByText(hi['owner.trips.stop.PENDING']).first()).toBeVisible();
+    await expect(card.getByText(hinglish['owner.trips.stop.PENDING']).first()).toBeVisible();
     // What went on the trip leaves the ready list, and the other order stays.
     await expect(pick(page, first.number)).toHaveCount(0);
     await expect(pick(page, third.number)).toBeVisible();
@@ -166,13 +166,15 @@ test('a manager sets the stops in order, picks a driver and a vehicle, and it is
       data: { status: 'PROBLEM', problem: 'NO_ACCESS' },
     });
     await page.reload();
-    await expect(card.getByText(hi['owner.trips.status.OUT'])).toBeVisible();
-    await expect(card.getByText(hi['owner.trips.stop.DELIVERED'])).toBeVisible();
+    await expect(card.getByText(hinglish['owner.trips.status.OUT'])).toBeVisible();
+    await expect(card.getByText(hinglish['owner.trips.stop.DELIVERED'])).toBeVisible();
     await expect(
-      card.getByText(`${hi['owner.trips.stop.PROBLEM']}: ${hi['owner.trips.problem.NO_ACCESS']}`),
+      card.getByText(
+        `${hinglish['owner.trips.stop.PROBLEM']}: ${hinglish['owner.trips.problem.NO_ACCESS']}`,
+      ),
     ).toBeVisible();
     // A trip on the road has no cancel button.
-    await expect(card.getByRole('button', { name: hi['owner.trips.cancel'] })).toHaveCount(0);
+    await expect(card.getByRole('button', { name: hinglish['owner.trips.cancel'] })).toHaveCount(0);
   } finally {
     await context.close();
   }
@@ -202,24 +204,32 @@ test('a trip not started can be cancelled, and the orders come back; a stale tap
   try {
     await go(page, '/trips');
     const card = tripCard(page, driver.name);
-    await card.getByRole('button', { name: hi['owner.trips.cancel'] }).click();
+    await card.getByRole('button', { name: hinglish['owner.trips.cancel'] }).click();
     await expect(
       page.getByRole('dialog').getByText(say('owner.trips.cancelBody', { name: driver.name })),
     ).toBeVisible();
-    await page.getByRole('dialog').getByRole('button', { name: hi['owner.trips.cancel'] }).click();
-    await expect(toast(page, hi['owner.trips.cancelled'])).toBeVisible();
-    await expect(card.getByText(hi['owner.trips.status.CANCELLED'], { exact: true })).toBeVisible();
+    await page
+      .getByRole('dialog')
+      .getByRole('button', { name: hinglish['owner.trips.cancel'] })
+      .click();
+    await expect(toast(page, hinglish['owner.trips.cancelled'])).toBeVisible();
+    await expect(
+      card.getByText(hinglish['owner.trips.status.CANCELLED'], { exact: true }),
+    ).toBeVisible();
     await expect(pick(page, one.number)).toBeVisible();
 
     // The driver leaves while the card is still on this screen.
     await db.trip.update({ where: { id: running.id }, data: { status: 'OUT' } });
     await tripCard(page, started.name)
-      .getByRole('button', { name: hi['owner.trips.cancel'] })
+      .getByRole('button', { name: hinglish['owner.trips.cancel'] })
       .click();
-    await page.getByRole('dialog').getByRole('button', { name: hi['owner.trips.cancel'] }).click();
-    await expect(toast(page, hi['owner.trips.cantCancel'])).toBeVisible();
+    await page
+      .getByRole('dialog')
+      .getByRole('button', { name: hinglish['owner.trips.cancel'] })
+      .click();
+    await expect(toast(page, hinglish['owner.trips.cantCancel'])).toBeVisible();
     await expect(
-      tripCard(page, started.name).getByText(hi['owner.trips.status.OUT']),
+      tripCard(page, started.name).getByText(hinglish['owner.trips.status.OUT']),
     ).toBeVisible();
     expect((await db.trip.findUniqueOrThrow({ where: { id: running.id } })).status).toBe('OUT');
   } finally {
@@ -241,7 +251,7 @@ test('two people pick the same order: the second is told plainly, and nothing do
       await go(page, '/trips');
       await pick(page, shared.number).check();
       await page
-        .getByRole('combobox', { name: hi['owner.trips.driver'] })
+        .getByRole('combobox', { name: hinglish['owner.trips.driver'] })
         .selectOption({ label: driver.name });
     }
     await first.page.getByRole('button', { name: say('owner.trips.create', { count: 1 }) }).click();
@@ -251,7 +261,7 @@ test('two people pick the same order: the second is told plainly, and nothing do
     await second.page
       .getByRole('button', { name: say('owner.trips.create', { count: 1 }) })
       .click();
-    await expect(second.page.getByText(hi['error.ORDER_BUSY'])).toBeVisible();
+    await expect(second.page.getByText(hinglish['error.ORDER_BUSY'])).toBeVisible();
     // The order leaves their list too, and nothing was made twice.
     await expect(pick(second.page, shared.number)).toHaveCount(0);
     expect(await db.tripStop.count({ where: { orderId: shared.id } })).toBe(1);
@@ -289,17 +299,17 @@ test('plain words when there is nothing, and an owner chooses the shop', async (
   const { context, page } = await signedInDesk(browser, boss);
   try {
     await go(page, '/trips');
-    await expect(page.getByText(hi['owner.trips.noOrders'])).toBeVisible();
-    const choose = page.getByRole('combobox', { name: hi['owner.whichShop'] });
+    await expect(page.getByText(hinglish['owner.trips.noOrders'])).toBeVisible();
+    const choose = page.getByRole('combobox', { name: hinglish['owner.whichShop'] });
     await choose.selectOption(SECOND);
-    await expect(page.getByText(hi['owner.trips.noOrders'])).toBeVisible();
-    await expect(page.getByText(hi['owner.trips.noTrips'])).toBeVisible();
+    await expect(page.getByText(hinglish['owner.trips.noOrders'])).toBeVisible();
+    await expect(page.getByText(hinglish['owner.trips.noTrips'])).toBeVisible();
     const there = await order(SECOND);
     await page.reload();
     await choose.selectOption(SECOND);
     await pick(page, there.number).check();
     // No driver at that shop yet, and it says who can add one.
-    await expect(page.getByText(hi['owner.trips.noDrivers'])).toBeVisible();
+    await expect(page.getByText(hinglish['owner.trips.noDrivers'])).toBeVisible();
   } finally {
     await context.close();
   }
@@ -350,7 +360,7 @@ test('a driver has no desk, and cannot assign trips', async ({ browser }) => {
   const driver = await person(db, 'DRIVER');
   const { context, page } = await signIn(browser, driver, { path: '/trips' });
   try {
-    await expect(page.getByText(hi['owner.noDeskAccess'])).toBeVisible();
+    await expect(page.getByText(hinglish['owner.noDeskAccess'])).toBeVisible();
     expect((await call(driver.token, 'GET', `/admin/trips/ready?locationId=${MAIN}`)).status).toBe(
       403,
     );
@@ -383,14 +393,14 @@ async function handover(driver: Who, collectedPaise: number, offeredPaise: numbe
   });
   return key;
 }
-const cash = (page: Page) => page.getByRole('region', { name: hi['owner.cash.title'] });
+const cash = (page: Page) => page.getByRole('region', { name: hinglish['owner.cash.title'] });
 const countIt = async (page: Page, driver: Who, rupees: string, note = '') => {
   await page
     .getByRole('button', { name: say('owner.cash.countFor', { name: driver.name }) })
     .click();
   const sheet = page.getByRole('dialog');
-  await sheet.getByRole('textbox', { name: hi['owner.cash.howMuch'] }).fill(rupees);
-  if (note) await sheet.getByRole('textbox', { name: hi['owner.cash.note'] }).fill(note);
+  await sheet.getByRole('textbox', { name: hinglish['owner.cash.howMuch'] }).fill(rupees);
+  if (note) await sheet.getByRole('textbox', { name: hinglish['owner.cash.note'] }).fill(note);
   return sheet;
 };
 
@@ -413,7 +423,10 @@ test('a cashier sees cash still out, counts a handover, and it joins the drawer'
   const { context, page } = await signedInDesk(browser, cashier);
   try {
     await go(page, '/galla');
-    const out = cash(page).locator('div').filter({ hasText: hi['owner.cash.withDrivers'] }).first();
+    const out = cash(page)
+      .locator('div')
+      .filter({ hasText: hinglish['owner.cash.withDrivers'] })
+      .first();
     await expect(out.getByText(driver.name)).toBeVisible();
     await expect(out.getByText('₹700.00')).toBeVisible();
 
@@ -423,13 +436,13 @@ test('a cashier sees cash still out, counts a handover, and it joins the drawer'
       handoverKey: randomUUID(),
     });
     await page.reload();
-    await expect(cash(page).getByText(hi['owner.cash.waiting'])).toBeVisible();
+    await expect(cash(page).getByText(hinglish['owner.cash.waiting'])).toBeVisible();
     const before = await ok(cashier.token, 'GET', `/admin/galla?locationId=${MAIN}`);
     const sheet = await countIt(page, driver, '700');
     await expect(sheet.getByText(/Ginti mein fark/)).toHaveCount(0);
-    await sheet.getByRole('button', { name: hi['owner.cash.take'] }).click();
+    await sheet.getByRole('button', { name: hinglish['owner.cash.take'] }).click();
     await expect(toast(page, say('owner.cash.countedSame', { name: driver.name }))).toBeVisible();
-    await expect(cash(page).getByText(hi['owner.cash.done'])).toBeVisible();
+    await expect(cash(page).getByText(hinglish['owner.cash.done'])).toBeVisible();
     await expect(
       cash(page).getByText(say('owner.cash.countedBy', { name: cashier.name })),
     ).toBeVisible();
@@ -456,12 +469,12 @@ test('a difference shows all three figures in neutral words, until an owner sett
         say('owner.cash.differsNow', { counted: '₹1,400.00', collected: '₹1,600.00' }),
       ),
     ).toBeVisible();
-    await sheet.getByRole('button', { name: hi['owner.cash.take'] }).click();
+    await sheet.getByRole('button', { name: hinglish['owner.cash.take'] }).click();
     await expect(
       toast(counter.page, say('owner.cash.countedDiffers', { name: driver.name })),
     ).toBeVisible();
     const card = (page: Page) => cash(page).locator('article').filter({ hasText: driver.name });
-    await expect(card(counter.page).getByText(hi['owner.cash.different'])).toBeVisible();
+    await expect(card(counter.page).getByText(hinglish['owner.cash.different'])).toBeVisible();
     for (const figure of ['₹1,600.00', '₹1,500.00', '₹1,400.00'])
       await expect(card(counter.page).getByText(figure)).toBeVisible();
     const words = await cash(counter.page).innerText();
@@ -470,7 +483,7 @@ test('a difference shows all three figures in neutral words, until an owner sett
     );
     // A cashier does not settle it, and is not offered to.
     await expect(
-      card(counter.page).getByRole('button', { name: hi['owner.cash.settle'] }),
+      card(counter.page).getByRole('button', { name: hinglish['owner.cash.settle'] }),
     ).toHaveCount(0);
     expect(
       (
@@ -481,13 +494,15 @@ test('a difference shows all three figures in neutral words, until an owner sett
     ).toBe(403);
 
     await go(owner.page, '/galla');
-    await card(owner.page).getByRole('button', { name: hi['owner.cash.settle'] }).click();
+    await card(owner.page).getByRole('button', { name: hinglish['owner.cash.settle'] }).click();
     const settle = owner.page.getByRole('dialog');
-    await settle.getByRole('textbox', { name: hi['owner.cash.settleNote'] }).fill('Baat ho gayi');
-    await settle.getByRole('button', { name: hi['owner.cash.settle'] }).click();
+    await settle
+      .getByRole('textbox', { name: hinglish['owner.cash.settleNote'] })
+      .fill('Baat ho gayi');
+    await settle.getByRole('button', { name: hinglish['owner.cash.settle'] }).click();
     await expect(toast(owner.page, say('owner.cash.settled', { name: driver.name }))).toBeVisible();
     await expect(
-      card(owner.page).getByText(hi['owner.cash.settledState'], { exact: true }),
+      card(owner.page).getByText(hinglish['owner.cash.settledState'], { exact: true }),
     ).toBeVisible();
     await expect(card(owner.page).getByText(/Baat ho gayi/)).toBeVisible();
     // All the figures stay, and the record has every step.
@@ -510,9 +525,9 @@ test('offering less, then a count that matches it, is still a difference against
   try {
     await go(page, '/galla');
     const sheet = await countIt(page, driver, '1500');
-    await sheet.getByRole('button', { name: hi['owner.cash.take'] }).click();
+    await sheet.getByRole('button', { name: hinglish['owner.cash.take'] }).click();
     const card = cash(page).locator('article').filter({ hasText: driver.name });
-    await expect(card.getByText(hi['owner.cash.different'])).toBeVisible();
+    await expect(card.getByText(hinglish['owner.cash.different'])).toBeVisible();
     await expect(card.getByText('₹1,600.00').first()).toBeVisible();
     await expect(card.getByText('₹1,500.00').first()).toBeVisible();
     await expect(card.locator('dd')).toHaveCount(3);
@@ -533,14 +548,14 @@ test('two people count the same cash: the second is told it is done, and it ente
   try {
     for (const { page } of [first, second]) await go(page, '/galla');
     const sheet = await countIt(first.page, driver, '900');
-    await sheet.getByRole('button', { name: hi['owner.cash.take'] }).click();
+    await sheet.getByRole('button', { name: hinglish['owner.cash.take'] }).click();
     await expect(
       toast(first.page, say('owner.cash.countedSame', { name: driver.name })),
     ).toBeVisible();
     // Another figure on the stale card is not taken.
     const stale = await countIt(second.page, driver, '850');
-    await stale.getByRole('button', { name: hi['owner.cash.take'] }).click();
-    await expect(toast(second.page, hi['owner.cash.alreadyCounted'])).toBeVisible();
+    await stale.getByRole('button', { name: hinglish['owner.cash.take'] }).click();
+    await expect(toast(second.page, hinglish['owner.cash.alreadyCounted'])).toBeVisible();
     const counted = await db.cashHandover.findMany({
       where: { handoverKey: key, step: 'COUNTED' },
     });
@@ -563,9 +578,9 @@ test('nonsense in the box is not sent, and another shop’s handover is refused'
   try {
     await go(page, '/galla');
     const sheet = await countIt(page, driver, 'bahut');
-    await expect(sheet.getByRole('button', { name: hi['owner.cash.take'] })).toBeDisabled();
-    await sheet.getByRole('textbox', { name: hi['owner.cash.howMuch'] }).fill('-5');
-    await expect(sheet.getByRole('button', { name: hi['owner.cash.take'] })).toBeDisabled();
+    await expect(sheet.getByRole('button', { name: hinglish['owner.cash.take'] })).toBeDisabled();
+    await sheet.getByRole('textbox', { name: hinglish['owner.cash.howMuch'] }).fill('-5');
+    await expect(sheet.getByRole('button', { name: hinglish['owner.cash.take'] })).toBeDisabled();
     expect(
       (await call(away.token, 'POST', `/admin/galla/handovers/${key}/count`, { countedPaise: 1 }))
         .status,
@@ -587,7 +602,9 @@ test('the accountant reads the drawer and gets no cash counting; a stock keeper 
   const stock = await signedInDesk(browser, keeper);
   try {
     await go(reader.page, '/galla');
-    await expect(reader.page.getByRole('heading', { name: hi['owner.galla.title'] })).toBeVisible();
+    await expect(
+      reader.page.getByRole('heading', { name: hinglish['owner.galla.title'] }),
+    ).toBeVisible();
     await expect(cash(reader.page)).toHaveCount(0);
     expect(
       (await call(accountant.token, 'GET', `/admin/galla/handovers?locationId=${MAIN}`)).status,

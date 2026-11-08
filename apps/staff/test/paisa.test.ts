@@ -15,7 +15,7 @@ import {
 import type { QueueEntry } from '../src/logic/queue';
 import { makeTr } from '../src/logic/words';
 
-const hi = makeTr('hi');
+const hi = makeTr('hinglish');
 const en = makeTr('en');
 const empty: MyPay = {
   monthlyPaise: null,

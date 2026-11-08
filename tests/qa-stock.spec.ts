@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import type { Page } from '@playwright/test';
-import { test, expect, observePage } from './fixtures';
+import { test, expect, observePage, deskLanguage } from './fixtures';
 
 const db = new PrismaClient({ datasourceUrl: process.env.TEST_DATABASE_URL });
 const productId = 'qa-stock-cement';
@@ -29,7 +29,7 @@ test.beforeAll(async () => {
 test.afterAll(() => db.$disconnect());
 
 async function login(page: Page) {
-  await page.addInitScript(() => localStorage.setItem('shiv-owner-language', 'en'));
+  await deskLanguage(page.context(), 'en');
   await page.goto('http://localhost:3001');
   await page.getByRole('textbox', { name: 'Staff mobile number' }).fill('9999997007');
   const sent = page.waitForResponse((r) => r.url().endsWith('/auth/otp/request'));

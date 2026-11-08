@@ -35,13 +35,15 @@ test('no language gate and no switching in the code', () => {
 
 test('the English the app reads has no Devanagari, and every word has a Hinglish line', () => {
   const en = JSON.parse(readFileSync(join(root, '../../packages/i18n/src/en.json'), 'utf8'));
-  const hi = JSON.parse(readFileSync(join(root, '../../packages/i18n/src/hi.json'), 'utf8'));
+  const hinglish = JSON.parse(
+    readFileSync(join(root, '../../packages/i18n/src/hinglish.json'), 'utf8'),
+  );
   const keys = Object.keys(en).filter((key) => key.startsWith('customer.'));
   assert.ok(keys.length > 200, String(keys.length));
   for (const key of keys) {
     assert.doesNotMatch(en[key], devanagari, key);
-    assert.doesNotMatch(hi[key], devanagari, key);
-    assert.ok(hi[key].trim(), key);
+    assert.doesNotMatch(hinglish[key], devanagari, key);
+    assert.ok(hinglish[key].trim(), key);
   }
 });
 

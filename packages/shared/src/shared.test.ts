@@ -13,6 +13,8 @@ import {
   customerErrorCodes,
   customerErrors,
   dayLabel,
+  dateLabel,
+  momentLabel,
   deliveryDateOptions,
   errorCodes,
   errorText,
@@ -61,19 +63,25 @@ test('dates are Patna calendar days in both languages', () => {
     '2026-10-15',
   ]);
   assert.equal(dayLabel('2026-10-12', 'en'), '12 Oct 2026');
-  assert.ok(!hasDevanagari(dayLabel('2026-10-12', 'hi')));
-  assert.equal(dayLabel('2026-10-12', 'hi'), '12 Oct 2026');
+  assert.equal(dayLabel('2026-10-12', 'hinglish'), '12 Oct 2026');
+  // Hindi takes its month from the catalogue; the digits stay Latin.
+  assert.equal(dayLabel('2026-10-12', 'hi'), '12 अक्तू॰ 2026');
+  assert.equal(dayLabel('2026-09-12', 'en'), '12 Sep 2026');
   assert.equal(dayLabel('not-a-date', 'hi'), 'not-a-date');
+  // 20:00 UTC on 31 Dec is already 1 Jan in Patna, the next year.
+  assert.equal(dateLabel('2026-12-31T20:00:00Z', 'en'), '1 Jan 2027');
+  assert.equal(momentLabel('2026-10-12T06:30:00Z', 'hi'), '12 अक्तू॰ 2026 · 12:00');
   const now = new Date('2026-10-12T12:00:00Z');
   assert.equal(ageLabel('2026-10-12T11:45:00Z', 'en', now), '15 min');
-  assert.equal(ageLabel('2026-10-12T09:00:00Z', 'hi', now), '3 ghante');
-  assert.equal(ageLabel('2026-10-09T12:00:00Z', 'hi', now), '3 din');
+  assert.equal(ageLabel('2026-10-12T09:00:00Z', 'hinglish', now), '3 ghante');
+  assert.equal(ageLabel('2026-10-09T12:00:00Z', 'hinglish', now), '3 din');
+  assert.equal(ageLabel('2026-10-09T12:00:00Z', 'hi', now), '3 दिन');
+  assert.equal(ageLabel('2026-10-12T12:05:00Z', 'en', now), '0 min');
   assert.equal(ageLabel('2026-10-09T12:00:00Z', 'en', now), '3d');
 });
 
 test('every label, glossary word and customer error has real Hindi text', () => {
-  for (const status of orderStatuses)
-    assert.ok(orderStatusLabels[status][1].trim(), status);
+  for (const status of orderStatuses) assert.ok(orderStatusLabels[status][1].trim(), status);
   for (const [status, [, hi]] of Object.entries(quoteStatusLabels))
     assert.ok(hasDevanagari(hi), status);
   for (const [status, [, hi]] of Object.entries(paymentStatusLabels))
@@ -125,7 +133,9 @@ test('app versions compare numerically, not as text', () => {
 test('delivery chips name the weekday and short date in Patna time', () => {
   assert.equal(weekdayLabel('2026-10-15', 'en'), 'Thu');
   assert.equal(shortDayLabel('2026-10-15', 'en'), '15 Oct');
-  assert.equal(weekdayLabel('2026-10-15', 'hi'), 'Guruvar');
+  assert.equal(weekdayLabel('2026-10-15', 'hinglish'), 'Guruvar');
+  assert.equal(weekdayLabel('2026-10-15', 'hi'), 'गुरुवार');
+  assert.equal(shortDayLabel('2026-10-15', 'hi'), '15 अक्तू॰');
 });
 
 test('order history notes hide status codes and show server notes in Hindi', () => {

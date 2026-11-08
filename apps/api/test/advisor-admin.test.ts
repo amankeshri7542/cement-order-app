@@ -405,7 +405,7 @@ describe('the operator', () => {
 
 describe('the words on the desk', () => {
   it('every audit event here reads as a sentence in both languages', async () => {
-    const { en, hi } = await import('@shiv/i18n');
+    const { en, hinglish } = await import('@shiv/i18n');
     for (const name of [
       'ADVISOR_CONTENT_SYNCED',
       'ADVISOR_GAP_DECIDED',
@@ -414,7 +414,9 @@ describe('the words on the desk', () => {
       'ADVISOR_SETTINGS_CHANGED',
     ]) {
       expect(en).toHaveProperty([`owner.activity.event.${name}`]);
-      expect((hi as Record<string, string>)[`owner.activity.event.${name}`]).not.toMatch(/[ऀ-ॿ]/);
+      expect((hinglish as Record<string, string>)[`owner.activity.event.${name}`]).not.toMatch(
+        /[ऀ-ॿ]/,
+      );
     }
   });
 });

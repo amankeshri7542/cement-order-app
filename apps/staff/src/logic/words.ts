@@ -8,4 +8,4 @@ export const makeTr =
   (key, params) =>
     t(key, params ?? {}, language);
 /** Opens in Hinglish on every install; Simple English is one tap away, in the same place. */
-export const firstLanguage: Language = 'hi';
+export const firstLanguage: Language = 'hinglish';

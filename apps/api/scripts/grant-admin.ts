@@ -24,7 +24,12 @@ async function main() {
       });
       const user = await tx.user.upsert({
         where: { phone },
-        create: { phone, role: 'ADMIN', name: process.argv[3] || 'Store owner' },
+        create: {
+          phone,
+          role: 'ADMIN',
+          language: 'hinglish',
+          name: process.argv[3] || 'Store owner',
+        },
         update: {
           role: 'ADMIN',
           staffPausedAt: null,

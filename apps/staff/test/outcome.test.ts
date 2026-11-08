@@ -9,7 +9,7 @@ import {
 } from '../src/logic/outcome';
 import { makeTr } from '../src/logic/words';
 
-const hi = makeTr('hi');
+const hi = makeTr('hinglish');
 const en = makeTr('en');
 const reply = (extra: Partial<PunchReply>): PunchReply => ({
   kind: 'IN',

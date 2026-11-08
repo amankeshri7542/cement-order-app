@@ -10,7 +10,7 @@ import {
   tallyPauseSchema,
   tallyReleaseSchema,
 } from '@shiv/shared';
-import { t } from '@shiv/i18n';
+import { t, readLanguage } from '@shiv/i18n';
 import { randomInt } from 'node:crypto';
 import { z } from 'zod';
 import { shownPhone } from '../crm/common';
@@ -979,7 +979,7 @@ export class TallyDesk {
     const day = istToday(now);
     const rows = alerts.flatMap((alert) =>
       people.map((person) => {
-        const language = person.language === 'en' ? 'en' : 'hi';
+        const language = readLanguage(person.language);
         return {
           userId: person.id,
           dedupeKey: `tally:${alert.key}:${day}:${person.id}`,

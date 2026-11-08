@@ -15,7 +15,7 @@ import {
   type LogEntry,
 } from './report-helpers';
 
-const hinglish = (key: MessageKey, params?: Params) => translate(key, params, 'hi');
+const hinglish = (key: MessageKey, params?: Params) => translate(key, params, 'hinglish');
 const lakh = (value: number) => value * 100000 * 100;
 const entry = (fields: Partial<LogEntry>): LogEntry => ({
   actorId: 'someone',
@@ -84,12 +84,12 @@ test('the wait chart has a round top, and short ticks', () => {
 });
 
 test('a bag is a bori in Hinglish and nothing turns into another script', () => {
-  assert.equal(unitWord('bag', 'hi'), 'bori');
-  assert.equal(unitWord('Bags', 'hi'), 'bori');
-  assert.equal(unitWord('50 kg bag', 'hi'), '50 kg bori');
-  assert.equal(unitWord('cu ft', 'hi'), 'cu ft');
+  assert.equal(unitWord('bag', 'hinglish'), 'bori');
+  assert.equal(unitWord('Bags', 'hinglish'), 'bori');
+  assert.equal(unitWord('50 kg bag', 'hinglish'), '50 kg bori');
+  assert.equal(unitWord('cu ft', 'hinglish'), 'cu ft');
   assert.equal(unitWord('bag', 'en'), 'bag');
-  assert.doesNotMatch(unitWord('kg', 'hi'), /[ऀ-ॿ]/);
+  assert.doesNotMatch(unitWord('kg', 'hinglish'), /[ऀ-ॿ]/);
 });
 
 test('the log says the sentence from the plan, with the customer and the order', () => {

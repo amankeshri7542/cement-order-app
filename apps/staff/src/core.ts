@@ -33,6 +33,7 @@ import {
   queueKey,
   wipeEverything,
 } from './logic/wipe';
+import { readLanguage } from '@shiv/i18n';
 import { firstLanguage, makeTr, type Language, type Tr } from './logic/words';
 import { bootCount, modelInfo, mono, publicKey, signText } from './platform/device';
 import { watchLocation, readLocationOnce } from './platform/location';
@@ -524,7 +525,10 @@ export async function setLanguage(language: Language) {
 }
 
 export async function boot() {
-  const language = (await readJson<Language>(languageKey)) ?? firstLanguage;
+  // Saved before plan v4 B2, 'hi' meant Hinglish. Until the staff app rebuild (G1) adds Hindi, it
+  // writes only 'hinglish' or 'en', so an old 'hi' here is always Hinglish.
+  const stored = await readJson<string>(languageKey);
+  const language = stored == null ? firstLanguage : readLanguage(stored, true);
   set({ language, tr: makeTr(language) });
   const mark = await readJson<'CUT_OFF' | 'REFUSED'>(cutOffKey);
   if (mark) {

@@ -12,7 +12,7 @@ import {
   staffRenewSchema,
   staffVerifySchema,
 } from '@shiv/shared';
-import { t } from '@shiv/i18n';
+import { t, readLanguage } from '@shiv/i18n';
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { AuthService, staffAppSessionMs } from '../auth';
@@ -77,7 +77,7 @@ async function tellDeciders(
     select: { id: true, language: true },
   });
   for (const person of people) {
-    const language = person.language === 'en' ? 'en' : 'hi';
+    const language = readLanguage(person.language);
     await tx.notification.create({
       data: {
         userId: person.id,
