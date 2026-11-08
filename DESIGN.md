@@ -359,7 +359,8 @@ The most important part: a ruled ledger, built on TanStack Table and TanStack Vi
 - **Desk rail:** `rail` background with `rail-ink` items, and small-caps group labels in `rail-muted`. The current item has an amber marker. Badges show counts only where action is needed.
 - **Phone:** bottom tabs with a centre [+] that opens an action sheet. Menu lists the same groups as the rail, with a search box at the top.
 - **One list of pages:** the rail, the phone Menu and the search's page results all come from `apps/admin/lib/shell-nav.ts`, filtered by what the person may open. A page joins its group there when it is built; an old address moves in the same file's table, never before its new home exists.
-- **Scope:** the top bar's shop or firm choice is read by pages through `useShopScope()`, never kept per page. A person with one shop sees it named instead of a switcher.
+- **Scope:** the top bar's shop or firm choice is read by pages through `useShopScope()`, never kept per page. A person with one shop sees it named instead of a switcher. Lists read through `useList` and the endpoint layer (`apps/admin/lib/endpoints`), which adds the choice to every request.
+- **Search:** results are grouped in a fixed order (Grahak, Order, Maal, then actions and pages), at most five a group, each row a name with one line of detail and at most one trailing figure or stamp. A group the person may not read is left out, never shown empty. On the phone the Menu's box shows results under itself instead of floating over the page.
 - **Shortcuts (laptop only):** `/` search, `M` Saathi, `N` new order, `Esc` closes. Never while typing, and listed in the person menu.
 
 ### Saathi cards

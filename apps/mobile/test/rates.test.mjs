@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { loadTs } from './load-ts.mjs';
+import { phoneSearch } from './shared-search.mjs';
 
 const { rateItems, rowDetail, rateToShow, offerFor } = loadTs('src/logic/rates.ts', {}, {});
-const { searchProducts, normalize } = loadTs('src/logic/search.ts', {}, {});
+const { searchProducts, normalize } = phoneSearch;
 
 const product = (id, categorySlug, pricePaise, over = {}) => ({
   id,

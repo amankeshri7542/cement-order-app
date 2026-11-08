@@ -1,55 +1,31 @@
+import { indexProducts, normaliseText, rankProducts, type SearchIndex } from '@shiv/shared';
 import type { CatalogProduct } from './types';
 
-// Search works on the phone, at once and with no signal. Plain logic, unit-tested under Node.
+// Search works on the phone, at once and with no signal. The words, spellings and ranking are the
+// shared ones (packages/shared/src/search-normalise.ts), so the phone and the desk agree.
 
-/** Everyday words for each material, because people search the way they speak. */
-const materialWords: Record<string, string[]> = {
-  cement: ['cement', 'bori', 'bag', 'siment'],
-  steel: ['sariya', 'saria', 'sarya', 'rod', 'steel', 'tmt', 'chhad', 'loha'],
-  sand: ['balu', 'baalu', 'sand', 'ret'],
-  aggregates: ['gitti', 'giti', 'stone', 'aggregate', 'chips'],
-  bricks: ['eent', 'int', 'brick', 'bricks', 'block'],
-};
+export const normalize = normaliseText;
 
-export const normalize = (text: string) =>
-  text
-    .toLowerCase()
-    .normalize('NFKC')
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
-    .trim();
-
-function terms(product: CatalogProduct) {
-  return [
-    product.name,
-    product.brand,
-    product.grade,
-    product.type,
-    ...(product.searchTerms ?? []),
-    ...(materialWords[product.categorySlug] ?? [product.categorySlug]),
-  ].map(normalize);
+type Entry = CatalogProduct & { category: string; words: string[] };
+// The shelf is indexed once per list the screen holds, not on every key press.
+const indexes = new WeakMap<readonly CatalogProduct[], SearchIndex<Entry>>();
+function indexOf(products: readonly CatalogProduct[]) {
+  let index = indexes.get(products);
+  if (!index) {
+    index = indexProducts(
+      products.map((product) => ({
+        ...product,
+        category: product.categorySlug,
+        words: product.searchTerms ?? [],
+      })),
+    );
+    indexes.set(products, index);
+  }
+  return index;
 }
 
 /** Every word typed must hit something; a match at the start of the name comes first. */
 export function searchProducts(products: CatalogProduct[], query: string): CatalogProduct[] {
-  const words = normalize(query).split(' ').filter(Boolean);
-  if (!words.length) return [];
-  const scored: { product: CatalogProduct; score: number }[] = [];
-  for (const product of products) {
-    const haystack = terms(product);
-    const hit = words.every((word) =>
-      haystack.some((term) => term.split(' ').some((part) => part.startsWith(word))),
-    );
-    if (!hit) continue;
-    scored.push({
-      product,
-      score: normalize(product.name).startsWith(words[0]!)
-        ? 0
-        : normalize(product.brand).startsWith(words[0]!)
-          ? 1
-          : 2,
-    });
-  }
-  return scored
-    .sort((a, b) => a.score - b.score || a.product.name.localeCompare(b.product.name))
-    .map((item) => item.product);
+  const byId = new Map(products.map((product) => [product.id, product]));
+  return rankProducts(indexOf(products), query).map((entry) => byId.get(entry.id)!);
 }

@@ -330,6 +330,15 @@ export function canDo(access: Access, name: Permission, locationId?: string | nu
   return scope.includes(locationId);
 }
 
+/**
+ * Whether this person works at this shop: reads its stock, its orders or its galla. The desk's
+ * shop chooser offers only these, and the API refuses any other shop asked for as the scope.
+ */
+export const worksAt = (access: Access, locationId: string) =>
+  canDo(access, 'stock.read', locationId) ||
+  canDo(access, 'orders.read', locationId) ||
+  canDo(access, 'galla.read', locationId);
+
 /** True when some role holds this permission for only certain shops, so routes must check which. */
 export function isShopScoped(name: Permission) {
   return staffRoles.some((role) => rolePermissions[role][name] === 'SHOP');

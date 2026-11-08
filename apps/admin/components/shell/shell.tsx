@@ -1,7 +1,7 @@
 'use client';
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import {
   Activity,
   Banknote,
@@ -37,6 +37,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { Drawer, EmptyState, Kbd, Menu, Sheet } from '@shiv/design';
+import { worksAt } from '@shiv/shared';
 import { htmlLang, languages, type MessageKey } from '@shiv/i18n';
 import { api } from '../../lib/api';
 import {
@@ -47,6 +48,7 @@ import {
 } from '../../lib/appearance';
 import { useChooseLanguage, useLanguage, useT } from '../../lib/i18n';
 import { useOwner } from '../../lib/owner';
+import { DeskSearch } from './search';
 import { writeScope, readScope } from '../../lib/scope';
 import {
   currentItem,
@@ -211,12 +213,9 @@ function RailGroup({
 /** Every shop, one firm, or one shop: the scope every page reads (`useShopScope`). */
 export function ScopeSwitcher() {
   const t = useT();
-  const { shops, firms, can, scope, setScope } = useOwner();
+  const { shops, firms, access, scope, setScope } = useOwner();
   // Only where this person works. Other shops exist, but there is nothing of theirs to narrow to.
-  const mine = shops.filter(
-    (shop) =>
-      can('stock.read', shop.id) || can('orders.read', shop.id) || can('galla.read', shop.id),
-  );
+  const mine = shops.filter((shop) => worksAt(access, shop.id));
   if (!mine.length) return null;
   if (mine.length === 1)
     return (
@@ -265,115 +264,6 @@ export function ScopeSwitcher() {
  * The top bar's search (plan v4 02, section 3). B4a finds pages and actions on this desk; B4b adds
  * customers, orders, bills, goods and suppliers from the server.
  */
-export function DeskSearch({ groups, onPick }: { groups: NavGroup[]; onPick?: () => void }) {
-  const t = useT();
-  const router = useRouter();
-  const { canOpen } = useOwner();
-  const [query, setQuery] = useState('');
-  const [open, setOpen] = useState(false);
-  const [active, setActive] = useState(0);
-  const input = useRef<HTMLInputElement>(null);
-  const listId = useId();
-  const found = useMemo(() => {
-    const typed = query.trim().toLowerCase();
-    const pages = groups.flatMap((group) =>
-      group.items.map((item) => ({ href: item.href, label: t(item.key), kind: 'page' as const })),
-    );
-    const actions = plusActions
-      .filter((action) => canOpen(action.needs))
-      .map((action) => ({ href: action.href, label: t(action.key), kind: 'action' as const }));
-    const all = [...actions, ...pages];
-    return typed ? all.filter((item) => item.label.toLowerCase().includes(typed)).slice(0, 8) : [];
-  }, [query, groups, t, canOpen]);
-  useEffect(() => {
-    const press = (event: KeyboardEvent) => {
-      if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return;
-      const target = event.target as HTMLElement;
-      if (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
-        return;
-      event.preventDefault();
-      input.current?.focus();
-    };
-    document.addEventListener('keydown', press);
-    return () => document.removeEventListener('keydown', press);
-  }, []);
-  const go = (href: string) => {
-    setQuery('');
-    setOpen(false);
-    onPick?.();
-    router.push(href);
-  };
-  return (
-    <div className={css.search} role="search">
-      <label htmlFor={`${listId}-input`} className={css.hidden}>
-        {t('owner.shell.searchLabel')}
-      </label>
-      <input
-        ref={input}
-        id={`${listId}-input`}
-        type="search"
-        role="combobox"
-        aria-expanded={open && !!query.trim()}
-        aria-controls={listId}
-        aria-activedescendant={open && found[active] ? `${listId}-${active}` : undefined}
-        aria-keyshortcuts="/"
-        autoComplete="off"
-        placeholder={t('owner.shell.search')}
-        value={query}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 150)}
-        onChange={(event) => {
-          setQuery(event.target.value);
-          setActive(0);
-          setOpen(true);
-        }}
-        onKeyDown={(event) => {
-          if (event.key === 'ArrowDown') {
-            event.preventDefault();
-            setActive((at) => Math.min(found.length - 1, at + 1));
-          } else if (event.key === 'ArrowUp') {
-            event.preventDefault();
-            setActive((at) => Math.max(0, at - 1));
-          } else if (event.key === 'Enter' && found[active]) {
-            event.preventDefault();
-            go(found[active].href);
-          } else if (event.key === 'Escape') {
-            setQuery('');
-            input.current?.blur();
-          }
-        }}
-      />
-      {open && query.trim() && (
-        <div className={css.results}>
-          <ul id={listId} role="listbox" aria-label={t('owner.shell.searchLabel')}>
-            {found.map((item, index) => (
-              <li
-                key={item.href}
-                id={`${listId}-${index}`}
-                role="option"
-                aria-selected={index === active}
-                className={css.result}
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                  go(item.href);
-                }}
-              >
-                <span>{item.label}</span>
-                <span className={css.resultKind}>
-                  {t(
-                    item.kind === 'page' ? 'owner.shell.searchPages' : 'owner.shell.searchActions',
-                  )}
-                </span>
-              </li>
-            ))}
-          </ul>
-          <p className={css.soon}>{t('owner.shell.searchSoon')}</p>
-        </div>
-      )}
-    </div>
-  );
-}
-
 const themes: ThemeChoice[] = ['auto', 'light', 'dark'];
 const sizes: TextSize[] = ['normal', 'large', 'larger'];
 
@@ -420,7 +310,7 @@ export function LookControls({ words = false }: { words?: boolean }) {
         icon={
           words ? undefined : (
             <span lang={htmlLang(language)} className={css.langMark}>
-              {language === 'en' ? 'En' : language === 'hi' ? 'हि' : 'Hi'}
+              {t('owner.shell.langMark')}
             </span>
           )
         }

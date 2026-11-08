@@ -54,6 +54,7 @@ import { OrdersController, OrdersService } from './orders';
 import { PaymentsController, PaymentsService } from './payments';
 import { QuotesController } from './quotes';
 import { AdminController } from './admin';
+import { SearchController } from './search';
 import { IntegrationsController, Maintenance } from './integrations';
 import { Lifecycle, requestId } from './lifecycle';
 import { AlertsController, AlertsService } from './alerts';
@@ -118,6 +119,7 @@ class HealthController {
     PaymentsController,
     QuotesController,
     AdminController,
+    SearchController,
     IntegrationsController,
     HealthController,
     OperationsController,

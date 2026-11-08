@@ -140,7 +140,10 @@ function StockTab() {
   const [history, setHistory] = useState<Item | null>(null);
   const allShops = table.data?.shops ?? [];
   const shops = shopId ? allShops.filter((shop) => shop.id === shopId) : allShops;
-  const items = table.data?.items ?? [];
+  // A goods result from the top bar's search opens on that one item.
+  const only = useSearchParams().get('product');
+  const allItems = table.data?.items ?? [];
+  const items = only ? allItems.filter((item) => item.id === only) : allItems;
   const level = (item: Item, id: string) => item.shops.find((row) => row.locationId === id);
   const total = (item: Item) =>
     shops.reduce((sum, shop) => sum + (level(item, shop.id)?.quantity ?? 0), 0);
@@ -182,6 +185,14 @@ function StockTab() {
             : t('owner.stockPage.cleanDays', { count: shop.cleanDays, target: cleanDaysTarget })}
         </p>
       ))}
+      {only && (
+        <p className={css.sub}>
+          {t('owner.stockPage.onlyOne')}{' '}
+          <Link href="/stock" className={css.inlineLink}>
+            {t('owner.stockPage.showAll')}
+          </Link>
+        </p>
+      )}
       {table.data && !items.length && <EmptyState title={t('owner.emptyStock')} />}
       {wide ? (
         <table className={css.table}>

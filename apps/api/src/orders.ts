@@ -22,6 +22,7 @@ import {
   checkoutSchema,
   CheckoutReview,
   istToday,
+  orderPageSchema,
   orderStatusSchema,
   orderStatusText,
   placeOrderSchema,
@@ -32,7 +33,7 @@ import {
   siteLanguage,
 } from '@shiv/shared';
 import { Db } from './db';
-import { firmOfLocation } from './firms';
+import { firmAsked, firmOfLocation } from './firms';
 import {
   atOrder,
   AuthRequest,
@@ -42,6 +43,7 @@ import {
   fail,
   forbid,
   Input,
+  Returns,
   scoped,
   Self,
   shopAsked,
@@ -1119,6 +1121,7 @@ export class OrdersController {
   }
   @Firm('shop')
   @Can('orders.read', scoped)
+  @Returns(orderPageSchema)
   @Get('admin/orders')
   async all(@Query() query: Record<string, string>, @Req() req: AuthRequest) {
     const parsed = z
@@ -1143,7 +1146,17 @@ export class OrdersController {
     const today = date ? new Date(`${date}T00:00:00+05:30`) : null;
     const page = paginate(
       query,
-      JSON.stringify({ list: 'admin-orders', q, status, queue, customerId, group, date }),
+      JSON.stringify({
+        list: 'admin-orders',
+        q,
+        status,
+        queue,
+        customerId,
+        group,
+        date,
+        locationId: query.locationId,
+        firmId: query.firmId,
+      }),
     );
     const rows = await this.db.order.findMany({
       include: { ...orderInclude, user: { select: orderPerson } },
@@ -1151,6 +1164,8 @@ export class OrdersController {
         AND: [
           page.after,
           shopAsked(req, 'orders.read', query.locationId),
+          // The firm chosen in the top bar; it must be one of this person's.
+          firmAsked(req, query.firmId),
           customerId ? { userId: customerId } : {},
           today ? { createdAt: { gte: today, lt: new Date(today.getTime() + 86400000) } } : {},
           group === 'pending' ? { status: { notIn: ['DELIVERED', 'CANCELLED', 'REFUNDED'] } } : {},

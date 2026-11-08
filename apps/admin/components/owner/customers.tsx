@@ -5,6 +5,7 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { Button, EmptyState, Field, MoneyText, SearchBar, Sheet } from '@shiv/design';
 import { istToday, money, type Order } from '@shiv/shared';
 import { ApiError, api } from '../../lib/api';
+import { customerList, useList } from '../../lib/endpoints';
 import { useT, useWords } from '../../lib/i18n';
 import { useAction, useDebounced, useOwner, useUnsavedGuard } from '../../lib/owner';
 import type { Customer, KhataSummary, Ledger, LedgerEntry } from '../../lib/owner-types';
@@ -34,11 +35,9 @@ export function Customers() {
   const { can } = useOwner();
   // Who owes what, across everyone, is for those who may read the udhaar list.
   const seesDue = can('khata.read.list');
-  const [sort, setSort] = useState(seesDue ? 'due' : 'recent');
-  const customers = usePaged<Customer>(
-    ['customers', 'list', sort, q],
-    `/admin/customers?limit=24&sort=${sort}&q=${encodeURIComponent(q)}`,
-  );
+  const [sort, setSort] = useState<'due' | 'recent'>(seesDue ? 'due' : 'recent');
+  // The firm chosen in the top bar, or the firm of the chosen shop (useList adds it).
+  const customers = useList(customerList, { limit: 24, sort, q });
   const rows = customers.data?.pages.flatMap((page) => page.items) ?? [];
   return (
     <>
@@ -49,7 +48,7 @@ export function Customers() {
         onChange={(event) => setSearch(event.target.value)}
       />
       <div className={css.chips}>
-        {(seesDue ? ['due', 'recent'] : ['recent']).map((value) => (
+        {(seesDue ? (['due', 'recent'] as const) : (['recent'] as const)).map((value) => (
           <Button
             key={value}
             variant={value === sort ? 'primary' : 'secondary'}

@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Button, EmptyState, Field, MoneyText, SearchBar, Sheet } from '@shiv/design';
 import { istToday, money, type Order, type StoreSettings } from '@shiv/shared';
 import { api } from '../../lib/api';
+import { orderList, useList } from '../../lib/endpoints';
 import { useLanguage, useT, useWords } from '../../lib/i18n';
 import { useAction, useDebounced, useOwner } from '../../lib/owner';
 import {
@@ -17,7 +18,6 @@ import {
   QueryStatus,
   Status,
   orderShare,
-  usePaged,
 } from './common';
 import css from './owner.module.css';
 
@@ -25,12 +25,9 @@ export function OrdersList() {
   const t = useT();
   const [search, setSearch] = useState('');
   const q = useDebounced(search);
-  const [group, setGroup] = useState('pending');
-  const { shopId } = useOwner();
-  const orders = usePaged<Order>(
-    ['orders', 'list', group, q, shopId],
-    `/admin/orders?limit=24&group=${group}&q=${encodeURIComponent(q)}${shopId ? `&locationId=${shopId}` : ''}`,
-  );
+  const [group, setGroup] = useState<'today' | 'pending' | 'completed' | 'all'>('pending');
+  // The shop or firm chosen in the top bar goes with the request (useList adds it).
+  const orders = useList(orderList, { limit: 24, group, q });
   const rows = orders.data?.pages.flatMap((page) => page.items) ?? [];
   return (
     <>

@@ -2,12 +2,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { SearchBox, Section } from '@shiv/design';
+import { Section } from '@shiv/design';
 import { api } from '../../lib/api';
 import { useT } from '../../lib/i18n';
 import { moreRoutes, type MoreView } from '../../lib/nav';
 import { useIsWide, useOwner } from '../../lib/owner';
 import { groupsWhere } from '../../lib/shell-nav';
+import { DeskSearch } from '../shell/search';
 import { LookControls } from '../shell/shell';
 import { PageHeader } from './common';
 import css from './owner.module.css';
@@ -30,25 +31,22 @@ export function More() {
     if (view && Object.hasOwn(moreRoutes, view)) router.replace(moreRoutes[view as MoreView]);
     else if (wide) router.replace('/today');
   }, [view, wide, router]);
+  const visible = useMemo(() => groupsWhere(canOpen), [canOpen]);
   const groups = useMemo(() => {
     const typed = query.trim().toLowerCase();
-    return groupsWhere(canOpen)
+    return visible
       .map((group) => ({
         ...group,
         items: group.items.filter((item) => !typed || t(item.key).toLowerCase().includes(typed)),
       }))
       .filter((group) => group.items.length);
-  }, [query, canOpen, t]);
+  }, [query, visible, t]);
   return (
     <>
       <PageHeader title={t('owner.shell.menu')} />
       <div className={own.tools}>
-        <SearchBox
-          label={t('owner.shell.menuSearch')}
-          value={query}
-          onChange={setQuery}
-          shortcut={false}
-        />
+        {/* Customers, orders and goods from the server show under the box; pages filter below. */}
+        <DeskSearch groups={visible} inline pages={false} onQuery={setQuery} />
         <div className={own.look}>
           <LookControls words />
         </div>

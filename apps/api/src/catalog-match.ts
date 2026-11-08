@@ -1,19 +1,12 @@
 import type { Prisma } from '@prisma/client';
+import { normaliseText } from '@shiv/shared';
 
 /**
- * The one way a product's name, or a customer's words, becomes comparable text. Marks stay, as
- * without them Hindi words fall apart into single letters.
+ * The one way a product's name, or a customer's words, becomes comparable text. Now shared with the
+ * phone and the desk's search (packages/shared/src/search-normalise.ts), unchanged, because saved
+ * aliases were made with it.
  */
-export function normalizeAlias(value: string) {
-  return value
-    .normalize('NFKC')
-    .toLowerCase()
-    .replace(/[०-९]/g, (digit) => String(digit.charCodeAt(0) - 0x0966))
-    .replace(/neo\s*steel/g, 'neosteel')
-    .replace(/(\d)\s*(mm|kg)\b/g, '$1$2')
-    .replace(/[^\p{L}\p{M}\p{N}]+/gu, ' ')
-    .trim();
-}
+export const normalizeAlias = normaliseText;
 
 export type MatchMethod = 'ALIAS' | 'EXACT' | 'CATEGORY';
 export type CatalogProduct = {

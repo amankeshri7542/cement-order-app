@@ -135,6 +135,16 @@ export function customerFirmWhere(req: Pick<AuthRequest, 'firms'>): Prisma.UserW
   };
 }
 
+/**
+ * The firms a list reads: the one chosen in the desk's top bar (which must be one of this
+ * person's), or all of theirs. In the shape firmWhere, firmsOf and customerFirmWhere take.
+ */
+export function firmView(req: AuthRequest, asked?: unknown): Pick<AuthRequest, 'firms'> {
+  if (typeof asked !== 'string' || !asked) return req;
+  requireFirm(req, asked);
+  return { firms: [asked] };
+}
+
 /** Firms by id with their names, for answers that show per firm and combined. */
 export async function firmNames(tx: Pick<Tx, 'firm'>) {
   const firms = await tx.firm.findMany({

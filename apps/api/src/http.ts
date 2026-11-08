@@ -9,7 +9,7 @@ import {
   SetMetadata,
 } from '@nestjs/common';
 import { Prisma, User } from '@prisma/client';
-import { ApiBody } from '@nestjs/swagger';
+import { ApiBody, ApiOkResponse } from '@nestjs/swagger';
 import type { SchemaObject } from '@nestjs/swagger/dist/interfaces/open-api-spec.interface';
 import type { Request, Response } from 'express';
 import { z } from 'zod';
@@ -193,6 +193,14 @@ class SchemaPipe implements PipeTransform {
 export const Input = (schema: z.ZodType) => Body(new SchemaPipe(schema));
 export const Contract = (schema: z.ZodType) =>
   ApiBody({ schema: z.toJSONSchema(schema, { target: 'openapi-3.0' }) as SchemaObject });
+/**
+ * What a route answers, as a shared schema from @shiv/shared (plan v4, 09 section 7). It feeds the
+ * OpenAPI document; the route's tests check real answers against the same schema.
+ */
+export const Returns = (schema: z.ZodType) =>
+  ApiOkResponse({
+    schema: z.toJSONSchema(schema, { target: 'openapi-3.0', io: 'output' }) as SchemaObject,
+  });
 /** Safe log fields for an unexpected error: its type, Prisma code and model, and stack frames as
  * file:line. Never the message, which can carry a phone number, address or query values. */
 export function errorCause(error: unknown) {

@@ -21,6 +21,7 @@ import {
 import { Button, Confirm, Field, PhoneField, Skeleton, Toast } from '@shiv/design';
 import {
   canDo,
+  worksAt,
   phoneDigits,
   type Access,
   type Permission,
@@ -69,6 +70,8 @@ type DeskSession = {
 };
 type Confirmation = { title: string; body: string; confirmLabel: string; noteLabel?: string };
 type OwnerContext = {
+  /** What this person may do, as the API worked it out. Prefer `can` for one check. */
+  access: Access;
   me: User;
   /** Whether this person may do this, at one shop or at all. Hiding a button is only manners: the API decides. */
   can: (permission: Permission, locationId?: string | null) => boolean;
@@ -432,11 +435,17 @@ function OwnerShell({ children }: { children: ReactNode }) {
         </Button>
       </div>
     );
-  const scope = allowedScope(chosenScope, auth.data.locations, auth.data.firms ?? []);
+  // Only a shop this person works at can be the scope, as in the chooser.
+  const scope = allowedScope(
+    chosenScope,
+    auth.data.locations.filter((shop) => worksAt(access, shop.id)),
+    auth.data.firms ?? [],
+  );
   const groups = visibleGroups(access);
   const counts = { waiting: waiting.data?.count ?? 0, reviews: reviewCount };
   const value: OwnerContext = {
     me: auth.data.user,
+    access,
     can: (permission, locationId) => canDo(access, permission, locationId),
     canOpen: (route) => pathAllowed(access, route),
     shops: auth.data.locations,

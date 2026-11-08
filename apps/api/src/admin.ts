@@ -5,9 +5,19 @@ import { paginate } from './pagination';
 import { Db } from './db';
 import { blindShops } from './blind-count';
 import { orderInclude, orderPerson } from './orders';
-import { AuthRequest, Can, fail, Firm, forbid, scoped, shopAsked, shopWhere } from './http';
-import { customerFirmWhere, firmAsked, firmNames, firmsOf, firmWhere } from './firms';
-import { canDo } from '@shiv/shared';
+import {
+  AuthRequest,
+  Can,
+  fail,
+  Firm,
+  forbid,
+  Returns,
+  scoped,
+  shopAsked,
+  shopWhere,
+} from './http';
+import { customerFirmWhere, firmAsked, firmNames, firmsOf, firmView, firmWhere } from './firms';
+import { canDo, customerPageSchema } from '@shiv/shared';
 import { shownPhone, withShownPhones } from './crm/common';
 import { z } from 'zod';
 
@@ -242,16 +252,20 @@ export class AdminController {
   }
   @Firm('own')
   @Can('customers.read')
+  @Returns(customerPageSchema)
   @Get('customers')
   async customers(@Query() query: Record<string, string>, @Req() req: AuthRequest) {
     const parsed = z
       .object({
         q: z.string().trim().max(100).default(''),
         sort: z.enum(['recent', 'due']).default('recent'),
+        firmId: z.string().trim().min(1).max(100).optional(),
       })
       .safeParse(query);
     if (!parsed.success) fail('INVALID_FILTER', 'Check customer filters.');
-    const { q, sort } = parsed.data;
+    const { q, sort, firmId } = parsed.data;
+    // The firm chosen in the top bar, or all of this person's.
+    const view = firmView(req, firmId);
     // Who owes what, across everyone, is the udhaar list. Without that right, a balance comes only
     // for the one customer whose full number was asked for.
     const seesAll = !!req.access['khata.read.list'];
@@ -263,7 +277,7 @@ export class AdminController {
       seesPhone || /^\+91[6-9]\d{9}$/.test(q) ? ['name', 'phone', 'area'] : ['name', 'area'];
     const page = paginate(
       query,
-      JSON.stringify({ list: 'customers', q, sort }),
+      JSON.stringify({ list: 'customers', q, sort, firmId }),
       sort === 'due' ? 'khataBalancePaise' : 'createdAt',
     );
     // The accountant knows people by their Tally names. Only those who may see Tally search by them.
@@ -287,7 +301,7 @@ export class AdminController {
           AND: [
             page.after,
             // Someone limited to one firm sees that firm's customers, and new ones.
-            customerFirmWhere(req),
+            customerFirmWhere(view),
             q
               ? {
                   OR: [
@@ -316,7 +330,7 @@ export class AdminController {
           notesCount: true,
           _count: { select: { orders: true, quotes: true } },
           firmBalances: {
-            where: firmWhere(req),
+            where: firmWhere(view),
             select: { firmId: true, balancePaise: true, creditLimitPaise: true },
           },
         },
@@ -331,7 +345,7 @@ export class AdminController {
           const customer = { ...rest, phone: shownPhone(req, phone) };
           // Per firm, and the total over the firms this person may see.
           const balance =
-            firmsOf(req) === 'ALL'
+            firmsOf(view) === 'ALL'
               ? khataBalancePaise
               : firmBalances.reduce((total, row) => total + row.balancePaise, 0);
           return showBalance

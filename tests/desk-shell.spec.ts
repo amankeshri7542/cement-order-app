@@ -190,8 +190,14 @@ test('on a phone at 360 × 640 with the largest text: five tabs, all readable an
   await bar.getByRole('link', { name: /^Menu/ }).click();
   await expect(page).toHaveURL(/\/more$/);
   await expect(page.getByRole('heading', { name: 'Paisa' })).toBeVisible();
-  await page.getByRole('searchbox', { name: say('owner.shell.menuSearch') }).fill('gal');
-  await expect(page.getByRole('main').getByRole('link')).toHaveText([/Galla/]);
+  // The Menu's box is the desk's search: pages filter below it.
+  await page
+    .getByRole('main')
+    .getByRole('combobox', { name: say('owner.shell.searchLabel') })
+    .fill('gal');
+  await expect(page.getByRole('main').getByRole('navigation').getByRole('link')).toHaveText([
+    /Galla/,
+  ]);
   await expect(page.getByRole('button', { name: say('owner.logout') })).toBeVisible();
 });
 
@@ -226,7 +232,8 @@ test('shortcuts: / searches, M opens Saathi, N starts an order, Escape closes; n
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${desk}/today`);
   await expect(rail(page)).toBeVisible();
-  await page.locator('body').click({ position: { x: 700, y: 400 } });
+  // Nothing focused, without clicking whatever the page shows at some point.
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.keyboard.press('m');
   const saathi = page.getByRole('dialog', { name: say('owner.shell.saathi') });
   await expect(saathi).toBeVisible();
@@ -239,11 +246,16 @@ test('shortcuts: / searches, M opens Saathi, N starts an order, Escape closes; n
   await page.keyboard.type('mn');
   await expect(saathi).toHaveCount(0);
   await expect(page).toHaveURL(/\/today$/);
-  await search.fill('gal');
-  await expect(page.getByRole('option', { name: /Galla/ })).toBeVisible();
+  await search.fill('galla');
+  // Enter opens the first result once the server has answered; here that is the Galla page.
+  await expect(
+    page.getByRole('status').filter({ hasText: say('owner.shell.searchLoading') }),
+  ).toHaveCount(0);
+  await expect(page.getByRole('option').first()).toContainText('Galla');
   await page.keyboard.press('Enter');
   await expect(page).toHaveURL(/\/galla$/);
-  await page.locator('body').click({ position: { x: 700, y: 400 } });
+  // Nothing focused, without clicking whatever the page shows at some point.
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.keyboard.press('n');
   await expect(page).toHaveURL(/\/orders\/new$/);
 });

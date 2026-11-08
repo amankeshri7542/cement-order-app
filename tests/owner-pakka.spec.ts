@@ -416,8 +416,11 @@ test('the order page of a waiting order leads to the card, and old status button
       page.getByRole('navigation', { name: hinglish['owner.desk'], exact: true }),
     ).toBeVisible();
     await page.goto(`${desk}/orders/${order.id}`);
+    // On the page, not the phone's Pakka karo tab.
     await expect(
-      page.getByRole('link', { name: new RegExp(hinglish['owner.pakka.confirm']) }),
+      page
+        .locator('#owner-main')
+        .getByRole('link', { name: new RegExp(hinglish['owner.pakka.confirm']) }),
     ).toBeVisible();
     await expect(page.getByRole('button', { name: hinglish['owner.startPreparing'] })).toHaveCount(
       0,

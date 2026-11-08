@@ -127,6 +127,9 @@ model User {
 
   @@index([createdAt, id])
   @@index([lastOrderAt])
+  // The desk's search finds a customer by a piece of their name or number (plan v4 B4b).
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "User_name_trgm_idx")
+  @@index([phone(ops: raw("gin_trgm_ops"))], type: Gin, map: "User_phone_trgm_idx")
 }
 
 model Session {
@@ -349,6 +352,8 @@ model Order {
   @@index([createdAt, id])
   @@index([userId, createdAt, id])
   @@index([locationId, status, createdAt])
+  // The desk's search finds an order by a piece of its number (plan v4 B4b).
+  @@index([number(ops: raw("gin_trgm_ops"))], type: Gin, map: "Order_number_trgm_idx")
 }
 
 model OrderItem {
