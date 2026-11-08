@@ -259,6 +259,13 @@ On a phone the desk switches to its own minimums: body text at least 16 px and f
 - **Spacing:** 2, 4, 8, 12, 16, 20, 24, 32, 40, 48, 64. Nothing else.
 - **Desk shell:** a grouped side rail (collapsible to icons) and a top bar holding global search (`/`), the firm and shop switcher, Saathi, the theme toggle, the language toggle and the person menu. On a phone, bottom tabs: Aaj · Pakka karo · [+] · Saathi · Menu.
 - **Density by device:** desk tables use 36 px rows and 13–14 px text, and desk forms use 44 px controls. On a phone, rows and touch targets are at least 48 px. App lists use 56 dp rows, or 64 dp for rich rows.
+- **Every size works, 320 px to 2560 px.**
+  - **Breakpoints:** phone up to 599, tablet 600 to 1023, laptop 1024 to 1439, wide from 1440.
+  - **Phone:** the rail becomes bottom tabs and Menu; DataTable becomes two-line rows; the drawer becomes a full screen; the KPI strip scrolls sideways.
+  - **Tablet and wide:** on a tablet the rail collapses to icons and the drawer lays over the list. On a wide screen content stops at 1600 px. Extra width goes to tables, never to stretched forms, which stay at most 720 px wide.
+  - **Also counted:** landscape phones, split screen, and Android font scale up to 2.0. The apps cover phones from 320 dp and tablets, in both orientations.
+
+**The No Sideways Page Rule.** The page never scrolls sideways at any width. Only a DataTable may scroll sideways, inside itself, with its first column sticky.
 
 ### Page templates
 
@@ -356,20 +363,14 @@ Saathi (the owners' AI) answers with kit parts, not chat bubbles full of prose: 
 - A DraftCard shows exactly what will change, and it needs a tap.
 - No sparkle icons or gradient "AI" styling: Saathi looks like the rest of the ledger.
 
-### Feedback
+### Feedback and charts
 
-- **Toast:** short, and carries an undo for inline edits.
-- **Banner:** info, warn or error, at the top of the area it concerns.
-- **Errors:** say what was saved and what was not.
-
-### Charts
-
-Small themed SVG charts: bar, stacked bar, line and sparkline. They use sequential ink-to-kraft steps that are safe for colour-blind readers, and each has a "see as table" toggle.
+- **Feedback:** a toast is short and carries an undo for inline edits. A banner (info, warn or error) sits at the top of the area it concerns. Errors say what was saved and what was not.
+- **Charts:** small themed SVG bar, stacked bar, line and sparkline charts, in colour-blind-safe ink-to-kraft steps, each with a "see as table" toggle.
 
 ### Icons and motion
 
-- **Icons:** Lucide only, 1.5 px stroke, at 16, 20 or 24 px. They always sit next to a word, except in well-known icon buttons that have a label for screen readers.
-- **Motion:** 120 ms for hover and press, 180 ms for drawers and sheets, ease-out. Nothing decorative. `prefers-reduced-motion` turns transitions off.
+Icons are Lucide only, 1.5 px stroke, at 16, 20 or 24 px, always next to a word except in well-known icon buttons labelled for screen readers. Motion is 120 ms for hover and press, 180 ms for drawers and sheets, ease-out, never decorative; `prefers-reduced-motion` turns it off.
 
 ## Do's and Don'ts
 
