@@ -23,6 +23,7 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { ApprovalsService, askApproval } from '../approvals';
 import { Db } from '../db';
+import { firmOfLocation } from '../firms';
 import {
   AuthRequest,
   Can,
@@ -33,6 +34,7 @@ import {
   scoped,
   Self,
   shopWhere,
+  Firm,
 } from '../http';
 
 type Tx = Prisma.TransactionClient;
@@ -173,7 +175,16 @@ async function drawerMovement(
   actorId: string,
 ) {
   await tx.financialMovement.create({
-    data: { kind, amountPaise, locationId, channel: 'CASH', actorId, counterParty: '' },
+    data: {
+      kind,
+      amountPaise,
+      locationId,
+      // The drawer's own firm: the shop that paid.
+      firmId: await firmOfLocation(tx, locationId),
+      channel: 'CASH',
+      actorId,
+      counterParty: '',
+    },
   });
 }
 async function checkDrawer(
@@ -1112,7 +1123,10 @@ export class SalaryController {
   give(@Input(advanceGiveSchema) body: z.infer<typeof advanceGiveSchema>, @Req() req: AuthRequest) {
     return this.salary.give(body, req.user.id);
   }
-  @Can('cash.count', scoped) @Get('admin/salary/advances/people') askable(@Req() req: AuthRequest) {
+  @Firm('none')
+  @Can('cash.count', scoped)
+  @Get('admin/salary/advances/people')
+  askable(@Req() req: AuthRequest) {
     return this.salary.askable(req);
   }
   @Can('approvals.ask', scoped)

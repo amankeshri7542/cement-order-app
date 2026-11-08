@@ -147,6 +147,26 @@
   font-weight: 700;
   line-height: 1.5;
 }
+/* Each firm's share under the total: one ruled line per firm, figures right-aligned. */
+.firmSplit {
+  margin: 0;
+  font-size: var(--shiv-small);
+  font-variant-numeric: tabular-nums;
+}
+.firmSplit > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--shiv-space-3);
+  padding: var(--shiv-space-1) 0;
+  border-top: 1px solid var(--shiv-line);
+}
+.firmSplit dt {
+  color: var(--shiv-ink2);
+}
+.firmSplit dd {
+  margin: 0;
+  color: var(--shiv-ink);
+}
 .hint {
   font-size: var(--shiv-small);
   color: var(--shiv-ink2);

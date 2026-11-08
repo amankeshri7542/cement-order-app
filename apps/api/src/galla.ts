@@ -4,7 +4,18 @@ import type { Prisma } from '@prisma/client';
 import { gallaCloseSchema, gallaEntrySchema, istToday } from '@shiv/shared';
 import { z } from 'zod';
 import { Db } from './db';
-import { AuthRequest, Can, Contract, fail, Input, requireAt, scoped, shopForAction } from './http';
+import { firmOfLocation } from './firms';
+import {
+  AuthRequest,
+  Can,
+  Contract,
+  fail,
+  Input,
+  requireAt,
+  scoped,
+  shopForAction,
+  Firm,
+} from './http';
 
 type Tx = Prisma.TransactionClient;
 const cash = (channel: string) => channel === 'CASH' || channel === '';
@@ -148,8 +159,10 @@ export class GallaService {
       }
       if ((await closeRows(tx, body.locationId, day)).length)
         fail('DAY_CLOSED', 'Today is already closed at this shop.', 409);
+      // A drawer is its shop's, so its entries are its shop's firm's.
+      const firmId = await firmOfLocation(tx, body.locationId);
       const entry = await tx.gallaEntry.create({
-        data: { ...body, day, actorId: req.user.id },
+        data: { ...body, day, firmId, actorId: req.user.id },
       });
       await tx.auditLog.create({
         data: {
@@ -219,22 +232,24 @@ export class GallaService {
 export class GallaController {
   constructor(@Inject(GallaService) private galla: GallaService) {}
 
-  @Can('galla.read', scoped) @Get() read(
-    @Query() query: Record<string, string>,
-    @Req() req: AuthRequest,
-  ) {
+  @Firm('shop')
+  @Can('galla.read', scoped)
+  @Get()
+  read(@Query() query: Record<string, string>, @Req() req: AuthRequest) {
     return this.galla.read(
       shopForAction(req, 'galla.read', query.locationId),
       query.day || istToday(),
       req.user.id,
     );
   }
+  @Firm('shop')
   @Can('galla.close', scoped)
   @Post('entries')
   @Contract(gallaEntrySchema)
   entry(@Input(gallaEntrySchema) body: z.infer<typeof gallaEntrySchema>, @Req() req: AuthRequest) {
     return this.galla.addEntry(body, req);
   }
+  @Firm('shop')
   @Can('galla.close', scoped)
   @Post('close')
   @Contract(gallaCloseSchema)

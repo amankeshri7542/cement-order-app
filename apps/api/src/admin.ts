@@ -5,7 +5,8 @@ import { paginate } from './pagination';
 import { Db } from './db';
 import { blindShops } from './blind-count';
 import { orderInclude, orderPerson } from './orders';
-import { AuthRequest, Can, fail, forbid, scoped, shopAsked, shopWhere } from './http';
+import { AuthRequest, Can, fail, Firm, forbid, scoped, shopAsked, shopWhere } from './http';
+import { customerFirmWhere, firmAsked, firmNames, firmsOf, firmWhere } from './firms';
 import { canDo } from '@shiv/shared';
 import { shownPhone, withShownPhones } from './crm/common';
 import { z } from 'zod';
@@ -35,7 +36,10 @@ const moment = (date: Date) => Prisma.sql`${date.toISOString()}::text::timestamp
 @Controller('admin')
 export class AdminController {
   constructor(@Inject(Db) private db: Db) {}
-  @Can('dashboard.read', scoped) @Get('dashboard') async dashboard(@Req() req: AuthRequest) {
+  @Firm('own')
+  @Can('dashboard.read', scoped)
+  @Get('dashboard')
+  async dashboard(@Req() req: AuthRequest) {
     const day = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Asia/Kolkata',
       year: 'numeric',
@@ -44,6 +48,8 @@ export class AdminController {
     }).format(new Date());
     const today = new Date(`${day}T00:00:00+05:30`);
     const shop = shopAsked(req, 'dashboard.read', req.query.locationId);
+    // One firm if asked for (it must be one of this person's), otherwise all of theirs.
+    const firm = firmAsked(req, req.query.firmId);
     const blind = await blindShops(this.db, req.access);
     const [
       todayOrders,
@@ -55,26 +61,31 @@ export class AdminController {
       lowStock,
       recentOrders,
     ] = await Promise.all([
-      this.db.order.count({ where: { createdAt: { gte: today }, ...shop } }),
+      this.db.order.count({ where: { createdAt: { gte: today }, ...shop, ...firm } }),
       this.db.financialMovement.aggregate({
         where: {
           kind: { in: ['COLLECTION', 'KHATA_PAYMENT', 'HANDOVER_OVER'] },
           occurredAt: { gte: today },
           ...shop,
+          ...firm,
         },
         _sum: { amountPaise: true },
       }),
       this.db.order.count({
-        where: { status: { in: ['AWAITING_CONFIRMATION', 'CONFIRMED', 'PREPARING'] }, ...shop },
+        where: {
+          status: { in: ['AWAITING_CONFIRMATION', 'CONFIRMED', 'PREPARING'] },
+          ...shop,
+          ...firm,
+        },
       }),
       this.db.payment.count({
         where: {
           status: 'PENDING',
           method: { not: 'CREDIT' },
-          order: { status: { notIn: ['CANCELLED', 'REFUNDED'] }, ...shop },
+          order: { status: { notIn: ['CANCELLED', 'REFUNDED'] }, ...shop, ...firm },
         },
       }),
-      this.db.order.count({ where: { status: 'OUT_FOR_DELIVERY', ...shop } }),
+      this.db.order.count({ where: { status: 'OUT_FOR_DELIVERY', ...shop, ...firm } }),
       this.db.quote.count({ where: { status: 'REQUESTED', ...shop } }),
       // One figure per shop for anyone limited to shops or being kept from one being counted. The
       // firm's total would tell them what no screen of theirs should.
@@ -109,7 +120,7 @@ export class AdminController {
             take: 20,
           }),
       this.db.order.findMany({
-        where: shop,
+        where: { ...shop, ...firm },
         orderBy: { createdAt: 'desc' },
         take: 8,
         include: { ...orderInclude, user: { select: orderPerson } },
@@ -117,7 +128,7 @@ export class AdminController {
     ]);
     const [counter, refunds, newWork, issues, short] = await Promise.all([
       this.db.financialMovement.aggregate({
-        where: { kind: 'COUNTER_SALE', occurredAt: { gte: today }, ...shop },
+        where: { kind: 'COUNTER_SALE', occurredAt: { gte: today }, ...shop, ...firm },
         _sum: { amountPaise: true },
       }),
       this.db.financialMovement.aggregate({
@@ -125,6 +136,7 @@ export class AdminController {
           kind: { in: ['REFUND', 'KHATA_PAYMENT_REVERSAL'] },
           occurredAt: { gte: today },
           ...shop,
+          ...firm,
         },
         _sum: { amountPaise: true },
       }),
@@ -134,33 +146,36 @@ export class AdminController {
           order: {
             status: { in: ['AWAITING_CONFIRMATION', 'CONFIRMED', 'PENDING_PAYMENT'] },
             ...shop,
+            ...firm,
           },
         },
       }),
       this.db.order.count({
-        where: { status: { in: ['DELIVERY_EXCEPTION', 'REFUND_PENDING'] }, ...shop },
+        where: { status: { in: ['DELIVERY_EXCEPTION', 'REFUND_PENDING'] }, ...shop, ...firm },
       }),
       // A driver's count that came up short never reached the drawer.
       this.db.financialMovement.aggregate({
-        where: { kind: 'HANDOVER_SHORT', occurredAt: { gte: today }, ...shop },
+        where: { kind: 'HANDOVER_SHORT', occurredAt: { gte: today }, ...shop, ...firm },
         _sum: { amountPaise: true },
       }),
     ]);
     const [khataDue, creditSales, todayPhoneOrders] = await Promise.all([
-      this.db.user.aggregate({
-        // The whole firm's udhaar total is only for those who may read the udhaar list.
+      // What is owed to each firm. Only for those who may read the udhaar list, and only their firms.
+      this.db.customerFirmBalance.groupBy({
+        by: ['firmId'],
         where: {
-          deletedAt: null,
-          role: { not: 'ADMIN' },
-          khataBalancePaise: { gt: 0 },
-          ...(req.access['khata.read.list'] ? {} : { id: '' }),
+          balancePaise: { gt: 0 },
+          customer: { deletedAt: null, role: { not: 'ADMIN' } },
+          ...firm,
+          ...(req.access['khata.read.list'] ? {} : { firmId: '' }),
         },
-        _sum: { khataBalancePaise: true },
+        _sum: { balancePaise: true },
       }),
       this.db.customerLedgerEntry.aggregate({
         where: {
           occurredAt: { gte: today },
           ...shop,
+          ...firm,
           OR: [
             { kind: 'SALE_ON_CREDIT' },
             { kind: 'REVERSAL', reverses: { kind: 'SALE_ON_CREDIT' } },
@@ -173,11 +188,34 @@ export class AdminController {
           source: { in: ['PHONE', 'WALK_IN', 'WHATSAPP'] },
           createdAt: { gte: today },
           ...shop,
+          ...firm,
         },
       }),
     ]);
+    // Per firm beside the combined figures, so both firms show even when one is quiet.
+    const salesByFirm = await this.db.financialMovement.groupBy({
+      by: ['firmId'],
+      where: {
+        kind: { in: ['COLLECTION', 'KHATA_PAYMENT', 'HANDOVER_OVER', 'COUNTER_SALE'] },
+        occurredAt: { gte: today },
+        ...shop,
+        ...firm,
+      },
+      _sum: { amountPaise: true },
+    });
+    const mine = firmsOf(req);
+    const byFirm = (await firmNames(this.db))
+      .filter((f) => mine === 'ALL' || mine.includes(f.id))
+      .filter((f) => typeof firm.firmId !== 'string' || firm.firmId === f.id)
+      .map((f) => ({
+        firmId: f.id,
+        name: f.name,
+        todayMoneyInPaise: salesByFirm.find((r) => r.firmId === f.id)?._sum.amountPaise ?? 0,
+        khataDuePaise: khataDue.find((r) => r.firmId === f.id)?._sum.balancePaise ?? 0,
+      }));
     return {
-      khataDuePaise: khataDue._sum.khataBalancePaise ?? 0,
+      khataDuePaise: khataDue.reduce((total, row) => total + (row._sum.balancePaise ?? 0), 0),
+      byFirm,
       todayCreditSalesPaise: creditSales._sum.amountPaise ?? 0,
       todayPhoneOrders,
       newWork,
@@ -195,10 +233,10 @@ export class AdminController {
       recentOrders: recentOrders.map((row) => withShownPhones(req, row)),
     };
   }
-  @Can('customers.read') @Get('customers') async customers(
-    @Query() query: Record<string, string>,
-    @Req() req: AuthRequest,
-  ) {
+  @Firm('own')
+  @Can('customers.read')
+  @Get('customers')
+  async customers(@Query() query: Record<string, string>, @Req() req: AuthRequest) {
     const parsed = z
       .object({
         q: z.string().trim().max(100).default(''),
@@ -241,6 +279,8 @@ export class AdminController {
           phone: { not: 'walk-in:store' },
           AND: [
             page.after,
+            // Someone limited to one firm sees that firm's customers, and new ones.
+            customerFirmWhere(req),
             q
               ? {
                   OR: [
@@ -268,6 +308,10 @@ export class AdminController {
           lastOrderAt: true,
           notesCount: true,
           _count: { select: { orders: true, quotes: true } },
+          firmBalances: {
+            where: firmWhere(req),
+            select: { firmId: true, balancePaise: true, creditLimitPaise: true },
+          },
         },
         orderBy: page.orderBy,
         take: page.take,
@@ -275,24 +319,45 @@ export class AdminController {
     );
     return {
       ...result,
-      items: result.items.map(({ khataBalancePaise, creditLimitPaise, phone, ...rest }) => {
-        const customer = { ...rest, phone: shownPhone(req, phone) };
-        return showBalance
-          ? { ...customer, khataBalancePaise, creditLimitPaise, balancePaise: khataBalancePaise }
-          : customer;
-      }),
+      items: result.items.map(
+        ({ khataBalancePaise, creditLimitPaise, phone, firmBalances, ...rest }) => {
+          const customer = { ...rest, phone: shownPhone(req, phone) };
+          // Per firm, and the total over the firms this person may see.
+          const balance =
+            firmsOf(req) === 'ALL'
+              ? khataBalancePaise
+              : firmBalances.reduce((total, row) => total + row.balancePaise, 0);
+          return showBalance
+            ? {
+                ...customer,
+                khataBalancePaise: balance,
+                creditLimitPaise,
+                balancePaise: balance,
+                byFirm: firmBalances,
+              }
+            : customer;
+        },
+      ),
     };
   }
-  @Can('customers.read') @Get('customers/:id') async customer(
-    @Param('id') id: string,
-    @Req() req: AuthRequest,
-  ) {
+  @Firm('own')
+  @Can('customers.read')
+  @Get('customers/:id')
+  async customer(@Param('id') id: string, @Req() req: AuthRequest) {
     // Staff are not customers, and a shop's people see that shop's orders.
     const user = await this.db.user.findFirst({
-      where: { id, role: { not: 'ADMIN' } },
+      where: { id, role: { not: 'ADMIN' }, ...customerFirmWhere(req) },
       include: {
         addresses: true,
-        orders: { where: shopWhere(req, 'orders.read'), orderBy: { createdAt: 'desc' }, take: 5 },
+        orders: {
+          where: { ...shopWhere(req, 'orders.read'), ...firmWhere(req) },
+          orderBy: { createdAt: 'desc' },
+          take: 5,
+        },
+        firmBalances: {
+          where: firmWhere(req),
+          select: { firmId: true, balancePaise: true, creditLimitPaise: true },
+        },
         _count: { select: { orders: true } },
       },
     });
@@ -308,18 +373,34 @@ export class AdminController {
           ? { ...row, address: { ...address, phone: shownPhone(req, address.phone) } }
           : row;
       }),
-      balancePaise: user.khataBalancePaise,
+      khataBalancePaise:
+        firmsOf(req) === 'ALL'
+          ? user.khataBalancePaise
+          : user.firmBalances.reduce((total, row) => total + row.balancePaise, 0),
+      balancePaise:
+        firmsOf(req) === 'ALL'
+          ? user.khataBalancePaise
+          : user.firmBalances.reduce((total, row) => total + row.balancePaise, 0),
+      byFirm: user.firmBalances,
     };
   }
-  @Can('audit.read') @Get('audit') async audit(
-    @Query() query: Record<string, unknown>,
-    @Req() req: AuthRequest,
-  ) {
+  @Firm('own')
+  @Can('audit.read')
+  @Get('audit')
+  async audit(@Query() query: Record<string, unknown>, @Req() req: AuthRequest) {
     const parsed = auditFilter.safeParse(query);
     if (!parsed.success) fail('INVALID_FILTER', 'Check the filters.');
     const { actorId, locationId, day } = parsed.data;
     const asked = shopAsked(req, 'audit.read', locationId).locationId;
-    const shops = typeof asked === 'string' ? [asked] : asked?.in;
+    let shops = typeof asked === 'string' ? [asked] : asked?.in;
+    // Someone limited to one firm reads only what happened at that firm's shops.
+    const mine = firmsOf(req);
+    if (mine !== 'ALL') {
+      const theirs = (
+        await this.db.location.findMany({ where: { firmId: { in: mine } }, select: { id: true } })
+      ).map((row) => row.id);
+      shops = (shops ?? theirs).filter((shop) => theirs.includes(shop));
+    }
     const page = paginate(query, JSON.stringify({ list: 'audit', actorId, locationId, day }));
     const when = day
       ? {
@@ -329,7 +410,18 @@ export class AdminController {
       : undefined;
     const rows = await this.db.auditLog.findMany({
       where: shops
-        ? { id: { in: await this.auditIdsAt(shops, query.cursor, page.take, actorId, when) } }
+        ? {
+            id: {
+              in: await this.auditIdsAt(
+                shops,
+                query.cursor,
+                page.take,
+                actorId,
+                when,
+                mine === 'ALL' ? undefined : mine,
+              ),
+            },
+          }
         : {
             AND: [page.after, actorId ? { actorId } : {}, when ? { createdAt: when } : {}],
           },
@@ -391,7 +483,10 @@ export class AdminController {
   }
 
   /** Staff and the machines that have acted, for the activity log's person filter. Former staff stay. */
-  @Can('audit.read') @Get('audit/people') async auditPeople() {
+  @Firm('none')
+  @Can('audit.read')
+  @Get('audit/people')
+  async auditPeople() {
     const [staff, machines] = await Promise.all([
       this.db.user.findMany({
         where: { role: 'ADMIN' },
@@ -418,6 +513,8 @@ export class AdminController {
     take: number,
     actorId?: string,
     when?: { gte: Date; lt: Date },
+    /** For someone limited to some firms: a row about another firm's book stays out, wherever it was typed. */
+    firms?: string[],
   ) {
     const after =
       typeof cursor === 'string'
@@ -428,6 +525,9 @@ export class AdminController {
         EXISTS (SELECT 1 FROM "Order" o WHERE o.id = a."entityId" AND o."locationId" = ANY(${shops}))
         OR EXISTS (SELECT 1 FROM "Quote" q WHERE q.id = a."entityId" AND q."locationId" = ANY(${shops}))
       )))`,
+      ...(firms
+        ? [Prisma.sql`(a.details->>'firmId' IS NULL OR a.details->>'firmId' = ANY(${firms}))`]
+        : []),
       ...(actorId ? [Prisma.sql`a."actorId" = ${actorId}`] : []),
       ...(when
         ? [Prisma.sql`a."createdAt" >= ${moment(when.gte)} AND a."createdAt" < ${moment(when.lt)}`]

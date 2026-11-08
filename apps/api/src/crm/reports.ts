@@ -16,7 +16,8 @@ import {
 } from '@shiv/shared';
 import type { Response } from 'express';
 import { Db } from '../db';
-import { AuthRequest, Can, fail, scoped, shopAsked } from '../http';
+import { customerFirmWhere, firmAsked } from '../firms';
+import { AuthRequest, Can, fail, Firm, scoped, shopAsked } from '../http';
 import { paginate } from '../pagination';
 import { moneyIn, moneyOut, notSold } from '../reports';
 import {
@@ -31,6 +32,7 @@ import {
   realCustomer,
   sendCsv,
   stoppedIds,
+  wire,
 } from './common';
 import { TallyNumbers } from './tally-numbers';
 
@@ -45,8 +47,77 @@ const QUIET_LEFT_ALONE_DAYS = 14;
 const QUIET_CANDIDATES = 2000;
 const QUIET_TAG = 'ghar-ban-gaya';
 
+const vasooliFields = {
+  id: true,
+  name: true,
+  phone: true,
+  area: true,
+  khataBalancePaise: true,
+  creditLimitPaise: true,
+  remindersStoppedAt: true,
+} satisfies Prisma.UserSelect;
+
 const shopIds = (shop: { locationId?: string | { in: string[] } }) =>
   typeof shop.locationId === 'string' ? [shop.locationId] : shop.locationId?.in;
+/** The firms a firm filter names, for a raw query. None means every firm. */
+const firmIdsOf = (firm: object) => {
+  const named = (firm as { firmId?: string | { in: string[] } }).firmId;
+  return typeof named === 'string' ? [named] : named?.in;
+};
+
+/**
+ * The shop each customer's due counts under, within some firms: the shop of their last credit at
+ * those firms. balanceShops does the same over every firm.
+ */
+export async function firmBalanceShops(
+  db: Pick<Db, '$queryRaw'>,
+  firms: readonly string[],
+  ids: readonly string[],
+) {
+  if (!ids.length) return new Map<string, string>();
+  const rows = await db.$queryRaw<{ customerId: string; locationId: string }[]>`
+    SELECT DISTINCT ON (e."customerId") e."customerId", e."locationId"
+    FROM "CustomerLedgerEntry" e
+    WHERE e."amountPaise" > 0 AND e.kind <> 'REVERSAL'
+      AND e."firmId" = ANY(${[...firms]}) AND e."customerId" = ANY(${[...ids]})
+      AND NOT EXISTS (SELECT 1 FROM "CustomerLedgerEntry" r WHERE r."reversesId" = e.id)
+    ORDER BY e."customerId", e."occurredAt" DESC, e.id DESC`;
+  return new Map(rows.map((row) => [row.customerId, row.locationId]));
+}
+
+/**
+ * oldestDues within some firms. Each firm's payments clear that firm's oldest debts, as each firm
+ * keeps its own khata; the customer's oldest is the oldest over those firms.
+ */
+export async function firmOldestDues(
+  db: Pick<Db, '$queryRaw'>,
+  firms: readonly string[],
+  ids: readonly string[],
+) {
+  if (!ids.length || !firms.length) return new Map<string, { on: string; opening: boolean }>();
+  const rows = await db.$queryRaw<{ customerId: string; occurredAt: Date; kind: string }[]>`
+    WITH debts AS (
+      SELECT e."customerId", e."occurredAt", e.kind, b."balancePaise"::bigint AS balance,
+        COALESCE(SUM(e."amountPaise"::bigint) OVER (
+          PARTITION BY e."customerId", e."firmId" ORDER BY e."occurredAt" DESC, e.id DESC
+          ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+        ), 0) AS newer
+      FROM "CustomerLedgerEntry" e
+      JOIN "CustomerFirmBalance" b ON b."customerId" = e."customerId" AND b."firmId" = e."firmId"
+      WHERE e."amountPaise" > 0 AND b."balancePaise" > 0
+        AND e."customerId" = ANY(${[...ids]}) AND e."firmId" = ANY(${[...firms]})
+        AND NOT EXISTS (SELECT 1 FROM "CustomerLedgerEntry" r WHERE r."reversesId" = e.id)
+    )
+    SELECT DISTINCT ON ("customerId") "customerId", "occurredAt", kind::text AS kind
+    FROM debts WHERE newer < balance
+    ORDER BY "customerId", "occurredAt" ASC`;
+  return new Map(
+    rows.map((row) => [
+      row.customerId,
+      { on: indiaDay(row.occurredAt), opening: row.kind === 'OPENING_BALANCE' },
+    ]),
+  );
+}
 
 @ApiTags('Customer khata and CRM')
 @Controller('admin')
@@ -62,18 +133,23 @@ export class CrmReportsController {
     const day = typeof query.day === 'string' ? query.day : today;
     if (!isRealDay(day) || day > today) fail('BAD_DAY', 'Choose a day that has happened.');
     const shop = shopAsked(req, 'reports.read', query.locationId);
+    // Money is the firm's, not the shop's: one firm's due can be paid at the other firm's shop.
+    const firm = firmAsked(req, query.firmId);
+    const firms = firmIdsOf(firm);
     const start = dayStart(day);
     const range = { gte: start, lt: new Date(start.getTime() + DAY_MS) };
     const ids = shopIds(shop);
+    const firmShops = firms ? { firmId: { in: firms } } : {};
     const [moves, given, placed, closes, shops] = await Promise.all([
       this.db.financialMovement.findMany({
-        where: { occurredAt: range, kind: { in: [...moneyIn, ...moneyOut] }, ...shop },
+        where: { occurredAt: range, kind: { in: [...moneyIn, ...moneyOut] }, ...shop, ...firm },
         select: { kind: true, channel: true, amountPaise: true },
       }),
       this.db.customerLedgerEntry.aggregate({
         where: {
           occurredAt: range,
           ...shop,
+          ...firm,
           OR: [
             { kind: 'SALE_ON_CREDIT' },
             { kind: 'REVERSAL', reverses: { kind: 'SALE_ON_CREDIT' } },
@@ -81,13 +157,14 @@ export class CrmReportsController {
         },
         _sum: { amountPaise: true },
       }),
-      this.db.order.count({ where: { createdAt: range, ...shop } }),
+      this.db.order.count({ where: { createdAt: range, ...shop, ...firm } }),
+      // The galla is a shop's, so a firm's galla is its own shops'.
       this.db.dayClose.findMany({
-        where: { day, ...shop },
+        where: { day, ...shop, ...(firms ? { location: firmShops } : {}) },
         select: { id: true, locationId: true, differencePaise: true, supersedesId: true },
       }),
       this.db.location.findMany({
-        where: { active: true, ...(ids ? { id: { in: ids } } : {}) },
+        where: { active: true, ...(ids ? { id: { in: ids } } : {}), ...firmShops },
         select: { id: true },
       }),
     ]);
@@ -123,6 +200,7 @@ export class CrmReportsController {
     };
   }
 
+  @Firm('own')
   @Can('reports.read', scoped)
   @Get('reports/shaam')
   shaam(@Query() query: Record<string, unknown>, @Req() req: AuthRequest) {
@@ -130,6 +208,7 @@ export class CrmReportsController {
     return this.evening(query, req);
   }
 
+  @Firm('own')
   @Can('reports.read', scoped)
   @Get('reports/shaam.csv')
   async shaamCsv(
@@ -162,50 +241,28 @@ export class CrmReportsController {
   private async vasooli(query: Record<string, unknown>, req: AuthRequest, wholeList: boolean) {
     const shop = shopAsked(req, 'crm.vasooli.read', query.locationId);
     const ids = shopIds(shop);
+    // Someone limited to some firms, or anyone asking for one, gets those firms' dues only.
+    const firms = firmIdsOf(firmAsked(req, query.firmId));
     const today = istToday();
-    const owing = { ...realCustomer, khataBalancePaise: { gt: 0 } } satisfies Prisma.UserWhereInput;
-    // Each balance counts under the shop that last gave credit, so the shops add up to the firm.
-    const inShop = ids
-      ? [...(await balanceShops(this.db)).entries()]
-          .filter(([, locationId]) => ids.includes(locationId))
-          .map(([customerId]) => customerId)
-      : null;
-    const scoped_ = inShop ? { id: { in: inShop } } : {};
-    const signed = { ...owing, ...scoped_, khataSignoffs: { some: {} } };
     const page = paginate(
       wholeList ? {} : { limit: query.limit ?? String(VASOOLI_PAGE), cursor: query.cursor },
-      `vasooli:${JSON.stringify(ids ?? [])}`,
+      `vasooli:${JSON.stringify(ids ?? [])}${firms ? `:${firms.join(',')}` : ''}`,
       'khataBalancePaise',
     );
-    const [rows, totals, unsigned] = await Promise.all([
-      this.db.user.findMany({
-        where: { ...signed, ...page.after },
-        orderBy: page.orderBy,
-        take: wholeList ? SHEET_LIMIT : page.take,
-        select: {
-          id: true,
-          name: true,
-          phone: true,
-          area: true,
-          khataBalancePaise: true,
-          creditLimitPaise: true,
-          remindersStoppedAt: true,
-        },
-      }),
-      this.db.user.aggregate({ where: signed, _sum: { khataBalancePaise: true }, _count: true }),
-      this.db.user.aggregate({
-        where: { ...owing, ...scoped_, khataSignoffs: { none: {} } },
-        _sum: { khataBalancePaise: true },
-        _count: true,
-      }),
-    ]);
-    const finished = wholeList ? { items: rows, nextCursor: null } : page.finish(rows);
+    const { finished, totalDuePaise, customersWithDue, unsignedCustomers } = firms
+      ? await this.vasooliAtFirms(firms, ids, page, query.cursor, wholeList)
+      : await this.vasooliAll(ids, page, wholeList);
     const customerIds = finished.items.map((row) => row.id);
     const [oldest, stopped, paid, reminded, promises] = await Promise.all([
-      oldestDues(this.db, customerIds),
+      firms ? firmOldestDues(this.db, firms, customerIds) : oldestDues(this.db, customerIds),
       stoppedIds(this.db, finished.items),
       this.db.customerLedgerEntry.findMany({
-        where: { customerId: { in: customerIds }, kind: 'PAYMENT_RECEIVED', reversal: null },
+        where: {
+          customerId: { in: customerIds },
+          kind: 'PAYMENT_RECEIVED',
+          reversal: null,
+          ...(firms ? { firmId: { in: firms } } : {}),
+        },
         orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
         select: { customerId: true, occurredAt: true, amountPaise: true, createdAt: true },
       }),
@@ -218,6 +275,7 @@ export class CrmReportsController {
         where: {
           customerId: { in: customerIds },
           ...(ids ? { locationId: { in: ids } } : {}),
+          ...(firms ? { location: { firmId: { in: firms } } } : {}),
           doneAt: null,
           kind: 'PAYMENT',
           promisedPaise: { not: null },
@@ -229,10 +287,10 @@ export class CrmReportsController {
     return {
       today,
       nextCursor: finished.nextCursor,
-      totalDuePaise: totals._sum.khataBalancePaise ?? 0,
-      customersWithDue: totals._count,
+      totalDuePaise,
+      customersWithDue,
       // Enough to say "12 grahak: purana hisaab pakka karna baaki", and no more.
-      unsigned: { customers: unsigned._count },
+      unsigned: { customers: unsignedCustomers },
       items: finished.items.map((row) => {
         const due = oldest.get(row.id) ?? null;
         const last = paid.find((entry) => entry.customerId === row.id);
@@ -283,6 +341,105 @@ export class CrmReportsController {
     };
   }
 
+  /** Every firm: each customer's one balance, under the shop that last gave them credit. */
+  private async vasooliAll(
+    ids: string[] | undefined,
+    page: ReturnType<typeof paginate>,
+    wholeList: boolean,
+  ) {
+    const owing = { ...realCustomer, khataBalancePaise: { gt: 0 } } satisfies Prisma.UserWhereInput;
+    // Each balance counts under the shop that last gave credit, so the shops add up to the firm.
+    const inShop = ids
+      ? [...(await balanceShops(this.db)).entries()]
+          .filter(([, locationId]) => ids.includes(locationId))
+          .map(([customerId]) => customerId)
+      : null;
+    const scoped_ = inShop ? { id: { in: inShop } } : {};
+    const signed = { ...owing, ...scoped_, khataSignoffs: { some: {} } };
+    const [rows, totals, unsigned] = await Promise.all([
+      this.db.user.findMany({
+        where: { ...signed, ...page.after },
+        orderBy: page.orderBy,
+        take: wholeList ? SHEET_LIMIT : page.take,
+        select: vasooliFields,
+      }),
+      this.db.user.aggregate({ where: signed, _sum: { khataBalancePaise: true }, _count: true }),
+      this.db.user.aggregate({
+        where: { ...owing, ...scoped_, khataSignoffs: { none: {} } },
+        _count: true,
+      }),
+    ]);
+    return {
+      finished: wholeList ? { items: rows, nextCursor: null } : page.finish(rows),
+      totalDuePaise: totals._sum.khataBalancePaise ?? 0,
+      customersWithDue: totals._count,
+      unsignedCustomers: unsigned._count,
+    };
+  }
+
+  /**
+   * Some firms: each customer's due is the total over those firms, under the shop of their last
+   * credit at them, and signed when one of those firms has signed it. Sorted here, since the total
+   * is not a column; the cursor is the same as on the whole list.
+   */
+  private async vasooliAtFirms(
+    firms: string[],
+    ids: string[] | undefined,
+    page: ReturnType<typeof paginate>,
+    cursor: unknown,
+    wholeList: boolean,
+  ) {
+    const sums = await this.db.customerFirmBalance.groupBy({
+      by: ['customerId'],
+      where: { firmId: { in: firms }, customer: realCustomer },
+      _sum: { balancePaise: true },
+      having: { balancePaise: { _sum: { gt: 0 } } },
+    });
+    let owing = sums.map((row) => ({ id: row.customerId, paise: row._sum.balancePaise ?? 0 }));
+    if (ids) {
+      const shops = await firmBalanceShops(
+        this.db,
+        firms,
+        owing.map((row) => row.id),
+      );
+      owing = owing.filter((row) => ids.includes(shops.get(row.id) ?? ''));
+    }
+    const signoffs = await this.db.khataSignoff.findMany({
+      where: { firmId: { in: firms }, customerId: { in: owing.map((row) => row.id) } },
+      select: { customerId: true },
+    });
+    const isSigned = new Set(signoffs.map((row) => row.customerId));
+    const signed = owing
+      .filter((row) => isSigned.has(row.id))
+      .sort((a, b) => b.paise - a.paise || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
+    // paginate has already checked this cursor and its number.
+    const after =
+      !wholeList && typeof cursor === 'string' && cursor
+        ? (JSON.parse(Buffer.from(cursor, 'base64url').toString()) as { value: number; id: string })
+        : null;
+    const wanted = signed
+      .filter(
+        (row) =>
+          !after || row.paise < after.value || (row.paise === after.value && row.id < after.id),
+      )
+      .slice(0, wholeList ? SHEET_LIMIT : page.take);
+    const people = await this.db.user.findMany({
+      where: { id: { in: wanted.map((row) => row.id) } },
+      select: vasooliFields,
+    });
+    const rows = wanted.flatMap((row) => {
+      const person = people.find((item) => item.id === row.id);
+      return person ? [{ ...person, khataBalancePaise: row.paise }] : [];
+    });
+    return {
+      finished: wholeList ? { items: rows, nextCursor: null } : page.finish(rows),
+      totalDuePaise: signed.reduce((sum, row) => sum + row.paise, 0),
+      customersWithDue: signed.length,
+      unsignedCustomers: owing.length - signed.length,
+    };
+  }
+
+  @Firm('own')
   @Can('crm.vasooli.read', scoped)
   @Get('reports/vasooli')
   vasooliList(@Query() query: Record<string, unknown>, @Req() req: AuthRequest) {
@@ -290,6 +447,7 @@ export class CrmReportsController {
     return this.vasooli(query, req, false);
   }
 
+  @Firm('own')
   @Can('crm.vasooli.read', scoped)
   @Get('reports/vasooli.csv')
   async vasooliCsv(
@@ -297,7 +455,7 @@ export class CrmReportsController {
     @Req() req: AuthRequest,
     @Res() res: Response,
   ) {
-    const r = await this.vasooli({ locationId: query.locationId }, req, true);
+    const r = await this.vasooli({ locationId: query.locationId, firmId: query.firmId }, req, true);
     countOpen(this.db, 'vasooli', req, r.today);
     sendCsv(res, `shiv-vasooli-${r.today}.csv`, [
       [
@@ -340,11 +498,14 @@ export class CrmReportsController {
   private async quiet(query: Record<string, unknown>, req: AuthRequest, limit: number) {
     const shop = shopAsked(req, 'crm.dormant.read', query.locationId);
     const ids = shopIds(shop);
+    // Quiet at these firms: only their orders count, and only customers they know are listed.
+    const firm = firmAsked(req, query.firmId);
     const today = istToday();
     const yearAgo = dayStart(addDays(today, -quietRule.windowDays));
     const candidates = await this.db.user.findMany({
       where: {
         ...realCustomer,
+        ...customerFirmWhere(req),
         NOT: { tags: { has: QUIET_TAG } },
         lastOrderAt: { gte: yearAgo, lt: dayStart(addDays(today, -quietRule.minQuietDays + 1)) },
         followUps: { none: { doneAt: null } },
@@ -361,6 +522,7 @@ export class CrmReportsController {
         userId: { in: candidates.map((row) => row.id) },
         createdAt: { gte: yearAgo },
         status: { notIn: [...notSold] },
+        ...firm,
       },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       select: {
@@ -446,6 +608,7 @@ export class CrmReportsController {
     };
   }
 
+  @Firm('own')
   @Can('crm.dormant.read', scoped)
   @Get('crm/dormant')
   dormant(@Query() query: Record<string, unknown>, @Req() req: AuthRequest) {
@@ -453,6 +616,7 @@ export class CrmReportsController {
     return this.quiet(query, req, QUIET_ROWS);
   }
 
+  @Firm('own')
   @Can('crm.dormant.read', scoped)
   @Get('reports/chup-grahak.csv')
   async dormantCsv(
@@ -493,18 +657,22 @@ export class CrmReportsController {
   }
 
   // ---- Mahine ka saar ---------------------------------------------------------------------------
-  /** What customers owed at a moment. At one shop, each balance counts under its last credit shop. */
-  private async dueAt(when: Date, ids?: string[]) {
+  /**
+   * What customers owed at a moment. At one shop, each balance counts under its last credit shop.
+   * Within some firms, only those firms' entries count, both for the balance and for the shop.
+   */
+  private async dueAt(when: Date, ids?: string[], firms?: string[]) {
     const at = moment(when);
+    const inFirms = firms ? Prisma.sql`AND e."firmId" = ANY(${firms})` : Prisma.empty;
     const rows = await this.db.$queryRaw<{ paise: bigint | null }[]>`
       WITH balances AS (
         SELECT e."customerId", SUM(e."amountPaise"::bigint) AS paise
-        FROM "CustomerLedgerEntry" e WHERE e."occurredAt" < ${at} GROUP BY 1
+        FROM "CustomerLedgerEntry" e WHERE e."occurredAt" < ${at} ${inFirms} GROUP BY 1
       ),
       shops AS (
         SELECT DISTINCT ON (e."customerId") e."customerId", e."locationId"
         FROM "CustomerLedgerEntry" e
-        WHERE e."occurredAt" < ${at} AND e."amountPaise" > 0 AND e.kind <> 'REVERSAL'
+        WHERE e."occurredAt" < ${at} AND e."amountPaise" > 0 AND e.kind <> 'REVERSAL' ${inFirms}
           AND NOT EXISTS (SELECT 1 FROM "CustomerLedgerEntry" r
             WHERE r."reversesId" = e.id AND r."occurredAt" < ${at})
         ORDER BY e."customerId", e."occurredAt" DESC, e.id DESC
@@ -522,8 +690,10 @@ export class CrmReportsController {
     const { start, end } = monthRange(month, today);
     const shop = shopAsked(req, 'reports.read', query.locationId);
     const ids = shopIds(shop);
+    const firm = firmAsked(req, query.firmId);
+    const firms = firmIdsOf(firm);
     const range = { gte: start, lt: end };
-    const sold = { createdAt: range, status: { notIn: [...notSold] }, ...shop };
+    const sold = { createdAt: range, status: { notIn: [...notSold] }, ...shop, ...firm };
     const [lines, orders, given, moves, startDue, endDue] = await Promise.all([
       this.db.orderItem.groupBy({
         by: ['productId', 'unit'],
@@ -541,6 +711,7 @@ export class CrmReportsController {
         where: {
           occurredAt: range,
           ...shop,
+          ...firm,
           OR: [
             { kind: 'SALE_ON_CREDIT' },
             { kind: 'REVERSAL', reverses: { kind: 'SALE_ON_CREDIT' } },
@@ -553,11 +724,12 @@ export class CrmReportsController {
           occurredAt: range,
           kind: { in: ['KHATA_PAYMENT', 'KHATA_PAYMENT_REVERSAL'] },
           ...shop,
+          ...firm,
         },
         select: { kind: true, amountPaise: true },
       }),
-      this.dueAt(start, ids),
-      this.dueAt(end, ids),
+      this.dueAt(start, ids, firms),
+      this.dueAt(end, ids, firms),
     ]);
     const products = await this.db.product.findMany({
       where: { id: { in: lines.map((row) => row.productId) } },
@@ -614,15 +786,33 @@ export class CrmReportsController {
       // The word Tally reaches only those who may see its numbers.
       ...(seesBooks
         ? {
-            tally: await this.booksFor(month, last),
+            tally: await this.booksFor(month, last, firms),
           }
         : {}),
     };
   }
 
-  private async booksFor(month: string, nextMonth: string) {
-    if (!(await this.tally.connected())) return { connected: false as const };
+  private async booksFor(month: string, nextMonth: string, firms?: string[]) {
     const lastDay = addDays(`${nextMonth}-01`, -1);
+    if (firms) {
+      const companies = await this.firmCompanies(firms);
+      if (!companies.length) return { connected: false as const };
+      const [sales, suppliers] = await Promise.all([
+        this.db.$queryRaw<{ paise: bigint | null }[]>`
+          SELECT SUM(ABS(v."partyAmountPaise"))::bigint AS paise
+          FROM "TallyVoucher" v
+          WHERE v."companyId" = ANY(${companies}) AND v."deletedAt" IS NULL
+            AND v."isOptional" = false AND v."isCancelled" = false
+            AND v."baseType" = 'Sales' AND v.date >= ${`${month}-01`} AND v.date <= ${lastDay}`,
+        this.firmSuppliers(companies, 1),
+      ]);
+      return {
+        connected: true as const,
+        salesPaise: wire(sales[0]?.paise ?? null),
+        suppliers: { totalPaise: suppliers.totalPaise, asOf: suppliers.asOf },
+      };
+    }
+    if (!(await this.tally.connected())) return { connected: false as const };
     const suppliers = await this.tally.suppliers(1);
     return {
       connected: true as const,
@@ -631,6 +821,87 @@ export class CrmReportsController {
     };
   }
 
+  /**
+   * The Tally companies keeping these firms' books. One not mapped to a firm yet could be anyone's,
+   * so it counts only for someone who sees every firm, through TallyNumbers.
+   */
+  private async firmCompanies(firms: string[]) {
+    const rows = await this.db.tallyCompany.findMany({
+      where: { role: 'PRIMARY', firmId: { in: firms } },
+      select: { id: true },
+    });
+    return rows.map((row) => row.id);
+  }
+
+  /**
+   * TallyNumbers.suppliers, within some companies. Kept here only until that class can take a list
+   * of companies itself.
+   */
+  private async firmSuppliers(companies: string[], limit = 200) {
+    const where = {
+      class: 'CREDITOR',
+      deletedAt: null,
+      closingPaise: { gt: 0 },
+      companyId: { in: companies },
+    } satisfies Prisma.TallyLedgerWhereInput;
+    const [rows, total] = await Promise.all([
+      this.db.tallyLedger.findMany({
+        where,
+        select: {
+          id: true,
+          name: true,
+          closingPaise: true,
+          closingAsOf: true,
+          tieOutOk: true,
+          companyId: true,
+          guid: true,
+        },
+        orderBy: [{ closingPaise: 'desc' }, { id: 'asc' }],
+        take: limit + 1,
+      }),
+      this.db.tallyLedger.aggregate({
+        where,
+        _sum: { closingPaise: true },
+        _max: { closingAsOf: true },
+      }),
+    ]);
+    const shown = rows.slice(0, limit);
+    const latest = await this.db.tallyVoucher.groupBy({
+      by: ['companyId', 'partyGuid', 'baseType'],
+      where: {
+        companyId: { in: companies },
+        partyGuid: { in: shown.map((row) => row.guid) },
+        baseType: { in: ['Purchase', 'Payment'] },
+        deletedAt: null,
+        isCancelled: false,
+        isOptional: false,
+      },
+      _max: { date: true },
+    });
+    const lastOf = (row: (typeof shown)[number], baseType: string) =>
+      latest.find(
+        (item) =>
+          item.companyId === row.companyId &&
+          item.partyGuid === row.guid &&
+          item.baseType === baseType,
+      )?._max.date ?? null;
+    return {
+      totalPaise: wire(total._sum.closingPaise),
+      asOf: total._max.closingAsOf,
+      truncated: rows.length > limit,
+      items: shown.map((row) => ({
+        id: row.id,
+        name: row.name,
+        payablePaise: wire(row.closingPaise),
+        asOf: row.closingAsOf,
+        tiedOut: row.tieOutOk,
+        lastPurchaseOn: lastOf(row, 'Purchase'),
+        lastPaymentOn: lastOf(row, 'Payment'),
+      })),
+    };
+  }
+
+  @Firm('own')
   @Can('reports.read', scoped)
   @Get('reports/mahine')
   mahine(@Query() query: Record<string, unknown>, @Req() req: AuthRequest) {
@@ -638,6 +909,7 @@ export class CrmReportsController {
     return this.month(query, req);
   }
 
+  @Firm('own')
   @Can('reports.read', scoped)
   @Get('reports/mahine.csv')
   async mahineCsv(
@@ -688,16 +960,30 @@ export class CrmReportsController {
   }
 
   // ---- Supplier baaki ---------------------------------------------------------------------------
-  /** Read-only, from the books, for owners and the accountant. The app keeps no supplier ledger. */
+  /**
+   * Read-only, from the books, for owners and the accountant. The app keeps no supplier ledger.
+   * Someone limited to some firms, or anyone asking for one, reads only those firms' companies.
+   */
+  @Firm('own')
   @Can('tally.numbers.view')
   @Get('tally/suppliers')
-  async suppliers() {
+  async suppliers(@Query() query: Record<string, unknown>, @Req() req: AuthRequest) {
+    const firms = firmIdsOf(firmAsked(req, query.firmId));
+    if (firms) {
+      const companies = await this.firmCompanies(firms);
+      if (!companies.length) return { connected: false as const, items: [] };
+      return { connected: true as const, ...(await this.firmSuppliers(companies)) };
+    }
     if (!(await this.tally.connected())) return { connected: false as const, items: [] };
     return { connected: true as const, ...(await this.tally.suppliers()) };
   }
 
   // ---- Who opens what ---------------------------------------------------------------------------
-  /** Plan 09: measure opens, and delete any report nobody opens in 30 days. */
+  /**
+   * Plan 09: measure opens, and delete any report nobody opens in 30 days. Counts of opens per
+   * report and nothing else: no money, customer or shop of either firm.
+   */
+  @Firm('none')
   @Can('audit.read')
   @Get('reports/opens')
   async opens() {

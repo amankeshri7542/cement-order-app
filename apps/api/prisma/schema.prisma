@@ -73,7 +73,8 @@ model User {
   followUps            FollowUp[]            @relation("FollowUpCustomer")
   assignedFollowUps    FollowUp[]            @relation("FollowUpAssignee")
   khataSignoffs        KhataSignoff[]
-  khataOpeningDraft    KhataOpeningDraft?
+  khataOpeningDrafts   KhataOpeningDraft[]
+  firmBalances         CustomerFirmBalance[]
   customerGroupId      String?
   customerGroup        CustomerGroup?        @relation(fields: [customerGroupId], references: [id])
   /// Tally ledgers a person has linked to this customer.
@@ -291,6 +292,9 @@ model CheckoutReview {
 }
 
 model Order {
+  /// The firm that sells: always the firm of the shop it was taken at.
+  firmId            String
+  firm              Firm                  @relation(fields: [firmId], references: [id])
   // Goes up with every change, so a tap on an old card is refused rather than confirming the wrong thing.
   version           Int                   @default(1)
   confirmedAt       DateTime?
@@ -542,6 +546,9 @@ model DeliveryAttempt {
 }
 
 model FinancialMovement {
+  /// Whose money this is. Never inferred from the shop: an owner at one shop can take another firm's due.
+  firmId              String
+  firm                Firm                 @relation(fields: [firmId], references: [id])
   locationId          String               @default("loc_main")
   location            Location             @relation(fields: [locationId], references: [id])
   ledgerEntry         CustomerLedgerEntry?
@@ -561,6 +568,9 @@ model FinancialMovement {
 }
 
 model CustomerLedgerEntry {
+  /// Whose book this entry is in. Never inferred from the shop. A reversal keeps its original's firm.
+  firmId              String
+  firm                Firm                 @relation(fields: [firmId], references: [id])
   locationId          String               @default("loc_main")
   location            Location             @relation(fields: [locationId], references: [id])
   id                  String               @id @default(cuid())
@@ -918,15 +928,31 @@ enum StaffRole {
 
 /// One row today. It gives the shop's legal identity a home, and saves a retrofit if shops split.
 model Firm {
-  id                    String     @id @default(cuid())
+  id                    String                @id @default(cuid())
   legalName             String
-  tradeName             String     @default("")
+  tradeName             String                @default("")
   gstin                 String?
-  complaintOfficerName  String     @default("")
-  complaintOfficerPhone String     @default("")
+  /// Printed on bills and receipts.
+  address               String                @default("")
+  /// Starts this firm's bill numbers, such as SIP. Set once; bills already issued keep theirs.
+  billPrefix            String                @default("")
+  /// The firm's own merchant UPI ID: money paid to it reaches this firm's bank account.
+  upiId                 String                @default("")
+  active                Boolean               @default(true)
+  updatedAt             DateTime              @default(now()) @updatedAt
+  complaintOfficerName  String                @default("")
+  complaintOfficerPhone String                @default("")
   approvedAt            DateTime?
-  createdAt             DateTime   @default(now())
+  createdAt             DateTime              @default(now())
   locations             Location[]
+  ledgerEntries         CustomerLedgerEntry[]
+  financialMovements    FinancialMovement[]
+  gallaEntries          GallaEntry[]
+  orders                Order[]
+  balances              CustomerFirmBalance[]
+  billSeries            BillSeries[]
+  memberships           StaffMembership[]
+  openingDrafts         KhataOpeningDraft[]
 }
 
 /// A shop sells; a godown only stores and sends stock on to the shops.
@@ -1005,6 +1031,9 @@ model StaffMembership {
   /// Null means all shops, and only all-shop roles may have it.
   locationId  String?
   location    Location? @relation(fields: [locationId], references: [id])
+  /// For an all-shop role only: limits this person to one firm's books, such as an accountant for one firm.
+  firmId      String?
+  firm        Firm?     @relation(fields: [firmId], references: [id])
   role        StaffRole
   startedAt   DateTime  @default(now())
   endedAt     DateTime?
@@ -1413,6 +1442,9 @@ model DayClose {
 /// Money put into or taken out of the drawer by hand, with why.
 model GallaEntry {
   id             String   @id @default(cuid())
+  /// The drawer's firm: always its shop's firm.
+  firmId         String
+  firm           Firm     @relation(fields: [firmId], references: [id])
   locationId     String
   location       Location @relation(fields: [locationId], references: [id])
   day            String
@@ -2400,8 +2432,11 @@ model FollowUpEvent {
 
 /// The opening sheet's row, typed from the paper book. Changes freely until an owner signs it.
 model KhataOpeningDraft {
-  customerId  String    @id
+  customerId  String
   customer    User      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  /// Each firm's opening is drafted and signed on its own.
+  firmId      String
+  firm        Firm      @relation(fields: [firmId], references: [id])
   /// The shop the opening entry is written at. A customer's balance counts under this shop until
   /// they next take credit somewhere.
   locationId  String
@@ -2417,6 +2452,8 @@ model KhataOpeningDraft {
   version     Int       @default(1)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+
+  @@id([customerId, firmId])
 }
 
 /// An owner agreed what a customer owed on the cut-off date. Once per customer per firm. Append-only.
@@ -2618,4 +2655,36 @@ model DemoBatch {
   /// The golden figures the run computed by SQL (also written to seed-manifest.json).
   manifest  Json
   createdAt DateTime @default(now())
+}
+
+/// What one customer owes one firm. Moves in the same transaction as each ledger entry, so it always
+/// equals the sum of that firm's entries; User.khataBalancePaise stays the total over all firms.
+model CustomerFirmBalance {
+  customerId       String
+  customer         User     @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  firmId           String
+  firm             Firm     @relation(fields: [firmId], references: [id])
+  balancePaise     Int      @default(0)
+  /// This firm's limit for the customer. Empty means the customer's own limit applies.
+  creditLimitPaise Int?
+  updatedAt        DateTime @default(now()) @updatedAt
+
+  @@id([customerId, firmId])
+  @@index([firmId, balancePaise])
+}
+
+/// One bill series per firm per financial year (April to March, India time). Bills take numbers from
+/// it in order, with no gaps (phase D4a).
+model BillSeries {
+  id            String   @id @default(cuid())
+  firmId        String
+  firm          Firm     @relation(fields: [firmId], references: [id])
+  /// Such as 2026-27.
+  financialYear String
+  prefix        String
+  nextNumber    Int      @default(1)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([firmId, financialYear])
 }

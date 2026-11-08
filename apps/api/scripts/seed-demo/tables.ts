@@ -69,6 +69,7 @@ export const TABLES: [string, Columns][] = [
       status: '"OrderStatus"',
       source: '"OrderSource"',
       locationId: 'text',
+      firmId: 'text',
       address: 'json',
       deliveryDate: 'text',
       notes: 'text',
@@ -175,6 +176,7 @@ export const TABLES: [string, Columns][] = [
     {
       id: 'text',
       locationId: 'text',
+      firmId: 'text',
       paymentId: 'text',
       inventoryMovementId: 'text',
       kind: 'text',
@@ -190,6 +192,7 @@ export const TABLES: [string, Columns][] = [
     {
       id: 'text',
       locationId: 'text',
+      firmId: 'text',
       customerId: 'text',
       kind: '"LedgerKind"',
       amountPaise: 'int',
@@ -207,6 +210,7 @@ export const TABLES: [string, Columns][] = [
     {
       id: 'text',
       locationId: 'text',
+      firmId: 'text',
       day: 'text',
       kind: 'text',
       amountPaise: 'int',
@@ -362,6 +366,28 @@ export const TABLES: [string, Columns][] = [
       orderId: 'text',
       decidedById: 'text',
       decidedAt: 'ts',
+      createdAt: 'ts',
+      updatedAt: 'ts',
+    },
+  ],
+  [
+    'CustomerFirmBalance',
+    {
+      customerId: 'text',
+      firmId: 'text',
+      balancePaise: 'int',
+      creditLimitPaise: 'int',
+      updatedAt: 'ts',
+    },
+  ],
+  [
+    'BillSeries',
+    {
+      id: 'text',
+      firmId: 'text',
+      financialYear: 'text',
+      prefix: 'text',
+      nextNumber: 'int',
       createdAt: 'ts',
       updatedAt: 'ts',
     },

@@ -1,5 +1,14 @@
 import type { Order, OwnerWork, User } from '@shiv/shared';
+/** What one customer owes one firm (plan v4, two firms). */
+export type FirmBalance = {
+  firmId: string;
+  name?: string;
+  balancePaise: number;
+  creditLimitPaise: number | null;
+};
 export type Customer = User & {
+  /** Per firm, only the firms this person may see. */
+  byFirm?: FirmBalance[];
   createdAt: string;
   creditAllowed: boolean;
   creditLimitPaise: number | null;
@@ -35,6 +44,8 @@ export type Dashboard = {
   todayCounterSalesPaise: number;
   todayRefundsPaise: number;
   khataDuePaise: number;
+  /** Each firm this person sees: money in today and udhaar owed. */
+  byFirm?: { firmId: string; name: string; todayMoneyInPaise: number; khataDuePaise: number }[];
   todayCreditSalesPaise: number;
   todayPhoneOrders: number;
   newWork: number;
@@ -51,6 +62,8 @@ export type WorkItem = OwnerWork & {
 export type KhataSummary = {
   totalDuePaise: number;
   customersWithDue: number;
+  /** Each firm this person sees, beside the combined figure. */
+  byFirm?: { firmId: string; name: string; totalDuePaise: number; customersWithDue: number }[];
   overdue30d: {
     id: string;
     name: string;

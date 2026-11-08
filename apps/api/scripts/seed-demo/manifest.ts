@@ -52,6 +52,14 @@ export async function buildManifest(
       COALESCE(sum("khataBalancePaise") FILTER (WHERE "khataBalancePaise" > 0), 0) AS "totalOwedPaise",
       COALESCE(max("khataBalancePaise"), 0) AS "largestBalancePaise"
     FROM "User" WHERE role <> 'ADMIN'`);
+  const udhaarByFirm = await many(
+    `SELECT "firmId" AS k, count(*) FILTER (WHERE "balancePaise" > 0) AS "customersOwing",
+            COALESCE(sum("balancePaise") FILTER (WHERE "balancePaise" > 0), 0) AS "totalOwedPaise"
+       FROM "CustomerFirmBalance" GROUP BY 1 ORDER BY 1`,
+    'k',
+  );
+  const crossFirmPayments = await one(`SELECT count(*) AS n FROM "FinancialMovement" f
+      JOIN "Location" l ON l.id = f."locationId" WHERE f.kind = 'KHATA_PAYMENT' AND f."firmId" <> l."firmId"`);
   const ordersByStatus = await many(
     `SELECT status::text AS k, count(*) AS n FROM "Order" GROUP BY 1 ORDER BY 1`,
     'k',
@@ -93,6 +101,8 @@ export async function buildManifest(
     ...meta,
     counts,
     udhaar,
+    udhaarByFirm,
+    crossFirmPayments: crossFirmPayments.n,
     ordersByStatus,
     ordersBySource,
     lastDay: { byShop: todayByShop, collectedPaise: collectedToday },

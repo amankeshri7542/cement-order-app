@@ -4,7 +4,7 @@ import { PLACES, type SeedContext } from '../context';
 import type { Rng } from '../rng';
 import type { SeedProduct } from './catalogue';
 import type { SeedCustomer, SeedStaff } from './people';
-import { GODOWNS, SHOPS, godownFor } from './places';
+import { GODOWNS, SHOPS, firmOf, godownFor } from './places';
 import type { DrawerPayout } from './salary';
 
 /** Orders per size over the whole history (platform section 4.2). */
@@ -35,7 +35,7 @@ export type WaOrder = {
 type Event = { at: Date; seq: number; run: () => Promise<void> };
 
 export type BusinessResult = {
-  totals: Map<string, { balance: number; lastOrderAt: Date | null }>;
+  totals: Map<string, { balance: number; lastOrderAt: Date | null; firms: Record<string, number> }>;
   waOrders: WaOrder[];
   levels: Map<string, number>;
   orders: number;
@@ -272,6 +272,8 @@ export async function seedBusiness(
   let fmCount = 0;
   const money = async (row: {
     locationId: string;
+    /** Whose money: the order's firm, the drawer's firm, or the firm whose due was paid. */
+    firmId: string;
     kind: string;
     amountPaise: number;
     at: Date;
@@ -285,6 +287,7 @@ export async function seedBusiness(
     await bulk.add('FinancialMovement', {
       id,
       locationId: row.locationId,
+      firmId: row.firmId,
       paymentId: row.paymentId ?? null,
       inventoryMovementId: row.inventoryMovementId ?? null,
       kind: row.kind,
@@ -308,9 +311,12 @@ export async function seedBusiness(
     return id;
   };
 
-  const totals = new Map<string, { balance: number; lastOrderAt: Date | null }>();
+  const totals = new Map<
+    string,
+    { balance: number; lastOrderAt: Date | null; firms: Record<string, number> }
+  >();
   const totalOf = (id: string) => {
-    const t = totals.get(id) ?? { balance: 0, lastOrderAt: null };
+    const t = totals.get(id) ?? { balance: 0, lastOrderAt: null, firms: {} };
     totals.set(id, t);
     return t;
   };
@@ -323,12 +329,17 @@ export async function seedBusiness(
     actorId: string,
     link: { orderId?: string; financialMovementId?: string },
     note: string,
+    /** Whose book, and where it was typed (an owner at the main shop takes both firms' dues). */
+    firmId: string,
+    locationId: string,
   ) => {
     const t = totalOf(c.id);
     t.balance += amountPaise;
+    t.firms[firmId] = (t.firms[firmId] ?? 0) + amountPaise;
     await bulk.add('CustomerLedgerEntry', {
       id: `demo-le-${++ledgerCount}`,
-      locationId: c.shop,
+      locationId,
+      firmId,
       customerId: c.id,
       kind,
       amountPaise,
@@ -461,7 +472,14 @@ export async function seedBusiness(
 
   const placeOrder = async (c: SeedCustomer, day: string) => {
     const source = rng.weighted(sources[c.kind]);
-    const shop = c.shop;
+    // A contractor sometimes buys from the other firm's shop: one customer, two firms' books.
+    const shop =
+      c.kind === 'contractor' && rng.chance(0.25)
+        ? c.shop === PLACES.shopA
+          ? PLACES.shopB
+          : PLACES.shopA
+        : c.shop;
+    const firmId = firmOf[shop]!;
     const lineCount = rng.weighted([
       [1, 0.45],
       [2, 0.3],
@@ -597,6 +615,7 @@ export async function seedBusiness(
       status,
       source,
       locationId: shop,
+      firmId,
       address: walkIn
         ? {
             label: 'Dukaan se',
@@ -706,6 +725,8 @@ export async function seedBusiness(
           cashier(shop),
           { orderId: id },
           `Credit sale ${number}`,
+          firmId,
+          shop,
         ),
       );
     if (delivered && !credit) {
@@ -713,6 +734,7 @@ export async function seedBusiness(
       schedule(at, async () => {
         await money({
           locationId: shop,
+          firmId,
           kind: 'COLLECTION',
           amountPaise: total,
           at,
@@ -811,6 +833,7 @@ export async function seedBusiness(
           );
           await money({
             locationId: shop,
+            firmId: firmOf[shop]!,
             kind: 'COUNTER_SALE',
             amountPaise: p.rateOn(day).paise * quantity,
             at,
@@ -824,8 +847,12 @@ export async function seedBusiness(
 
     // Udhaar payments: good payers settle every few weeks, slow ones rarely.
     for (const c of credits) {
-      const balance = totalOf(c.id).balance;
-      if (balance <= 0) continue;
+      // The firm owed most gets paid; each firm's due is paid down on its own.
+      const owed = Object.entries(totalOf(c.id).firms)
+        .filter(([, paise]) => paise > 0)
+        .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0];
+      if (!owed) continue;
+      const [payFirm, balance] = owed;
       const since = lastPaid.get(c.id);
       if (since && since > addDays(day, -7)) continue;
       if (!rng.chance(0.07 * c.payer)) continue;
@@ -835,17 +862,24 @@ export async function seedBusiness(
       );
       const at = istInstant(day, rng.int(10, 18), rng.int(0, 59));
       lastPaid.set(c.id, day);
+      // Usually at that firm's own shop; sometimes an owner at the main shop takes it, whichever
+      // firm is owed. That is why money never takes its firm from the shop.
+      const byOwner = rng.chance(0.2);
+      const where = byOwner ? PLACES.shopA : payFirm === PLACES.firmA ? PLACES.shopA : PLACES.shopB;
+      const who = byOwner ? ctx.actors.owner : cashier(where);
+      const channel = rng.chance(0.55) ? 'CASH' : 'UPI';
       schedule(at, async () => {
-        const live = totalOf(c.id).balance;
+        const live = totalOf(c.id).firms[payFirm] ?? 0;
         const paid = Math.min(amount, live);
         if (paid <= 0) return;
         const fm = await money({
-          locationId: c.shop,
+          locationId: where,
+          firmId: payFirm,
           kind: 'KHATA_PAYMENT',
           amountPaise: paid,
           at,
-          channel: rng.chance(0.55) ? 'CASH' : 'UPI',
-          actorId: cashier(c.shop),
+          channel,
+          actorId: who,
           counterParty: c.id,
         });
         await ledger(
@@ -853,9 +887,11 @@ export async function seedBusiness(
           'PAYMENT_RECEIVED',
           -paid,
           at,
-          cashier(c.shop),
+          who,
           { financialMovementId: fm },
           '',
+          payFirm,
+          where,
         );
       });
     }
@@ -865,6 +901,7 @@ export async function seedBusiness(
       schedule(p.at, async () => {
         await money({
           locationId: p.shop,
+          firmId: firmOf[p.shop]!,
           kind: 'STAFF_PAY',
           amountPaise: p.amountPaise,
           at: p.at,
@@ -889,6 +926,7 @@ export async function seedBusiness(
           await bulk.add('GallaEntry', {
             id: `demo-ge-${id}`,
             locationId: shop,
+            firmId: firmOf[shop]!,
             day,
             kind: 'PAID_OUT',
             amountPaise: amount,
@@ -923,6 +961,7 @@ export async function seedBusiness(
           await bulk.add('GallaEntry', {
             id: `demo-ge-${id}`,
             locationId: shop,
+            firmId: firmOf[shop]!,
             day,
             kind: 'PAID_OUT',
             amountPaise: deposit,
@@ -941,6 +980,7 @@ export async function seedBusiness(
         await bulk.add('GallaEntry', {
           id: `demo-ge-${id}`,
           locationId: shop,
+          firmId: firmOf[shop]!,
           day,
           kind: 'PAID_IN',
           amountPaise: top,

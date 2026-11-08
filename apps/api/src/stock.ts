@@ -231,6 +231,14 @@ export class StockService {
       }
       const to = await tx.location.findUnique({ where: { id: body.toLocationId } });
       if (!to?.active) fail('INVALID_SHOP', 'That shop is not open on this system.', 400);
+      // Each firm's stock is its own, even under one roof. Goods cross to the other firm only as a
+      // sale bill from one and a purchase in the other ("Bill banake bhejo"), never as a transfer.
+      const from = await tx.location.findUnique({
+        where: { id: body.fromLocationId },
+        select: { firmId: true },
+      });
+      if (from?.firmId !== to.firmId)
+        fail('OTHER_FIRM', 'Stock goes to the other firm only with a bill.', 409);
       const transfer = await tx.stockTransfer.create({
         data: {
           fromLocationId: body.fromLocationId,

@@ -32,7 +32,9 @@ import {
   Input,
   MAIN_LOCATION,
   Self,
+  Firm,
 } from '../http';
+import { activeFirm, firmsOf, MAIN_FIRM, requireCustomerVisible, requireFirm } from '../firms';
 import { appendLedger, khataCustomer } from '../khata';
 import { paginate } from '../pagination';
 import { setStopped } from './customer-page';
@@ -53,7 +55,12 @@ export class OpeningSheet {
   ) {}
 
   /** Paper's figure goes in until an owner signs. Then this row is history, and cannot move. */
-  async draft(input: z.infer<typeof openingDraftSchema>, actorId: string, seesTally: boolean) {
+  async draft(
+    input: z.infer<typeof openingDraftSchema>,
+    actorId: string,
+    seesTally: boolean,
+    firms: 'ALL' | string[] = 'ALL',
+  ) {
     if (input.asOf > istToday() || input.asOf < '2020-01-01')
       fail('INVALID_BUSINESS_DATE', 'Choose a valid date no later than today.');
     const locationId = input.locationId ?? MAIN_LOCATION;
@@ -66,22 +73,25 @@ export class OpeningSheet {
         select: { id: true },
       });
       if (!customer) fail('CUSTOMER_NOT_FOUND', 'Customer not found.', 404);
-      if (await tx.khataSignoff.findFirst({ where: { customerId: input.customerId } }))
-        fail('ALREADY_SIGNED', 'This customer’s opening is already signed off.', 409);
       const shop = await tx.location.findFirst({
         where: { id: locationId, active: true },
-        select: { id: true },
+        select: { id: true, firmId: true },
       });
       if (!shop) fail('INVALID_SHOP', 'That shop is not open.', 400);
+      // Each firm's opening is its own: the one asked for, or the shop's.
+      const firmId = input.firmId ? await activeFirm(tx, input.firmId) : shop.firmId;
+      if (firms !== 'ALL' && !firms.includes(firmId))
+        fail('FORBIDDEN', 'You do not have access to this firm’s khata.', 403);
+      if (await tx.khataSignoff.findFirst({ where: { customerId: input.customerId, firmId } }))
+        fail('ALREADY_SIGNED', 'This customer’s opening is already signed off.', 409);
       const figures = {
         locationId,
         asOf: input.asOf,
         paperPaise: input.paperPaise,
         note: input.note ?? '',
       };
-      const was = await tx.khataOpeningDraft.findUnique({
-        where: { customerId: input.customerId },
-      });
+      const key = { customerId_firmId: { customerId: input.customerId, firmId } };
+      const was = await tx.khataOpeningDraft.findUnique({ where: key });
       // Sending the same figures again keeps the version, so an owner's page stays good.
       if (
         was &&
@@ -97,12 +107,13 @@ export class OpeningSheet {
       };
       const row = was
         ? await tx.khataOpeningDraft.update({
-            where: { customerId: input.customerId },
+            where: key,
             data: { ...figures, ...tallyFacts, enteredById: actorId, version: { increment: 1 } },
           })
         : await tx.khataOpeningDraft.create({
             data: {
               customerId: input.customerId,
+              firmId,
               ...figures,
               ...tallyFacts,
               enteredById: actorId,
@@ -114,7 +125,12 @@ export class OpeningSheet {
           event: 'KHATA_OPENING_DRAFTED',
           entityId: input.customerId,
           locationId,
-          details: { asOf: input.asOf, paperPaise: input.paperPaise, version: row.version },
+          details: {
+            asOf: input.asOf,
+            paperPaise: input.paperPaise,
+            version: row.version,
+            firmId,
+          },
         },
       });
       return this.draftView(row);
@@ -124,6 +140,7 @@ export class OpeningSheet {
   draftView(row: Prisma.KhataOpeningDraftGetPayload<object>) {
     return {
       customerId: row.customerId,
+      firmId: row.firmId,
       locationId: row.locationId,
       asOf: row.asOf,
       paperPaise: row.paperPaise,
@@ -140,12 +157,30 @@ export class OpeningSheet {
    * One row of the sheet, in its own transaction, so one refused row leaves the rest signed. Writes
    * the opening entry and the sign-off together, and only an exact repeat of it is let through.
    */
-  async sign(row: z.infer<typeof openingApproveSchema>['rows'][number], approverId: string) {
+  async sign(
+    row: z.infer<typeof openingApproveSchema>['rows'][number],
+    approverId: string,
+    firms: 'ALL' | string[] = 'ALL',
+  ) {
     const { customerId, chosenPaise, draftVersion } = row;
     return this.db.atomic(async (tx) => {
       await khataCustomer(tx, customerId);
-      const draft = await tx.khataOpeningDraft.findUnique({ where: { customerId } });
-      const previous = await tx.khataSignoff.findFirst({ where: { customerId } });
+      // The firm named on the row, or the customer's only draft. Two drafts need the row to say which.
+      let firmId = row.firmId;
+      if (!firmId) {
+        const drafts = await tx.khataOpeningDraft.findMany({
+          where: { customerId },
+          select: { firmId: true },
+        });
+        if (drafts.length > 1) fail('FIRM_REQUIRED', 'Say which firm this opening is for.', 400);
+        firmId = drafts[0]?.firmId ?? MAIN_FIRM;
+      }
+      if (firms !== 'ALL' && !firms.includes(firmId))
+        fail('FORBIDDEN', 'You do not have access to this firm’s khata.', 403);
+      const draft = await tx.khataOpeningDraft.findUnique({
+        where: { customerId_firmId: { customerId, firmId } },
+      });
+      const previous = await tx.khataSignoff.findFirst({ where: { customerId, firmId } });
       if (previous) {
         const same = hash(JSON.stringify({ chosenPaise, draftVersion }));
         if (previous.requestHash !== same)
@@ -166,6 +201,7 @@ export class OpeningSheet {
       const earlier = await tx.customerLedgerEntry.count({
         where: {
           customerId,
+          firmId,
           kind: { not: 'REVERSAL' },
           reversal: null,
           OR: [{ occurredAt: { lt: cutoff } }, { kind: 'OPENING_BALANCE' }],
@@ -175,28 +211,25 @@ export class OpeningSheet {
         fail('ENTRIES_BEFORE_CUTOFF', 'This customer has entries from before the cut-off.', 409, {
           entries: earlier,
         });
-      const shop = await tx.location.findUniqueOrThrow({
-        where: { id: draft.locationId },
-        select: { firmId: true },
-      });
       // Nothing owed moves no money, so there is no entry, only the owner's word.
       const entry = chosenPaise
         ? await appendLedger(tx, {
             locationId: draft.locationId,
+            firmId,
             customerId,
             kind: 'OPENING_BALANCE',
             amountPaise: chosenPaise,
             actorId: approverId,
             note: `Purana hisaab ${draft.asOf} tak ka`,
             occurredAt: cutoff,
-            idempotencyKey: `opening:${shop.firmId}`,
-            requestHash: hash(`opening:${customerId}`),
+            idempotencyKey: `opening:${firmId}`,
+            requestHash: hash(`opening:${customerId}:${firmId}`),
           })
         : null;
       await tx.khataSignoff.create({
         data: {
           customerId,
-          firmId: shop.firmId,
+          firmId,
           locationId: draft.locationId,
           asOf: draft.asOf,
           paperPaise: draft.paperPaise,
@@ -220,6 +253,7 @@ export class OpeningSheet {
             paperPaise: draft.paperPaise,
             chosenPaise,
             enteredById: draft.enteredById,
+            firmId,
           },
         },
       });
@@ -238,6 +272,7 @@ export class OpeningSheetController {
   ) {}
 
   /** Everyone with udhaar history, or with a row started, biggest first. Search finds the rest. */
+  @Firm('own')
   @Can('khata.opening.draft')
   @Get('khata/opening-sheet')
   async list(@Query() query: Record<string, unknown>, @Req() req: AuthRequest) {
@@ -245,13 +280,19 @@ export class OpeningSheetController {
       .object({
         q: z.string().trim().max(100).default(''),
         status: z.enum(['pending', 'signed', 'all']).default('pending'),
+        firmId: z.string().min(1).max(60).optional(),
       })
-      .safeParse({ q: query.q, status: query.status });
+      .safeParse({ q: query.q, status: query.status, firmId: query.firmId || undefined });
     if (!parsed.success) fail('INVALID_FILTER', 'Check the filters.');
     const { q, status } = parsed.data;
+    // The sheet is one firm's: the one asked for, or this person's first.
+    const mine = firmsOf(req);
+    const firmId = parsed.data.firmId ?? (mine === 'ALL' ? MAIN_FIRM : mine[0]);
+    if (!firmId) fail('FORBIDDEN', 'You do not have access to any firm’s khata.', 403);
+    requireFirm(req, firmId, 'khata.opening.draft');
     const page = paginate(
       { limit: query.limit, cursor: query.cursor },
-      JSON.stringify({ list: 'opening-sheet', q, status }),
+      JSON.stringify({ list: 'opening-sheet', q, status, firmId }),
       'khataBalancePaise',
     );
     // Part of a number is a way to discover numbers, for anyone who may not see them.
@@ -262,17 +303,17 @@ export class OpeningSheetController {
       ? { OR: fields.map((field) => ({ [field]: { contains: q, mode: 'insensitive' } })) }
       : {
           OR: [
-            { ledgerEntries: { some: {} } },
-            { khataOpeningDraft: { isNot: null } },
+            { ledgerEntries: { some: { firmId } } },
+            { khataOpeningDrafts: { some: { firmId } } },
             { creditAllowed: true },
-            { khataSignoffs: { some: {} } },
+            { khataSignoffs: { some: { firmId } } },
           ],
         };
     const statusWhere: Prisma.UserWhereInput =
       status === 'pending'
-        ? { khataSignoffs: { none: {} } }
+        ? { khataSignoffs: { none: { firmId } } }
         : status === 'signed'
-          ? { khataSignoffs: { some: {} } }
+          ? { khataSignoffs: { some: { firmId } } }
           : {};
     const [rows, pending, signed] = await Promise.all([
       this.db.user.findMany({
@@ -287,15 +328,16 @@ export class OpeningSheetController {
           khataBalancePaise: true,
           creditAllowed: true,
           khataViewOn: true,
-          khataOpeningDraft: true,
-          khataSignoffs: { take: 1 },
+          khataOpeningDrafts: { where: { firmId } },
+          khataSignoffs: { where: { firmId }, take: 1 },
+          firmBalances: { where: { firmId }, select: { balancePaise: true } },
         },
       }),
       this.db.user.count({
-        where: { ...realCustomer, AND: [someone, { khataSignoffs: { none: {} } }] },
+        where: { ...realCustomer, AND: [someone, { khataSignoffs: { none: { firmId } } }] },
       }),
       this.db.user.count({
-        where: { ...realCustomer, AND: [someone, { khataSignoffs: { some: {} } }] },
+        where: { ...realCustomer, AND: [someone, { khataSignoffs: { some: { firmId } } }] },
       }),
     ]);
     const finished = page.finish(rows);
@@ -307,17 +349,20 @@ export class OpeningSheetController {
       ...finished,
       pending,
       signed,
+      firmId,
       today: istToday(),
       items: finished.items.map((row) => {
         const signoff = row.khataSignoffs[0];
-        const draft = row.khataOpeningDraft;
+        const draft = row.khataOpeningDrafts[0];
         const tallyNow = numbers.get(row.id)?.tallyPaise ?? null;
         return {
           id: row.id,
           name: row.name,
           area: row.area,
           ...phoneFields(req, row.phone),
-          appBalancePaise: row.khataBalancePaise,
+          // This firm's balance; the customer's total across firms stays beside it.
+          appBalancePaise: row.firmBalances[0]?.balancePaise ?? 0,
+          totalBalancePaise: row.khataBalancePaise,
           creditAllowed: row.creditAllowed,
           khataViewOn: row.khataViewOn,
           draft: draft ? this.sheet.draftView(draft) : null,
@@ -336,6 +381,7 @@ export class OpeningSheetController {
     };
   }
 
+  @Firm('own')
   @Can('khata.opening.draft')
   @Post('khata/opening-sheet')
   @Contract(openingDraftSchema)
@@ -343,10 +389,16 @@ export class OpeningSheetController {
     @Input(openingDraftSchema) input: z.infer<typeof openingDraftSchema>,
     @Req() req: AuthRequest,
   ) {
-    return this.sheet.draft(input, req.user.id, canDo(req.access, 'tally.numbers.view'));
+    return this.sheet.draft(
+      input,
+      req.user.id,
+      canDo(req.access, 'tally.numbers.view'),
+      firmsOf(req),
+    );
   }
 
   /** Approve in batches. Each row stands alone, so the answer says what happened to each. */
+  @Firm('own')
   @Can('khata.opening.approve')
   @Post('khata/opening-sheet/approve')
   @Contract(openingApproveSchema)
@@ -357,7 +409,7 @@ export class OpeningSheetController {
     const results = [];
     for (const row of input.rows) {
       try {
-        results.push(await this.sheet.sign(row, req.user.id));
+        results.push(await this.sheet.sign(row, req.user.id, firmsOf(req)));
       } catch (error) {
         if (error instanceof HttpException) {
           const answer = error.getResponse() as { code?: string; details?: unknown };
@@ -395,6 +447,7 @@ export class OpeningSheetController {
    * The customer's own view of their udhaar. Off until an owner turns it on for them, and that needs
    * a signed opening: paper closes shop by shop, so a signature alone does not show it (plan 09).
    */
+  @Firm('own')
   @Can('khata.opening.approve')
   @Put('customers/:id/khata-view')
   @Contract(khataViewSchema)
@@ -404,6 +457,7 @@ export class OpeningSheetController {
     @Req() req: AuthRequest,
   ) {
     return this.db.atomic(async (tx) => {
+      await requireCustomerVisible(tx, req, id);
       const customer = await tx.user.findFirst({
         where: { id, ...realCustomer },
         select: { khataViewOn: true },

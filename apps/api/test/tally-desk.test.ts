@@ -102,6 +102,7 @@ async function entry(
   const balance = user.khataBalancePaise + amountPaise;
   const row = await db.customerLedgerEntry.create({
     data: {
+      firmId: 'firm_main',
       customerId,
       kind: amountPaise >= 0 ? 'ADJUSTMENT' : 'PAYMENT_RECEIVED',
       amountPaise,
@@ -680,6 +681,7 @@ describe('both numbers, for one customer', () => {
     const row = await linked('Asha', -100000n);
     const order = await db.order.create({
       data: {
+        firmId: 'firm_main',
         number: 'SC-2026-ABCD1234',
         userId: 'customer',
         idempotencyKey: randomUUID(),
@@ -1320,6 +1322,7 @@ describe('what the desk screens rely on', () => {
       await link('owner', row.id, { userId: 'customer' }).expect(201);
       const order = await db.order.create({
         data: {
+          firmId: 'firm_main',
           number: 'SC-2026-UNDO0001',
           userId: 'customer',
           idempotencyKey: randomUUID(),

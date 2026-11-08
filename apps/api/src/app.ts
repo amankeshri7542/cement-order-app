@@ -44,6 +44,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { AuthController, AuthGuard, AuthService } from './auth';
 import { AccountController, CatalogController, Events } from './catalog';
 import { Db } from './db';
+import { FirmSettingsController } from './firm-settings';
 import { assertDemoSinks } from './demo-lock';
 import { OwnerWorkController, OwnerWorkService } from './owner-work';
 import { Errors, Public, cookie, fail, hash } from './http';
@@ -127,6 +128,7 @@ class HealthController {
     CurrentRatesController,
     WebEnquiriesController,
     UsersController,
+    FirmSettingsController,
     InboxController,
     WaWebhookController,
     WaDeskController,

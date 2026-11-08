@@ -12,6 +12,7 @@ import {
 import { moveStock, orderTotals, validateQuantity } from './inventory';
 import { paginate } from './pagination';
 import { Db } from './db';
+import { firmOfLocation } from './firms';
 import { notifyCustomer, pushText } from './notify';
 import { workInclude } from './owner-work';
 import { Events } from './catalog';
@@ -27,6 +28,7 @@ import {
   scoped,
   Self,
   shopWhere,
+  Firm,
 } from './http';
 import { withShownPhones } from './crm/common';
 import { customerWork, orderInclude, reference, validDelivery } from './orders';
@@ -157,10 +159,10 @@ export class QuotesController {
       });
     });
   }
-  @Can('quotes.read', scoped) @Get('admin/quotes') async all(
-    @Query() query: Record<string, string>,
-    @Req() req: AuthRequest,
-  ) {
+  @Firm('shop')
+  @Can('quotes.read', scoped)
+  @Get('admin/quotes')
+  async all(@Query() query: Record<string, string>, @Req() req: AuthRequest) {
     const parsed = z
       .enum(['REQUESTED', 'SENT', 'ACCEPTED', 'REJECTED', 'EXPIRED'])
       .optional()
@@ -418,6 +420,7 @@ export class QuotesController {
         data: {
           number: reference('SC'),
           locationId: quote.locationId,
+          firmId: await firmOfLocation(tx, quote.locationId),
           userId: quote.userId,
           quoteId: id,
           quoteRevision: quote.revision,

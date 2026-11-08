@@ -35,6 +35,7 @@ import {
   scoped,
   shopForAction,
   shopWhere,
+  Firm,
 } from '../http';
 import { paginate } from '../pagination';
 import { PhoneOrdersService } from '../phone-orders';
@@ -747,6 +748,7 @@ export class WaCardsController {
   }
 
   /** "Order banao" and "Pakka karo": a named person, with the right to confirm at that shop. */
+  @Firm('shop')
   @Can('orders.confirm', scoped)
   @HttpCode(200)
   @Post('drafts/:id/confirm')
@@ -759,6 +761,7 @@ export class WaCardsController {
     return this.drafts.confirm(id, body, req);
   }
 
+  @Firm('shop')
   @Can('orders.confirm', scoped)
   @HttpCode(200)
   @Post('drafts/:id/refuse')

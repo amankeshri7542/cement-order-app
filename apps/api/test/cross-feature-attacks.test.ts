@@ -191,6 +191,7 @@ async function makeOrder(
   const quantity = opts.quantity ?? 2;
   return db.order.create({
     data: {
+      firmId: 'firm_main',
       number: opts.number ?? `SC-CROSS-${orderSeq}-${randomUUID().slice(0, 6)}`,
       locationId: opts.locationId ?? MAIN,
       userId: opts.userId ?? 'customer',

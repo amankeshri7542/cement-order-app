@@ -73,7 +73,7 @@ describe('Personal-data redaction preserves business evidence', () => {
 
   it('records counter-sale money once at the original server price and stock-event time', async () => {
     const stockRows = new Map<string, InventoryMovement>();
-    const moneyRows = new Map<string, Prisma.FinancialMovementCreateInput>();
+    const moneyRows = new Map<string, Prisma.FinancialMovementUncheckedCreateInput>();
     const product = { stock: 100, pricePaise: 39000 };
     const occurredAt = new Date('2026-10-07T12:00:00.000Z');
     const db = {
@@ -93,7 +93,9 @@ describe('Personal-data redaction preserves business evidence', () => {
         },
         findUniqueOrThrow: async () => product,
       },
-      location: { findUnique: async () => ({ active: true, stockStartedAt: occurredAt }) },
+      location: {
+        findUnique: async () => ({ active: true, stockStartedAt: occurredAt, firmId: 'firm_main' }),
+      },
       stockCount: { findMany: async () => [] },
       stockLevel: {
         updateMany: async () => ({ count: 1 }),
@@ -107,7 +109,10 @@ describe('Personal-data redaction preserves business evidence', () => {
         upsert: vi.fn(async ({ where, create, update }: Prisma.FinancialMovementUpsertArgs) => {
           expect(update).toEqual({});
           if (!moneyRows.has(where.inventoryMovementId!))
-            moneyRows.set(where.inventoryMovementId!, create);
+            moneyRows.set(
+              where.inventoryMovementId!,
+              create as Prisma.FinancialMovementUncheckedCreateInput,
+            );
           return moneyRows.get(where.inventoryMovementId!);
         }),
       },
@@ -133,6 +138,8 @@ describe('Personal-data redaction preserves business evidence', () => {
     expect([...moneyRows.values()]).toEqual([
       {
         inventoryMovementId: 'movement-1',
+        // A counter sale is the shop's own, so it carries the shop's firm.
+        firmId: 'firm_main',
         locationId: 'loc_main',
         kind: 'COUNTER_SALE',
         amountPaise: 1950000,

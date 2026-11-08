@@ -164,8 +164,10 @@ export class PublicSiteController {
   @Public()
   @Get('shop')
   async shop() {
+    // The first firm that is open and approved: the website speaks for the shop's main firm.
     const firm = await this.db.firm.findFirst({
-      where: { approvedAt: { not: null } },
+      where: { approvedAt: { not: null }, active: true },
+      orderBy: { createdAt: 'asc' },
       select: {
         legalName: true,
         tradeName: true,

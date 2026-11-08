@@ -5,6 +5,7 @@ import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { istToday, khataBalance, phoneOrderSchema } from '@shiv/shared';
 import { Db } from './db';
+import { creditFigures, firmOfLocation } from './firms';
 import {
   AuthRequest,
   Can,
@@ -133,11 +134,14 @@ export class PhoneOrdersService {
       zone?.freeDeliveryAbovePaise ?? null,
     );
     let exposurePaise = customer.khataBalancePaise;
+    // A firm's own limit for this customer, if it set one; the customer's limit otherwise.
+    const credit = await creditFigures(tx, customer, await firmOfLocation(tx, locationId));
     if (input.paymentMethod === 'CREDIT') {
-      if (!customer.creditAllowed || customer.creditLimitPaise === null)
+      if (!customer.creditAllowed || credit.limitPaise === null)
         fail('CREDIT_NOT_ALLOWED', 'Enable credit and set a limit for this customer first.', 409);
       const pending = await tx.order.aggregate({
         where: {
+          ...credit.pendingWhere,
           userId: user.id,
           payment: { method: 'CREDIT' },
           status: { in: ['CONFIRMED', 'PREPARING', 'OUT_FOR_DELIVERY', 'DELIVERY_EXCEPTION'] },
@@ -148,16 +152,16 @@ export class PhoneOrdersService {
       });
       try {
         exposurePaise = khataBalance(
-          khataBalance(customer.khataBalancePaise, pending._sum.totalPaise ?? 0),
+          khataBalance(credit.balancePaise, pending._sum.totalPaise ?? 0),
           amounts.totalPaise,
         );
       } catch {
         fail('KHATA_OVERFLOW', 'This order exceeds the supported khata balance.', 409);
       }
-      if (exposurePaise > customer.creditLimitPaise && !input.overrideLimit)
+      if (exposurePaise > credit.limitPaise && !input.overrideLimit)
         fail('CREDIT_LIMIT_EXCEEDED', 'This order exceeds the customer credit limit.', 409, {
           exposurePaise,
-          creditLimitPaise: customer.creditLimitPaise,
+          creditLimitPaise: credit.limitPaise,
         });
     }
     const number = reference('SC');
@@ -188,6 +192,7 @@ export class PhoneOrdersService {
       data: {
         number,
         locationId,
+        firmId: await firmOfLocation(tx, locationId),
         userId: user.id,
         source: input.source,
         createdById: actorId,

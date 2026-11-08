@@ -55,6 +55,7 @@ function order(input: {
   const total = (input.items ?? []).reduce((sum, item) => sum + item.lineTotalPaise, 0);
   return db.order.create({
     data: {
+      firmId: 'firm_main',
       number,
       userId: 'customer',
       idempotencyKey: randomUUID(),
@@ -86,7 +87,15 @@ function order(input: {
 }
 const money = (kind: string, amountPaise: number, occurredAt: Date, locationId = MAIN) =>
   db.financialMovement.create({
-    data: { kind, amountPaise, occurredAt, locationId, actorId: 'papa', channel: 'CASH' },
+    data: {
+      firmId: 'firm_main',
+      kind,
+      amountPaise,
+      occurredAt,
+      locationId,
+      actorId: 'papa',
+      channel: 'CASH',
+    },
   });
 /** A line on a customer's khata, with their balance kept in step as the real code does. */
 async function khata(
@@ -101,6 +110,7 @@ async function khata(
   const balanceAfterPaise = khataBalancePaise + amountPaise;
   await db.customerLedgerEntry.create({
     data: {
+      firmId: 'firm_main',
       customerId,
       amountPaise,
       balanceAfterPaise,
@@ -113,6 +123,12 @@ async function khata(
   await db.user.update({
     where: { id: customerId },
     data: { khataBalancePaise: balanceAfterPaise },
+  });
+  // And each firm's balance, as appendLedger keeps it.
+  await db.customerFirmBalance.upsert({
+    where: { customerId_firmId: { customerId, firmId: 'firm_main' } },
+    create: { customerId, firmId: 'firm_main', balancePaise: amountPaise },
+    update: { balancePaise: { increment: amountPaise } },
   });
 }
 

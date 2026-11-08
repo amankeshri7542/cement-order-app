@@ -35,6 +35,7 @@ import { enqueueWhatsApp } from './alerts';
 import { Events } from './catalog';
 import { getConfig } from './config';
 import { Db } from './db';
+import { creditFigures } from './firms';
 import {
   atOrder,
   AuthRequest,
@@ -46,6 +47,7 @@ import {
   Public,
   scoped,
   shopAsked,
+  Firm,
 } from './http';
 import { moveStock, orderTotals, validateQuantity } from './inventory';
 import { clearHeldMessages } from './notify';
@@ -421,8 +423,10 @@ export class ConfirmService {
 
   /** What the customer would owe in all, counting orders on their way. */
   private async exposure(tx: Tx, order: FullOrder, totalPaise: number) {
+    const figures = await creditFigures(tx, order.user, order.firmId);
     const pending = await tx.order.aggregate({
       where: {
+        ...figures.pendingWhere,
         userId: order.userId,
         id: { not: order.id },
         payment: { method: 'CREDIT' },
@@ -434,7 +438,7 @@ export class ConfirmService {
     });
     try {
       return khataBalance(
-        khataBalance(order.user.khataBalancePaise, pending._sum.totalPaise ?? 0),
+        khataBalance(figures.balancePaise, pending._sum.totalPaise ?? 0),
         totalPaise,
       );
     } catch {
@@ -452,7 +456,8 @@ export class ConfirmService {
     locationId: string,
   ) {
     need(actor, 'orders.confirm.credit', locationId);
-    const { creditAllowed, creditLimitPaise } = order.user;
+    const { creditAllowed } = order.user;
+    const creditLimitPaise = (await creditFigures(tx, order.user, order.firmId)).limitPaise;
     if (!creditAllowed || creditLimitPaise === null)
       fail('CREDIT_NOT_ALLOWED', 'Udhaar is not allowed for this customer yet.', 409);
     const exposurePaise = await this.exposure(tx, order, totalPaise);
@@ -933,7 +938,8 @@ export class ConfirmService {
       let overLimit: { exposurePaise: number; creditLimitPaise: number } | null = null;
       let creditNotAllowed = false;
       if (after.paymentMethod === 'CREDIT') {
-        const { creditAllowed, creditLimitPaise } = order.user;
+        const { creditAllowed } = order.user;
+        const creditLimitPaise = (await creditFigures(tx, order.user, order.firmId)).limitPaise;
         if (!creditAllowed || creditLimitPaise === null) creditNotAllowed = true;
         else {
           const exposurePaise = await this.exposure(tx, order, totalOf(after));
@@ -1237,19 +1243,23 @@ export class ConfirmService {
 export class InboxController {
   constructor(@Inject(ConfirmService) private confirms: ConfirmService) {}
 
-  @Can('orders.confirm', scoped) @Get('inbox') inbox(@Req() req: AuthRequest) {
+  @Firm('shop')
+  @Can('orders.confirm', scoped)
+  @Get('inbox')
+  inbox(@Req() req: AuthRequest) {
     return this.confirms.inbox(
       req.access,
       shopAsked(req, 'orders.confirm', req.query.locationId),
       req.user.id,
     );
   }
-  @Can('orders.confirm', atOrder()) @Get('inbox/:id') one(
-    @Param('id') id: string,
-    @Req() req: AuthRequest,
-  ) {
+  @Firm('shop')
+  @Can('orders.confirm', atOrder())
+  @Get('inbox/:id')
+  one(@Param('id') id: string, @Req() req: AuthRequest) {
     return this.confirms.one(id, req.access, req.user.id);
   }
+  @Firm('shop')
   @Can('orders.confirm', atOrder())
   @Post('orders/:id/confirm')
   @Contract(orderConfirmSchema)
@@ -1260,6 +1270,7 @@ export class InboxController {
   ) {
     return this.confirms.confirm(id, body, { id: req.user.id, access: req.access });
   }
+  @Firm('shop')
   @Can('orders.confirm', atOrder())
   @Post('orders/:id/refuse')
   @Contract(orderRefuseSchema)
@@ -1270,6 +1281,7 @@ export class InboxController {
   ) {
     return this.confirms.refuse(id, body, { id: req.user.id, access: req.access });
   }
+  @Firm('shop')
   @Can('orders.confirm', atOrder())
   @Post('orders/:id/undo-decision')
   @Contract(orderUndoSchema)
@@ -1280,6 +1292,7 @@ export class InboxController {
   ) {
     return this.confirms.undo(id, body.expectedVersion, { id: req.user.id, access: req.access });
   }
+  @Firm('shop')
   @Can('orders.confirm', atOrder())
   @Post('orders/:id/preview')
   @Contract(orderPreviewSchema)

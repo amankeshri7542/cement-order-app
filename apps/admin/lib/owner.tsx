@@ -61,12 +61,15 @@ declare global {
   }
 }
 
-export type Shop = { id: string; name: string };
+export type Shop = { id: string; name: string; firmId?: string; kind?: 'SHOP' | 'GODOWN' };
+/** A firm this person sees (plan v4, two firms). Shops group under it in the switcher. */
+export type Firm = { id: string; name: string };
 type DeskSession = {
   user: User;
   access: Access;
   permissionsVersion: number;
   locations: Shop[];
+  firms?: Firm[];
   hasPassphrase: boolean;
 };
 type Confirmation = { title: string; body: string; confirmLabel: string; noteLabel?: string };
@@ -75,6 +78,8 @@ type OwnerContext = {
   /** Whether this person may do this, at one shop or at all. Hiding a button is only manners: the API decides. */
   can: (permission: Permission, locationId?: string | null) => boolean;
   shops: Shop[];
+  /** The firms this person sees: one for a one-firm accountant, every firm for an owner. */
+  firms: Firm[];
   hasPassphrase: boolean;
   notice: (message: string, error?: boolean) => void;
   confirm: (options: Confirmation) => Promise<boolean>;
@@ -423,6 +428,7 @@ function OwnerShell({ children }: { children: ReactNode }) {
     can: (permission, locationId) => canDo(access, permission, locationId),
     canOpen: (route) => pathAllowed(access, route),
     shops: auth.data.locations,
+    firms: auth.data.firms ?? [],
     hasPassphrase: auth.data.hasPassphrase,
     notice,
     confirm,

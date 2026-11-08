@@ -2,7 +2,7 @@
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { BigNumberCard, EmptyState, MoneyText } from '@shiv/design';
-import type { Order, Page } from '@shiv/shared';
+import { money, type Order, type Page } from '@shiv/shared';
 import { api } from '../../lib/api';
 import { useT } from '../../lib/i18n';
 import type { Dashboard } from '../../lib/owner-types';
@@ -97,6 +97,22 @@ export function Today() {
             </Link>
           )}
         </div>
+      )}
+      {/* Each firm's figures under the combined ones, when more than one firm is seen. */}
+      {(dashboard.data?.byFirm?.length ?? 0) > 1 && (
+        <dl aria-label={t('owner.khata.byFirm')} className={`${css.card} ${css.firmSplit}`}>
+          {dashboard.data!.byFirm!.map((row) => (
+            <div key={row.firmId}>
+              <dt>{row.name}</dt>
+              <dd>
+                {money(row.todayMoneyInPaise)}
+                {can('khata.read.list')
+                  ? ` · ${t('owner.totalDue')} ${money(row.khataDuePaise)}`
+                  : ''}
+              </dd>
+            </div>
+          ))}
+        </dl>
       )}
       {/* Questions sent from the website's Contact page; nothing shows while there are none. */}
       <EnquiryCards items={enquiries.data?.items ?? []} />

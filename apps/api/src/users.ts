@@ -11,6 +11,7 @@ import {
 } from '@shiv/shared';
 import { z } from 'zod';
 import { Db } from './db';
+import { activeFirm } from './firms';
 import { AuthRequest, Can, Contract, fail, Input, MAIN_LOCATION } from './http';
 import { requireStepUp } from './security';
 import { randomUUID } from 'node:crypto';
@@ -24,7 +25,7 @@ const userSelect = {
   createdAt: true,
   staffMemberships: {
     where: { endedAt: null },
-    select: { role: true, locationId: true, startedAt: true },
+    select: { role: true, locationId: true, firmId: true, startedAt: true },
   },
   sessions: {
     where: { surface: 'DESK' },
@@ -40,6 +41,8 @@ function userView({ staffMemberships, sessions, ...user }: UserRow) {
     ...user,
     role: staffMemberships[0]?.role ?? null,
     locationIds: staffMemberships.flatMap((m) => (m.locationId ? [m.locationId] : [])),
+    // Set only for an accountant limited to one firm.
+    firmId: staffMemberships[0]?.firmId ?? null,
     lastActiveAt: sessions[0]?.lastSeenAt ?? null,
   };
 }
@@ -59,6 +62,21 @@ async function chosenShops(
   const open = await tx.location.count({ where: { id: { in: ids }, active: true } });
   if (open !== ids.length) fail('INVALID_SHOP', 'One of those shops is not open on this system.');
   return ids;
+}
+
+/**
+ * A one-firm limit is for an accountant only: the books of one firm and nothing of the other. The
+ * firm must be open. Anyone else covers the firms of their shops, or all of them.
+ */
+async function firmLimit(
+  tx: Prisma.TransactionClient,
+  role: StaffRole,
+  firmId: string | null | undefined,
+) {
+  if (!firmId) return null;
+  if (role !== 'ACCOUNTANT')
+    fail('INVALID_INPUT', 'Only an accountant can be limited to one firm.', 400);
+  return activeFirm(tx, firmId);
 }
 
 /** Stops the shop being locked out of its own system. */
@@ -163,6 +181,7 @@ export class UsersController {
     await this.stepUp(req, body.passphrase);
     return this.db.atomic(async (tx) => {
       const shops = await chosenShops(tx, body.role, body.locationIds);
+      const firmId = await firmLimit(tx, body.role, body.firmId);
       const existing = await tx.user.findUnique({
         where: { phone: body.phone },
         include: { staffMemberships: { where: { endedAt: null }, select: { id: true } } },
@@ -189,6 +208,7 @@ export class UsersController {
           userId: user.id,
           locationId,
           role: body.role,
+          firmId,
           grantedById: req.user.id,
         })),
       });
@@ -216,7 +236,8 @@ export class UsersController {
     @Input(staffUserUpdateSchema) body: z.infer<typeof staffUserUpdateSchema>,
     @Req() req: AuthRequest,
   ) {
-    const accessChanging = body.role !== undefined || body.locationIds !== undefined;
+    const accessChanging =
+      body.role !== undefined || body.locationIds !== undefined || body.firmId !== undefined;
     if (accessChanging) {
       notSelf(req, id);
       await this.stepUp(req, body.passphrase);
@@ -233,11 +254,21 @@ export class UsersController {
         );
         if (current.some((m) => m.role === 'OWNER') && role !== 'OWNER')
           await keepAnotherOwner(tx, id);
+        // The one-firm limit asked for, or the one held, while the role stays an accountant.
+        const firmId = await firmLimit(
+          tx,
+          role,
+          body.firmId !== undefined
+            ? body.firmId
+            : role === 'ACCOUNTANT'
+              ? current[0]?.firmId
+              : null,
+        );
         const same = (m: (typeof current)[number]) =>
-          m.role === role && shops.includes(m.locationId);
+          m.role === role && shops.includes(m.locationId) && (m.firmId ?? null) === firmId;
         const ending = current.filter((m) => !same(m));
         const adding = shops.filter(
-          (locationId) => !current.some((m) => m.role === role && m.locationId === locationId),
+          (locationId) => !current.some((m) => same(m) && m.locationId === locationId),
         );
         if (ending.length)
           await tx.staffMembership.updateMany({
@@ -250,6 +281,7 @@ export class UsersController {
               userId: id,
               locationId,
               role,
+              firmId,
               grantedById: req.user.id,
             })),
           });
@@ -270,6 +302,7 @@ export class UsersController {
                 role,
                 previousRole: current[0]!.role,
                 locationIds: shops.filter(Boolean),
+                firmId,
               },
             },
           });
@@ -390,6 +423,9 @@ export class UsersController {
         active: true,
         stockStartedAt: true,
         managerRateCapPercent: true,
+        firmId: true,
+        kind: true,
+        siteId: true,
         _count: { select: { memberships: { where: { endedAt: null } } } },
       },
       orderBy: { createdAt: 'asc' },
@@ -415,18 +451,40 @@ export class UsersController {
           .replace(/[^a-z0-9]+/g, '-')
           .replace(/^-|-$/g, '') || 'shop';
       const count = await tx.location.count();
+      // Every shop belongs to one firm, for good. With two firms open, the person must say which.
+      const open = await tx.firm.findMany({ where: { active: true }, select: { id: true } });
+      const firmId = body.firmId
+        ? await activeFirm(tx, body.firmId)
+        : open.length === 1
+          ? open[0]!.id
+          : fail('FIRM_REQUIRED', 'Choose which firm this shop belongs to.', 400);
       const location = await tx.location.create({
         // Counted from nothing: stock arrives here as goods received.
         data: {
-          firmId: 'firm_main',
+          firmId,
+          kind: body.kind,
+          siteId: body.siteId ?? null,
           name: body.name,
           slug: `${base}-${count + 1}`,
           stockStartedAt: new Date(),
         },
-        select: { id: true, name: true, active: true, stockStartedAt: true },
+        select: {
+          id: true,
+          name: true,
+          active: true,
+          stockStartedAt: true,
+          firmId: true,
+          kind: true,
+          siteId: true,
+        },
       });
       await tx.auditLog.create({
-        data: { actorId: req.user.id, event: 'SHOP_ADDED', entityId: location.id, details: {} },
+        data: {
+          actorId: req.user.id,
+          event: 'SHOP_ADDED',
+          entityId: location.id,
+          details: { firmId, kind: body.kind },
+        },
       });
       return location;
     });

@@ -11,6 +11,7 @@ type Route = {
   isPublic: boolean;
   isSelf: boolean;
   can?: CanRule;
+  firm?: 'own' | 'shop' | 'none';
 };
 
 /** Every route Nest will serve, with its access rule, read the same way the guard reads it. */
@@ -32,6 +33,7 @@ function routes(): Route[] {
           isPublic: !!read('public'),
           isSelf: !!read('self'),
           can: read<CanRule | undefined>('can'),
+          firm: read<Route['firm']>('firm'),
         },
       ];
     });
@@ -72,6 +74,62 @@ describe('every route says who may use it', () => {
       });
     for (const file of files(join(__dirname, '../src')))
       expect(readFileSync(file, 'utf8'), file).not.toMatch(/@Admin\(\)/);
+  });
+});
+
+/**
+ * Permissions whose routes read or write something that belongs to one firm: customers' money and
+ * orders, khata, galla, reports, follow-ups and Tally's numbers (plan v4, two firms). Each such route
+ * must say how it keeps to the firms a person may see.
+ */
+const firmOwned = [
+  'customers.read',
+  'customers.note',
+  'khata.read.one',
+  'khata.read.list',
+  'khata.payment',
+  'khata.adjust',
+  'khata.reverse',
+  'khata.credit.set',
+  'khata.opening.draft',
+  'khata.opening.approve',
+  'crm.followups.read',
+  'crm.followups',
+  'crm.dormant.read',
+  'crm.vasooli.read',
+  'crm.remind',
+  'orders.read',
+  'orders.confirm',
+  'orders.status',
+  'quotes.read',
+  'galla.read',
+  'galla.close',
+  'cash.count',
+  'money.receive',
+  'money.refund',
+  'reports.read',
+  'dashboard.read',
+  'audit.read',
+  'tally.numbers.view',
+  'tally.match',
+];
+
+describe('two firms', () => {
+  const all = routes();
+  it("every firm-owned route says how it keeps to a person's firms", () => {
+    const missing = all.filter(
+      (route) => route.can && firmOwned.includes(route.can.permission) && !route.firm,
+    );
+    expect(missing.map((route) => `${route.name} (${route.can!.permission})`)).toEqual([]);
+  });
+  it('a route left to its shop filter really has one', () => {
+    const wrong = all.filter(
+      (route) => route.firm === 'shop' && !(route.can && isShopScoped(route.can.permission)),
+    );
+    expect(wrong.map((route) => route.name)).toEqual([]);
+  });
+  it('the firm list names only permissions that exist', () => {
+    for (const name of firmOwned) expect(permissions).toContain(name);
   });
 });
 

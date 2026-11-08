@@ -15,7 +15,7 @@ import { z } from 'zod';
 import { ApprovalsService, askApproval } from './approvals';
 import { Events } from './catalog';
 import { Db } from './db';
-import { atOrder, AuthRequest, Can, Contract, fail, Input, Public, Self } from './http';
+import { atOrder, AuthRequest, Can, Contract, fail, Input, Public, Self, Firm } from './http';
 import { activeRules, bigChange, priceFor } from './price-rules';
 
 type Tx = Prisma.TransactionClient;
@@ -433,9 +433,10 @@ export class PricingController {
     });
   }
   /** Bhada to suggest on a card, from the order's own area. Only a person picks it. */
-  @Can('orders.confirm', atOrder()) @Get('admin/inbox/:id/bhada') async bhada(
-    @Param('id') id: string,
-  ) {
+  @Firm('shop')
+  @Can('orders.confirm', atOrder())
+  @Get('admin/inbox/:id/bhada')
+  async bhada(@Param('id') id: string) {
     const order = await this.db.order.findUnique({
       where: { id },
       select: { address: true },

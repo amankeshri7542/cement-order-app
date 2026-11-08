@@ -4,7 +4,8 @@ import { OrderSource, Prisma } from '@prisma/client';
 import type { Response } from 'express';
 import { istToday, reportRangeSchema, type MoneyReport } from '@shiv/shared';
 import { Db } from './db';
-import { AuthRequest, Can, fail, scoped, shopAsked, shopWhere } from './http';
+import { AuthRequest, Can, fail, Firm, scoped, shopAsked, shopWhere } from './http';
+import { firmAsked } from './firms';
 import { shownPhone } from './crm/common';
 
 const day = (date: Date) =>
@@ -78,6 +79,8 @@ export class ReportsController {
   async money(
     query: Record<string, string>,
     shop: { locationId?: { in: string[] } } = {},
+    /** The firms counted: money belongs to a firm, whichever shop took it. */
+    firm: { firmId?: string | { in: string[] } } = {},
   ): Promise<MoneyReport> {
     const parsed = reportRangeSchema.safeParse({ from: query.from, to: query.to });
     if (!parsed.success)
@@ -88,7 +91,7 @@ export class ReportsController {
     const range = { gte: start, lt: end };
     const [orders, movements, pending, quotes, creditSales] = await Promise.all([
       this.db.order.findMany({
-        where: { createdAt: range, ...shop },
+        where: { createdAt: range, ...shop, ...firm },
         select: {
           createdAt: true,
           totalPaise: true,
@@ -97,7 +100,7 @@ export class ReportsController {
         },
       }),
       this.db.financialMovement.findMany({
-        where: { occurredAt: range, ...shop },
+        where: { occurredAt: range, ...shop, ...firm },
         select: { kind: true, channel: true, amountPaise: true, occurredAt: true },
       }),
       this.db.payment.findMany({
@@ -106,6 +109,7 @@ export class ReportsController {
           status: 'PENDING',
           order: {
             ...shop,
+            ...firm,
             status: {
               in: [
                 'AWAITING_CONFIRMATION',
@@ -126,6 +130,7 @@ export class ReportsController {
         where: {
           occurredAt: range,
           ...shop,
+          ...firm,
           OR: [
             { kind: 'SALE_ON_CREDIT' },
             { kind: 'REVERSAL', reverses: { kind: 'SALE_ON_CREDIT' } },
@@ -248,11 +253,14 @@ export class ReportsController {
     };
   }
 
-  @Can('reports.read', scoped) @Get('money') async report(
-    @Query() query: Record<string, string>,
-    @Req() req: AuthRequest,
-  ) {
-    return this.withNumbersShown(await this.money(query, shopWhere(req, 'reports.read')), req);
+  @Firm('own')
+  @Can('reports.read', scoped)
+  @Get('money')
+  async report(@Query() query: Record<string, string>, @Req() req: AuthRequest) {
+    return this.withNumbersShown(
+      await this.money(query, shopWhere(req, 'reports.read'), firmAsked(req, query.firmId)),
+      req,
+    );
   }
 
   private withNumbersShown(report: MoneyReport, req: AuthRequest): MoneyReport {
@@ -266,11 +274,12 @@ export class ReportsController {
   }
 
   /** The numbers behind the Report page's charts. Reads only. Money figures are never profit. */
-  @Can('reports.read', scoped) @Get('trends') async trends(
-    @Query() query: Record<string, unknown>,
-    @Req() req: AuthRequest,
-  ) {
+  @Firm('own')
+  @Can('reports.read', scoped)
+  @Get('trends')
+  async trends(@Query() query: Record<string, unknown>, @Req() req: AuthRequest) {
     const shop = shopAsked(req, 'reports.read', query.locationId);
+    const firm = firmAsked(req, query.firmId);
     const { from, to, start, end } = rangeOf(query);
     const range = { gte: start, lt: end };
     const [locations, movements, itemRows, sourceRows, tapped, firstOrder, firstMoney] =
@@ -281,25 +290,28 @@ export class ReportsController {
           orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
         }),
         this.db.financialMovement.findMany({
-          where: { occurredAt: range, kind: { in: [...moneyIn, ...moneyOut] }, ...shop },
+          where: { occurredAt: range, kind: { in: [...moneyIn, ...moneyOut] }, ...shop, ...firm },
           select: { locationId: true, kind: true, amountPaise: true, occurredAt: true },
         }),
         this.db.orderItem.groupBy({
           by: ['productId', 'unit'],
-          where: { order: { createdAt: range, status: { notIn: [...notSold] }, ...shop } },
+          where: { order: { createdAt: range, status: { notIn: [...notSold] }, ...shop, ...firm } },
           _sum: { lineTotalPaise: true, quantity: true },
         }),
         this.db.order.groupBy({
           by: ['source'],
-          where: { createdAt: range, ...shop },
+          where: { createdAt: range, ...shop, ...firm },
           _count: { _all: true },
         }),
         this.db.order.findMany({
-          where: { confirmedAt: range, source: { notIn: [...bornConfirmed] }, ...shop },
+          where: { confirmedAt: range, source: { notIn: [...bornConfirmed] }, ...shop, ...firm },
           select: { createdAt: true, confirmedAt: true },
         }),
-        this.db.order.aggregate({ where: shop, _min: { createdAt: true } }),
-        this.db.financialMovement.aggregate({ where: shop, _min: { occurredAt: true } }),
+        this.db.order.aggregate({ where: { ...shop, ...firm }, _min: { createdAt: true } }),
+        this.db.financialMovement.aggregate({
+          where: { ...shop, ...firm },
+          _min: { occurredAt: true },
+        }),
       ]);
 
     const dates = daysOf(start, end);
@@ -397,12 +409,15 @@ export class ReportsController {
    * what is still owed is always the newest debts. Each debt stays with the shop that gave it: a
    * shop's people see only theirs, even when a payment landed at another shop.
    */
-  @Can('reports.read', scoped) @Get('udhaar-age') async udhaarAge(
-    @Query() query: Record<string, unknown>,
-    @Req() req: AuthRequest,
-  ) {
+  @Firm('own')
+  @Can('reports.read', scoped)
+  @Get('udhaar-age')
+  async udhaarAge(@Query() query: Record<string, unknown>, @Req() req: AuthRequest) {
     const asked = shopAsked(req, 'reports.read', query.locationId).locationId;
     const ids = typeof asked === 'string' ? [asked] : asked?.in;
+    // Each firm's debts age on their own: a payment to one firm never ages the other's.
+    const firm = firmAsked(req, query.firmId).firmId;
+    const firms = typeof firm === 'string' ? [firm] : firm?.in;
     const midnight = new Date(`${istToday()}T00:00:00+05:30`).getTime();
     // Columns hold UTC with no zone. A Date sent as it is would be compared in the database
     // session's zone, so on a server not set to UTC each step would be hours out.
@@ -412,14 +427,18 @@ export class ReportsController {
     const rows = await this.db.$queryRaw<{ step: number; paise: bigint }[]>`
       WITH debts AS (
         SELECT e."locationId", e."occurredAt", e.kind, e."amountPaise"::bigint AS amount,
-          u."khataBalancePaise"::bigint AS balance,
+          b."balancePaise"::bigint AS balance,
           COALESCE(SUM(e."amountPaise"::bigint) OVER (
-            PARTITION BY e."customerId" ORDER BY e."occurredAt" DESC, e.id DESC
+            PARTITION BY e."customerId", e."firmId" ORDER BY e."occurredAt" DESC, e.id DESC
             ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
           ), 0) AS newer
         FROM "CustomerLedgerEntry" e JOIN "User" u ON u.id = e."customerId"
-        WHERE e."amountPaise" > 0 AND u."khataBalancePaise" > 0
+        JOIN (SELECT "customerId", "firmId", SUM("amountPaise")::bigint AS "balancePaise"
+              FROM "CustomerLedgerEntry" GROUP BY 1, 2) b
+          ON b."customerId" = e."customerId" AND b."firmId" = e."firmId"
+        WHERE e."amountPaise" > 0 AND b."balancePaise" > 0
           AND u."deletedAt" IS NULL AND u.role <> 'ADMIN'
+          ${firms ? Prisma.sql`AND e."firmId" = ANY(${firms})` : Prisma.empty}
       )
       SELECT (CASE WHEN kind = 'OPENING_BALANCE' THEN 3 WHEN "occurredAt" >= ${d30} THEN 0
         WHEN "occurredAt" >= ${d60} THEN 1
@@ -437,12 +456,14 @@ export class ReportsController {
   }
 
   /** The same report as a spreadsheet (UTF-8 with BOM so Excel shows Hindi and ₹ correctly). */
-  @Can('reports.read', scoped) @Get(['money.csv', 'export']) async csv(
-    @Query() query: Record<string, string>,
-    @Res() res: Response,
-    @Req() req: AuthRequest,
-  ) {
-    const r = this.withNumbersShown(await this.money(query, shopWhere(req, 'reports.read')), req);
+  @Firm('own')
+  @Can('reports.read', scoped)
+  @Get(['money.csv', 'export'])
+  async csv(@Query() query: Record<string, string>, @Res() res: Response, @Req() req: AuthRequest) {
+    const r = this.withNumbersShown(
+      await this.money(query, shopWhere(req, 'reports.read'), firmAsked(req, query.firmId)),
+      req,
+    );
     const customerText = (value: string) => (/^\s*[=+\-@]/.test(value) ? `'${value}` : value);
     const lines = [
       ['Date', 'Orders', 'Collected (₹)', 'Counter (₹)', 'Refunds (₹)'],

@@ -687,6 +687,8 @@ export const ledgerEntrySchema = z.strictObject({
   occurredAt: occurredAt.optional(),
   note,
   idempotencyKey: z.string().uuid(),
+  // Whose book (plan v4, two firms). Empty: the firm owed longest for a payment, the shop's firm otherwise.
+  firmId: z.string().min(1).max(60).optional(),
 });
 export const khataPaymentSchema = ledgerEntrySchema.extend({
   amountPaise: amount.refine((value) => value > 0, 'Payment must be positive.'),
@@ -699,6 +701,8 @@ export const customerUpdateSchema = z
   .strictObject({
     creditAllowed: z.boolean().optional(),
     creditLimitPaise: amount.nonnegative().nullable().optional(),
+    // With a firm, the limit is that firm's for this customer; without, the customer's own.
+    firmId: z.string().min(1).max(60).optional(),
     area: z.string().trim().max(120).optional(),
     tags: z
       .array(z.string().trim().min(1).max(40))
@@ -753,12 +757,15 @@ export const staffUserCreateSchema = z.strictObject({
   phone: phoneSchema,
   role: z.enum(staffRoles),
   locationIds: shopIds.default([]),
+  // An accountant for one firm only (plan v4, two firms). Empty: every firm.
+  firmId: z.string().min(1).max(60).nullable().optional(),
   passphrase: stepUpPassphrase,
 });
 export const staffUserUpdateSchema = z.strictObject({
   name: personName.optional(),
   role: z.enum(staffRoles).optional(),
   locationIds: shopIds.optional(),
+  firmId: z.string().min(1).max(60).nullable().optional(),
   passphrase: stepUpPassphrase,
 });
 export const staffActionSchema = z.strictObject({ passphrase: stepUpPassphrase });
@@ -772,7 +779,55 @@ const shopName = z
   .min(2)
   .max(60)
   .refine((value) => !/[<>]/.test(value), 'Use letters and numbers only.');
-export const locationCreateSchema = z.strictObject({ name: shopName });
+export const locationCreateSchema = z.strictObject({
+  name: shopName,
+  // Which firm the shop belongs to. Needed once there is more than one; it never changes later.
+  firmId: z.string().min(1).max(60).optional(),
+  kind: z.enum(['SHOP', 'GODOWN']).default('SHOP'),
+  // Places under one roof share a site, such as one godown holding a location per firm.
+  siteId: z.string().trim().min(1).max(60).optional(),
+});
+const gstinSchema = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/, 'Check the GSTIN.');
+const firmFields = {
+  legalName: z.string().trim().min(2).max(150),
+  tradeName: z.string().trim().max(100),
+  gstin: gstinSchema.nullable(),
+  address: z.string().trim().max(400),
+  // Starts this firm's bill numbers, such as SIP: capital letters only.
+  billPrefix: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z]{2,6}$/, 'Use 2 to 6 capital letters.'),
+  // The firm's merchant UPI ID, such as shop@okaxis.
+  upiId: z
+    .string()
+    .trim()
+    .regex(/^$|^[a-zA-Z0-9._-]{2,256}@[a-zA-Z]{2,64}$/, 'Check the UPI ID.'),
+};
+export const firmCreateSchema = z.strictObject({
+  legalName: firmFields.legalName,
+  tradeName: firmFields.tradeName.default(''),
+  gstin: firmFields.gstin.default(null),
+  address: firmFields.address.default(''),
+  billPrefix: firmFields.billPrefix.optional(),
+  upiId: firmFields.upiId.default(''),
+});
+export const firmUpdateSchema = z
+  .strictObject({
+    legalName: firmFields.legalName.optional(),
+    tradeName: firmFields.tradeName.optional(),
+    gstin: firmFields.gstin.optional(),
+    address: firmFields.address.optional(),
+    billPrefix: firmFields.billPrefix.optional(),
+    upiId: firmFields.upiId.optional(),
+    active: z.boolean().optional(),
+  })
+  .refine((input) => Object.keys(input).length > 0, 'Change at least one field.');
 export const locationUpdateSchema = z.strictObject({
   name: shopName.optional(),
   active: z.boolean().optional(),

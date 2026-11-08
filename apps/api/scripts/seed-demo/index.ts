@@ -13,7 +13,8 @@ import { dirname, resolve } from 'node:path';
 import { PrismaClient } from '@prisma/client';
 import { Bulk } from './bulk';
 import { istInstant, istToday } from './calendar';
-import { makeContext } from './context';
+import { makeContext, PLACES } from './context';
+import { financialYear } from '../../src/firms';
 import { recreateDatabase } from './fresh';
 import { existingDataRefusal, parseSeedArgs, seedTarget } from './guard';
 import { checkInvariants } from './invariants';
@@ -103,6 +104,32 @@ export async function runSeed(argv: readonly string[], env: Record<string, strin
       customers,
       now,
     });
+    // What each customer owes each firm, and a few contractors with a firm's own limit.
+    const limits = root.fork('firm-limits');
+    for (const [customerId, t] of business.totals)
+      for (const [firmId, balancePaise] of Object.entries(t.firms)) {
+        const c = customers.find((row) => row.id === customerId);
+        await bulk.add('CustomerFirmBalance', {
+          customerId,
+          firmId,
+          balancePaise,
+          creditLimitPaise:
+            c?.kind === 'contractor' && c.credit && limits.chance(0.3)
+              ? limits.int(1, 5) * 10000000
+              : null,
+          updatedAt: now,
+        });
+      }
+    for (const firmId of [PLACES.firmA, PLACES.firmB])
+      await bulk.add('BillSeries', {
+        id: `demo-bills-${firmId}`,
+        firmId,
+        financialYear: financialYear(ctx.today),
+        prefix: firmId === PLACES.firmA ? 'DFA' : 'DFB',
+        nextNumber: 1,
+        createdAt: now,
+        updatedAt: now,
+      });
     // Inserting a product fires the stock bridge, which gives it an empty main-shop row. The real
     // levels replace those rows.
     await bulk.flush();

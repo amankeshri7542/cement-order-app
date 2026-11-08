@@ -1765,7 +1765,15 @@ describe('credit posts when the goods leave', () => {
 describe('Shaam ka hisaab', () => {
   const money = async (locationId: string, kind: string, channel: string, amountPaise: number) =>
     db.financialMovement.create({
-      data: { kind, channel, amountPaise, locationId, actorId: 'papa', occurredAt: new Date() },
+      data: {
+        firmId: 'firm_main',
+        kind,
+        channel,
+        amountPaise,
+        locationId,
+        actorId: 'papa',
+        occurredAt: new Date(),
+      },
     });
   it('adds the day up by channel, for the owner and for a manager’s own shop', async () => {
     await money(MAIN, 'COLLECTION', 'CASH', 1000);
@@ -1847,6 +1855,7 @@ describe('Shaam ka hisaab', () => {
     const yesterday = addDays(today(), -1);
     await db.financialMovement.create({
       data: {
+        firmId: 'firm_main',
         kind: 'COLLECTION',
         channel: 'CASH',
         amountPaise: 300,
@@ -1983,6 +1992,7 @@ describe('Chup grahak', () => {
     for (const age of days)
       await db.order.create({
         data: {
+          firmId: 'firm_main',
           number: `SC-${randomUUID()}`,
           userId: customerId,
           idempotencyKey: randomUUID(),
@@ -2159,6 +2169,7 @@ describe('Mahine ka saar', () => {
   const sold = async (customerId: string, locationId: string, total: number) =>
     db.order.create({
       data: {
+        firmId: 'firm_main',
         number: `SC-${randomUUID()}`,
         userId: customerId,
         idempotencyKey: randomUUID(),
@@ -2371,6 +2382,7 @@ describe('spreadsheets', () => {
     for (const age of [50, 60, 70])
       await db.order.create({
         data: {
+          firmId: 'firm_main',
           number: `SC-${randomUUID()}`,
           userId: 'suresh',
           idempotencyKey: randomUUID(),
@@ -2399,6 +2411,7 @@ describe('spreadsheets', () => {
       });
     await db.order.create({
       data: {
+        firmId: 'firm_main',
         number: `SC-${randomUUID()}`,
         userId: 'ramesh',
         idempotencyKey: randomUUID(),

@@ -337,3 +337,50 @@ export function isShopScoped(name: Permission) {
 
 /** A role that needs shops chosen for it. */
 export const needsShop = (role: StaffRole) => !allShopRoles.includes(role);
+
+/** One membership as the firm check reads it: its shop's firm, and a one-firm limit if any. */
+export type FirmMembershipView = {
+  role: StaffRole;
+  locationId: string | null;
+  firmId?: string | null;
+  location?: { firmId: string } | null;
+};
+
+/**
+ * Whose books this person may see (plan v4, platform section 2.2). A shop membership gives that shop's
+ * firm. An all-shop membership gives every firm, unless it carries a one-firm limit (an accountant
+ * for one firm). The widest wins.
+ */
+export function firmsFor(memberships: readonly FirmMembershipView[]): 'ALL' | string[] {
+  const firms = new Set<string>();
+  for (const m of memberships) {
+    if (m.locationId) {
+      if (m.location?.firmId) firms.add(m.location.firmId);
+    } else if (m.firmId) firms.add(m.firmId);
+    else return 'ALL';
+  }
+  return [...firms].sort();
+}
+
+/**
+ * For someone limited to some firms: every shop-by-shop permission they hold at all shops becomes
+ * the list of those firms' shops, so every route that already filters by shop also filters by firm.
+ * Permissions that are not shop-by-shop are left alone; their routes filter by firm themselves.
+ */
+export function narrowToFirms(
+  access: Access,
+  firms: 'ALL' | readonly string[],
+  locations: readonly { id: string; firmId: string }[],
+): Access {
+  if (firms === 'ALL') return access;
+  const shops = locations.filter((l) => firms.includes(l.firmId)).map((l) => l.id);
+  const narrowed: Access = {};
+  for (const [name, scope] of Object.entries(access) as [Permission, 'ALL' | string[]][])
+    narrowed[name] =
+      scope === 'ALL'
+        ? isShopScoped(name)
+          ? [...shops]
+          : 'ALL'
+        : scope.filter((shop) => shops.includes(shop));
+  return narrowed;
+}

@@ -95,6 +95,7 @@ async function order(
   const quantity = opts.quantity ?? 2;
   return db.order.create({
     data: {
+      firmId: 'firm_main',
       number: `SC-TEST-${orderSeq}-${randomUUID().slice(0, 6)}`,
       locationId: opts.locationId ?? MAIN,
       userId: 'customer',

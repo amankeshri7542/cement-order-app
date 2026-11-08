@@ -15,6 +15,7 @@ import { ApiError, api } from '../../lib/api';
 import { useT, useWords } from '../../lib/i18n';
 import { useAction, useOwner } from '../../lib/owner';
 import { PageHeader, Problem, QueryStatus } from './common';
+import { FirmRows } from './firms';
 import { StaffHours } from './staff-hours';
 import css from './owner.module.css';
 
@@ -513,8 +514,10 @@ function RateCap({ shop }: { shop: ShopRow }) {
 
 function ShopRows({ shops }: { shops: ShopRow[] }) {
   const t = useT();
-  const { can, confirm } = useOwner();
+  const { can, confirm, firms } = useOwner();
   const [name, setName] = useState('');
+  // A new shop belongs to one firm for good; with two firms, the owner says which.
+  const [firmId, setFirmId] = useState('');
   // 'new' adds a shop; a shop's id renames that one.
   const [naming, setNaming] = useState<string | null>(null);
   const write = useAction(
@@ -594,7 +597,10 @@ function ShopRows({ shops }: { shops: ShopRow[] }) {
               write.mutate(
                 () =>
                   naming === 'new'
-                    ? api('/admin/locations', 'POST', { name: name.trim() })
+                    ? api('/admin/locations', 'POST', {
+                        name: name.trim(),
+                        ...(firmId ? { firmId } : {}),
+                      })
                     : api(`/admin/locations/${naming}`, 'PATCH', { name: name.trim() }),
                 { onSuccess: () => setNaming(null) },
               );
@@ -609,6 +615,20 @@ function ShopRows({ shops }: { shops: ShopRow[] }) {
                 onChange={(event) => setName(event.target.value)}
               />
             </Field>
+            {naming === 'new' && firms.length > 1 && (
+              <Field label={t('owner.firm.which')}>
+                <select required value={firmId} onChange={(event) => setFirmId(event.target.value)}>
+                  <option value="" disabled>
+                    {t('owner.firm.which')}
+                  </option>
+                  {firms.map((firm) => (
+                    <option key={firm.id} value={firm.id}>
+                      {firm.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            )}
             <Problem error={write.error} />
             <Button className={css.wide} disabled={write.isPending}>
               {t('owner.save')}
@@ -745,6 +765,7 @@ export function People() {
         />
       ))}
       {people.data?.length === 0 && <EmptyState title={t('owner.emptyPeople')} />}
+      <FirmRows />
       <ShopRows shops={shops} />
       {editing && (
         <PersonForm

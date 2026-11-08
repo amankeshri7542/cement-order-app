@@ -24,6 +24,17 @@ export async function checkInvariants(db: PrismaClient) {
      WHERE u."khataBalancePaise" <> COALESCE(l.s, 0)`,
   );
   await check(
+    "a firm balance differs from that firm's ledger",
+    `SELECT count(*) AS n FROM "CustomerFirmBalance" b FULL JOIN (SELECT "customerId", "firmId", sum("amountPaise") AS s FROM "CustomerLedgerEntry" GROUP BY 1, 2) l
+       ON l."customerId" = b."customerId" AND l."firmId" = b."firmId"
+     WHERE COALESCE(b."balancePaise", 0) <> COALESCE(l.s, 0)`,
+  );
+  await check(
+    "an order or galla row in a firm other than its shop's",
+    `SELECT (SELECT count(*) FROM "Order" o JOIN "Location" l ON l.id = o."locationId" WHERE o."firmId" <> l."firmId")
+          + (SELECT count(*) FROM "GallaEntry" g JOIN "Location" l ON l.id = g."locationId" WHERE g."firmId" <> l."firmId") AS n`,
+  );
+  await check(
     'ledger running balance is off',
     `SELECT count(*) AS n FROM (SELECT "balanceAfterPaise" AS b, sum("amountPaise") OVER (PARTITION BY "customerId" ORDER BY "occurredAt", length(id), id) AS s FROM "CustomerLedgerEntry") x WHERE b <> s`,
   );

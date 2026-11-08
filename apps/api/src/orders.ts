@@ -31,6 +31,7 @@ import {
   type ReviewLeftOut,
 } from '@shiv/shared';
 import { Db } from './db';
+import { firmOfLocation } from './firms';
 import {
   atOrder,
   AuthRequest,
@@ -43,6 +44,7 @@ import {
   scoped,
   Self,
   shopAsked,
+  Firm,
 } from './http';
 import { paginate } from './pagination';
 import { activeRules, priceFor } from './price-rules';
@@ -600,6 +602,8 @@ export class OrdersService {
         data: {
           number: reference('SC'),
           locationId: zone.locationId,
+          // The firm that sells is the shop's; the database checks it.
+          firmId: await firmOfLocation(tx, zone.locationId),
           work: { create: {} },
           userId,
           reviewId: review.id,
@@ -1112,10 +1116,10 @@ export class OrdersController {
     // Re-read through the customer view: changeStatus returns the desk view.
     return this.detail(id, req);
   }
-  @Can('orders.read', scoped) @Get('admin/orders') async all(
-    @Query() query: Record<string, string>,
-    @Req() req: AuthRequest,
-  ) {
+  @Firm('shop')
+  @Can('orders.read', scoped)
+  @Get('admin/orders')
+  async all(@Query() query: Record<string, string>, @Req() req: AuthRequest) {
     const parsed = z
       .object({
         q: z.string().max(100).default(''),
@@ -1199,6 +1203,7 @@ export class OrdersController {
       ),
     );
   }
+  @Firm('shop')
   @Can('orders.read', atOrder())
   @Get('admin/orders/:id')
   async adminDetail(@Param('id') id: string, @Req() req: AuthRequest) {
@@ -1219,6 +1224,7 @@ export class OrdersController {
         : null,
     };
   }
+  @Firm('shop')
   @Can('orders.status', atOrder())
   @Patch('admin/orders/:id/status')
   @Contract(orderStatusSchema)
@@ -1229,6 +1235,7 @@ export class OrdersController {
   ) {
     return this.orders.changeStatus(id, body.status, req.user.id, body.note);
   }
+  @Firm('shop')
   @Can('orders.status', atOrder())
   @Post('admin/orders/:id/delivery')
   delivery(

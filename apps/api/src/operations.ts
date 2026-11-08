@@ -9,6 +9,7 @@ import {
   inventorySchema,
 } from '@shiv/shared';
 import { Db } from './db';
+import { firmOfLocation } from './firms';
 import {
   AuthRequest,
   Can,
@@ -214,6 +215,8 @@ export class OperationsController {
           where: { inventoryMovementId: movement.id },
           create: {
             inventoryMovementId: movement.id,
+            // A counter sale is the shop's own, so it is the shop's firm's.
+            firmId: await firmOfLocation(tx, locationId),
             locationId,
             kind: 'COUNTER_SALE',
             amountPaise: orderTotals(

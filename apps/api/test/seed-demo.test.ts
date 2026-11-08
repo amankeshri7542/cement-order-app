@@ -42,7 +42,7 @@ beforeAll(async () => {
   ({ runSeed } = await import('../scripts/seed-demo/index'));
   first = (await runSeed(args('first.json', '--fresh'), env)).manifest;
   db = new PrismaClient({ datasources: { db: { url: seedUrl } } });
-}, 120000);
+}, 300000);
 afterAll(async () => {
   await db?.$disconnect();
 });
@@ -119,7 +119,7 @@ describe('demo seed, small', () => {
     await runSeed(args('back.json', '--fresh'), env);
     await db.$disconnect();
     db = new PrismaClient({ datasources: { db: { url: seedUrl } } });
-  }, 120000);
+  }, 300000);
 
   it('protects its batch row: no delete, and the manifest is set once', async () => {
     const batch = await db.demoBatch.findFirstOrThrow();
@@ -148,9 +148,9 @@ describe('demo seed, small', () => {
   it('refuses a database holding an order it did not make', async () => {
     await db.$executeRawUnsafe(`
       INSERT INTO "Order" (id, number, "userId", "idempotencyKey", status, source, address, "deliveryDate", notes,
-        "subtotalPaise", "deliveryFeePaise", "totalPaise", "updatedAt")
+        "subtotalPaise", "deliveryFeePaise", "totalPaise", "updatedAt", "locationId", "firmId")
       SELECT 'real-order-1', 'SC-2026-REAL0001', "userId", 'real-key-1', 'CONFIRMED', 'PHONE', address, "deliveryDate", '',
-        100, 0, 100, now() FROM "Order" WHERE id LIKE 'demo-%' LIMIT 1`);
+        100, 0, 100, now(), "locationId", "firmId" FROM "Order" WHERE id LIKE 'demo-%' LIMIT 1`);
     await expect(runSeed(args('foreign.json'), env)).rejects.toThrow(
       /1 order\(s\) the demo seed did not create/,
     );

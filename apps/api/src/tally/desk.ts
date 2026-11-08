@@ -15,7 +15,15 @@ import { randomInt } from 'node:crypto';
 import { z } from 'zod';
 import { shownPhone } from '../crm/common';
 import { Db } from '../db';
-import { AuthRequest, Can, Contract, fail, Input } from '../http';
+import {
+  activeFirm,
+  customerFirmWhere,
+  firmAsked,
+  firmsOf,
+  firmWhere,
+  requireCustomerVisible,
+} from '../firms';
+import { AuthRequest, Can, Contract, fail, Firm, forbid, Input } from '../http';
 import { normalizeAlias } from '../rate-studio/rules';
 import { pairingHash } from '../staff/secret';
 import { copyFromFor } from './plan';
@@ -35,6 +43,46 @@ const big = (value: bigint | null | undefined) =>
   value === null || value === undefined ? null : String(value);
 
 type TieOut = { status?: string; total?: number; failed?: number; at?: string } | null;
+
+/**
+ * The Tally companies whose books this person may see: those mapped to one of their firms. A
+ * company not mapped to a firm yet could hold anyone's books, so only someone who sees every firm
+ * sees it.
+ */
+export const companyWhere = (req: Pick<AuthRequest, 'firms'>) => firmWhere(req);
+
+/** Whether a firm-owned row is one of this person's firms. */
+const inFirms = (req: Pick<AuthRequest, 'firms'>, firmId: string) => {
+  const firms = firmsOf(req);
+  return firms === 'ALL' || firms.includes(firmId);
+};
+
+/** Whether a Tally company is one this person may see. */
+const companySeen = (req: Pick<AuthRequest, 'firms'>, firmId: string | null) => {
+  const firms = firmsOf(req);
+  return firms === 'ALL' || (!!firmId && firms.includes(firmId));
+};
+
+/**
+ * Whether one customer's whole-customer Tally comparison stays inside this person's firms: none of
+ * their khata is another firm's, and none of their linked parties is in another firm's company (or
+ * one not mapped yet). Only then may someone limited to some firms see it.
+ */
+export async function tallyInFirms(db: Db, req: Pick<AuthRequest, 'firms'>, customerId: string) {
+  const firms = firmsOf(req);
+  if (firms === 'ALL') return true;
+  const [elsewhere, outside] = await Promise.all([
+    db.customerLedgerEntry.count({ where: { customerId, firmId: { notIn: firms } } }),
+    db.tallyPartyLink.count({
+      where: {
+        userId: customerId,
+        status: 'LINKED',
+        ledger: { company: { OR: [{ firmId: null }, { firmId: { notIn: firms } }] } },
+      },
+    }),
+  ]);
+  return !elsewhere && !outside;
+}
 
 /** The desk's view of the bridge. Nothing here reaches Tally or changes a number in the books. */
 @Injectable()
@@ -138,10 +186,7 @@ export class TallyDesk {
         const device = await tx.tallyDevice.findUnique({ where: { id: body.ownerDeviceId } });
         if (!device || device.revokedAt) fail('TALLY_COMPANY_OWNER', 'Choose a connected PC.', 400);
       }
-      if (body.firmId) {
-        const firm = await tx.firm.findUnique({ where: { id: body.firmId } });
-        if (!firm) fail('INVALID_INPUT', 'Choose a firm that exists.', 400);
-      }
+      if (body.firmId) await activeFirm(tx, body.firmId);
       const starting = body.role === 'PRIMARY' && company.role !== 'PRIMARY';
       const today = istToday();
       const saved = await tx.tallyCompany.update({
@@ -150,14 +195,31 @@ export class TallyDesk {
           ...(body.role ? { role: body.role } : {}),
           ...(body.firmId !== undefined ? { firmId: body.firmId } : {}),
           ...(body.ownerDeviceId ? { ownerDeviceId: body.ownerDeviceId } : {}),
-          // Whether this file counts changes who owes what, so the Farq list is worked out again.
-          ...(body.role && body.role !== company.role ? { reconDue: true } : {}),
+          // Whether this file counts, or which firm it is, changes who owes what, so the Farq list is
+          // worked out again.
+          ...((body.role && body.role !== company.role) ||
+          (body.firmId !== undefined && body.firmId !== company.firmId)
+            ? { reconDue: true }
+            : {}),
           ...(starting
             ? { copyFrom: company.copyFrom ?? copyFromFor(company, today), failures: 0 }
             : {}),
         },
         select: { id: true, role: true, ownerDeviceId: true, firmId: true, copyFrom: true },
       });
+      // One firm keeps one set of books. Asked after the change, so moving either the role or the
+      // firm onto a taken pair is refused alike.
+      if (saved.role === 'PRIMARY' && saved.firmId) {
+        const taken = await tx.tallyCompany.count({
+          where: { id: { not: id }, role: 'PRIMARY', firmId: saved.firmId },
+        });
+        if (taken)
+          fail(
+            'FIRM_REQUIRED',
+            'Another Tally company already keeps this firm’s books. Choose a different firm.',
+            409,
+          );
+      }
       await tx.auditLog.create({
         data: {
           actorId: req.user.id,
@@ -167,6 +229,7 @@ export class TallyDesk {
             role: saved.role,
             ownerDeviceId: saved.ownerDeviceId,
             firmId: saved.firmId,
+            wasFirmId: company.firmId,
           },
         },
       });
@@ -347,7 +410,7 @@ export class TallyDesk {
   async parties(query: Record<string, unknown>, req: AuthRequest) {
     const { take, skip } = listWindow(query);
     const companies = await this.db.tallyCompany.findMany({
-      where: { role: 'PRIMARY' },
+      where: { role: 'PRIMARY', ...companyWhere(req) },
       select: { id: true, name: true, freshAt: true },
     });
     const companyIds = companies
@@ -399,9 +462,11 @@ export class TallyDesk {
       LEFT JOIN "TallyPartyLink" k ON k."companyId" = l."companyId" AND k.guid = l.guid
       WHERE l."deletedAt" IS NULL AND l.class = ${className} AND l."companyId" = ANY(${companyIds}::text[])`;
     const page = rows.slice(0, take);
+    // A party linked to a customer their firms never dealt with shows as linked, to nobody.
     const people = await this.db.user.findMany({
       where: {
         id: { in: page.map((row) => row.userId).filter((id): id is string => Boolean(id)) },
+        ...customerFirmWhere(req),
       },
       select: { id: true, name: true, phone: true },
     });
@@ -429,7 +494,7 @@ export class TallyDesk {
         suggestions:
           linkedTo || row.status === 'NOT_CUSTOMER'
             ? []
-            : (await this.suggest(row)).map((person) => ({
+            : (await this.suggest(row, req)).map((person) => ({
                 ...person,
                 phone: shownPhone(req, person.phone),
               })),
@@ -448,7 +513,10 @@ export class TallyDesk {
     };
   }
 
-  private async suggest(ledger: { name: string; phones: string[]; gstin: string | null }) {
+  private async suggest(
+    ledger: { name: string; phones: string[]; gstin: string | null },
+    req: Pick<AuthRequest, 'firms'>,
+  ) {
     const found = new Map<
       string,
       { userId: string; name: string; phone: string; area: string; by: string; score: number }
@@ -518,13 +586,31 @@ export class TallyDesk {
             score: Math.round(person.score * 100),
           });
     }
+    // Another firm's customers are not offered: the person could not see whom they were linking.
+    if (firmsOf(req) !== 'ALL' && found.size) {
+      const seen = await this.db.user.findMany({
+        where: { id: { in: [...found.keys()] }, ...customerFirmWhere(req) },
+        select: { id: true },
+      });
+      for (const id of found.keys()) if (!seen.some((row) => row.id === id)) found.delete(id);
+    }
     return [...found.values()].slice(0, 3);
+  }
+
+  /** A party in a company this person may see, or not found, as if it were not there. */
+  private async ledgerSeen(tx: Pick<Db, 'tallyLedger'>, ledgerId: string, req: AuthRequest) {
+    const ledger = await tx.tallyLedger.findUnique({
+      where: { id: ledgerId },
+      include: { company: { select: { firmId: true } } },
+    });
+    if (!ledger || !companySeen(req, ledger.company.firmId))
+      fail('NOT_FOUND', 'That party is not here.', 404);
+    return ledger;
   }
 
   async link(ledgerId: string, body: z.infer<typeof tallyLinkSchema>, req: AuthRequest) {
     return this.db.atomic(async (tx) => {
-      const ledger = await tx.tallyLedger.findUnique({ where: { id: ledgerId } });
-      if (!ledger) fail('NOT_FOUND', 'That party is not here.', 404);
+      const ledger = await this.ledgerSeen(tx, ledgerId, req);
       if (ledger.deletedAt) fail('TALLY_LEDGER_GONE', 'This party is no longer in Tally.', 409);
       let userId = body.userId;
       if (body.phone) {
@@ -547,6 +633,13 @@ export class TallyDesk {
         person.deletedAt ||
         person.role === 'ADMIN' ||
         person.phone === 'walk-in:store'
+      )
+        fail('TALLY_NOT_CUSTOMER', 'Only a customer’s account can be linked.', 400);
+      // Not another firm's customer, found by id or by a number typed in. Refused in the same words
+      // as an id that is no customer at all, so the answer says nothing about the other firm.
+      if (
+        firmsOf(req) !== 'ALL' &&
+        !(await tx.user.count({ where: { id: person.id, ...customerFirmWhere(req) } }))
       )
         fail('TALLY_NOT_CUSTOMER', 'Only a customer’s account can be linked.', 400);
       const held = await tx.tallyPartyLink.findUnique({
@@ -590,8 +683,7 @@ export class TallyDesk {
 
   async unlink(ledgerId: string, req: AuthRequest) {
     const result = await this.db.atomic(async (tx) => {
-      const ledger = await tx.tallyLedger.findUnique({ where: { id: ledgerId } });
-      if (!ledger) fail('NOT_FOUND', 'That party is not here.', 404);
+      const ledger = await this.ledgerSeen(tx, ledgerId, req);
       const held = await tx.tallyPartyLink.findUnique({
         where: { companyId_guid: { companyId: ledger.companyId, guid: ledger.guid } },
       });
@@ -629,8 +721,7 @@ export class TallyDesk {
   /** "Grahak nahi": Cash Sales and the like. Stays in Tally lists, off the to-do list. */
   async notCustomer(ledgerId: string, req: AuthRequest) {
     return this.db.atomic(async (tx) => {
-      const ledger = await tx.tallyLedger.findUnique({ where: { id: ledgerId } });
-      if (!ledger) fail('NOT_FOUND', 'That party is not here.', 404);
+      const ledger = await this.ledgerSeen(tx, ledgerId, req);
       const held = await tx.tallyPartyLink.findUnique({
         where: { companyId_guid: { companyId: ledger.companyId, guid: ledger.guid } },
       });
@@ -676,9 +767,18 @@ export class TallyDesk {
             partyGuid: true,
             partyAmountPaise: true,
             deletedAt: true,
+            company: { select: { firmId: true } },
           },
         });
-        if (!entry || !voucher || voucher.deletedAt || !voucher.partyGuid)
+        // Another firm's entry or books answer as not found, the same as a wrong id.
+        if (
+          !entry ||
+          !voucher ||
+          voucher.deletedAt ||
+          !voucher.partyGuid ||
+          !inFirms(req, entry.firmId) ||
+          !companySeen(req, voucher.company.firmId)
+        )
           fail('TALLY_MATCH_BAD', 'That entry or voucher could not be found.', 400);
         const link = await tx.tallyPartyLink.findUnique({
           where: { companyId_guid: { companyId: voucher.companyId, guid: voucher.partyGuid } },
@@ -728,6 +828,24 @@ export class TallyDesk {
     return this.db.atomic(async (tx) => {
       const row = await tx.khataVoucherMatch.findUnique({ where: { id } });
       if (!row || row.undoesId) fail('NOT_FOUND', 'That match is not here.', 404);
+      if (firmsOf(req) !== 'ALL') {
+        const [entry, books] = await Promise.all([
+          tx.customerLedgerEntry.findUnique({
+            where: { id: row.entryId },
+            select: { firmId: true },
+          }),
+          tx.tallyVoucher.findUnique({
+            where: { id: row.voucherId },
+            select: { company: { select: { firmId: true } } },
+          }),
+        ]);
+        if (
+          !entry ||
+          !inFirms(req, entry.firmId) ||
+          !companySeen(req, books?.company.firmId ?? null)
+        )
+          fail('NOT_FOUND', 'That match is not here.', 404);
+      }
       const already = await tx.khataVoucherMatch.findUnique({ where: { undoesId: id } });
       if (already) return { id: already.id, repeat: true };
       const undo = await tx.khataVoucherMatch.create({
@@ -899,6 +1017,7 @@ export class TallyDeskController {
   constructor(
     @Inject(TallyDesk) private desk: TallyDesk,
     @Inject(TallyRecon) private recon: TallyRecon,
+    @Inject(Db) private db: Db,
   ) {}
 
   @Can('tally.read') @Get('status') status() {
@@ -957,12 +1076,13 @@ export class TallyDeskController {
   ) {
     return this.desk.publishRelease(body, req);
   }
-  @Can('tally.numbers.view') @Get('parties') parties(
-    @Query() query: Record<string, string>,
-    @Req() req: AuthRequest,
-  ) {
+  @Firm('own')
+  @Can('tally.numbers.view')
+  @Get('parties')
+  parties(@Query() query: Record<string, string>, @Req() req: AuthRequest) {
     return this.desk.parties(query, req);
   }
+  @Firm('own')
   @Can('tally.match')
   @Post('parties/:id/link')
   @Contract(tallyLinkSchema)
@@ -973,31 +1093,49 @@ export class TallyDeskController {
   ) {
     return this.desk.link(id, body, req);
   }
-  @Can('tally.match') @Post('parties/:id/unlink') unlink(
-    @Param('id') id: string,
-    @Req() req: AuthRequest,
-  ) {
+  @Firm('own')
+  @Can('tally.match')
+  @Post('parties/:id/unlink')
+  unlink(@Param('id') id: string, @Req() req: AuthRequest) {
     return this.desk.unlink(id, req);
   }
-  @Can('tally.match') @Post('parties/:id/not-customer') notCustomer(
-    @Param('id') id: string,
-    @Req() req: AuthRequest,
-  ) {
+  @Firm('own')
+  @Can('tally.match')
+  @Post('parties/:id/not-customer')
+  notCustomer(@Param('id') id: string, @Req() req: AuthRequest) {
     return this.desk.notCustomer(id, req);
   }
-  @Can('tally.numbers.view') @Get('customers/:id/numbers') numbers(@Param('id') id: string) {
+  /**
+   * One customer's two numbers. An owner gets the whole customer, or one firm's part if asked.
+   * Someone limited to one firm gets that firm's khata against that firm's books. Limited to several,
+   * the whole customer only when none of it is another firm's.
+   */
+  @Firm('own')
+  @Can('tally.numbers.view')
+  @Get('customers/:id/numbers')
+  async numbers(@Param('id') id: string, @Query('firmId') asked: unknown, @Req() req: AuthRequest) {
+    await requireCustomerVisible(this.db, req, id);
+    const firm = firmAsked(req, asked);
+    const firms = firmsOf(req);
+    if ('firmId' in firm && typeof firm.firmId === 'string')
+      return this.recon.numbers(id, new Date(), { firmId: firm.firmId });
+    if (firms === 'ALL') return this.recon.numbers(id);
+    if (firms.length === 1) return this.recon.numbers(id, new Date(), { firmId: firms[0]! });
+    if (!(await tallyInFirms(this.db, req, id))) forbid(req, 'tally.numbers.view');
     return this.recon.numbers(id);
   }
-  @Can('tally.numbers.view') @Get('differences') async differences(
-    @Query() query: Record<string, string>,
-    @Req() req: AuthRequest,
-  ) {
-    const list = await this.recon.differences(query);
+  @Firm('own')
+  @Can('tally.numbers.view')
+  @Get('differences')
+  async differences(@Query() query: Record<string, string>, @Req() req: AuthRequest) {
+    const firms = firmsOf(req);
+    const list = await this.recon.differences(query, firms === 'ALL' ? undefined : firms);
     return {
       ...list,
       items: list.items.map((row) => ({ ...row, phone: shownPhone(req, row.phone) })),
     };
   }
+  @Firm('own')
   @Can('tally.match')
   @Post('matches')
   @Contract(tallyMatchesSchema)
@@ -1007,10 +1145,10 @@ export class TallyDeskController {
   ) {
     return this.desk.match(body, req);
   }
-  @Can('tally.match') @Post('matches/:id/undo') undoMatch(
-    @Param('id') id: string,
-    @Req() req: AuthRequest,
-  ) {
+  @Firm('own')
+  @Can('tally.match')
+  @Post('matches/:id/undo')
+  undoMatch(@Param('id') id: string, @Req() req: AuthRequest) {
     return this.desk.undoMatch(id, req);
   }
 }

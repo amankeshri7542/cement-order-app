@@ -17,6 +17,7 @@ import {
   Public,
   safeEqual,
   Self,
+  Firm,
 } from './http';
 
 const capturedSchema = z.object({
@@ -190,6 +191,7 @@ export class PaymentsService {
         data: {
           paymentId: payment.id,
           locationId: payment.order.locationId,
+          firmId: payment.order.firmId,
           kind: 'COLLECTION',
           channel: 'ONLINE',
           amountPaise: payment.amountPaise,
@@ -292,6 +294,7 @@ export class PaymentsService {
           data: {
             paymentId: p.id,
             locationId: p.order.locationId,
+            firmId: p.order.firmId,
             kind: 'REFUND',
             channel: 'ONLINE',
             amountPaise: p.amountPaise,
@@ -385,6 +388,7 @@ export class PaymentsService {
           // part at the door that slot is theirs, and the status above guards this one.
           ...(atTheDoor.length ? {} : { paymentId: p.id }),
           locationId: p.order.locationId,
+          firmId: p.order.firmId,
           kind: refund ? 'REFUND' : 'COLLECTION',
           channel,
           amountPaise: refund ? p.amountPaise : owedPaise,
@@ -476,6 +480,7 @@ export class PaymentsController {
       String(req.headers['x-razorpay-event-id'] || ''),
     );
   }
+  @Firm('shop')
   @Can('money.receive', atOrder())
   @Post('admin/orders/:id/cod-received')
   @Contract(collectionSchema)
@@ -487,6 +492,7 @@ export class PaymentsController {
     return this.payments.cod(id, req.user.id, false, body?.channel || '');
   }
   // The channel defaults to how the money was collected; the desk sends no body.
+  @Firm('shop')
   @Can('money.refund', atOrder())
   @Post('admin/orders/:id/cash-refunded')
   @Contract(collectionSchema)
@@ -497,6 +503,7 @@ export class PaymentsController {
   ) {
     return this.payments.cod(id, req.user.id, true, body?.channel || '');
   }
+  @Firm('shop')
   @Can('money.refund', atOrder())
   @Post('admin/orders/:id/reconcile-payment')
   @Contract(reconcileSchema)

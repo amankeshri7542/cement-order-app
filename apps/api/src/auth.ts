@@ -54,6 +54,8 @@ import {
 import {
   PERMISSIONS_VERSION,
   accessFor,
+  firmsFor,
+  narrowToFirms,
   canDo,
   passphraseSetSchema,
   staffAppPermissions,
@@ -101,6 +103,10 @@ export class AuthGuard implements CanActivate {
     @Inject(Db) private db: Db,
     @Inject(Reflector) private reflector: Reflector,
   ) {}
+  /** Shops and their firms. Only read for someone limited to some firms; a shop never changes firm. */
+  private async locations() {
+    return this.db.location.findMany({ select: { id: true, firmId: true } });
+  }
   async canActivate(ctx: ExecutionContext) {
     const req = ctx.switchToHttp().getRequest<AuthRequest>();
     if (getConfig().OTP_PROVIDER === 'mock' && !getConfig().DEMO_MODE && !directLoopback(req))
@@ -128,7 +134,12 @@ export class AuthGuard implements CanActivate {
           include: {
             staffMemberships: {
               where: { endedAt: null },
-              select: { role: true, locationId: true },
+              select: {
+                role: true,
+                locationId: true,
+                firmId: true,
+                location: { select: { firmId: true } },
+              },
             },
           },
         },
@@ -154,10 +165,18 @@ export class AuthGuard implements CanActivate {
       linked = device.status === 'ACTIVE';
     }
     // Read fresh on every request, so a changed role or a pause takes effect at once.
+    req.firms =
+      session.surface === 'CUSTOMER' || user.staffPausedAt || user.role !== 'ADMIN'
+        ? []
+        : firmsFor(staffMemberships);
+    // Someone limited to some firms holds shop-by-shop permissions only at those firms' shops.
     const held =
       session.surface === 'CUSTOMER' || user.staffPausedAt || user.role !== 'ADMIN'
         ? {}
-        : accessFor(staffMemberships);
+        : req.firms === 'ALL'
+          ? accessFor(staffMemberships)
+          : narrowToFirms(accessFor(staffMemberships), req.firms, await this.locations());
+    // Whose books: a customer sees no firm's books here (their own account is read through @Self).
     req.access =
       session.surface !== 'STAFF_APP'
         ? atDesk(held)
@@ -580,12 +599,25 @@ export class AuthController {
     return { ok: true };
   }
   @Self() @Get('session') async session(@Req() req: AuthRequest) {
+    const mine = req.firms ?? 'ALL';
+    const firmFilter = mine === 'ALL' ? {} : { firmId: { in: mine } };
     const locations = Object.keys(req.access).length
       ? await this.db.location.findMany({
-          where: { active: true },
-          select: { id: true, name: true },
+          // Someone limited to one firm sees that firm's shops only.
+          where: { active: true, ...firmFilter },
+          select: { id: true, name: true, firmId: true, kind: true },
           orderBy: { name: 'asc' },
         })
+      : [];
+    // The firms this person sees, for grouping shops under their firm in the switcher.
+    const firms = Object.keys(req.access).length
+      ? (
+          await this.db.firm.findMany({
+            where: { active: true, ...(mine === 'ALL' ? {} : { id: { in: mine } }) },
+            select: { id: true, legalName: true, tradeName: true },
+            orderBy: { createdAt: 'asc' },
+          })
+        ).map((firm) => ({ id: firm.id, name: firm.tradeName || firm.legalName }))
       : [];
     // The main shop comes first, so a chooser never starts on some other shop by accident.
     locations.sort((a, b) => Number(b.id === MAIN_LOCATION) - Number(a.id === MAIN_LOCATION));
@@ -594,6 +626,7 @@ export class AuthController {
       access: req.access,
       permissionsVersion: PERMISSIONS_VERSION,
       locations,
+      firms,
       hasPassphrase: req.access['desk.use']
         ? (await this.db.adminCredential.count({ where: { userId: req.user.id } })) > 0
         : false,

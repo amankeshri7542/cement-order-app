@@ -128,6 +128,16 @@ export function Khata() {
         <section className={css.card}>
           <p>{t('owner.totalDue')}</p>
           <p className={`${css.moneyHero} ${css.due}`}>{money(summary.data.totalDuePaise)}</p>
+          {(summary.data.byFirm?.length ?? 0) > 1 && (
+            <dl aria-label={t('owner.khata.byFirm')} className={css.firmSplit}>
+              {summary.data.byFirm!.map((row) => (
+                <div key={row.firmId}>
+                  <dt>{row.name}</dt>
+                  <dd>{money(row.totalDuePaise)}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
         </section>
       )}
       <nav className={`${css.card} ${css.menu}`} aria-label={t('owner.khata')}>
@@ -193,6 +203,8 @@ export function CustomerDetails({ id, startTab }: { id: string; startTab?: 'tall
     startTab === 'tally' && can('tally.numbers.view') ? 'tally' : 'timeline',
   );
   const [form, setForm] = useState<'payment' | 'adjust' | null>(null);
+  const { firms } = useOwner();
+  const firmName = (firmId: string) => firms.find((f) => f.id === firmId)?.name ?? firmId;
   return (
     <>
       <PageHeader title={customer.data?.name || t('owner.customer')} back="/customers" />
@@ -215,6 +227,17 @@ export function CustomerDetails({ id, startTab }: { id: string; startTab?: 'tall
                 )}
               </p>
               <p className={css.moneyHero}>{money(Math.abs(customer.data.balancePaise))}</p>
+              {/* Each firm's share, when this person sees more than one firm's book. */}
+              {(customer.data.byFirm?.length ?? 0) > 1 && (
+                <dl aria-label={t('owner.khata.byFirm')} className={css.firmSplit}>
+                  {customer.data.byFirm!.map((row) => (
+                    <div key={row.firmId}>
+                      <dt>{firmName(row.firmId)}</dt>
+                      <dd>{money(row.balancePaise)}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
               <div className={css.actions}>
                 {can('khata.payment') && (
                   <Button
@@ -379,7 +402,7 @@ function LedgerForm({
   close: () => void;
 }) {
   const t = useT();
-  const { me, can, shops, shopId } = useOwner();
+  const { me, can, shops, shopId, firms } = useOwner();
   // Someone working at more than one shop says whose drawer took it.
   const drawers = shops.filter((shop) => can('money.receive', shop.id));
   const storageKey = `shiv-owner-khata:${me.id}:${id}:${mode}:${entry?.id || ''}`;
@@ -403,6 +426,14 @@ function LedgerForm({
   const [date, setDate] = useState(String(saved?.occurredAt ?? istToday()));
   const [channel, setChannel] = useState(String(saved?.channel ?? 'CASH'));
   const [drawer, setDrawer] = useState(String(saved?.locationId ?? shopId ?? drawers[0]?.id ?? ''));
+  // Whose due: the server takes the firm owed longest unless someone picks one.
+  const owed = useQuery({
+    queryKey: ['customers', 'detail', id],
+    queryFn: () => api<Customer>(`/admin/customers/${id}`),
+    enabled: mode !== 'reverse',
+  });
+  const firmsHere = owed.data?.byFirm ?? [];
+  const [firmId, setFirmId] = useState(String(saved?.firmId ?? ''));
   const frozen = useRef<Record<string, unknown> | null>(saved);
   const persisted = useRef(!!saved);
   const [locked, setLocked] = useState(!!saved);
@@ -422,6 +453,7 @@ function LedgerForm({
               occurredAt: date,
               idempotencyKey: key,
               ...(mode === 'payment' ? { channel } : {}),
+              ...(firmId ? { firmId } : {}),
               ...(mode === 'payment' && drawers.length > 1 && drawer ? { locationId: drawer } : {}),
             });
       frozen.current = body;
@@ -530,6 +562,19 @@ function LedgerForm({
                   <select value={channel} onChange={(event) => setChannel(event.target.value)}>
                     <option value="CASH">{t('owner.paymentCash')}</option>
                     <option value="UPI">{t('owner.paymentUpi')}</option>
+                  </select>
+                </Field>
+              )}
+              {firmsHere.length > 1 && (
+                <Field label={t('owner.khata.whichFirm')}>
+                  <select value={firmId} onChange={(event) => setFirmId(event.target.value)}>
+                    <option value="">{t('owner.khata.firmAuto')}</option>
+                    {firmsHere.map((row) => (
+                      <option key={row.firmId} value={row.firmId}>
+                        {(firms.find((f) => f.id === row.firmId)?.name ?? row.firmId) +
+                          ` · ${money(row.balancePaise)}`}
+                      </option>
+                    ))}
                   </select>
                 </Field>
               )}

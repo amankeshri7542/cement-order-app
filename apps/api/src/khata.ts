@@ -34,7 +34,19 @@ import {
   Input,
   MAIN_LOCATION,
   requireAt,
+  Firm,
 } from './http';
+import {
+  activeFirm,
+  customerFirmWhere,
+  firmNames,
+  firmOfLocation,
+  firmsOf,
+  firmWhere,
+  oldestDueFirm,
+  requireCustomerVisible,
+  requireFirm,
+} from './firms';
 import { paginate } from './pagination';
 import { shownPhone } from './crm/common';
 
@@ -63,12 +75,20 @@ export async function appendLedger(
     financialMovementId?: string;
     reversesId?: string;
     locationId?: string;
+    /** Whose book. Required: never taken from the shop (plan v4, platform section 2). */
+    firmId: string;
   },
 ) {
   const customer = await khataCustomer(tx, input.customerId);
   let balanceAfterPaise: number;
+  let firmBalancePaise: number;
+  const firm = await tx.customerFirmBalance.findUnique({
+    where: { customerId_firmId: { customerId: customer.id, firmId: input.firmId } },
+    select: { balancePaise: true },
+  });
   try {
     balanceAfterPaise = khataBalance(customer.khataBalancePaise, input.amountPaise);
+    firmBalancePaise = khataBalance(firm?.balancePaise ?? 0, input.amountPaise);
   } catch {
     fail('KHATA_OVERFLOW', 'Khata balance exceeds the supported range.', 409);
   }
@@ -76,6 +96,12 @@ export async function appendLedger(
   await tx.user.update({
     where: { id: customer.id },
     data: { khataBalancePaise: balanceAfterPaise },
+  });
+  // The firm's balance moves with the entry, in the same transaction, so it always equals the sum.
+  await tx.customerFirmBalance.upsert({
+    where: { customerId_firmId: { customerId: customer.id, firmId: input.firmId } },
+    create: { customerId: customer.id, firmId: input.firmId, balancePaise: firmBalancePaise },
+    update: { balancePaise: firmBalancePaise },
   });
   await tx.auditLog.create({
     data: {
@@ -86,6 +112,8 @@ export async function appendLedger(
         entryId: entry.id,
         amountPaise: input.amountPaise,
         balanceAfterPaise,
+        firmId: input.firmId,
+        firmBalancePaise,
         orderId: input.orderId ?? null,
         reversesId: input.reversesId ?? null,
         financialMovementId: input.financialMovementId ?? null,
@@ -107,6 +135,7 @@ export async function postCreditSale(
     number: string;
     userId: string;
     locationId: string;
+    firmId: string;
     totalPaise: number;
     payment?: { method: string } | null;
   },
@@ -119,6 +148,7 @@ export async function postCreditSale(
     return;
   await appendLedger(tx, {
     locationId: order.locationId,
+    firmId: order.firmId,
     customerId: order.userId,
     kind: 'SALE_ON_CREDIT',
     amountPaise: order.totalPaise,
@@ -143,6 +173,7 @@ export async function reverseCreditSale(
   if (!sale || sale.kind !== 'SALE_ON_CREDIT' || sale.reversal) return;
   await appendLedger(tx, {
     locationId: sale.locationId,
+    firmId: sale.firmId,
     customerId: sale.customerId,
     kind: 'REVERSAL',
     amountPaise: -sale.amountPaise,
@@ -184,16 +215,28 @@ export class KhataService {
     customerId: string,
     input: z.infer<typeof ledgerEntrySchema> & {
       channel?: 'CASH' | 'UPI';
+      firmId?: string;
     },
     actorId: string,
     payment: boolean,
     locationId: string = MAIN_LOCATION,
+    /** The firms this person may write to. */
+    firms: 'ALL' | string[] = 'ALL',
   ) {
     const requestHash = hash(
       JSON.stringify({ ...input, operation: payment ? 'PAYMENT' : 'ADJUST' }),
     );
     return this.db.atomic(async (tx) => {
       const customer = await khataCustomer(tx, customerId);
+      // Whose due this is: the firm chosen on the form, or the one owed longest. Never the shop's
+      // firm by default, because an owner at one shop takes payments for both firms.
+      const firmId = input.firmId
+        ? await activeFirm(tx, input.firmId)
+        : payment
+          ? await oldestDueFirm(tx, customerId, await firmOfLocation(tx, locationId))
+          : await firmOfLocation(tx, locationId);
+      if (firms !== 'ALL' && !firms.includes(firmId))
+        fail('FORBIDDEN', 'You do not have access to this firm’s khata.', 403);
       const previous = await tx.customerLedgerEntry.findUnique({
         where: {
           customerId_idempotencyKey: { customerId, idempotencyKey: input.idempotencyKey },
@@ -211,7 +254,7 @@ export class KhataService {
       const occurredAt = businessTime(input.occurredAt);
       // The signed opening is where this customer's book starts. Nothing can be slipped in before it.
       const signoff = await tx.khataSignoff.findFirst({
-        where: { customerId },
+        where: { customerId, firmId },
         select: { asOf: true },
       });
       if (signoff && occurredAt < new Date(`${signoff.asOf}T00:00:00+05:30`))
@@ -223,6 +266,7 @@ export class KhataService {
             data: {
               kind: 'KHATA_PAYMENT',
               locationId,
+              firmId,
               amountPaise: input.amountPaise,
               actorId,
               // The ledger keeps the business date. Cash entered a drawer now, whatever the date
@@ -236,6 +280,7 @@ export class KhataService {
       // A payment may leave an advance balance; credit permission is needed for sales only.
       return appendLedger(tx, {
         locationId,
+        firmId,
         customerId: customer.id,
         kind,
         amountPaise: payment ? -input.amountPaise : input.amountPaise,
@@ -254,6 +299,7 @@ export class KhataService {
     entryId: string,
     input: z.infer<typeof ledgerReverseSchema>,
     actorId: string,
+    firms: 'ALL' | string[] = 'ALL',
   ) {
     const requestHash = hash(JSON.stringify({ ...input, entryId, operation: 'REVERSE' }));
     return this.db.atomic(async (tx) => {
@@ -276,7 +322,9 @@ export class KhataService {
         where: { id: entryId, customerId },
         include: { reversal: true, financialMovement: true },
       });
-      if (!original) fail('ENTRY_NOT_FOUND', 'Khata entry not found.', 404);
+      // Another firm's entry is not there for this person, so it is not found rather than forbidden.
+      if (!original || (firms !== 'ALL' && !firms.includes(original.firmId)))
+        fail('ENTRY_NOT_FOUND', 'Khata entry not found.', 404);
       if (original.kind === 'REVERSAL' || original.reversal)
         fail(
           'INVALID_REVERSAL',
@@ -294,6 +342,7 @@ export class KhataService {
             data: {
               kind: 'KHATA_PAYMENT_REVERSAL',
               locationId: original.financialMovement.locationId,
+              firmId: original.financialMovement.firmId,
               amountPaise: original.financialMovement.amountPaise,
               channel: original.financialMovement.channel,
               actorId,
@@ -304,6 +353,8 @@ export class KhataService {
         : undefined;
       return appendLedger(tx, {
         locationId: original.locationId,
+        // A reversal keeps its original's firm; the database checks it too.
+        firmId: original.firmId,
         customerId,
         kind: 'REVERSAL',
         amountPaise: -original.amountPaise,
@@ -318,17 +369,45 @@ export class KhataService {
     });
   }
 
-  async summary() {
+  /**
+   * What is owed, per firm and combined, for the firms this person may see. Each customer's figure
+   * is their balance with those firms only.
+   */
+  async summary(firms: 'ALL' | string[] = 'ALL') {
     return this.db.atomic(async (tx) => {
-      const totals = await tx.user.aggregate({
+      const allowed = firms === 'ALL' ? (await firmNames(tx)).map((f) => f.id) : firms;
+      const names = new Map((await firmNames(tx)).map((f) => [f.id, f.name]));
+      const perFirm = await tx.customerFirmBalance.groupBy({
+        by: ['firmId'],
         where: {
-          deletedAt: null,
-          role: { not: 'ADMIN' },
-          khataBalancePaise: { gt: 0 },
+          firmId: { in: allowed },
+          balancePaise: { gt: 0 },
+          customer: { deletedAt: null, role: { not: 'ADMIN' } },
         },
-        _sum: { khataBalancePaise: true },
+        _sum: { balancePaise: true },
         _count: true,
       });
+      const byFirm = allowed.map((firmId) => {
+        const row = perFirm.find((r) => r.firmId === firmId);
+        return {
+          firmId,
+          name: names.get(firmId) ?? firmId,
+          totalDuePaise: row?._sum.balancePaise ?? 0,
+          customersWithDue: row?._count ?? 0,
+        };
+      });
+      // Combined: each customer's balance over these firms, so one who owes one firm and is in
+      // advance with the other counts once, by what they owe in all.
+      const [combined] = await tx.$queryRaw<{ total: bigint | null; customers: bigint }[]>`
+        SELECT SUM(t.b) AS total, COUNT(*) AS customers FROM (
+          SELECT b."customerId", SUM(b."balancePaise") AS b FROM "CustomerFirmBalance" b
+          JOIN "User" u ON u.id = b."customerId" AND u."deletedAt" IS NULL AND u.role <> 'ADMIN'
+          WHERE b."firmId" = ANY(${allowed}) GROUP BY b."customerId"
+          HAVING SUM(b."balancePaise") > 0) t`;
+      const totals = {
+        _sum: { khataBalancePaise: Number(combined?.total ?? 0) },
+        _count: Number(combined?.customers ?? 0),
+      };
       const cutoff = new Date(`${istToday()}T00:00:00+05:30`);
       cutoff.setTime(cutoff.getTime() - 30 * 86400000);
       // FIFO aging: later payments/credits pay down the oldest debt first.
@@ -340,17 +419,18 @@ export class KhataService {
           balancePaise: number;
           overduePaise: number;
         }[]
-      >`SELECT u.id, u.name, u.phone, u."khataBalancePaise" AS "balancePaise",
-        LEAST(u."khataBalancePaise", SUM(CASE WHEN e."occurredAt" < ${cutoff.toISOString()}::timestamp
+      >`SELECT u.id, u.name, u.phone, SUM(e."amountPaise")::integer AS "balancePaise",
+        LEAST(SUM(e."amountPaise"), SUM(CASE WHEN e."occurredAt" < ${cutoff.toISOString()}::timestamp
           OR e."amountPaise" < 0 OR e.kind = 'OPENING_BALANCE' THEN e."amountPaise" ELSE 0 END))::integer AS "overduePaise"
-        FROM "User" u JOIN "CustomerLedgerEntry" e ON e."customerId" = u.id
-        WHERE u."deletedAt" IS NULL AND u.role <> 'ADMIN' AND u."khataBalancePaise" > 0
-        GROUP BY u.id HAVING SUM(CASE WHEN e."occurredAt" < ${cutoff.toISOString()}::timestamp
+        FROM "User" u JOIN "CustomerLedgerEntry" e ON e."customerId" = u.id AND e."firmId" = ANY(${allowed})
+        WHERE u."deletedAt" IS NULL AND u.role <> 'ADMIN'
+        GROUP BY u.id HAVING SUM(e."amountPaise") > 0 AND SUM(CASE WHEN e."occurredAt" < ${cutoff.toISOString()}::timestamp
           OR e."amountPaise" < 0 OR e.kind = 'OPENING_BALANCE' THEN e."amountPaise" ELSE 0 END) > 0
         ORDER BY "overduePaise" DESC, u.id`;
       return {
         totalDuePaise: totals._sum.khataBalancePaise ?? 0,
         customersWithDue: totals._count,
+        byFirm,
         overdue30d,
       };
     });
@@ -369,11 +449,20 @@ export class KhataService {
       FROM "User" u LEFT JOIN "CustomerLedgerEntry" e ON e."customerId" = u.id
       GROUP BY u.id HAVING u."khataBalancePaise" <> COALESCE(SUM(e."amountPaise"), 0)`,
     );
-    for (const row of drift)
+    // Each firm's balance against that firm's entries.
+    const firmDrift = await this.db.$queryRaw<
+      { customerId: string; firmId: string; cachedPaise: number; actualPaise: string }[]
+    >`SELECT COALESCE(b."customerId", e."customerId") AS "customerId", COALESCE(b."firmId", e."firmId") AS "firmId",
+        COALESCE(b."balancePaise", 0) AS "cachedPaise", COALESCE(e.s, 0)::text AS "actualPaise"
+      FROM "CustomerFirmBalance" b
+      FULL JOIN (SELECT "customerId", "firmId", SUM("amountPaise") AS s FROM "CustomerLedgerEntry" GROUP BY 1, 2) e
+        ON e."customerId" = b."customerId" AND e."firmId" = b."firmId"
+      WHERE COALESCE(b."balancePaise", 0) <> COALESCE(e.s, 0)`;
+    for (const row of [...drift, ...firmDrift])
       console.error(
         JSON.stringify({ event: 'KHATA_DRIFT', ...row, timestamp: new Date().toISOString() }),
       );
-    return { checked: true, drift: drift.length };
+    return { checked: true, drift: drift.length + firmDrift.length };
   }
 }
 
@@ -385,18 +474,20 @@ export class KhataController {
     @Inject(KhataService) private khata: KhataService,
   ) {}
 
+  @Firm('own')
   @Can('khata.read.one')
   @Get('customers/:id/khata')
   ledger(@Param('id') id: string, @Query() query: Record<string, string>, @Req() req: AuthRequest) {
     const page = paginate(query, `khata:${id}`);
+    const firms = firmsOf(req);
     return this.db.atomic(async (tx) => {
       const customer = await tx.user.findFirst({
-        where: { id, deletedAt: null, role: { not: 'ADMIN' } },
+        where: { id, deletedAt: null, role: { not: 'ADMIN' }, ...customerFirmWhere(req) },
       });
       if (!customer) fail('CUSTOMER_NOT_FOUND', 'Customer not found.', 404);
       const entries = page.finish(
         await tx.customerLedgerEntry.findMany({
-          where: { customerId: id, ...page.after },
+          where: { customerId: id, ...firmWhere(req), ...page.after },
           include: {
             reversal: { select: { id: true } },
             order: { select: { locationId: true } },
@@ -406,15 +497,39 @@ export class KhataController {
           take: page.take,
         }),
       );
-      const signoff = await tx.khataSignoff.findFirst({
-        where: { customerId: id },
-        select: { asOf: true, chosenPaise: true, createdAt: true },
+      const signoffs = await tx.khataSignoff.findMany({
+        where: { customerId: id, ...firmWhere(req) },
+        select: { firmId: true, asOf: true, chosenPaise: true, createdAt: true },
       });
+      const names = await firmNames(tx);
+      const balances = await tx.customerFirmBalance.findMany({
+        where: { customerId: id, ...firmWhere(req) },
+        select: { firmId: true, balancePaise: true, creditLimitPaise: true },
+      });
+      // One line per firm this person may see, so both firms show even when one is at nothing.
+      const byFirm = names
+        .filter((f) => firms === 'ALL' || firms.includes(f.id))
+        .filter((f) => f.active || balances.some((b) => b.firmId === f.id))
+        .map((f) => {
+          const b = balances.find((row) => row.firmId === f.id);
+          return {
+            firmId: f.id,
+            name: f.name,
+            balancePaise: b?.balancePaise ?? 0,
+            creditLimitPaise: b?.creditLimitPaise ?? null,
+            signoff: signoffs.find((row) => row.firmId === f.id) ?? null,
+          };
+        });
       return {
-        balancePaise: customer.khataBalancePaise,
+        // The total over the firms this person may see; owners see the customer's whole balance.
+        balancePaise:
+          firms === 'ALL'
+            ? customer.khataBalancePaise
+            : byFirm.reduce((total, row) => total + row.balancePaise, 0),
+        byFirm,
         creditAllowed: customer.creditAllowed,
         creditLimitPaise: customer.creditLimitPaise,
-        signoff,
+        signoff: signoffs[0] ?? null,
         // The balance belongs to the whole firm. An order's note names the order, which stays with
         // the shop that took it.
         entries: {
@@ -431,6 +546,7 @@ export class KhataController {
     });
   }
 
+  @Firm('own')
   @Can('khata.payment')
   @Post('customers/:id/khata/payment')
   @Contract(khataPaymentSchema)
@@ -440,8 +556,9 @@ export class KhataController {
     @Req() req: AuthRequest,
   ) {
     const { locationId: asked, ...entry } = input;
-    return this.khata.record(id, entry, req.user.id, true, drawerFor(req, asked));
+    return this.khata.record(id, entry, req.user.id, true, drawerFor(req, asked), firmsOf(req));
   }
+  @Firm('own')
   @Can('khata.adjust')
   @Post('customers/:id/khata/adjust')
   @Contract(ledgerEntrySchema)
@@ -450,8 +567,9 @@ export class KhataController {
     @Input(ledgerEntrySchema) input: z.infer<typeof ledgerEntrySchema>,
     @Req() req: AuthRequest,
   ) {
-    return this.khata.record(id, input, req.user.id, false, homeShop(req));
+    return this.khata.record(id, input, req.user.id, false, homeShop(req), firmsOf(req));
   }
+  @Firm('own')
   @Can('khata.reverse')
   @Post('customers/:id/khata/reverse/:entryId')
   @Contract(ledgerReverseSchema)
@@ -461,16 +579,20 @@ export class KhataController {
     @Input(ledgerReverseSchema) input: z.infer<typeof ledgerReverseSchema>,
     @Req() req: AuthRequest,
   ) {
-    return this.khata.reverse(id, entryId, input, req.user.id);
+    return this.khata.reverse(id, entryId, input, req.user.id, firmsOf(req));
   }
-  @Can('khata.read.list') @Get('khata/summary') async summary(@Req() req: AuthRequest) {
-    const summary = await this.khata.summary();
+  @Firm('own')
+  @Can('khata.read.list')
+  @Get('khata/summary')
+  async summary(@Req() req: AuthRequest) {
+    const summary = await this.khata.summary(firmsOf(req));
     return {
       ...summary,
       overdue30d: summary.overdue30d.map((row) => ({ ...row, phone: shownPhone(req, row.phone) })),
     };
   }
 
+  @Firm('own')
   @Can('khata.credit.set')
   @Patch('customers/:id')
   @Contract(customerUpdateSchema)
@@ -479,9 +601,11 @@ export class KhataController {
     @Input(customerUpdateSchema) input: z.infer<typeof customerUpdateSchema>,
     @Req() req: AuthRequest,
   ) {
+    const { firmId, ...fields } = input;
+    if (firmId) return this.firmLimit(id, firmId, fields, req);
     return this.db.atomic(async (tx) => {
       const customer = await khataCustomer(tx, id);
-      const next = { ...customer, ...input };
+      const next = { ...customer, ...fields };
       if (next.creditAllowed && next.creditLimitPaise === null)
         fail('CREDIT_LIMIT_REQUIRED', 'Set a credit limit before enabling credit.');
       // Sales cannot go in before the opening they sit on top of. It may be a signed nothing.
@@ -491,7 +615,7 @@ export class KhataController {
         !(await tx.khataSignoff.findFirst({ where: { customerId: id }, select: { id: true } }))
       )
         fail('OPENING_NOT_SIGNED', 'Sign off this customer’s opening balance first.', 409);
-      const updated = await tx.user.update({ where: { id }, data: input });
+      const updated = await tx.user.update({ where: { id }, data: fields });
       await tx.auditLog.create({
         data: {
           actorId: req.user.id,
@@ -515,6 +639,46 @@ export class KhataController {
     });
   }
 
+  /** One firm's own udhaar limit for this customer. Nothing else about the customer changes. */
+  private firmLimit(
+    id: string,
+    firmId: string,
+    fields: Omit<z.infer<typeof customerUpdateSchema>, 'firmId'>,
+    req: AuthRequest,
+  ) {
+    const keys = Object.keys(fields);
+    if (keys.length !== 1 || fields.creditLimitPaise === undefined)
+      fail('INVALID_INPUT', 'With a firm, only that firm’s credit limit can be set.');
+    requireFirm(req, firmId, 'khata.credit.set');
+    return this.db.atomic(async (tx) => {
+      await khataCustomer(tx, id);
+      await activeFirm(tx, firmId);
+      const before = await tx.customerFirmBalance.findUnique({
+        where: { customerId_firmId: { customerId: id, firmId } },
+        select: { creditLimitPaise: true },
+      });
+      const row = await tx.customerFirmBalance.upsert({
+        where: { customerId_firmId: { customerId: id, firmId } },
+        create: { customerId: id, firmId, creditLimitPaise: fields.creditLimitPaise },
+        update: { creditLimitPaise: fields.creditLimitPaise },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorId: req.user.id,
+          event: 'CUSTOMER_FIRM_LIMIT_SET',
+          entityId: id,
+          details: {
+            firmId,
+            before: before?.creditLimitPaise ?? null,
+            after: fields.creditLimitPaise ?? null,
+          },
+        },
+      });
+      return { firmId, balancePaise: row.balancePaise, creditLimitPaise: row.creditLimitPaise };
+    });
+  }
+
+  @Firm('own')
   @Can('customers.note')
   @Post('customers/:id/notes')
   @Contract(customerNoteSchema)
@@ -524,6 +688,7 @@ export class KhataController {
     @Req() req: AuthRequest,
   ) {
     return this.db.atomic(async (tx) => {
+      await requireCustomerVisible(tx, req, id);
       await khataCustomer(tx, id);
       const note = await tx.customerNote.create({
         data: { customerId: id, actorId: req.user.id, ...input },
@@ -540,10 +705,19 @@ export class KhataController {
       return note;
     });
   }
+  @Firm('own')
   @Can('customers.read')
   @Get('customers/:id/notes')
-  async notes(@Param('id') id: string, @Query() query: Record<string, string>) {
-    if (!(await this.db.user.findFirst({ where: { id, deletedAt: null, role: { not: 'ADMIN' } } })))
+  async notes(
+    @Param('id') id: string,
+    @Query() query: Record<string, string>,
+    @Req() req: AuthRequest,
+  ) {
+    if (
+      !(await this.db.user.findFirst({
+        where: { id, deletedAt: null, role: { not: 'ADMIN' }, ...customerFirmWhere(req) },
+      }))
+    )
       fail('CUSTOMER_NOT_FOUND', 'Customer not found.', 404);
     const page = paginate(query, `customer-notes:${id}`);
     return page.finish(
@@ -554,6 +728,7 @@ export class KhataController {
       }),
     );
   }
+  @Firm('own')
   @Can('customers.note')
   @Post('customers/:id/contacts')
   @Contract(customerContactSchema)
@@ -563,6 +738,7 @@ export class KhataController {
     @Req() req: AuthRequest,
   ) {
     return this.db.atomic(async (tx) => {
+      await requireCustomerVisible(tx, req, id);
       await khataCustomer(tx, id);
       const contact = await tx.customerContact.create({
         data: {

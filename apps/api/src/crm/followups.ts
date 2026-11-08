@@ -30,12 +30,14 @@ import {
 import type { Response } from 'express';
 import { z } from 'zod';
 import { Db } from '../db';
+import { customerFirmWhere, firmsOf, firmWhere, requireCustomerVisible } from '../firms';
 import {
   atFollowUp,
   AuthRequest,
   Can,
   Contract,
   fail,
+  Firm,
   hash,
   Input,
   requireAt,
@@ -51,28 +53,37 @@ const MAX_DAYS_AHEAD = 366;
 /** A day's calls fit on a page. More than this means nobody is working the list. */
 const DUE_LIMIT = 300;
 
-const shown = {
-  customer: {
-    select: {
-      id: true,
-      name: true,
-      phone: true,
-      area: true,
-      khataBalancePaise: true,
-      remindersStoppedAt: true,
-      khataSignoffs: { select: { id: true }, take: 1 },
+/** What a row carries, with the customer's balance and sign-off read at this person's firms. */
+const shownFor = (req: Pick<AuthRequest, 'firms'>) =>
+  ({
+    customer: {
+      select: {
+        id: true,
+        name: true,
+        phone: true,
+        area: true,
+        khataBalancePaise: true,
+        remindersStoppedAt: true,
+        khataSignoffs: { where: firmWhere(req), select: { id: true }, take: 1 },
+        firmBalances: { where: firmWhere(req), select: { firmId: true, balancePaise: true } },
+      },
     },
-  },
-  assignee: { select: { id: true, name: true } },
-  location: { select: { name: true } },
-  events: {
-    where: { action: 'SNOOZED' },
-    orderBy: [{ createdAt: 'desc' as const }, { id: 'desc' as const }],
-    take: 1,
-    select: { reason: true },
-  },
-} satisfies Prisma.FollowUpInclude;
-type Shown = Prisma.FollowUpGetPayload<{ include: typeof shown }>;
+    assignee: { select: { id: true, name: true } },
+    location: { select: { name: true } },
+    events: {
+      where: { action: 'SNOOZED' },
+      orderBy: [{ createdAt: 'desc' as const }, { id: 'desc' as const }],
+      take: 1,
+      select: { reason: true },
+    },
+  }) satisfies Prisma.FollowUpInclude;
+type Shown = Prisma.FollowUpGetPayload<{ include: ReturnType<typeof shownFor> }>;
+
+/** A customer's due as this person may see it: the total over their firms. */
+const dueOf = (req: Pick<AuthRequest, 'firms'>, customer: Shown['customer']) =>
+  firmsOf(req) === 'ALL'
+    ? customer.khataBalancePaise
+    : customer.firmBalances.reduce((total, row) => total + row.balancePaise, 0);
 
 @Injectable()
 export class FollowUps {
@@ -119,6 +130,9 @@ export class FollowUps {
       }),
     );
     const row = await this.db.atomic(async (tx) => {
+      // Another firm's customer is not found, as one who does not exist. Asked before the replay,
+      // so a reused key cannot read back a call for someone else's customer.
+      await requireCustomerVisible(tx, req, input.customerId);
       const previous = await tx.followUp.findUnique({
         where: {
           customerId_idempotencyKey: {
@@ -196,6 +210,10 @@ export class FollowUps {
       if (!row) fail('FOLLOWUP_NOT_FOUND', 'That call is not on the list.', 404);
       // Asked again here: the guard read the shop outside this transaction.
       requireAt(req, 'crm.followups', row.locationId);
+      // A call at this firm's shop for a customer it never dealt with is not on its list.
+      await requireCustomerVisible(tx, req, row.customerId).catch(() =>
+        fail('FOLLOWUP_NOT_FOUND', 'That call is not on the list.', 404),
+      );
       const earlier = await tx.followUpEvent.findUnique({
         where: { followUpId_idempotencyKey: { followUpId: id, idempotencyKey } },
       });
@@ -283,13 +301,16 @@ export class FollowUps {
   }
 
   private async one(id: string, req: AuthRequest) {
-    const row = await this.db.followUp.findUniqueOrThrow({ where: { id }, include: shown });
+    const row = await this.db.followUp.findUniqueOrThrow({
+      where: { id },
+      include: shownFor(req),
+    });
     const [view] = await this.views([row], req, istToday());
     return view!;
   }
 
   /** What has come in from each customer since their promise was written, net of reversals. */
-  private async paidSince(rows: readonly Shown[]) {
+  private async paidSince(rows: readonly Shown[], req: AuthRequest) {
     const promises = rows.filter((row) => row.promisedPaise !== null);
     const paid = new Map<string, number>();
     if (!promises.length) return paid;
@@ -298,6 +319,8 @@ export class FollowUps {
       where: {
         customerId: { in: [...new Set(promises.map((row) => row.customerId))] },
         createdAt: { gte: from },
+        // What was paid to another firm keeps nobody's promise here.
+        ...firmWhere(req),
         OR: [
           { kind: 'PAYMENT_RECEIVED' },
           { kind: 'REVERSAL', reverses: { kind: 'PAYMENT_RECEIVED' } },
@@ -320,7 +343,7 @@ export class FollowUps {
   /** Each person's view of a row, built field by field. A balance only once it is signed. */
   private async views(rows: readonly Shown[], req: AuthRequest, today: string) {
     const [paid, stopped] = await Promise.all([
-      this.paidSince(rows),
+      this.paidSince(rows, req),
       stoppedIds(
         this.db,
         rows.map((row) => row.customer),
@@ -366,14 +389,14 @@ export class FollowUps {
         doneAt: row.doneAt,
         createdAt: row.createdAt,
         signedOff: signed,
-        balancePaise: signed && seesBalance ? row.customer.khataBalancePaise : null,
+        balancePaise: signed && seesBalance ? dueOf(req, row.customer) : null,
         lastRemindedAt:
           reminded.find((item) => item.customerId === row.customerId)?._max.createdAt ?? null,
         reminderBlocked: reminderBlock({
           purpose: 'PAYMENT',
           stopped: stopped.has(row.customerId),
           signed,
-          balancePaise: row.customer.khataBalancePaise,
+          balancePaise: dueOf(req, row.customer),
           phone: row.customer.phone,
         }),
       };
@@ -425,7 +448,7 @@ export class FollowUps {
     const rows = await this.db.followUp.findMany({
       where: {
         ...shopAsked(req, 'crm.followups.read', locationId),
-        customer: realCustomer,
+        customer: { ...realCustomer, ...customerFirmWhere(req) },
         doneAt: null,
         dueOn: { lte: today },
         ...(mine === '1' ? { assigneeId: req.user.id } : {}),
@@ -433,7 +456,7 @@ export class FollowUps {
       },
       orderBy: [{ dueOn: 'asc' }, { id: 'asc' }],
       take: DUE_LIMIT + 1,
-      include: shown,
+      include: shownFor(req),
     });
     const rank = (promise: string | null) =>
       promise === 'BROKEN' ? 0 : promise === 'KEPT' ? 2 : 1;
@@ -458,7 +481,7 @@ export class FollowUps {
     const today = istToday();
     const where = {
       ...shopAsked(req, 'crm.followups.read', locationId),
-      customer: realCustomer,
+      customer: { ...realCustomer, ...customerFirmWhere(req) },
       ...(mine === '1' ? { assigneeId: req.user.id } : {}),
       ...(customerId ? { customerId } : {}),
     } satisfies Prisma.FollowUpWhereInput;
@@ -479,7 +502,7 @@ export class FollowUps {
             : { ...where, doneAt: { not: null }, ...page.after },
         orderBy: page.orderBy,
         take: page.take,
-        include: shown,
+        include: shownFor(req),
       }),
     );
     return { today, ...rows, items: await this.views(rows.items, req, today) };
@@ -494,6 +517,7 @@ export class FollowUpsController {
     @Inject(FollowUps) private followUps: FollowUps,
   ) {}
 
+  @Firm('own')
   @Can('crm.followups.read', scoped)
   @Get('followups')
   list(@Query() query: Record<string, unknown>, @Req() req: AuthRequest) {
@@ -507,6 +531,7 @@ export class FollowUpsController {
     return this.followUps.people(locationId, req);
   }
 
+  @Firm('own')
   @Can('crm.followups', scoped)
   @Post('followups')
   @Contract(followUpCreateSchema)
@@ -517,6 +542,7 @@ export class FollowUpsController {
     return this.followUps.create(input, req);
   }
 
+  @Firm('own')
   @Can('crm.followups', atFollowUp())
   @Patch('followups/:id')
   @Contract(followUpChangeSchema)
@@ -529,6 +555,7 @@ export class FollowUpsController {
   }
 
   /** Aaj ke call as a spreadsheet. The same rows the person sees, numbers hidden the same way. */
+  @Firm('own')
   @Can('crm.followups.read', scoped)
   @Get('reports/aaj-ke-call.csv')
   async csv(

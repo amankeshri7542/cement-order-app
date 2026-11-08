@@ -15,11 +15,13 @@ import {
 } from '@shiv/shared';
 import { z } from 'zod';
 import { Db } from '../db';
+import { firmNames, firmsOf, firmWhere, requireCustomerVisible } from '../firms';
 import {
   AuthRequest,
   Can,
   Contract,
   fail,
+  Firm,
   forbid,
   Input,
   requireAt,
@@ -38,6 +40,8 @@ import {
   stoppedIds,
   type Tx,
 } from './common';
+import { tallyInFirms } from '../tally/desk';
+import { firmBalanceShops, firmOldestDues } from './reports';
 import { TallyNumbers } from './tally-numbers';
 
 const blockCode: Record<ReminderBlock, [code: string, message: string]> = {
@@ -47,6 +51,15 @@ const blockCode: Record<ReminderBlock, [code: string, message: string]> = {
   NO_BALANCE: ['REMINDER_NO_BALANCE', 'Nothing is due from this customer.'],
 };
 const notStaff = { deletedAt: null, role: { not: 'ADMIN' as const } };
+
+/** A customer's due as this person may see it: the total over their firms. */
+const dueOf = (
+  req: Pick<AuthRequest, 'firms'>,
+  customer: { khataBalancePaise: number; firmBalances: { balancePaise: number }[] },
+) =>
+  firmsOf(req) === 'ALL'
+    ? customer.khataBalancePaise
+    : customer.firmBalances.reduce((total, row) => total + row.balancePaise, 0);
 
 @ApiTags('Customer khata and CRM')
 @Controller('admin')
@@ -60,7 +73,9 @@ export class CustomerPageController {
    * Sab kuch: orders, money, reminders, calls, notes and follow-ups, newest first. Each source is
    * read past the cursor and the pages merged, so there is no table to keep in step. A shop's
    * people see that shop's orders and calls; the balance and the notes belong to the whole firm.
+   * Someone limited to some firms sees those firms' orders and khata only.
    */
+  @Firm('own')
   @Can('customers.read')
   @Get('customers/:id/timeline')
   async timeline(
@@ -74,6 +89,7 @@ export class CustomerPageController {
       select: { id: true },
     });
     if (!customer) fail('CUSTOMER_NOT_FOUND', 'Customer not found.', 404);
+    await requireCustomerVisible(this.db, req, id);
     // paginate has already checked this cursor and its date.
     const after = query.cursor
       ? (JSON.parse(Buffer.from(query.cursor, 'base64url').toString()) as {
@@ -93,7 +109,12 @@ export class CustomerPageController {
     const [orders, entries, notes, contacts, followUps] = await Promise.all([
       can('orders.read')
         ? this.db.order.findMany({
-            where: { userId: id, ...shopWhere(req, 'orders.read'), ...before('createdAt') },
+            where: {
+              userId: id,
+              ...shopWhere(req, 'orders.read'),
+              ...firmWhere(req),
+              ...before('createdAt'),
+            },
             orderBy: order('createdAt'),
             take: page.take,
             select: {
@@ -114,11 +135,13 @@ export class CustomerPageController {
         : nothing,
       can('khata.read.one')
         ? this.db.customerLedgerEntry.findMany({
-            where: { customerId: id, ...before('occurredAt') },
+            // Khata money is the firm's, whichever shop took it.
+            where: { customerId: id, ...firmWhere(req), ...before('occurredAt') },
             orderBy: order('occurredAt'),
             take: page.take,
             select: {
               id: true,
+              firmId: true,
               kind: true,
               amountPaise: true,
               balanceAfterPaise: true,
@@ -187,6 +210,7 @@ export class CustomerPageController {
         actorId: row.actorId,
         kind: 'KHATA' as const,
         entryKind: row.kind,
+        firmId: row.firmId,
         amountPaise: row.amountPaise,
         balanceAfterPaise: row.balanceAfterPaise,
         // An order's entry names the order in its note, and so does taking it back, so that stays
@@ -258,7 +282,11 @@ export class CustomerPageController {
     };
   }
 
-  /** The top of the customer page. Each block only for whoever may see it. */
+  /**
+   * The top of the customer page. Each block only for whoever may see it, and the money only at
+   * this person's firms.
+   */
+  @Firm('own')
   @Can('customers.read')
   @Get('customers/:id/crm')
   async facts(@Param('id') id: string, @Req() req: AuthRequest) {
@@ -272,25 +300,33 @@ export class CustomerPageController {
         creditLimitPaise: true,
         khataViewOn: true,
         remindersStoppedAt: true,
+        firmBalances: { where: firmWhere(req), select: { firmId: true, balancePaise: true } },
       },
     });
     if (!customer) fail('CUSTOMER_NOT_FOUND', 'Customer not found.', 404);
+    await requireCustomerVisible(this.db, req, id);
+    const firms = firmsOf(req);
     const seesKhata = canDo(req.access, 'khata.read.one');
     const seesOrders = canDo(req.access, 'orders.read');
     const seesCalls = canDo(req.access, 'crm.followups.read');
     const [signoff, lastOrder, lastPayment, nextFollowUp, lastReminder, oldest, stopped] =
       await Promise.all([
-        this.db.khataSignoff.findFirst({ where: { customerId: id } }),
+        this.db.khataSignoff.findFirst({ where: { customerId: id, ...firmWhere(req) } }),
         seesOrders
           ? this.db.order.findFirst({
-              where: { userId: id, ...shopWhere(req, 'orders.read') },
+              where: { userId: id, ...shopWhere(req, 'orders.read'), ...firmWhere(req) },
               orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
               select: { id: true, number: true, createdAt: true, status: true },
             })
           : null,
         seesKhata
           ? this.db.customerLedgerEntry.findFirst({
-              where: { customerId: id, kind: 'PAYMENT_RECEIVED', reversal: null },
+              where: {
+                customerId: id,
+                kind: 'PAYMENT_RECEIVED',
+                reversal: null,
+                ...firmWhere(req),
+              },
               orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
               select: { occurredAt: true, amountPaise: true },
             })
@@ -307,7 +343,11 @@ export class CustomerPageController {
           orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
           select: { createdAt: true },
         }),
-        seesKhata ? oldestDues(this.db, [id]) : null,
+        seesKhata
+          ? firms === 'ALL'
+            ? oldestDues(this.db, [id])
+            : firmOldestDues(this.db, firms, [id])
+          : null,
         stoppedIds(this.db, [customer]),
       ]);
     const approver = signoff
@@ -316,7 +356,11 @@ export class CustomerPageController {
           select: { name: true },
         })
       : null;
-    const seesTally = canDo(req.access, 'tally.numbers.view');
+    // The Tally numbers are worked out over the whole customer, so they come only when none of it
+    // is another firm's.
+    const seesTally =
+      canDo(req.access, 'tally.numbers.view') && (await tallyInFirms(this.db, req, id));
+    const names = seesKhata ? await firmNames(this.db) : [];
     return {
       signoff: signoff
         ? {
@@ -337,10 +381,15 @@ export class CustomerPageController {
       nextFollowUp,
       khata: seesKhata
         ? {
-            balancePaise: customer.khataBalancePaise,
+            balancePaise: dueOf(req, customer),
             creditAllowed: customer.creditAllowed,
             limitPaise: customer.creditLimitPaise,
             oldestDue: oldest?.get(id) ?? null,
+            byFirm: customer.firmBalances.map((row) => ({
+              firmId: row.firmId,
+              name: names.find((firm) => firm.id === row.firmId)?.name ?? '',
+              balancePaise: row.balancePaise,
+            })),
           }
         : null,
       // Not even an empty block for anyone who may not see Tally: the word stays off their screen.
@@ -434,13 +483,18 @@ export class CustomerPageController {
     };
   }
 
-  /** The shop whose call this is: the follow-up's, or where the money or the last order is. */
+  /**
+   * The shop whose call this is: the follow-up's, or where the money or the last order is. For
+   * someone limited to some firms, where their firms' money or last order is.
+   */
   private async shopOf(
     tx: Pick<Tx, '$queryRaw' | 'followUp' | 'order'>,
+    req: AuthRequest,
     customerId: string,
     purpose: ReminderPurpose,
     followUpId?: string,
   ) {
+    const firms = firmsOf(req);
     if (followUpId) {
       const row = await tx.followUp.findFirst({
         where: { id: followUpId, customerId },
@@ -450,9 +504,18 @@ export class CustomerPageController {
       return row.locationId;
     }
     if (purpose === 'PAYMENT')
-      return (await balanceShops(tx as never, [customerId])).get(customerId) ?? null;
+      return (
+        (firms === 'ALL'
+          ? await balanceShops(tx as never, [customerId])
+          : await firmBalanceShops(tx as never, firms, [customerId])
+        ).get(customerId) ?? null
+      );
     const last = await tx.order.findFirst({
-      where: { userId: customerId, status: { notIn: ['CANCELLED', 'REFUNDED'] } },
+      where: {
+        userId: customerId,
+        status: { notIn: ['CANCELLED', 'REFUNDED'] },
+        ...firmWhere(req),
+      },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       select: { locationId: true },
     });
@@ -465,20 +528,25 @@ export class CustomerPageController {
     return req.access['crm.remind'] === 'ALL';
   }
 
-  private words(purpose: ReminderPurpose, customer: { name: string; khataBalancePaise: number }) {
+  private words(purpose: ReminderPurpose, customer: { name: string }, balancePaise: number) {
     return purpose === 'QUIET'
       ? quietText({ name: customer.name, shop: SHOP_NAME })
-      : reminderText({
-          name: customer.name,
-          balancePaise: customer.khataBalancePaise,
-          shop: SHOP_NAME,
-        });
+      : reminderText({ name: customer.name, balancePaise, shop: SHOP_NAME });
+  }
+
+  /** The customer as a reminder reads them: the sign-off and the due at this person's firms. */
+  private reminderCustomer(req: AuthRequest) {
+    return {
+      khataSignoffs: { where: firmWhere(req), select: { id: true }, take: 1 },
+      firmBalances: { where: firmWhere(req), select: { balancePaise: true } },
+    } as const;
   }
 
   /**
    * What the Yaad dilao button would do, for drawing it. Sends nothing and records nothing. The link
    * holds the number, so it comes only to someone who may hold the number and work this shop.
    */
+  @Firm('own')
   @Can('customers.read')
   @Get('customers/:id/reminder')
   async preview(
@@ -493,28 +561,31 @@ export class CustomerPageController {
     const { purpose } = parsed.data;
     const customer = await this.db.user.findFirst({
       where: { id, ...realCustomer },
-      include: { khataSignoffs: { select: { id: true }, take: 1 } },
+      include: this.reminderCustomer(req),
     });
     if (!customer) fail('CUSTOMER_NOT_FOUND', 'Customer not found.', 404);
-    const shop = await this.shopOf(this.db, id, purpose);
+    await requireCustomerVisible(this.db, req, id);
+    const due = dueOf(req, customer);
+    const shop = await this.shopOf(this.db, req, id, purpose);
     const blocked = reminderBlock({
       purpose,
       stopped: (await stoppedIds(this.db, [customer])).has(id),
       signed: customer.khataSignoffs.length > 0,
-      balancePaise: customer.khataBalancePaise,
+      balancePaise: due,
       phone: customer.phone,
     });
     const seesBalance = purpose === 'QUIET' || canDo(req.access, 'khata.read.one');
     const allowed = !blocked && this.mayRemind(req, shop);
-    const text = !blocked && seesBalance ? this.words(purpose, customer) : null;
+    const text = !blocked && seesBalance ? this.words(purpose, customer, due) : null;
     const last = await this.db.customerContact.findFirst({
       where: { customerId: id, kind: purpose === 'QUIET' ? 'QUIET' : 'REMINDER' },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       select: { createdAt: true },
     });
-    const number = canDo(req.access, 'tally.numbers.view')
-      ? await this.tally.forCustomer(id)
-      : null;
+    const number =
+      canDo(req.access, 'tally.numbers.view') && (await tallyInFirms(this.db, req, id))
+        ? await this.tally.forCustomer(id)
+        : null;
     return {
       purpose,
       blocked,
@@ -536,6 +607,7 @@ export class CustomerPageController {
    * filled in. Nothing is sent: the person sends it from their own WhatsApp, or does not. The words
    * and the amount are worked out here, from the balance now, never taken from the request.
    */
+  @Firm('own')
   @Can('crm.remind', scoped)
   @Post('customers/:id/reminder')
   @Contract(reminderSchema)
@@ -547,22 +619,25 @@ export class CustomerPageController {
     return this.db.atomic(async (tx) => {
       const customer = await tx.user.findFirst({
         where: { id, ...realCustomer },
-        include: { khataSignoffs: { select: { id: true }, take: 1 } },
+        include: this.reminderCustomer(req),
       });
       if (!customer) fail('CUSTOMER_NOT_FOUND', 'Customer not found.', 404);
-      const shop = await this.shopOf(tx, id, input.purpose, input.followUpId);
+      await requireCustomerVisible(tx, req, id);
+      // The amount asked for is what is owed to this person's firms, never another firm's due.
+      const due = dueOf(req, customer);
+      const shop = await this.shopOf(tx, req, id, input.purpose, input.followUpId);
       if (!this.mayRemind(req, shop)) forbid(req, 'crm.remind');
       const blocked = reminderBlock({
         purpose: input.purpose,
         stopped: (await stoppedIds(tx as never, [customer])).has(id),
         signed: customer.khataSignoffs.length > 0,
-        balancePaise: customer.khataBalancePaise,
+        balancePaise: due,
         phone: customer.phone,
       });
       // Asked first, so a retry after a stop request gets the refusal and not the old link.
       if (blocked) fail(blockCode[blocked][0], blockCode[blocked][1], 409);
       const kind = input.purpose === 'QUIET' ? 'QUIET' : 'REMINDER';
-      const text = this.words(input.purpose, customer);
+      const text = this.words(input.purpose, customer, due);
       const reply = (contactId: string) => ({
         id: contactId,
         purpose: input.purpose,
@@ -608,7 +683,7 @@ export class CustomerPageController {
             contactId: contact.id,
             purpose: input.purpose,
             followUpId: input.followUpId ?? null,
-            ...(input.purpose === 'PAYMENT' ? { balancePaise: customer.khataBalancePaise } : {}),
+            ...(input.purpose === 'PAYMENT' ? { balancePaise: due } : {}),
           },
         },
       });
@@ -620,6 +695,7 @@ export class CustomerPageController {
    * "Mujhe message mat karo." Anyone who reminds may write that down, at any shop. Only an owner may
    * take it back, because the customer's word should not be undone by the person chasing them.
    */
+  @Firm('own')
   @Can('crm.remind', scoped)
   @Put('customers/:id/reminder-stop')
   @Contract(reminderStopSchema)
@@ -635,6 +711,7 @@ export class CustomerPageController {
         select: { remindersStoppedAt: true },
       });
       if (!customer) fail('CUSTOMER_NOT_FOUND', 'Customer not found.', 404);
+      await requireCustomerVisible(tx, req, id);
       await setStopped(tx, id, input.stopped, customer.remindersStoppedAt, req.user.id);
       return { stopped: input.stopped };
     });

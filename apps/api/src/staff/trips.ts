@@ -19,12 +19,14 @@ import { z } from 'zod';
 import { blindShops } from '../blind-count';
 import { Events } from '../catalog';
 import { Db } from '../db';
+import { firmOfLocation } from '../firms';
 import {
   atOrder,
   AuthRequest,
   Can,
   Contract,
   fail,
+  Firm,
   forbid,
   Input,
   requireAt,
@@ -128,6 +130,7 @@ export class StaffJobs {
           totalPaise: true,
           status: true,
           locationId: true,
+          firmId: true,
           payment: { select: { method: true } },
         },
       });
@@ -585,6 +588,7 @@ export class StaffJobs {
         select: {
           status: true,
           locationId: true,
+          firmId: true,
           address: true,
           payment: { select: { id: true, method: true, status: true, amountPaise: true } },
         },
@@ -632,6 +636,7 @@ export class StaffJobs {
             data: {
               paymentId: payment.id,
               locationId: order.locationId,
+              firmId: order.firmId,
               kind: 'COLLECTION',
               channel: 'UPI',
               amountPaise: body.collected.amountPaise,
@@ -919,16 +924,20 @@ export class StaffJobs {
       const collections = await tx.driverCollection.findMany({ where: { handoverKey: key } });
       const payments = await tx.payment.findMany({
         where: { orderId: { in: collections.map((row) => row.orderId) } },
-        select: { id: true, orderId: true },
+        select: { id: true, orderId: true, order: { select: { firmId: true } } },
       });
+      const drawerFirm = await firmOfLocation(tx, offered.locationId);
       // The cash has now really entered this drawer, so this is when today's sheet sees it.
       let recorded = 0;
       for (const row of collections) {
-        const paymentId = payments.find((payment) => payment.orderId === row.orderId)?.id;
+        const paid = payments.find((payment) => payment.orderId === row.orderId);
+        const paymentId = paid?.id;
         await tx.financialMovement.create({
           data: {
             ...(paymentId ? { paymentId } : {}),
             locationId: offered.locationId,
+            // The order's firm: its money, even when another shop's drawer counted it.
+            firmId: paid?.order.firmId ?? drawerFirm,
             kind: 'COLLECTION',
             channel: 'CASH',
             amountPaise: row.amountPaise,
@@ -943,6 +952,7 @@ export class StaffJobs {
         await tx.financialMovement.create({
           data: {
             locationId: offered.locationId,
+            firmId: drawerFirm,
             kind: body.countedPaise < recorded ? 'HANDOVER_SHORT' : 'HANDOVER_OVER',
             channel: 'CASH',
             amountPaise: Math.abs(body.countedPaise - recorded),
@@ -1113,12 +1123,13 @@ export class StaffJobsController {
   ) {
     return this.jobs.offerCash(body, req);
   }
-  @Can('cash.count', scoped) @Get('admin/galla/handovers') handovers(
-    @Query() query: Record<string, string>,
-    @Req() req: AuthRequest,
-  ) {
+  @Firm('shop')
+  @Can('cash.count', scoped)
+  @Get('admin/galla/handovers')
+  handovers(@Query() query: Record<string, string>, @Req() req: AuthRequest) {
     return this.jobs.handovers(req, query);
   }
+  @Firm('shop')
   @Can('cash.count', scoped)
   @Post('admin/galla/handovers/:key/count')
   @Contract(cashCountSchema)

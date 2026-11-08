@@ -414,6 +414,13 @@ describe('another shop’s data', () => {
   });
   it('the whole firm’s udhaar total is not on a shop manager’s dashboard', async () => {
     await db.user.update({ where: { id: 'customer' }, data: { khataBalancePaise: 5000000 } });
+    // What is owed is kept per firm too; the dashboard reads each firm's figure.
+    const firmRow = { customerId_firmId: { customerId: 'customer', firmId: 'firm_main' } };
+    await db.customerFirmBalance.upsert({
+      where: firmRow,
+      create: { customerId: 'customer', firmId: 'firm_main', balancePaise: 5000000 },
+      update: { balancePaise: 5000000 },
+    });
     try {
       const of = async (who: string) =>
         JSON.stringify(
@@ -423,6 +430,7 @@ describe('another shop’s data', () => {
       expect(await of('manager')).not.toContain('5000000');
     } finally {
       await db.user.update({ where: { id: 'customer' }, data: { khataBalancePaise: 0 } });
+      await db.customerFirmBalance.update({ where: firmRow, data: { balancePaise: 0 } });
     }
   });
   it('the money report counts only your shop', async () => {
@@ -512,6 +520,11 @@ describe('customers across shops', () => {
     await db.user.update({
       where: { id: 'customer' },
       data: { khataBalancePaise: 12345, creditAllowed: true, creditLimitPaise: 500000 },
+    });
+    await db.customerFirmBalance.upsert({
+      where: { customerId_firmId: { customerId: 'customer', firmId: 'firm_main' } },
+      create: { customerId: 'customer', firmId: 'firm_main', balancePaise: 12345 },
+      update: { balancePaise: 12345 },
     });
   });
   it('those with the udhaar list see who owes what', async () => {

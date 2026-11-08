@@ -23,11 +23,18 @@ export const godownFor: Record<string, string> = {
 
 export async function seedPlaces(db: PrismaClient, ctx: SeedContext) {
   const started = istInstant(ctx.firstDay, 7, 0);
+  // Placeholder names and prefixes: the real ones are typed by the owners in Settings.
+  await db.firm.update({
+    where: { id: PLACES.firmA },
+    data: { tradeName: 'Demo Firm A', billPrefix: 'DFA', address: 'Patna (demo)' },
+  });
   await db.firm.create({
     data: {
       id: PLACES.firmB,
       legalName: 'Demo Firm B (sample)',
       tradeName: 'Demo Firm B',
+      billPrefix: 'DFB',
+      address: 'Danapur (demo)',
       createdAt: started,
     },
   });

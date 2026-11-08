@@ -25,6 +25,13 @@ export function listWindow(query: Record<string, unknown>) {
   return { take: Math.max(whole(query.limit, 24, 100), 1), skip: whole(query.skip, 0, 1000000) };
 }
 
+/**
+ * Which part of a customer one comparison covers. A firm: that firm's khata against the Tally
+ * companies mapped to it. Unmapped: the khata of every firm not named, against companies not yet
+ * mapped to any firm. Left out: the whole customer, as before there were two firms.
+ */
+export type ReconPart = { firmId: string } | { unmapped: string[] };
+
 export type DifferenceLine = {
   reason: 'TIMING' | 'APP_ONLY' | 'TALLY_ONLY' | 'AMOUNT' | 'OPENING';
   amountPaise: string;
@@ -35,6 +42,12 @@ export type DifferenceLine = {
   note?: string;
 };
 
+/** Whether a Tally company of this firm (null: not mapped yet) is in this part of the customer. */
+function inPart(part: ReconPart | undefined, firmId: string | null) {
+  if (!part) return true;
+  return 'firmId' in part ? firmId === part.firmId : firmId === null;
+}
+
 @Injectable()
 export class TallyRecon {
   constructor(@Inject(Db) private db: Db) {}
@@ -44,10 +57,14 @@ export class TallyRecon {
    * ever corrected from the other: difference = khata - (-Tally closing), then the named lines, and
    * whatever is left is `unexplained`, which only the mirror's own gap can produce.
    */
-  async numbers(customerId: string, now = new Date()) {
+  async numbers(customerId: string, now = new Date(), part?: ReconPart) {
     const customer = await this.db.user.findFirst({
       where: { id: customerId, deletedAt: null, role: { not: 'ADMIN' } },
-      select: { id: true, khataBalancePaise: true },
+      select: {
+        id: true,
+        khataBalancePaise: true,
+        firmBalances: { select: { firmId: true, balancePaise: true } },
+      },
     });
     if (!customer) fail('CUSTOMER_NOT_FOUND', 'Customer not found.', 404);
     const links = await this.db.tallyPartyLink.findMany({
@@ -55,8 +72,18 @@ export class TallyRecon {
       include: { ledger: { include: { company: true } } },
     });
     // Tally sync copies and ignored files are not the books, so they never reach a total.
-    const live = links.filter((link) => link.ledger.company.role === 'PRIMARY');
-    const khataPaise = customer.khataBalancePaise;
+    const live = links.filter(
+      (link) => link.ledger.company.role === 'PRIMARY' && inPart(part, link.ledger.company.firmId),
+    );
+    const firmPaise = (wanted: (firmId: string) => boolean) =>
+      customer.firmBalances
+        .filter((row) => wanted(row.firmId))
+        .reduce((total, row) => total + row.balancePaise, 0);
+    const khataPaise = !part
+      ? customer.khataBalancePaise
+      : 'firmId' in part
+        ? firmPaise((firmId) => firmId === part.firmId)
+        : customer.khataBalancePaise - firmPaise((firmId) => part.unmapped.includes(firmId));
     if (!live.length)
       return { customerId, khataPaise, state: 'NOT_LINKED' as const, tally: null, parties: [] };
     const parties = live.map(({ ledger }) => ({
@@ -111,7 +138,7 @@ export class TallyRecon {
         changes: [],
         matches: [],
       };
-    const explained = await this.explain(customerId, live, now);
+    const explained = await this.explain(customerId, live, now, part);
     const named = explained.lines.reduce(
       (total, line) => total + BigInt(line.amountPaise),
       BigInt(0),
@@ -141,12 +168,18 @@ export class TallyRecon {
       };
     }[],
     now: Date,
+    part?: ReconPart,
   ) {
+    const firmRows = !part
+      ? {}
+      : 'firmId' in part
+        ? { firmId: part.firmId }
+        : { firmId: { notIn: part.unmapped } };
     // Our copy starts at one date per company; before it we hold only Tally's balance on that day.
     const copyFrom =
       links.map((link) => link.ledger.company.copyFrom ?? '').sort()[0] || '9999-12-31';
     const entries = await this.db.customerLedgerEntry.findMany({
-      where: { customerId },
+      where: { customerId, ...firmRows },
       select: {
         id: true,
         amountPaise: true,
@@ -160,7 +193,7 @@ export class TallyRecon {
     // A signed opening is where the khata begins. Tally's bills from before it are already inside
     // that figure, so they roll up into one opening line and are not chased one by one.
     const signoff = await this.db.khataSignoff.findFirst({
-      where: { customerId },
+      where: { customerId, ...firmRows },
       select: { asOf: true, ledgerEntryId: true },
     });
     const agreedFrom = signoff && signoff.asOf > copyFrom ? signoff.asOf : copyFrom;
@@ -410,13 +443,43 @@ export class TallyRecon {
     return links.length;
   }
 
+  /**
+   * One row per firm whose Tally company is mapped, comparing that firm's khata with that company.
+   * Companies not mapped yet keep the row with no firm, against the khata of the other firms, so a
+   * shop with one firm and no mapping works as it always did.
+   */
   async refresh(customerId: string) {
-    const result = await this.numbers(customerId).catch(() => null);
+    const links = await this.db.tallyPartyLink.findMany({
+      where: { userId: customerId, status: 'LINKED', ledger: { company: { role: 'PRIMARY' } } },
+      select: { ledger: { select: { company: { select: { firmId: true } } } } },
+    });
+    const mapped = [...new Set(links.flatMap((link) => link.ledger.company.firmId ?? []))].sort();
+    const unmapped = links.some((link) => !link.ledger.company.firmId);
+    const parts: [string, ReconPart | undefined][] = [
+      ...mapped.map((firmId): [string, ReconPart] => [firmId, { firmId }]),
+      ...(unmapped || !mapped.length
+        ? [
+            ['', mapped.length ? { unmapped: mapped } : undefined] as [
+              string,
+              ReconPart | undefined,
+            ],
+          ]
+        : []),
+    ];
+    const kept: string[] = [];
+    for (const [firmId, part] of parts)
+      if (await this.write(customerId, firmId, part)) kept.push(firmId);
+    // A firm whose company was unmapped, or a link undone, leaves no line behind.
+    await this.db.khataRecon
+      .deleteMany({ where: { customerId, firmId: { notIn: kept } } })
+      .catch(() => undefined);
+  }
+
+  /** Works out one comparison and keeps it. False when there is nothing to compare. */
+  private async write(customerId: string, firmId: string, part: ReconPart | undefined) {
+    const result = await this.numbers(customerId, new Date(), part).catch(() => null);
     const now = new Date();
-    if (!result?.tally) {
-      await this.db.khataRecon.deleteMany({ where: { customerId } }).catch(() => undefined);
-      return;
-    }
+    if (!result?.tally) return false;
     const reasons: Record<string, string> = {};
     for (const line of (result as { lines?: DifferenceLine[] }).lines ?? [])
       reasons[line.reason] = String(BigInt(reasons[line.reason] ?? '0') + BigInt(line.amountPaise));
@@ -431,18 +494,22 @@ export class TallyRecon {
       computedAt: now,
     };
     await this.db.khataRecon.upsert({
-      where: { customerId_firmId: { customerId, firmId: '' } },
-      create: { customerId, firmId: '', ...row },
+      where: { customerId_firmId: { customerId, firmId } },
+      create: { customerId, firmId, ...row },
       update: row,
     });
+    return true;
   }
 
   /** The Farq list: biggest unexplained first, then biggest difference. Whole numbers, with their time. */
-  async differences(query: Record<string, unknown>) {
+  async differences(query: Record<string, unknown>, firms?: readonly string[]) {
     const { take, skip } = listWindow(query);
+    // Someone limited to some firms sees only their firms' lines, and only their firms' books count.
+    const inFirms = firms ? Prisma.sql`AND r."firmId" = ANY(${[...firms]})` : Prisma.empty;
     const rows = await this.db.$queryRaw<
       {
         customerId: string;
+        firmId: string;
         name: string;
         phone: string;
         appPaise: number;
@@ -454,19 +521,21 @@ export class TallyRecon {
         computedAt: Date;
       }[]
     >`
-      SELECT r."customerId", u.name, u.phone, r."appPaise", r."tallyPaise", r."differencePaise",
+      SELECT r."customerId", r."firmId", u.name, u.phone, r."appPaise", r."tallyPaise", r."differencePaise",
         r."unexplainedPaise", r.reasons, r."tallyAsOf", r."computedAt"
       FROM "KhataRecon" r JOIN "User" u ON u.id = r."customerId"
-      WHERE u."deletedAt" IS NULL AND COALESCE(r."differencePaise", 0) <> 0
+      WHERE u."deletedAt" IS NULL AND COALESCE(r."differencePaise", 0) <> 0 ${inFirms}
         -- These rows wait for the worker, and neither of these may. Only books in use reach the list,
-        -- and plan 09 hides differences until each of the customer's copies has finished.
+        -- and plan 09 hides differences until each of the customer's copies has finished. A firm's
+        -- row asks only of that firm's companies.
         AND EXISTS (
           SELECT 1 FROM "TallyPartyLink" k JOIN "TallyCompany" c ON c.id = k."companyId"
-          WHERE k."userId" = r."customerId" AND k.status = 'LINKED' AND c.role = 'PRIMARY')
+          WHERE k."userId" = r."customerId" AND k.status = 'LINKED' AND c.role = 'PRIMARY'
+            AND (r."firmId" = '' OR c."firmId" = r."firmId"))
         AND NOT EXISTS (
           SELECT 1 FROM "TallyPartyLink" k JOIN "TallyCompany" c ON c.id = k."companyId"
           WHERE k."userId" = r."customerId" AND k.status = 'LINKED' AND c.role = 'PRIMARY'
-            AND c.phase <> 'LIVE')
+            AND c.phase <> 'LIVE' AND (r."firmId" = '' OR c."firmId" = r."firmId"))
       ORDER BY ABS(COALESCE(r."unexplainedPaise", 0)) DESC, ABS(COALESCE(r."differencePaise", 0)) DESC,
         r."customerId"
       LIMIT ${take + 1} OFFSET ${skip}`;

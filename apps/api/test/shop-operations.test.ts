@@ -498,6 +498,7 @@ describe('a blind count', () => {
   it('compares against goods promised to orders that are still in the yard', async () => {
     await db.order.create({
       data: {
+        firmId: 'firm_main',
         id: 'held',
         number: 'SC-HELD',
         userId: 'customer',
@@ -785,7 +786,15 @@ describe('Galla', () => {
     locationId = MAIN,
   ) =>
     db.financialMovement.create({
-      data: { kind, amountPaise, channel, occurredAt, locationId, actorId: 'cashier' },
+      data: {
+        firmId: 'firm_main',
+        kind,
+        amountPaise,
+        channel,
+        occurredAt,
+        locationId,
+        actorId: 'cashier',
+      },
     });
   const paid = (kind: 'PAID_IN' | 'PAID_OUT', amountPaise: number, who = 'cashier') =>
     post(who, 'galla/entries', {

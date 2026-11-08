@@ -108,12 +108,15 @@ export const openingDraftSchema = z.strictObject({
   paperPaise: khataPaise,
   note: words(300).optional(),
   locationId: rowId.optional(),
+  // Each firm's opening is its own. Empty: the shop's firm.
+  firmId: rowId.optional(),
 });
 export const openingApproveSchema = z.strictObject({
   rows: z
     .array(
       z.strictObject({
         customerId: rowId,
+        firmId: rowId.optional(),
         // What the owner saw. A figure changed since then is refused for that row.
         draftVersion: z.number().int().min(1),
         chosenPaise: khataPaise,
@@ -123,8 +126,9 @@ export const openingApproveSchema = z.strictObject({
     .min(1)
     .max(100)
     .refine(
-      (rows) => new Set(rows.map((row) => row.customerId)).size === rows.length,
-      'Each customer can appear once.',
+      (rows) =>
+        new Set(rows.map((row) => `${row.customerId}|${row.firmId ?? ''}`)).size === rows.length,
+      'Each customer can appear once per firm.',
     ),
 });
 export const khataViewSchema = z.strictObject({ on: z.boolean() });

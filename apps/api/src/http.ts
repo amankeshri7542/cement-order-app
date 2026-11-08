@@ -24,6 +24,9 @@ export type AuthRequest = Request & {
   sessionAccessHash: string;
   // What this person may do now, worked out from their memberships on every request.
   access: Access;
+  // Whose books this person may see: every firm, or the listed ones (a one-firm accountant, or shop
+  // staff, who see their own shops' firms).
+  firms?: 'ALL' | string[];
   deniedPermission?: string;
   requestId: string;
   rawBody?: Buffer;
@@ -50,6 +53,13 @@ export function accountView(user: User) {
 export const Public = () => SetMetadata('public', true);
 /** A signed-in person acting on their own records only. The handler must filter by req.user.id. */
 export const Self = () => SetMetadata('self', true);
+/**
+ * How a route keeps to the firms a person may see (plan v4, two firms). `own`: it filters by firm
+ * itself (firmWhere, customerFirmWhere or requireFirm). `shop`: its shop filter does it, because a
+ * one-firm person holds shop-by-shop permissions only at that firm's shops. `none`: it reads nothing
+ * that belongs to a firm. route-rules.test.ts fails any firm-owned route without one.
+ */
+export const Firm = (how: 'own' | 'shop' | 'none') => SetMetadata('firm', how);
 /** The handler limits its own results to the shops this person holds the permission at. */
 export const scoped = 'scoped' as const;
 export type ShopLookup = (

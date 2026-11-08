@@ -6,7 +6,18 @@ import { pendingCod, pendingQuote } from './abuse';
 import { z } from 'zod';
 import { Db } from './db';
 import { Lifecycle } from './lifecycle';
-import { atOrder, atQuote, atWork, AuthRequest, Can, fail, Input, scoped, shopWhere } from './http';
+import {
+  atOrder,
+  atQuote,
+  atWork,
+  AuthRequest,
+  Can,
+  fail,
+  Input,
+  scoped,
+  shopWhere,
+  Firm,
+} from './http';
 import { enqueueWhatsApp } from './alerts';
 import { money } from '@shiv/shared';
 import { accessFor } from '@shiv/shared';
@@ -211,7 +222,10 @@ export class OwnerWorkController {
     @Inject(Lifecycle) private lifecycle: Lifecycle,
   ) {}
 
-  @Can('orders.confirm', scoped) @Get('owners') owners(@Req() req: AuthRequest) {
+  @Firm('none')
+  @Can('orders.confirm', scoped)
+  @Get('owners')
+  owners(@Req() req: AuthRequest) {
     const shops = shopWhere(req, 'orders.confirm');
     return this.db.user.findMany({
       where: {
@@ -233,7 +247,10 @@ export class OwnerWorkController {
     });
   }
 
-  @Can('orders.confirm', scoped) @Get('work') queue(@Req() req: AuthRequest) {
+  @Firm('shop')
+  @Can('orders.confirm', scoped)
+  @Get('work')
+  queue(@Req() req: AuthRequest) {
     const shops = shopWhere(req, 'orders.confirm');
     return this.db.ownerWork.findMany({
       where: {
@@ -362,17 +379,17 @@ export class OwnerWorkController {
       return override;
     });
   }
-  @Can('orders.confirm', atQuote()) @Post('quotes/:id/acknowledge') async acknowledgeQuote(
-    @Param('id') id: string,
-    @Req() req: AuthRequest,
-  ) {
+  @Firm('shop')
+  @Can('orders.confirm', atQuote())
+  @Post('quotes/:id/acknowledge')
+  async acknowledgeQuote(@Param('id') id: string, @Req() req: AuthRequest) {
     return this.acknowledgeEntity({ quoteId: id }, req);
   }
 
-  @Can('orders.confirm', atOrder()) @Post('orders/:id/acknowledge') async acknowledge(
-    @Param('id') id: string,
-    @Req() req: AuthRequest,
-  ) {
+  @Firm('shop')
+  @Can('orders.confirm', atOrder())
+  @Post('orders/:id/acknowledge')
+  async acknowledge(@Param('id') id: string, @Req() req: AuthRequest) {
     return this.acknowledgeEntity({ orderId: id }, req);
   }
 
@@ -404,7 +421,10 @@ export class OwnerWorkController {
     return result;
   }
 
-  @Can('orders.confirm', atWork()) @Post('work/:id/assign') async assign(
+  @Firm('shop')
+  @Can('orders.confirm', atWork())
+  @Post('work/:id/assign')
+  async assign(
     @Param('id') id: string,
     @Input(assignment) body: z.infer<typeof assignment>,
     @Req() req: AuthRequest,
@@ -442,7 +462,10 @@ export class OwnerWorkController {
     });
   }
 
-  @Can('orders.confirm', atWork()) @Post('work/:id/retry') async retry(@Param('id') id: string) {
+  @Firm('shop')
+  @Can('orders.confirm', atWork())
+  @Post('work/:id/retry')
+  async retry(@Param('id') id: string) {
     await this.db.ownerWork.update({
       where: { id },
       data: { deliveredAt: null, nextAttemptAt: new Date() },
