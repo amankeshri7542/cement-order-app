@@ -44,6 +44,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { AuthController, AuthGuard, AuthService } from './auth';
 import { AccountController, CatalogController, Events } from './catalog';
 import { Db } from './db';
+import { assertDemoSinks } from './demo-lock';
 import { OwnerWorkController, OwnerWorkService } from './owner-work';
 import { Errors, Public, cookie, fail, hash } from './http';
 import { getConfig } from './config';
@@ -243,6 +244,13 @@ export function uploadGate(db: Db) {
 export async function createApp() {
   const c = getConfig();
   const app = await NestFactory.create(AppModule, { rawBody: true, logger: ['error', 'warn'] });
+  // The sink lock: on a database holding demo data, refuse to run with any real sender.
+  try {
+    await assertDemoSinks(app.get(Db), c);
+  } catch (error) {
+    await app.close();
+    throw error;
+  }
   app.getHttpAdapter().getInstance().set('trust proxy', c.TRUST_PROXY_HOPS);
   app.setGlobalPrefix('api/v1');
   app.use(helmet());

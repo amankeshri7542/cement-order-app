@@ -23,6 +23,7 @@ import { WaDrafts } from './whatsapp/drafts';
 import { WaSender } from './whatsapp/sender';
 import { WaService } from './whatsapp/service';
 import { Db } from './db';
+import { sendBlocked } from './demo-lock';
 import { OrdersService } from './orders';
 import { OwnerWorkService } from './owner-work';
 import { AlertsService } from './alerts';
@@ -250,6 +251,7 @@ export class Maintenance implements OnModuleInit, OnModuleDestroy {
   }
   private async devicePush() {
     if (!getApps().length) return;
+    if (await sendBlocked(this.db)) return;
     const pending = await this.db.notification.findMany({
       where: {
         sentAt: null,

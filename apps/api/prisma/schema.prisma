@@ -929,7 +929,16 @@ model Firm {
   locations             Location[]
 }
 
+/// A shop sells; a godown only stores and sends stock on to the shops.
+enum LocationKind {
+  SHOP
+  GODOWN
+}
+
 model Location {
+  kind                  LocationKind          @default(SHOP)
+  /// Locations at one physical place share a site. The godown is one location per firm at one site.
+  siteId                String?
   /// How far below list a manager here may set a rate at confirm. Set by owners; 0 means not at all.
   managerRateCapPercent Int                   @default(0)
   id                    String                @id @default(cuid())
@@ -967,6 +976,8 @@ model Location {
   trips                 Trip[]
   cashHandovers         CashHandover[]
   followUps             FollowUp[]
+
+  @@index([siteId])
 }
 
 /// Per-shop stock. Product.stock stays the all-shops total until every client reads availability.
@@ -2594,4 +2605,17 @@ model AdvisorSettings {
   generalEnabled Boolean  @default(true)
   updatedById    String?
   updatedAt      DateTime @updatedAt
+}
+
+/// One run of the demo seed (`npm run seed:demo`). While any row exists, the API sends no SMS,
+/// WhatsApp or push: seeded phone numbers are valid Indian numbers and could belong to real people.
+model DemoBatch {
+  id        String   @id
+  size      String
+  seed      Int
+  /// The last day of the seeded history (India date).
+  today     String
+  /// The golden figures the run computed by SQL (also written to seed-manifest.json).
+  manifest  Json
+  createdAt DateTime @default(now())
 }

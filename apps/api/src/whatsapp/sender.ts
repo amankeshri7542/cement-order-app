@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { WaReply, WaSettings, WaThread } from '@prisma/client';
 import { getConfig } from '../config';
 import { Db } from '../db';
+import { sendBlocked } from '../demo-lock';
 import { errorCause, hash } from '../http';
 import { knownCustomer, stageAllows } from './draft-core';
 import { promisesTooMuch, type AiReplyKind } from './replies';
@@ -221,6 +222,8 @@ export class WaSender {
 
   /** One worker pass. Rows are claimed first, so a second worker can never send the same one. */
   async sendDue(limit = 10) {
+    // Demo data is loaded: a real partner sends nothing; the fake one still records.
+    if (getConfig().WA_REPLY_PROVIDER !== 'fake' && (await sendBlocked(this.db))) return 0;
     await this.recoverLost();
     const now = new Date();
     const at = now.toISOString();

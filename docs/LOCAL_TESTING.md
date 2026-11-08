@@ -312,6 +312,44 @@ review directory. These unthrottled local results do not establish phone/network
 performance or live-provider acceptance. Run it after other build/browser work,
 not concurrently with files or output directories it owns.
 
+## Demo data (a busy, made-up business)
+
+`npm run seed:demo -w @shiv/api` builds a realistic history in a database of its own:
+
+- 2 firms, 2 shops, and a godown with one location per firm;
+- products in families, with rates that drift;
+- customers who order through every door;
+- stock moving between godown and shops;
+- udhaar sold and paid;
+- every evening's galla close;
+- Hazri, monthly salary, and WhatsApp cards.
+
+Every name is made up.
+
+```bash
+DATABASE_URL=postgresql://…/shiv_cement_demo npm run seed:demo -w @shiv/api -- --size medium --seed 42 --fresh
+```
+
+- **Sizes:**
+
+  | Size | History | Customers | Orders | Use | Time on this Mac |
+  |---|---|---|---|---|---|
+  | `small` | 6 months | 200 | ~3,000 | Tests | ~2 s |
+  | `medium` | 18 months | 2,000 | ~25,000 | Demos | ~8 s |
+  | `large` | 36 months | 50,000 | ~400,000 | Speed checks | ~2 min |
+
+- **Repeatable:** the same `--seed` and `--today` always build the same business. `--today` defaults to today.
+- **Refusals:** it only writes to a database whose name ends in `_dev`, `_demo` or `_test`. It refuses `NODE_ENV=production`, any database holding orders it did not make, and a second load.
+- **`--fresh`:** drops and recreates the database first. Rows in append-only tables cannot be deleted, so this is the only way to reseed. On a database that is not on this machine, it also needs `SEED_DEMO_REMOTE_DROP=yes`.
+- **Self-checks:** after writing, it checks its own invariants and fails loudly if one breaks:
+  - balances equal their ledgers;
+  - stock equals its movements;
+  - the desk's galla sheet equals every close;
+  - Hazri and pay hash chains are unbroken.
+- **Manifest:** it writes golden figures to `.local/seed-manifest.json` (choose another path with `--manifest`).
+- **Sink lock:** seeded phone numbers are valid Indian mobiles and could belong to real people. While demo data exists, the API refuses to start with any real sender configured: Twilio, live WhatsApp, Firebase push or web push. Each send path also checks before sending. Leave the providers on `mock`, `fake` or `off`.
+- **Signing in:** the seed creates no desk passwords. Run `npm run local:fixtures -w @shiv/api` against the same database to add the practice owner accounts.
+
 ## Reset and recovery
 
 - **Safe fixture rerun:** `npm run local:setup` does not replenish used stock, reset prices or rotate passwords. Record a Purchase in through the owner stock ledger to restore practice stock with evidence, or create a new clearly labelled test product. Run `npm run local:fixtures -w @shiv/api` to add missing fixture records only. Disposable test suites reset their own databases automatically. Never use `prisma migrate reset` on the development database to “fix” a migration.

@@ -71,7 +71,7 @@ const ledgerFields = [
   'note',
 ] as const;
 type LedgerRow = Partial<Record<(typeof ledgerFields)[number], unknown>>;
-const ledgerHash = (prevHash: string, seq: number, row: LedgerRow) =>
+export const ledgerHash = (prevHash: string, seq: number, row: LedgerRow) =>
   createHash('sha256')
     .update(prevHash)
     .update(

@@ -22,6 +22,7 @@ import type { Response } from 'express';
 import { z } from 'zod';
 import { otpRequestSchema, otpResendSeconds, otpVerifySchema, refreshSchema } from '@shiv/shared';
 import { Db } from './db';
+import { sendBlocked } from './demo-lock';
 import { getConfig } from './config';
 import {
   accountView,
@@ -296,8 +297,12 @@ export class AuthService {
       };
       await tx.otpChallenge.upsert({ where: { phone }, create: { phone, ...data }, update: data });
     });
-    if (getConfig().OTP_PROVIDER === 'twilio')
+    if (getConfig().OTP_PROVIDER === 'twilio') {
+      // Demo data is loaded, and this number may be a real person's: no SMS goes out.
+      if (await sendBlocked(this.db))
+        fail('OTP_UNAVAILABLE', 'SMS verification is unavailable. Try again shortly.', 503);
       await this.twilio('Verifications', new URLSearchParams({ To: phone, Channel: 'sms' }));
+    }
     return {
       sent: true,
       expiresIn: 300,

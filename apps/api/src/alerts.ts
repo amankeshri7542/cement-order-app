@@ -26,6 +26,7 @@ import {
 } from '@shiv/shared';
 import { getConfig } from './config';
 import { Db } from './db';
+import { sendBlocked } from './demo-lock';
 import {
   AuthRequest,
   Can,
@@ -127,6 +128,7 @@ export class AlertsService {
   private async webPush() {
     const c = getConfig();
     if (!c.WEB_PUSH_PUBLIC_KEY || !c.WEB_PUSH_PRIVATE_KEY) return;
+    if (await sendBlocked(this.db)) return;
     if (!this.vapidReady) {
       webPush.setVapidDetails(c.WEB_PUSH_SUBJECT, c.WEB_PUSH_PUBLIC_KEY, c.WEB_PUSH_PRIVATE_KEY);
       this.vapidReady = true;
@@ -249,6 +251,8 @@ export class AlertsService {
 
   private async whatsapp() {
     const c = getConfig();
+    // Demo data is loaded: real alerts wait, untouched, until the database is dropped.
+    if (c.WHATSAPP_PROVIDER === 'meta' && (await sendBlocked(this.db))) return;
     const due = await this.db.outboundMessage.findMany({
       where: { status: 'PENDING', nextAttemptAt: { lte: new Date() } },
       take: 20,
