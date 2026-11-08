@@ -522,7 +522,7 @@ test('net band tha: many accepted with one reason, ticking only what is plainly 
   }
 });
 
-test('the count shows on Today, on the side bar and under Aur on a phone, and goes when settled', async ({
+test('the count shows on Today, on the side bar and on the Menu tab of a phone, and goes when settled', async ({
   browser,
 }) => {
   await db.attendanceReview.updateMany({ where: { status: 'OPEN' }, data: { status: 'ACCEPTED' } });
@@ -544,9 +544,9 @@ test('the count shows on Today, on the side bar and under Aur on a phone, and go
       name: hinglish['owner.desk'],
       exact: true,
     });
-    await expect(tabs.locator('a:visible')).toHaveCount(5);
+    await expect(tabs.locator('a:visible, button:visible')).toHaveCount(5);
     await expect(
-      tabs.getByRole('link', { name: hinglish['owner.more'], exact: true }),
+      tabs.getByRole('link', { name: `${hinglish['owner.shell.menu']} 1`, exact: true }),
     ).toBeVisible();
     await go(handset.page, '/more');
     await expect(

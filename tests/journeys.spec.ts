@@ -295,7 +295,7 @@ test('store records stock and delivery rules; customers browse server pages on m
   await page.setViewportSize({ width: 390, height: 844 });
   const nav = page.getByRole('navigation', { name: en['owner.desk'], exact: true });
   await expect(nav).toBeVisible();
-  await nav.getByRole('link', { name: en['owner.more'], exact: true }).click();
+  await nav.getByRole('link', { name: new RegExp(`^${en['owner.shell.menu']}`) }).click();
   await page.getByRole('link', { name: en['owner.settings.title'], exact: true }).click();
   await expect(page).toHaveURL(/\/settings$/);
   await expect(page.locator('.sidebar')).toHaveCount(0);

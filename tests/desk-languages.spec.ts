@@ -62,9 +62,10 @@ const saved = async () =>
 
 async function shellIn(page: Page, language: keyof typeof catalogue) {
   await expect(page.locator('html')).toHaveAttribute('lang', lang[language]);
-  const tabs = page.locator('nav[data-owner-tabs]');
-  await expect(tabs.getByText(say(language, 'owner.today'), { exact: true })).toBeVisible();
-  await expect(tabs.getByText(say(language, 'owner.more'), { exact: true })).toBeVisible();
+  // The rail on a laptop, the tabs on a phone: whichever is shown carries Aaj and Pakka karo.
+  const nav = page.getByRole('navigation', { name: say(language, 'owner.desk'), exact: true });
+  await expect(nav.getByText(say(language, 'owner.today'), { exact: true })).toBeVisible();
+  await expect(nav.getByText(say(language, 'owner.pakka.title'), { exact: true })).toBeVisible();
 }
 
 test('the shell renders in all three languages, and the choice is saved', async ({

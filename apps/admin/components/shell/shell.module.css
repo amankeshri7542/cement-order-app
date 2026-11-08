@@ -1,0 +1,433 @@
+/* The desk shell (plan v4 B4a): the grouped rail and top bar from 1024 px, the five tabs below. */
+.hidden {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.wideOnly {
+  display: none;
+}
+.phoneOnly {
+  display: flex;
+}
+@media (min-width: 64rem) {
+  .wideOnly {
+    display: contents;
+  }
+  .top .phoneOnly {
+    display: none;
+  }
+}
+
+/* ---- Rail ------------------------------------------------------------------------------------ */
+.rail {
+  display: none;
+}
+@media (min-width: 64rem) {
+  .rail {
+    position: fixed;
+    z-index: var(--z-sticky);
+    inset-block: 0;
+    inset-inline-start: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    inline-size: var(--rail-width);
+    padding: 0.75rem 0.5rem 1rem;
+    overflow-y: auto;
+    background: var(--rail);
+    color: var(--rail-ink);
+    overscroll-behavior: contain;
+  }
+}
+.railHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem;
+  padding-block-end: 0.5rem;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-inline-size: 0;
+  color: inherit;
+  font-weight: 600;
+  text-decoration: none;
+}
+.brand img {
+  border-radius: var(--radius-control);
+  flex: none;
+}
+.railFlip {
+  display: inline-grid;
+  place-items: center;
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--rail-muted);
+  cursor: pointer;
+  flex: none;
+}
+.railFlip:hover {
+  color: var(--rail-ink);
+}
+.railNew {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-block-size: 2.5rem;
+  margin-block: 0.25rem 0.5rem;
+  padding-inline: 0.75rem;
+  border-radius: var(--radius-control);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+.railGroup {
+  display: grid;
+  gap: 0.125rem;
+  padding-block: 0.25rem;
+}
+.railGroup ul {
+  display: grid;
+  gap: 0.125rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.groupLabel {
+  padding: 0.5rem 0.75rem 0.125rem;
+  color: var(--rail-muted);
+  font-size: var(--text-micro);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.railLink {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-block-size: 2.25rem;
+  padding-inline: 0.75rem;
+  border-radius: var(--radius-control);
+  color: var(--rail-ink);
+  text-decoration: none;
+  font-size: var(--text-body);
+}
+.railLink:hover {
+  background: color-mix(in srgb, var(--rail-ink) 10%, transparent);
+}
+/* The page this person is on: an amber marker and a lighter ground. */
+.railLink[aria-current='page'] {
+  background: color-mix(in srgb, var(--rail-ink) 14%, transparent);
+  font-weight: 600;
+  box-shadow: inset 0.1875rem 0 0 var(--accent);
+}
+.railText {
+  flex: 1;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rail :is(a, button):focus-visible {
+  outline: 0.125rem solid var(--rail-ink);
+  outline-offset: 0.125rem;
+}
+.rail[data-narrow] {
+  align-items: center;
+}
+.rail[data-narrow] .railText,
+.rail[data-narrow] .groupLabel {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+.rail[data-narrow] .railHead {
+  flex-direction: column;
+}
+.rail[data-narrow] .railGroup {
+  border-block-start: 0.0625rem solid color-mix(in srgb, var(--rail-ink) 18%, transparent);
+}
+.rail[data-narrow] .railLink,
+.rail[data-narrow] .railNew {
+  justify-content: center;
+  padding-inline: 0;
+  inline-size: 2.5rem;
+}
+.rail[data-narrow] .count {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: -0.25rem;
+}
+.count {
+  min-inline-size: 1.25rem;
+  padding-inline: 0.3125rem;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: var(--text-micro);
+  font-weight: 700;
+  line-height: 1.25rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Top bar --------------------------------------------------------------------------------- */
+.top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0.5rem 1rem;
+  border-block-end: 0.0625rem solid var(--rule);
+  background: var(--bg);
+  min-inline-size: 0;
+}
+.top .brand {
+  min-block-size: var(--touch);
+  color: var(--ink);
+  font-size: var(--text-lead);
+}
+.topEnd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+  margin-inline-start: auto;
+  min-inline-size: 0;
+}
+.search {
+  position: relative;
+  flex: 1 1 18rem;
+  max-inline-size: 36rem;
+  min-inline-size: 0;
+}
+.search input {
+  box-sizing: border-box;
+  inline-size: 100%;
+  min-block-size: var(--touch);
+  padding: 0.5rem 0.75rem;
+  border: 0.0625rem solid var(--rule-strong);
+  border-radius: var(--radius-control);
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+}
+@media (min-width: 64rem) {
+  .search input {
+    min-block-size: 2.5rem;
+  }
+}
+.search input::placeholder {
+  color: var(--ink-3);
+}
+.search input:focus-visible,
+.scope select:focus-visible,
+.saathi:focus-visible,
+.tab:focus-visible,
+.plusList a:focus-visible {
+  outline: 0.125rem solid var(--focus);
+  outline-offset: 0.125rem;
+}
+.results {
+  position: absolute;
+  z-index: var(--z-popover);
+  inset-inline: 0;
+  inset-block-start: calc(100% + 0.25rem);
+  border: 0.0625rem solid var(--rule-strong);
+  background: var(--card);
+  box-shadow: var(--shadow-overlay);
+}
+.results ul {
+  margin: 0;
+  padding: 0.25rem 0;
+  list-style: none;
+}
+.result {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  min-block-size: var(--touch);
+  align-items: center;
+  padding: 0 0.75rem;
+  cursor: pointer;
+}
+.result[aria-selected='true'],
+.result:hover {
+  background: var(--surface);
+  box-shadow: inset 0.1875rem 0 0 var(--accent);
+}
+.resultKind {
+  color: var(--ink-2);
+  font-size: var(--text-meta);
+}
+.soon {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border-block-start: 0.0625rem solid var(--rule);
+  color: var(--ink-2);
+  font-size: var(--text-meta);
+}
+.scope {
+  display: inline-flex;
+  flex-wrap: wrap;
+  max-inline-size: 100%;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: var(--text-meta);
+  color: var(--ink-2);
+  min-inline-size: 0;
+}
+.scope select {
+  min-block-size: var(--touch);
+  max-inline-size: min(12rem, 100%);
+  padding-inline: 0.5rem;
+  border: 0.0625rem solid var(--rule-strong);
+  border-radius: var(--radius-control);
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--text-body);
+}
+@media (min-width: 64rem) {
+  .scope select {
+    min-block-size: 2.5rem;
+  }
+}
+.scopeLocked {
+  color: var(--ink-2);
+  font-size: var(--text-meta);
+}
+.saathi {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-block-size: 2.5rem;
+  padding: 0 0.75rem;
+  border: 0.0625rem solid var(--rule-strong);
+  border-radius: var(--radius-control);
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.langMark {
+  font-size: var(--text-meta);
+  font-weight: 700;
+}
+.initials {
+  display: inline-grid;
+  place-items: center;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  border-radius: var(--radius-pill);
+  background: var(--ink);
+  color: var(--card);
+  font-size: var(--text-micro);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.keys {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+}
+.keys div {
+  display: grid;
+  grid-template-columns: 4rem 1fr;
+  align-items: center;
+}
+.keys dd {
+  margin: 0;
+}
+
+/* ---- Phone tabs ------------------------------------------------------------------------------ */
+.tabs {
+  position: fixed;
+  z-index: var(--z-sticky);
+  inset-inline: 0;
+  inset-block-end: 0;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  padding: 0.25rem 0.25rem calc(0.25rem + env(safe-area-inset-bottom));
+  background: var(--rail);
+  color: var(--rail-ink);
+}
+@media (min-width: 64rem) {
+  .tabs {
+    display: none;
+  }
+}
+.tab {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.125rem;
+  min-block-size: 3.5rem;
+  min-inline-size: 0;
+  padding: 0.25rem;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: var(--text-meta);
+  line-height: var(--leading-tight);
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+.tab span:first-of-type {
+  overflow-wrap: normal;
+  min-inline-size: 0;
+}
+.tab[aria-current='page'] {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.tab .count {
+  position: absolute;
+  inset-block-start: 0.125rem;
+  inset-inline-end: 0.25rem;
+}
+.plus svg {
+  padding: 0.125rem;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.plusList {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.plusList a {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-block-size: 3.5rem;
+  padding: 0 1rem;
+  border: 0.0625rem solid var(--rule);
+  background: var(--card);
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+}

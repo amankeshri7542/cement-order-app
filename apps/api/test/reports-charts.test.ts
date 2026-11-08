@@ -266,6 +266,22 @@ describe('money in, by shop and by day', () => {
     expect(one.shops.map((shop: { id: string }) => shop.id)).toEqual([SECOND]);
     await get('manager', `reports/trends?${range}&locationId=${MAIN}`).expect(200);
   });
+  it('the money report and its sheet follow the shop the desk is looking at', async () => {
+    await money('COLLECTION', 100000, at(DAY));
+    await money('COLLECTION', 700000, at(DAY), SECOND);
+    const all = (await get('papa', `reports/money?${range}`).expect(200)).body;
+    const second = (await get('papa', `reports/money?${range}&locationId=${SECOND}`).expect(200))
+      .body;
+    const main = (await get('papa', `reports/money?${range}&locationId=${MAIN}`).expect(200)).body;
+    expect(second.netPaise).toBe(700000);
+    expect(main.netPaise + second.netPaise).toBe(all.netPaise);
+    const sheet = await get('papa', `reports/export?${range}&locationId=${SECOND}`).expect(200);
+    expect(sheet.text).toContain('7000');
+    expect(sheet.text).not.toContain('1000.00');
+    // A manager may not look at a shop that is not theirs, by either address.
+    await get('manager', `reports/money?${range}&locationId=${SECOND}`).expect(403);
+    await get('manager', `reports/export?${range}&locationId=${SECOND}`).expect(403);
+  });
   it('a closed shop stays only while it has money in the range', async () => {
     const quiet = (await get('papa', `reports/trends?${range}`).expect(200)).body;
     expect(quiet.shops.map((shop: { id: string }) => shop.id)).not.toContain(THIRD);

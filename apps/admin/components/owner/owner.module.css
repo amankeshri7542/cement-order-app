@@ -8,16 +8,6 @@
 .login * {
   box-sizing: border-box;
 }
-.topbar {
-  max-inline-size: 65rem;
-  margin: auto;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1rem;
-  gap: 1rem;
-  border-block-end: 0.0625rem solid var(--shiv-line);
-}
 .brand {
   display: flex;
   align-items: center;
@@ -28,14 +18,6 @@
 }
 .brand img {
   border-radius: var(--shiv-radius-sm);
-}
-.stockLink {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-block-size: 2.75rem;
-  color: var(--shiv-ink);
-  text-decoration: none;
 }
 .main {
   max-inline-size: 65rem;
@@ -333,7 +315,6 @@
   font-size: 0.875rem;
 }
 .main :is(a, button, input, select, textarea):focus-visible,
-.topbar a:focus-visible,
 .login :is(a, button, input):focus-visible {
   outline: 0.1875rem solid var(--shiv-blue);
   outline-offset: 0.1875rem;
@@ -380,9 +361,6 @@
   .main {
     padding: 2rem 1.5rem 9rem;
   }
-  .topbar {
-    padding-inline: 1.5rem;
-  }
   .fab {
     inset-block-end: 6.5rem;
   }
@@ -390,9 +368,6 @@
 @media (max-width: 23rem) {
   .brand {
     font-size: 1.125rem;
-  }
-  .stockLink span {
-    max-inline-size: 5rem;
   }
   .steps {
     gap: 0.25rem;
@@ -408,9 +383,6 @@
 .ratePreview {
   inline-size: 100%;
   block-size: auto;
-}
-.topbar {
-  flex-wrap: wrap;
 }
 
 /* The ledger look: the double rule always sits before the money, so every screen reads like one
@@ -555,17 +527,6 @@
   text-align: center;
   font-weight: 700;
 }
-.tabCount {
-  min-inline-size: 1.25rem;
-  padding-inline: 0.25rem;
-  border-radius: var(--shiv-radius-pill);
-  background: var(--shiv-brand);
-  color: var(--shiv-brand-ink);
-  font-size: var(--shiv-small);
-  font-weight: 700;
-  line-height: 1.25rem;
-  text-align: center;
-}
 
 /* WhatsApp reading. A customer's words keep their own line breaks and are never linked. */
 .waWords {
@@ -586,26 +547,6 @@
 }
 
 /* The shell. A phone has five tabs at the bottom; from 64rem the same nav is the side bar. */
-.sideOnly {
-  display: none !important;
-}
-.shopSwitch {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-inline-start: auto;
-  font-size: var(--shiv-small);
-}
-.shopSwitch select {
-  min-block-size: 2.75rem;
-  max-inline-size: 11rem;
-  font: inherit;
-  border: 0.0625rem solid var(--shiv-line);
-  border-radius: var(--shiv-radius-sm);
-  background: var(--shiv-card);
-  color: var(--shiv-ink);
-  padding-inline: 0.5rem;
-}
 .linkButton {
   padding: 0;
   border: 0;
@@ -626,50 +567,27 @@
   padding-block: 0.75rem;
   border-block-start: 0.0625rem solid var(--shiv-line);
 }
-.moreCount {
-  composes: tabCount;
-}
 .totalRow th,
 .totalRow td {
   border-block-start: 0.1875rem double var(--shiv-ink);
   font-weight: 700;
 }
+/* The shell (plan v4 B4a): the rail sits on the left from 64rem, at its wide or narrow width. */
+.shell {
+  --rail-width: 15rem;
+}
+:global([data-rail='narrow']) .shell {
+  --rail-width: 4rem;
+}
+.column {
+  min-inline-size: 0;
+}
 @media (min-width: 64rem) {
-  .sideOnly {
-    display: flex !important;
-  }
   .shell {
-    padding-inline-start: 15rem;
+    padding-inline-start: var(--rail-width);
   }
-  .shell nav[data-owner-tabs] {
-    inset-block: 0;
-    inset-inline: 0 auto;
-    margin: 0;
-    max-inline-size: none;
-    inline-size: 15rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.125rem;
-    padding: 1rem 0.5rem;
-    overflow-y: auto;
-  }
-  .shell nav[data-owner-tabs] a {
-    flex-direction: row;
-    justify-content: flex-start;
-    gap: 0.625rem;
-    min-block-size: 2.75rem;
-    padding-inline: 0.75rem;
-    text-align: start;
-  }
-  .stockLink,
-  .moreCount {
-    display: none;
-  }
-  .topbar,
   .main {
     max-inline-size: 90rem;
-  }
-  .main {
     padding-block-end: 3rem;
   }
 }

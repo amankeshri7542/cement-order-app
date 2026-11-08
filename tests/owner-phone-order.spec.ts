@@ -62,6 +62,15 @@ test.beforeAll(async () => {
 });
 test.afterAll(() => db.$disconnect());
 
+/** On a phone a new order starts from the [+] tab (plan v4 B4a). */
+async function startPhoneOrder(page: Page) {
+  await page
+    .getByRole('navigation', { name: hinglish['owner.desk'], exact: true })
+    .getByRole('button', { name: new RegExp(`^${hinglish['owner.shell.plus']}`) })
+    .click();
+  await page.getByRole('link', { name: hinglish['owner.phoneOrder'], exact: true }).click();
+}
+
 async function signInHindi(page: Page) {
   await deskLanguage(page.context(), 'hinglish');
   await page.goto(desk + '/today');
@@ -112,10 +121,7 @@ test('Hindi phone order survives a lost receipt and completes cash delivery once
   await signInHindi(page);
   await expect(page.getByText('Aaj ki vasooli', { exact: true })).toBeVisible();
   await accessibleAtLargeText(page, 'Aaj');
-  await page
-    .getByRole('navigation', { name: hinglish['owner.desk'], exact: true })
-    .getByRole('link', { name: hinglish['owner.newOrder'], exact: true })
-    .click();
+  await startPhoneOrder(page);
   await expect(page).toHaveURL(/\/orders\/new$/);
   await expect(page.getByRole('heading', { name: 'Naya order', exact: true })).toBeVisible();
   await accessibleAtLargeText(page, 'Naya order');
@@ -232,10 +238,7 @@ test('Hindi phone order survives a lost receipt and completes cash delivery once
 
 async function draftPhoneOrder(page: Page, phone: string, name: string) {
   await signInHindi(page);
-  await page
-    .getByRole('navigation', { name: hinglish['owner.desk'], exact: true })
-    .getByRole('link', { name: hinglish['owner.newOrder'], exact: true })
-    .click();
+  await startPhoneOrder(page);
   await page
     .getByRole('textbox', { name: hinglish['owner.phone'], exact: true })
     .fill(phone.slice(3));
@@ -408,19 +411,18 @@ test('a loaded delivery minimum does not block switching a phone draft to counte
   }
 });
 
-test('the new-order tab is one tap away on every desk screen', async ({ page }) => {
+test('a new order is two taps away on every desk screen: [+], then the kind', async ({ page }) => {
   await signInHindi(page);
-  const newOrder = page
+  const plus = page
     .getByRole('navigation', { name: hinglish['owner.desk'], exact: true })
-    .getByRole('link', { name: hinglish['owner.newOrder'], exact: true });
+    .getByRole('button', { name: new RegExp(`^${hinglish['owner.shell.plus']}`) });
   for (const route of ['/today', '/orders', '/customers', '/udhaar', '/stock', '/more']) {
     await page.goto(desk + route);
-    await expect(newOrder, route).toBeVisible();
+    await expect(plus, route).toBeVisible();
   }
-  await newOrder.click();
+  await startPhoneOrder(page);
   await expect(page).toHaveURL(/\/orders\/new$/);
   await expect(
     page.getByRole('heading', { name: hinglish['owner.newOrder'], exact: true }),
   ).toBeVisible();
-  await expect(newOrder).toHaveAttribute('aria-current', 'page');
 });

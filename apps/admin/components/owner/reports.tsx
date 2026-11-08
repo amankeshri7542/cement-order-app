@@ -8,7 +8,7 @@ import { istToday, money, shortDayLabel, type MoneyReport } from '@shiv/shared';
 import { isMessageKey, type MessageKey } from '@shiv/i18n';
 import { api, download } from '../../lib/api';
 import { useLanguage, useT } from '../../lib/i18n';
-import { useAction, useOwner } from '../../lib/owner';
+import { useAction, useOwner, useShopScope } from '../../lib/owner';
 import { PageHeader, Problem, QueryStatus } from './common';
 import { NotYourPage } from './not-your-page';
 import {
@@ -577,20 +577,26 @@ function ReportPage() {
   const today = istToday();
   const { from, to } = datesOf(range, today);
   // Each block loads and fails on its own, so one slow chart never holds up the others.
+  // The shop or firm chosen in the top bar (plan v4 B4a). The server checks it is this person's.
+  const scope = useShopScope();
   const report = useQuery({
-    queryKey: ['owner-reports', 'money', from, to],
-    queryFn: () => api<MoneyReport>(`/admin/reports/money?from=${from}&to=${to}`),
+    queryKey: ['owner-reports', 'money', from, to, scope.params],
+    queryFn: () =>
+      api<MoneyReport>(`/admin/reports/money?from=${from}&to=${to}${scope.query('&')}`),
   });
   const trends = useQuery({
-    queryKey: ['owner-reports', 'trends', from, to],
-    queryFn: () => api<Trends>(`/admin/reports/trends?from=${from}&to=${to}`),
+    queryKey: ['owner-reports', 'trends', from, to, scope.params],
+    queryFn: () => api<Trends>(`/admin/reports/trends?from=${from}&to=${to}${scope.query('&')}`),
   });
   const age = useQuery({
-    queryKey: ['owner-reports', 'udhaar-age'],
-    queryFn: () => api<UdhaarAge>('/admin/reports/udhaar-age'),
+    queryKey: ['owner-reports', 'udhaar-age', scope.params],
+    queryFn: () => api<UdhaarAge>(`/admin/reports/udhaar-age${scope.query()}`),
   });
   const exportFile = useAction(() =>
-    download(`/admin/reports/export?from=${from}&to=${to}`, `shiv-${from}-${to}.csv`),
+    download(
+      `/admin/reports/export?from=${from}&to=${to}${scope.query('&')}`,
+      `shiv-${from}-${to}.csv`,
+    ),
   );
   const thin = !!trends.data && trends.data.historyDays < THIN_BELOW_DAYS;
   return (

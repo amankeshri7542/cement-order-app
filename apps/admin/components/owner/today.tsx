@@ -14,15 +14,17 @@ import { PakkaQueue } from './inbox';
 import { useApprovals } from './manzoori';
 import { ReviewsLink } from './hazri/today';
 import css from './owner.module.css';
-import { useOwner } from '../../lib/owner';
+import { useOwner, useShopScope } from '../../lib/owner';
 
 export function Today() {
   const t = useT();
   const { can, shopId, reviewCount } = useOwner();
+  // The shop or firm chosen in the top bar (plan v4 B4a); orders narrow by shop only.
+  const scope = useShopScope();
   const shopQuery = shopId ? `&locationId=${shopId}` : '';
   const dashboard = useQuery({
-    queryKey: ['dashboard', shopId],
-    queryFn: () => api<Dashboard>(`/admin/dashboard${shopId ? `?locationId=${shopId}` : ''}`),
+    queryKey: ['dashboard', scope.params],
+    queryFn: () => api<Dashboard>(`/admin/dashboard${scope.query()}`),
   });
   const work = useQuery({
     queryKey: ['orders', 'list', 'work', shopId],

@@ -4,7 +4,7 @@ import { OrderSource, Prisma } from '@prisma/client';
 import type { Response } from 'express';
 import { istToday, reportRangeSchema, type MoneyReport } from '@shiv/shared';
 import { Db } from './db';
-import { AuthRequest, Can, fail, Firm, scoped, shopAsked, shopWhere } from './http';
+import { AuthRequest, Can, fail, Firm, scoped, shopAsked } from './http';
 import { firmAsked } from './firms';
 import { shownPhone } from './crm/common';
 
@@ -71,6 +71,12 @@ function rangeOf(query: Record<string, unknown>) {
  * and how (cash, UPI, online), counter sales, refunds, cash still to collect and quotes.
  * Collections are not profit: purchase costs are not tracked.
  */
+/** The shops a money report covers: the one asked for (checked), or all of this person's. */
+function askedShops(req: AuthRequest, asked?: unknown): { locationId?: { in: string[] } } {
+  const shop = shopAsked(req, 'reports.read', asked);
+  return typeof shop.locationId === 'string' ? { locationId: { in: [shop.locationId] } } : shop;
+}
+
 @ApiTags('Store administration')
 @Controller('admin/reports')
 export class ReportsController {
@@ -258,7 +264,12 @@ export class ReportsController {
   @Get('money')
   async report(@Query() query: Record<string, string>, @Req() req: AuthRequest) {
     return this.withNumbersShown(
-      await this.money(query, shopWhere(req, 'reports.read'), firmAsked(req, query.firmId)),
+      await this.money(
+        query,
+        // One shop when the desk's scope asks for one (plan v4 B4a); it must be this person's.
+        askedShops(req, query.locationId),
+        firmAsked(req, query.firmId),
+      ),
       req,
     );
   }
@@ -461,7 +472,12 @@ export class ReportsController {
   @Get(['money.csv', 'export'])
   async csv(@Query() query: Record<string, string>, @Res() res: Response, @Req() req: AuthRequest) {
     const r = this.withNumbersShown(
-      await this.money(query, shopWhere(req, 'reports.read'), firmAsked(req, query.firmId)),
+      await this.money(
+        query,
+        // One shop when the desk's scope asks for one (plan v4 B4a); it must be this person's.
+        askedShops(req, query.locationId),
+        firmAsked(req, query.firmId),
+      ),
       req,
     );
     const customerText = (value: string) => (/^\s*[=+\-@]/.test(value) ? `'${value}` : value);

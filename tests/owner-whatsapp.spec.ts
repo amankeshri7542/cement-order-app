@@ -55,7 +55,7 @@ async function signedIn(browser: Browser, role: StaffRole) {
     .fill((await (await sent).json()).devCode);
   await page.getByRole('button', { name: hinglish['owner.signIn'] }).click();
   await expect(
-    page.getByRole('heading', { name: hinglish['owner.more'], exact: true }),
+    page.getByRole('heading', { name: hinglish['owner.shell.menu'], exact: true }),
   ).toBeVisible();
   return { context, page };
 }

@@ -18,33 +18,7 @@ import {
   useQueryClient,
   type QueryKey,
 } from '@tanstack/react-query';
-import {
-  Activity,
-  Banknote,
-  BarChart3,
-  BookOpen,
-  CalendarCheck,
-  CheckCircle,
-  ClipboardList,
-  Contact,
-  FileText,
-  History,
-  Home,
-  IndianRupee,
-  Menu,
-  MessageCircle,
-  Package,
-  Plus,
-  Settings,
-  ShieldCheck,
-  Truck,
-  UserCog,
-  Users,
-  Wallet,
-  PhoneCall,
-  Scale,
-} from 'lucide-react';
-import { BottomNav, Button, Confirm, Field, PhoneField, Skeleton, Toast } from '@shiv/design';
+import { Button, Confirm, Field, PhoneField, Skeleton, Toast } from '@shiv/design';
 import {
   canDo,
   phoneDigits,
@@ -61,6 +35,18 @@ import { homeFor, pathAllowed } from './nav';
 import { ringBell, soundOn } from './bell';
 import { registerWorker } from './push';
 import { refreshAfterWrite } from './refresh';
+import {
+  allowedScope,
+  legacyShopKey,
+  readScope,
+  scopeParams,
+  scopeQuery,
+  scopeStorageKey,
+  writeScope,
+  type Scope,
+} from './scope';
+import { visibleGroups } from './shell-nav';
+import { PhoneTabs, PlusSheet, Rail, SaathiPanel, TopBar } from '../components/shell/shell';
 import css from '../components/owner/owner.module.css';
 
 declare global {
@@ -100,8 +86,13 @@ type OwnerContext = {
   offline: boolean;
   /** Whether this person's job includes a page. */
   canOpen: (path: string) => boolean;
-  /** The shop being looked at, remembered on this device. Empty means every shop. */
+  /** What the desk is looking at, remembered on this device (`useShopScope`). */
+  scope: Scope;
+  setScope: (scope: Scope) => void;
+  /** The shop being looked at. Empty means every shop, or a whole firm (`firmId`). */
   shopId: string | null;
+  /** The firm being looked at, when a whole firm is chosen. */
+  firmId: string | null;
   setShopId: (id: string | null) => void;
   /** Hazri cards waiting for this person, at the shop being looked at. */
   reviewCount: number;
@@ -152,17 +143,6 @@ async function session() {
     return api<DeskSession>('/auth/session');
   }
 }
-
-/** How many orders are waiting, on the Aaj tab. Android shows no number on the app icon. */
-function WaitingCount() {
-  const count = useContext(WaitingCounts);
-  return count ? (
-    <span className={css.tabCount} aria-label={String(count)}>
-      {count}
-    </span>
-  ) : null;
-}
-const WaitingCounts = createContext(0);
 
 function OwnerShell({ children }: { children: ReactNode }) {
   const t = useT();
@@ -364,23 +344,31 @@ function OwnerShell({ children }: { children: ReactNode }) {
     observer.observe(nav);
     return () => observer.disconnect();
   });
-  const [chosenShop, setChosenShop] = useState<string | null>(null);
+  const [chosenScope, setChosenScope] = useState<Scope>({ kind: 'all' });
   useEffect(() => {
     try {
-      setChosenShop(localStorage.getItem(shopStorageKey));
+      const stored = localStorage.getItem(scopeStorageKey);
+      // A shop remembered before plan v4 B4a carries over once.
+      const legacy = stored === null ? localStorage.getItem(legacyShopKey) : null;
+      setChosenScope(readScope(stored ?? (legacy ? `shop:${legacy}` : '')));
+      if (legacy) localStorage.removeItem(legacyShopKey);
     } catch {
       /* Keep this visit usable when browser storage is disabled. */
     }
   }, []);
-  const chooseShop = useCallback((id: string | null) => {
-    setChosenShop(id);
+  const chooseScope = useCallback((next: Scope) => {
+    setChosenScope(next);
     try {
-      if (id) localStorage.setItem(shopStorageKey, id);
-      else localStorage.removeItem(shopStorageKey);
+      const value = writeScope(next);
+      if (value) localStorage.setItem(scopeStorageKey, value);
+      else localStorage.removeItem(scopeStorageKey);
     } catch {
       /* Keep this visit usable when browser storage is disabled. */
     }
   }, []);
+  const chosenShop = chosenScope.kind === 'shop' ? chosenScope.shopId : null;
+  const [saathi, setSaathi] = useState(false);
+  const [plus, setPlus] = useState(false);
   const waiting = useQuery({
     enabled: !!access?.['orders.confirm'],
     queryKey: ['inbox'],
@@ -444,6 +432,9 @@ function OwnerShell({ children }: { children: ReactNode }) {
         </Button>
       </div>
     );
+  const scope = allowedScope(chosenScope, auth.data.locations, auth.data.firms ?? []);
+  const groups = visibleGroups(access);
+  const counts = { waiting: waiting.data?.count ?? 0, reviews: reviewCount };
   const value: OwnerContext = {
     me: auth.data.user,
     can: (permission, locationId) => canDo(access, permission, locationId),
@@ -459,32 +450,22 @@ function OwnerShell({ children }: { children: ReactNode }) {
     requestClose,
     endSession,
     offline,
-    shopId:
-      chosenShop && auth.data.locations.some((shop) => shop.id === chosenShop) ? chosenShop : null,
-    setShopId: chooseShop,
+    scope,
+    setScope: chooseScope,
+    shopId: scope.kind === 'shop' ? scope.shopId : null,
+    firmId: scope.kind === 'firm' ? scope.firmId : null,
+    setShopId: (id) => chooseScope(id ? { kind: 'shop', shopId: id } : { kind: 'all' }),
     reviewCount,
   };
   return (
     <Owner.Provider value={value}>
-      <WaitingCounts.Provider value={waiting.data?.count ?? 0}>
-        <div className={css.shell}>
-          <a href="#owner-main" className={css.skip}>
-            {t('owner.continue')}
-          </a>
-          <header className={css.topbar}>
-            <Link href="/today" className={css.brand}>
-              <img src="/icon-192.png" alt="" width="40" height="40" />
-              <span>{t('owner.deskName')}</span>
-            </Link>
-            <ShopSwitcher />
-            {/* Someone whose day starts at stock has it in the bar below instead. */}
-            {canDo(access, 'stock.read') && pathAllowed(access, '/today') && (
-              <Link href="/stock" className={css.stockLink}>
-                <Package size={20} />
-                <span>{t('owner.stock')}</span>
-              </Link>
-            )}
-          </header>
+      <div className={css.shell}>
+        <a href="#owner-main" className={css.skip}>
+          {t('owner.continue')}
+        </a>
+        <Rail groups={groups} counts={counts} />
+        <div className={css.column}>
+          <TopBar groups={groups} onSaathi={() => setSaathi(true)} />
           {process.env.NEXT_PUBLIC_TEST_DESK === 'true' && (
             <p className={css.testBand}>{t('owner.pakka.testBand')}</p>
           )}
@@ -506,114 +487,75 @@ function OwnerShell({ children }: { children: ReactNode }) {
               </section>
             )}
           </main>
-          <BottomNav label={t('owner.desk')}>
-            {deskLinks
-              .filter(({ href }) => pathAllowed(access, href))
-              .map(({ href: route, key, Icon: Mark, tab }) => (
-                <Link
-                  key={route}
-                  href={route}
-                  // Everything is on the laptop's side bar. A phone has room for five.
-                  className={
-                    tab === true || (route === '/stock' && !pathAllowed(access, '/today'))
-                      ? undefined
-                      : css.sideOnly
-                  }
-                  aria-current={
-                    path === route ||
-                    (path.startsWith(route + '/') &&
-                      !(route === '/orders' && path === '/orders/new'))
-                      ? 'page'
-                      : undefined
-                  }
-                >
-                  <Mark size={22} aria-hidden="true" />
-                  {t(key as MessageKey)}
-                  {route === '/today' && <WaitingCount />}
-                  {route === '/hazri' && reviewCount > 0 && (
-                    <span className={css.tabCount} aria-label={String(reviewCount)}>
-                      {reviewCount}
-                    </span>
-                  )}
-                  {/* A phone has Hazri under Aur, so the number waits on that tab. */}
-                  {route === '/more' && reviewCount > 0 && (
-                    <span className={css.moreCount} aria-hidden="true">
-                      {reviewCount}
-                    </span>
-                  )}
-                </Link>
-              ))}
-          </BottomNav>
-          {toast && <Toast error={toast.error}>{toast.message}</Toast>}
-          {confirmation && (
-            <Confirm
-              title={confirmation.title}
-              body={confirmation.body}
-              confirmLabel={confirmation.confirmLabel}
-              cancelLabel={t('owner.keepEditing')}
-              closeLabel={t('owner.close')}
-              onConfirm={() => finishConfirm(true)}
-              onCancel={() => finishConfirm(false)}
-            />
-          )}
         </div>
-      </WaitingCounts.Provider>
+        <PhoneTabs counts={counts} onPlus={() => setPlus(true)} onSaathi={() => setSaathi(true)} />
+        <SaathiPanel open={saathi} onClose={() => setSaathi(false)} />
+        {plus && <PlusSheet onClose={() => setPlus(false)} />}
+        <Shortcuts
+          onSaathi={() => setSaathi(true)}
+          onNew={pathAllowed(access, '/orders/new') ? () => router.push('/orders/new') : undefined}
+        />
+        {toast && <Toast error={toast.error}>{toast.message}</Toast>}
+        {confirmation && (
+          <Confirm
+            title={confirmation.title}
+            body={confirmation.body}
+            confirmLabel={confirmation.confirmLabel}
+            cancelLabel={t('owner.keepEditing')}
+            closeLabel={t('owner.close')}
+            onConfirm={() => finishConfirm(true)}
+            onCancel={() => finishConfirm(false)}
+          />
+        )}
+      </div>
     </Owner.Provider>
   );
 }
 
-const shopStorageKey = 'shiv-desk-shop';
-/** Every page on the desk, in the order the side bar shows them. `tab` puts one on a phone's bar. */
-export const deskLinks: { href: string; key: MessageKey; Icon: typeof Home; tab?: boolean }[] = [
-  { href: '/today', key: 'owner.today', Icon: Home, tab: true },
-  { href: '/inbox', key: 'owner.pakka.title', Icon: CheckCircle },
-  { href: '/orders', key: 'owner.orders', Icon: ClipboardList, tab: true },
-  { href: '/orders/new', key: 'owner.newOrder', Icon: Plus, tab: true },
-  { href: '/lists', key: 'owner.lists.title', Icon: FileText },
-  { href: '/customers', key: 'owner.customers', Icon: Users, tab: true },
-  { href: '/calls', key: 'owner.crm.todayCalls', Icon: PhoneCall },
-  { href: '/udhaar', key: 'owner.khata', Icon: BookOpen },
-  { href: '/rates', key: 'owner.rates.nav', Icon: IndianRupee },
-  { href: '/stock', key: 'owner.stock', Icon: Package },
-  { href: '/manzoori', key: 'owner.manzoori.title', Icon: ShieldCheck },
-  { href: '/galla', key: 'owner.galla.title', Icon: Wallet },
-  { href: '/hazri', key: 'owner.hazri.title', Icon: CalendarCheck },
-  { href: '/trips', key: 'owner.trips.title', Icon: Truck },
-  { href: '/salary', key: 'owner.salary.title', Icon: Banknote },
-  { href: '/reports', key: 'owner.reports', Icon: BarChart3 },
-  { href: '/tally', key: 'owner.tally.nav', Icon: Scale },
-  { href: '/activity', key: 'owner.activity', Icon: History },
-  { href: '/users', key: 'owner.people', Icon: UserCog },
-  { href: '/staff', key: 'owner.staff', Icon: Contact },
-  { href: '/whatsapp', key: 'owner.whatsappReading', Icon: MessageCircle },
-  { href: '/settings', key: 'owner.settings.title', Icon: Settings },
-  { href: '/system', key: 'owner.system.title', Icon: Activity },
-  { href: '/more', key: 'owner.more', Icon: Menu, tab: true },
-];
+/**
+ * The laptop's shortcuts (plan v4 02, section 3): `M` Saathi and `N` a new order, never while
+ * someone is typing. `/` is the search box's own, and Escape closes whatever is open.
+ */
+function Shortcuts({ onSaathi, onNew }: { onSaathi: () => void; onNew?: () => void }) {
+  useEffect(() => {
+    const press = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey || event.defaultPrevented) return;
+      const target = event.target as HTMLElement;
+      if (
+        target.isContentEditable ||
+        ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(target.tagName) ||
+        target.closest('[role="dialog"], dialog, [role="menu"]')
+      )
+        return;
+      if (!window.matchMedia('(min-width: 64rem)').matches) return;
+      const key = event.key.toLowerCase();
+      if (key === 'm') {
+        event.preventDefault();
+        onSaathi();
+      } else if (key === 'n' && onNew) {
+        event.preventDefault();
+        onNew();
+      }
+    };
+    document.addEventListener('keydown', press);
+    return () => document.removeEventListener('keydown', press);
+  }, [onSaathi, onNew]);
+  return null;
+}
 
-/** One shop at a time, or all of them. The server checks every read and write regardless. */
-function ShopSwitcher() {
-  const t = useT();
-  const { shops, shopId, setShopId, can } = useOwner();
-  // Only where this person works. Other shops exist, but there is nothing of theirs to narrow to.
-  const mine = shops.filter(
-    (shop) =>
-      can('stock.read', shop.id) || can('orders.read', shop.id) || can('galla.read', shop.id),
-  );
-  if (mine.length < 2) return null;
-  return (
-    <label className={css.shopSwitch}>
-      <span>{t('owner.shell.shop')}</span>
-      <select value={shopId ?? ''} onChange={(event) => setShopId(event.target.value || null)}>
-        <option value="">{t('owner.shell.allShops')}</option>
-        {mine.map((shop) => (
-          <option key={shop.id} value={shop.id}>
-            {shop.name}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
+/** What the desk is looking at, for a page's reads: the shop or firm chosen in the top bar. */
+export function useShopScope() {
+  const { scope, setScope, shopId, firmId } = useOwner();
+  return {
+    scope,
+    setScope,
+    shopId,
+    firmId,
+    /** `{ locationId }`, `{ firmId }` or `{}` for every shop. */
+    params: scopeParams(scope),
+    /** The same as a query string: '' or '?locationId=…', or '&…' after an existing '?'. */
+    query: (after: '?' | '&' = '?') => scopeQuery(scope, after),
+  };
 }
 
 /** Whether this is a laptop's width. Before the page is mounted it answers as a phone. */

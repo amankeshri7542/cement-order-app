@@ -519,10 +519,8 @@ test('a laptop gets a side bar and no tabs at the bottom; a phone gets five tabs
     await expect(
       nav(phone.page).getByRole('link', { name: hinglish['owner.rates.nav'], exact: true }),
     ).toBeHidden();
-    await expect(nav(phone.page).getByRole('link')).toHaveCount(
-      await nav(phone.page).locator('a:visible').count(),
-    );
-    expect(await nav(phone.page).locator('a:visible').count()).toBe(5);
+    // Aaj · Pakka karo · [+] · Saathi · Menu (plan v4 B4a).
+    await expect(nav(phone.page).locator('a:visible, button:visible')).toHaveCount(5);
     // A typed address outside someone's job shows the polite page.
     const cashier = await signedIn(browser, 'CASHIER');
     await go(cashier.page, '/manzoori');
@@ -547,7 +545,7 @@ test('the shop chosen narrows the pages, and is remembered on this device', asyn
     });
     await switcher.selectOption({ label: 'P4 doosri dukaan' });
     await go(page, '/stock');
-    await expect(switcher).toHaveValue(SECOND);
+    await expect(switcher).toHaveValue(`shop:${SECOND}`);
     await expect(
       page.getByRole('columnheader', { name: 'P4 doosri dukaan', exact: true }),
     ).toBeVisible();

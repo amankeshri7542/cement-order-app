@@ -112,7 +112,9 @@ test('an owner adds a cashier, previews the role, and the cashier sees only thei
     await expect(
       page.getByRole('heading', { name: hinglish['owner.today'], exact: true }),
     ).toBeVisible();
-    await nav(page).getByRole('link', { name: hinglish['owner.more'], exact: true }).click();
+    await nav(page)
+      .getByRole('link', { name: new RegExp(`^${hinglish['owner.shell.menu']}`) })
+      .click();
     await page.getByRole('link', { name: hinglish['owner.people'] }).click();
     await expect(page.getByRole('heading', { name: hinglish['owner.people'] })).toBeVisible();
     // Your own row says it is you, and offers no way to change your own access.
@@ -130,7 +132,7 @@ test('an owner adds a cashier, previews the role, and the cashier sees only thei
     await expect(page.getByText(hinglish['owner.can.takeMoney'], { exact: true })).toBeVisible();
     await expect(page.getByText(hinglish['owner.can.refund'], { exact: true })).toBeVisible();
     // The preview says refunds are something a cashier cannot do.
-    const cannot = page.locator('ul').nth(1);
+    const cannot = page.locator('#owner-main ul').nth(1);
     await expect(cannot).toContainText(hinglish['owner.can.refund']);
     await page.getByRole('button', { name: hinglish['owner.save'] }).click();
 
@@ -152,11 +154,11 @@ test('an owner adds a cashier, previews the role, and the cashier sees only thei
       // No udhaar total on Today, and the menu holds no people, reports or rates.
       await expect(cashier.page.getByText(hinglish['owner.totalDue'])).toHaveCount(0);
       await nav(cashier.page)
-        .getByRole('link', { name: hinglish['owner.more'], exact: true })
+        .getByRole('link', { name: new RegExp(`^${hinglish['owner.shell.menu']}`) })
         .click();
       await expect(cashier.page).toHaveURL(`${desk}/more`);
       await expect(
-        cashier.page.getByRole('heading', { name: hinglish['owner.more'], exact: true }),
+        cashier.page.getByRole('heading', { name: hinglish['owner.shell.menu'], exact: true }),
       ).toBeVisible();
       for (const key of [
         'owner.people',
@@ -523,7 +525,9 @@ test('an owner’s existing fixtures still get the whole desk', async ({ browser
     await expect(
       page.getByRole('heading', { name: hinglish['owner.today'], exact: true }),
     ).toBeVisible();
-    await nav(page).getByRole('link', { name: hinglish['owner.more'], exact: true }).click();
+    await nav(page)
+      .getByRole('link', { name: new RegExp(`^${hinglish['owner.shell.menu']}`) })
+      .click();
     for (const key of ['owner.people', 'owner.reports', 'owner.activity', 'owner.staff'] as const)
       await expect(page.getByRole('link', { name: hinglish[key] })).toBeVisible();
   } finally {

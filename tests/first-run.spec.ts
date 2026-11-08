@@ -121,8 +121,10 @@ test('owner first run: Hindi setup routes save store information on the server',
   await deskSignIn(page, phone);
   expect(await db.adminCredential.count({ where: { userId: owner.id } })).toBe(0);
   const navigation = page.getByRole('navigation', { name: hinglish['owner.desk'], exact: true });
-  await navigation.getByRole('link', { name: hinglish['owner.more'], exact: true }).click();
-  await page.getByRole('link', { name: hinglish['owner.settings.title'], exact: true }).click();
+  // On a laptop the rail has Settings itself (plan v4 B4a).
+  await navigation
+    .getByRole('link', { name: hinglish['owner.settings.title'], exact: true })
+    .click();
   await expect(page).toHaveURL(/\/settings$/);
   await expect(page.getByRole('listitem').filter({ hasText: '800020' }).first()).toBeVisible();
   const before = await db.storeSettings.findUniqueOrThrow({ where: { id: 'store' } });
@@ -146,8 +148,7 @@ test('owner first run: Hindi setup routes save store information on the server',
   await page.reload();
   await expect(information).toHaveValue(after.deliveryMessage);
   await expect(page.locator('html')).toHaveAttribute('lang', 'hi-Latn');
-  await navigation.getByRole('link', { name: hinglish['owner.more'], exact: true }).click();
-  await page.getByRole('link', { name: hinglish['owner.staff'], exact: true }).click();
+  await navigation.getByRole('link', { name: hinglish['owner.staff'], exact: true }).click();
   await expect(page).toHaveURL(/\/staff$/);
   await expect(page.getByText(/First-run owner/).first()).toBeVisible();
 });

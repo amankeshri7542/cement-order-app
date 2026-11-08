@@ -7,7 +7,7 @@
     "build": "next build --webpack",
     "start": "next start --port 3000",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test lib/api.test.ts lib/refresh.test.ts lib/nav.test.ts lib/sw.test.ts lib/money.test.ts components/owner/report-helpers.test.ts components/owner/hazri/words.test.ts components/owner/hazri/fixes.test.ts components/owner/hazri/code-loop.test.ts components/owner/salary/pure.test.ts components/owner/trip-order.test.ts components/owner/crm/pure.test.ts components/owner/tally/pure.test.ts"
+    "test": "node --import tsx --test lib/api.test.ts lib/refresh.test.ts lib/nav.test.ts lib/shell.test.ts lib/sw.test.ts lib/money.test.ts components/owner/report-helpers.test.ts components/owner/hazri/words.test.ts components/owner/hazri/fixes.test.ts components/owner/hazri/code-loop.test.ts components/owner/salary/pure.test.ts components/owner/trip-order.test.ts components/owner/crm/pure.test.ts components/owner/tally/pure.test.ts"
   },
   "dependencies": {
     "@shiv/design": "1.0.0",
