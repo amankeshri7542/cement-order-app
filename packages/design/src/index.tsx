@@ -5,32 +5,22 @@ import {
   useEffect,
   useId,
   useRef,
-  type ButtonHTMLAttributes,
   type InputHTMLAttributes,
   type ReactNode,
 } from 'react';
-import { istToday, money, phoneDigits } from '@shiv/shared';
+import { istToday, phoneDigits } from '@shiv/shared';
 import styles from './design.module.css';
+import { Button } from './kit/actions';
+import { formatMoney } from './kit/format';
 export * from './tokens';
+export * from './kit/words';
+export * from './kit/format';
+export * from './kit/actions';
+export * from './kit/inputs';
+export * from './kit/filters';
+export * from './kit/data';
+export * from './kit/table';
 
-export function Button({
-  variant = 'primary',
-  className = '',
-  ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: 'primary' | 'secondary' | 'danger' | 'ghost';
-}) {
-  return <button {...props} className={`${styles.button} ${styles[variant]} ${className}`} />;
-}
-export function MoneyText({ value, signed = false }: { value: number; signed?: boolean }) {
-  return (
-    <span
-      className={`${styles.money} ${signed ? (value > 0 ? styles.due : value < 0 ? styles.paid : '') : ''}`}
-    >
-      {money(signed ? Math.abs(value) : value)}
-    </span>
-  );
-}
 export function StatusPill({
   label,
   tone = 'neutral',
@@ -54,7 +44,7 @@ export function BigNumberCard({
   return (
     <section className={`${styles.bigNumber} ${styles[tone]}`}>
       <span>{label}</span>
-      <MoneyText value={value} />
+      <span className={styles.money}>{formatMoney(value, true)}</span>
       {children}
     </section>
   );
@@ -371,3 +361,5 @@ export function Skeleton({ label }: { label: string }) {
     </div>
   );
 }
+/** The kit's name for QuantityStepper (plan v4 01, section 8.1). */
+export const QtyStepper = QuantityStepper;

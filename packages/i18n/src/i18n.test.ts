@@ -36,8 +36,8 @@ test('Hinglish is Hindi in Latin letters, spelled the shop’s way', () => {
   }
 });
 
-// Brand and system names that stay as they are written on the product or the screen.
-const latinInHindi = /\b(WhatsApp|GST|UPI|TEST)\b/g;
+// Brand names, file types and key names that stay as they are written on the product or keyboard.
+const latinInHindi = /\b(WhatsApp|GST|UPI|TEST|CSV|Enter)\b/g;
 test('every Hindi key exists in English, keeps its placeholders and is in Devanagari', () => {
   for (const [key, value] of Object.entries(hi)) {
     assert.ok(key in en, `not in en: ${key}`);

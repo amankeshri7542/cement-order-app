@@ -11,17 +11,31 @@
   },
   "scripts": {
     "build": "tsc --noEmit",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@shiv/shared": "1.0.0",
-    "@shiv/tokens": "1.0.0"
+    "@shiv/tokens": "1.0.0",
+    "@tanstack/react-table": "8.21.3",
+    "@tanstack/react-virtual": "3.14.26",
+    "@shiv/i18n": "1.0.0"
   },
   "peerDependencies": {
-    "react": ">=19"
+    "react": ">=19",
+    "react-dom": ">=19"
   },
   "devDependencies": {
     "@types/react": "~19.2.0",
-    "@types/react-dom": "~19.2.0"
-  }
+    "@types/react-dom": "~19.2.0",
+    "@testing-library/react": "16.3.3",
+    "@testing-library/user-event": "^14.6.1",
+    "jsdom": "^27.0.0",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "vitest": "^5.0.3"
+  },
+  "sideEffects": [
+    "*.css"
+  ]
 }

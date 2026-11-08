@@ -1,5 +1,8 @@
 .button {
   min-block-size: 3rem;
+  transition:
+    border-color var(--motion-fast) var(--ease),
+    background var(--motion-fast) var(--ease);
   min-inline-size: 2.75rem;
   padding: 0.65rem 1rem;
   border: 0.0625rem solid transparent;
@@ -27,13 +30,19 @@
   color: var(--shiv-brand-ink);
 }
 .secondary {
-  background: var(--shiv-card);
-  color: var(--shiv-ink);
-  border-color: var(--shiv-line);
+  background: var(--card);
+  color: var(--ink);
+  border-color: var(--rule-strong);
 }
+/* DESIGN.md, Buttons: danger is red text with no fill, and asks once before acting. */
 .danger {
-  background: var(--shiv-red);
-  color: var(--on-solid);
+  background: transparent;
+  color: var(--danger);
+  border-color: var(--rule-strong);
+}
+.quiet {
+  color: var(--ink-2);
+  background: transparent;
 }
 .ghost {
   color: var(--shiv-ink);

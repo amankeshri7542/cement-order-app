@@ -323,6 +323,7 @@ Plain and firm.
 - **Secondary:** paper card with a `rule-strong` border and ink text.
 - **Quiet:** no fill, `ink-secondary` text, for other actions.
 - **Danger:** `danger` text with no fill. Asks once before acting.
+- **Names in code:** `primary`, `secondary`, `quiet`, `danger`, and `sm` for dense laptop toolbars (below 1024 px every button stays 48 px). `ghost` is the old name of `quiet`; new code uses `quiet`.
 - **Motion:** 120 ms on hover and press. The focus ring is a 2 px `info` outline with an offset.
 
 ### Inputs
@@ -345,6 +346,8 @@ The most important part: a ruled ledger, built on TanStack Table and TanStack Vi
 - **Interaction:** row hover actions and a row menu; multi-select with a bulk action bar; arrow keys move, Enter opens, `x` selects.
 - **States:** skeleton rows while loading; an empty state that says what will appear and offers one action; an error state.
 - **Phone:** the same component renders two-line rows: primary text on the left, the figure on the right, secondary text below.
+- **Safety:** a bulk action only ever gets the chosen rows that are on screen; a row a filter or refetch took away is never acted on. Groups stay open or folded as the person left them.
+- **Size:** above 200 rows the table draws only what is on screen (10,000 rows scroll at under 50 ms a frame). On a laptop the table scrolls in its own area under a sticky header; on a phone the rows scroll with the page.
 
 ### KPI tiles and page header
 

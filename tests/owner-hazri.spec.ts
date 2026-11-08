@@ -405,6 +405,8 @@ test('Malik ko bhejo moves it up: gone from the manager, there for the owner, an
     for (const { page } of [one, two]) await go(page, '/hazri?tab=reviews');
     const card = (page: import('@playwright/test').Page) =>
       page.locator('article').filter({ hasText: who.name });
+    // Both managers have the card on screen before the first one acts.
+    for (const { page } of [one, two]) await expect(card(page)).toBeVisible();
     await card(one.page)
       .getByRole('button', { name: hinglish['owner.hazri.review.toOwner'] })
       .click();

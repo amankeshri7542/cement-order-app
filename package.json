@@ -38,7 +38,7 @@
     "serve:customer": "node scripts/serve-customer.mjs",
     "dev:storefront": "npm run dev -w @shiv/storefront",
     "test:tally-bridge": "node --test apps/tally-bridge/test/bridge.test.mjs",
-    "test:local": "npm run build -w @shiv/tokens && node scripts/theme-css.mjs --check && npm test -w @shiv/tokens && node --test scripts/local.test.mjs scripts/staging-smoke.test.mjs scripts/demo.test.mjs scripts/sms-app-hash.test.mjs scripts/design-guards.test.mjs",
+    "test:local": "npm run build -w @shiv/tokens && node scripts/theme-css.mjs --check && npm test -w @shiv/tokens && npm test -w @shiv/design && node --test scripts/local.test.mjs scripts/staging-smoke.test.mjs scripts/demo.test.mjs scripts/sms-app-hash.test.mjs scripts/design-guards.test.mjs",
     "staging:smoke": "node scripts/staging-smoke.mjs",
     "android:baseline": "node scripts/android-baseline.mjs",
     "demo": "node scripts/demo.mjs",

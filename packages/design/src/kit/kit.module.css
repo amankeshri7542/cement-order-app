@@ -1,0 +1,878 @@
+/* Naksha 2 kit, part 1 (plan v4 B3a). Every colour, size and step comes from tokens.css. */
+
+/* ---- Shared ---------------------------------------------------------------------------------- */
+.hidden {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+.figure {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.strong {
+  font-weight: 600;
+}
+.due {
+  color: var(--danger);
+}
+.advance {
+  color: var(--ok);
+}
+.count {
+  font-variant-numeric: tabular-nums;
+  color: inherit;
+  opacity: 0.8;
+}
+.label {
+  font-size: var(--text-meta);
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.hint {
+  font-size: var(--text-meta);
+  color: var(--ink-2);
+}
+.error {
+  font-size: var(--text-meta);
+  color: var(--danger);
+  font-weight: 600;
+}
+:where(
+  .control,
+  .chip,
+  .filterChip,
+  .sortButton,
+  .groupToggle,
+  .menuItem,
+  .kpiButton,
+  .clear,
+  .switch,
+  .exportLink,
+  .dataRow,
+  .phoneRow
+):focus-visible,
+.segment input:focus-visible + span,
+.check input:focus-visible {
+  outline: 0.125rem solid var(--focus);
+  outline-offset: 0.125rem;
+}
+
+/* ---- Actions --------------------------------------------------------------------------------- */
+@media (min-width: 64rem) {
+  .small {
+    min-block-size: 2.25rem;
+    padding: 0.25rem 0.75rem;
+    font-size: var(--text-body);
+  }
+}
+.iconButton {
+  padding-inline: 0.5rem;
+  min-inline-size: var(--touch);
+}
+.icon {
+  display: inline-flex;
+  font-size: var(--text-lead);
+  line-height: 1;
+}
+.spinner {
+  inline-size: 1em;
+  block-size: 1em;
+  border: 0.125rem solid currentColor;
+  border-inline-end-color: transparent;
+  border-radius: var(--radius-pill);
+  animation: spin 700ms linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
+}
+.kbd {
+  display: inline-block;
+  min-inline-size: 1.25rem;
+  padding: 0 0.25rem;
+  border: 0.0625rem solid var(--rule-strong);
+  border-block-end-width: 0.125rem;
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: var(--text-micro);
+  text-align: center;
+  line-height: 1.4;
+}
+
+/* ---- Inputs ---------------------------------------------------------------------------------- */
+.field {
+  display: grid;
+  align-content: start;
+  gap: 0.25rem;
+  min-inline-size: 0;
+}
+.control {
+  box-sizing: border-box;
+  inline-size: 100%;
+  min-block-size: var(--touch);
+  padding: 0.5rem 0.75rem;
+  border: 0.0625rem solid var(--rule-strong);
+  border-radius: var(--radius-control);
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  transition: border-color var(--motion-fast) var(--ease);
+}
+@media (min-width: 64rem) {
+  .control {
+    min-block-size: 2.75rem;
+  }
+}
+.control:focus {
+  border-color: var(--info);
+}
+.control::placeholder {
+  color: var(--ink-3);
+}
+.invalid {
+  border-color: var(--danger);
+}
+.number {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+.affix {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.prefix,
+.suffix {
+  position: absolute;
+  color: var(--ink-2);
+  pointer-events: none;
+}
+.prefix {
+  inset-inline-start: 0.75rem;
+}
+.withPrefix {
+  padding-inline-start: 1.75rem;
+}
+.suffix {
+  inset-inline-end: 0.75rem;
+}
+.affix:has(.suffix) .control {
+  padding-inline-end: 3.5rem;
+}
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-block-size: var(--touch);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+.track {
+  position: relative;
+  inline-size: 2.5rem;
+  block-size: 1.5rem;
+  border-radius: var(--radius-pill);
+  background: var(--rule-strong);
+  transition: background var(--motion-fast) var(--ease);
+}
+.thumb {
+  position: absolute;
+  inset-block-start: 0.1875rem;
+  inset-inline-start: 0.1875rem;
+  inline-size: 1.125rem;
+  block-size: 1.125rem;
+  border-radius: var(--radius-pill);
+  background: var(--card);
+  transition: transform var(--motion-fast) var(--ease);
+}
+.switch[aria-checked='true'] .track {
+  background: var(--ok);
+}
+.switch[aria-checked='true'] .thumb {
+  transform: translateX(1rem);
+}
+.switch:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-block-size: var(--touch);
+  min-inline-size: var(--touch);
+  justify-content: center;
+  cursor: pointer;
+}
+.check input {
+  inline-size: 1.125rem;
+  block-size: 1.125rem;
+  margin: 0;
+  accent-color: var(--ink);
+}
+@media (min-width: 64rem) {
+  .check {
+    min-block-size: 2.25rem;
+    min-inline-size: 2.25rem;
+  }
+}
+.segmented {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  border: 0.0625rem solid var(--rule-strong);
+  border-radius: var(--radius-control);
+  background: var(--card);
+  max-inline-size: 100%;
+}
+.segment {
+  position: relative;
+  display: inline-flex;
+}
+.segment input {
+  position: absolute;
+  opacity: 0;
+  inset: 0;
+  margin: 0;
+  cursor: pointer;
+}
+.segment span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-block-size: calc(var(--touch) - 0.125rem);
+  padding: 0 0.875rem;
+  color: var(--ink-2);
+  font-weight: 500;
+  border-radius: var(--radius-control);
+}
+.segment input:checked + span {
+  background: var(--ink);
+  color: var(--card);
+}
+@media (min-width: 64rem) {
+  .segment span {
+    min-block-size: 2.125rem;
+  }
+}
+.dateInput {
+  display: grid;
+  align-content: start;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+.chip,
+.filterChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-block-size: var(--touch);
+  padding: 0 1rem;
+  border: 0.0625rem solid var(--rule);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--ink-2);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) var(--ease),
+    color var(--motion-fast) var(--ease);
+}
+.chip[aria-pressed='true'],
+.filterChip[aria-pressed='true'] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--card);
+}
+@media (min-width: 64rem) {
+  .chip,
+  .filterChip {
+    min-block-size: 2.25rem;
+  }
+}
+.datePick {
+  inline-size: auto;
+  min-inline-size: 10rem;
+}
+.combo {
+  position: relative;
+}
+.listbox {
+  position: absolute;
+  z-index: var(--z-popover);
+  inset-inline: 0;
+  inset-block-start: calc(100% + 0.25rem);
+  max-block-size: 18rem;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0.25rem 0;
+  list-style: none;
+  border: 0.0625rem solid var(--rule-strong);
+  border-radius: var(--radius-control);
+  background: var(--card);
+  box-shadow: var(--shadow-overlay);
+}
+.option {
+  display: grid;
+  gap: 0.125rem;
+  padding: 0.625rem 0.75rem;
+  min-block-size: var(--touch);
+  box-sizing: border-box;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.option[aria-selected='true'],
+.option:hover {
+  background: var(--surface);
+  box-shadow: inset 0.1875rem 0 0 var(--accent);
+}
+.quietRow {
+  padding: 0.75rem;
+  color: var(--ink-2);
+}
+
+/* ---- Filters --------------------------------------------------------------------------------- */
+.searchBox {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-inline-size: 0;
+}
+.searchBox .control {
+  padding-inline-end: 3rem;
+}
+.searchBox input::-webkit-search-cancel-button {
+  display: none;
+}
+.searchHint {
+  position: absolute;
+  inset-inline-end: 0.75rem;
+  pointer-events: none;
+}
+.clear {
+  position: absolute;
+  inset-inline-end: 0;
+  inline-size: var(--touch);
+  block-size: 100%;
+  border: 0;
+  background: none;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: var(--text-lead);
+  cursor: pointer;
+}
+.filterBar {
+  position: sticky;
+  inset-block-start: var(--sticky-top, 0);
+  z-index: var(--z-sticky);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding-block: 0.5rem;
+  background: var(--bg);
+  border-block-end: 0.0625rem solid var(--rule);
+  min-inline-size: 0;
+}
+.filterSearch {
+  flex: 1 1 16rem;
+  min-inline-size: 0;
+}
+.filterChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  min-inline-size: 0;
+}
+.filterControls,
+.filterEnd {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+.filterEnd {
+  margin-inline-start: auto;
+}
+
+/* ---- Data ------------------------------------------------------------------------------------ */
+.stamp {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.625rem;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-meta);
+  font-weight: 600;
+  line-height: var(--leading-tight);
+  white-space: nowrap;
+}
+.stamp_ok {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+.stamp_warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.stamp_danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.stamp_neutral {
+  background: var(--surface);
+  color: var(--ink-2);
+  box-shadow: inset 0 0 0 0.0625rem var(--rule);
+}
+.ledgerTotal {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding-block: 0.75rem 0;
+  border-block-start: 0.1875rem double var(--ink);
+  font-weight: 600;
+}
+.kpi {
+  display: grid;
+  align-content: start;
+  gap: 0.25rem;
+  padding: 1rem;
+  border: 0.0625rem solid var(--rule);
+  border-radius: var(--radius-none);
+  background: var(--card);
+  color: var(--ink);
+  text-align: start;
+  font: inherit;
+  min-inline-size: 0;
+}
+.kpiButton {
+  cursor: pointer;
+  transition: border-color var(--motion-fast) var(--ease);
+}
+.kpiButton:hover {
+  border-color: var(--rule-strong);
+}
+.kpiButton[aria-pressed='true'] {
+  border-color: var(--ink);
+  box-shadow: inset 0 -0.1875rem 0 var(--accent);
+}
+.kpiLabel {
+  font-size: var(--text-meta);
+  color: var(--ink-2);
+  font-weight: 600;
+}
+.kpiFigure {
+  font-size: var(--text-figure);
+  font-weight: 500;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.kpiChange {
+  font-size: var(--text-meta);
+  color: var(--ink-2);
+}
+.goodChange {
+  color: var(--ok);
+}
+.badChange {
+  color: var(--danger);
+}
+.spark {
+  inline-size: 6rem;
+  block-size: 1.5rem;
+  color: var(--ink-3);
+}
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding-block: 0.75rem;
+  color: var(--ink-2);
+}
+.pagerButtons {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* ---- DataTable ------------------------------------------------------------------------------- */
+.tableWrap {
+  display: grid;
+  /* Never wider than its place, even at 200% text: the rows wrap and the table scrolls inside. */
+  grid-template-columns: minmax(0, 1fr);
+  min-inline-size: 0;
+}
+.tableBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  min-block-size: var(--touch);
+  padding: 0.25rem 0.5rem;
+  background: var(--surface);
+  border: 0.0625rem solid var(--rule);
+  border-block-end: 0;
+}
+.exportLink {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: var(--touch);
+  margin-inline-start: auto;
+  color: var(--ink);
+  font-weight: 600;
+  padding: 0 0.5rem;
+}
+.tableScroll {
+  overflow: auto;
+  max-inline-size: 100%;
+  border: 0.0625rem solid var(--rule);
+  background: var(--card);
+  overscroll-behavior: contain;
+}
+.tableScrollFixed {
+  max-block-size: min(70dvh, 48rem);
+}
+.table {
+  inline-size: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--text-body);
+  line-height: var(--leading);
+}
+.table th,
+.table td {
+  padding: 0.375rem 0.75rem;
+  border-block-end: 0.0625rem solid var(--rule);
+  text-align: start;
+  vertical-align: middle;
+  background: var(--card);
+  overflow-wrap: anywhere;
+}
+.table tbody td {
+  block-size: 2.25rem;
+  box-sizing: border-box;
+}
+.table thead th {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 2;
+  background: var(--surface);
+  font-size: var(--text-meta);
+  font-weight: 600;
+  color: var(--ink-2);
+  white-space: nowrap;
+  border-block-end-color: var(--rule-strong);
+}
+.table .stickyFirst {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 1;
+}
+.table thead .stickyFirst {
+  z-index: 3;
+}
+.num {
+  text-align: end !important;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* The ledger's double rule: before the first money column, and above the totals. */
+.ruleBefore {
+  border-inline-start: 0.1875rem double var(--rule-strong);
+}
+.ruleBefore ~ .ruleBefore {
+  border-inline-start: 0;
+}
+.sortButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-block-size: var(--touch);
+  padding: 0.25rem 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.num .sortButton {
+  flex-direction: row-reverse;
+}
+.sortMark {
+  color: var(--ink-3);
+  font-size: var(--text-micro);
+}
+th[aria-sort='ascending'] .sortMark,
+th[aria-sort='descending'] .sortMark {
+  color: var(--ink);
+}
+.selectCell {
+  inline-size: 2.75rem;
+  padding: 0 !important;
+  text-align: center !important;
+}
+.dataRow {
+  outline-offset: -0.125rem;
+}
+.dataRow:hover td,
+.dataRow:focus-within td {
+  background: var(--surface);
+}
+.dataRow[aria-selected='true'] td {
+  background: var(--surface);
+  box-shadow: inset 0 0 0 9999px var(--warn-soft);
+}
+.openable {
+  cursor: pointer;
+}
+.actionsCell {
+  inline-size: 1%;
+  white-space: nowrap;
+  text-align: end !important;
+}
+.rowActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+@media (hover: hover) and (min-width: 64rem) {
+  .rowActions > :not(.menuBox) {
+    opacity: 0;
+    transition: opacity var(--motion-fast) var(--ease);
+  }
+  .dataRow:hover .rowActions > *,
+  .dataRow:focus-within .rowActions > * {
+    opacity: 1;
+  }
+}
+.groupRow th {
+  padding-block: 0.5rem 0.25rem;
+  background: var(--bg);
+  border-block-end-color: var(--rule-strong);
+  text-align: start;
+}
+.groupToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-block-size: var(--touch);
+  padding: 0 0.25rem;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--text-micro);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.groupCount {
+  color: var(--ink-2);
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.subtotalRow td {
+  font-weight: 600;
+  border-block-start: 0.1875rem double var(--rule-strong);
+  background: var(--surface);
+}
+.subtotalLabel {
+  color: var(--ink-2);
+}
+.totalRow td {
+  position: sticky;
+  inset-block-end: 0;
+  z-index: 2;
+  font-weight: 600;
+  border-block-start: 0.1875rem double var(--ink);
+  border-block-end: 0;
+  background: var(--card);
+}
+.totalRow .stickyFirst {
+  z-index: 3;
+}
+.spacer td {
+  padding: 0;
+  border: 0;
+}
+.menuBox {
+  position: relative;
+  display: inline-flex;
+}
+.menu {
+  position: absolute;
+  z-index: var(--z-popover);
+  inset-inline-end: 0;
+  inset-block-start: calc(100% + 0.25rem);
+  min-inline-size: 12rem;
+  margin: 0;
+  padding: 0.25rem 0;
+  list-style: none;
+  border: 0.0625rem solid var(--rule-strong);
+  background: var(--card);
+  box-shadow: var(--shadow-overlay);
+}
+.menuItem {
+  display: block;
+  inline-size: 100%;
+  min-block-size: var(--touch);
+  padding: 0 1rem;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.menuItem:hover,
+.menuItem:focus {
+  background: var(--surface);
+}
+.menuDanger {
+  color: var(--danger);
+}
+@media (min-width: 64rem) {
+  .menuItem,
+  .groupToggle,
+  .sortButton,
+  .exportLink {
+    min-block-size: 2.25rem;
+  }
+}
+.tableState {
+  display: grid;
+  justify-items: center;
+  gap: 0.75rem;
+  padding: 2rem 1rem;
+  border: 0.0625rem solid var(--rule);
+  background: var(--card);
+  text-align: center;
+  color: var(--ink-2);
+}
+.emptyTitle {
+  margin: 0;
+  color: var(--ink);
+  font-weight: 600;
+}
+.skeletonRow {
+  justify-self: stretch;
+  block-size: 1.25rem;
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeletonRow {
+    animation: none;
+  }
+}
+
+/* ---- DataTable on a phone: two-line rows ------------------------------------------------------ */
+.phoneList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-block: 0.0625rem solid var(--rule);
+  background: var(--card);
+}
+.placed {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+}
+.phoneRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.75rem;
+  min-block-size: var(--touch);
+  padding: 0.625rem 0.75rem;
+  border-block-end: 0.0625rem solid var(--rule);
+  background: var(--card);
+  box-sizing: border-box;
+}
+.phoneRow[aria-selected='true'] {
+  background: var(--warn-soft);
+}
+.phoneMain {
+  display: grid;
+  gap: 0.125rem;
+  flex: 1 1 8rem;
+  min-inline-size: 0;
+}
+.phonePrimary {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.phoneSecondary {
+  color: var(--ink-2);
+  font-size: var(--text-meta);
+  overflow-wrap: anywhere;
+}
+.phoneFigure {
+  margin-inline-start: auto;
+  text-align: end;
+  font-weight: 600;
+}
+.phoneGroup {
+  padding: 0.5rem 0.75rem 0;
+  background: var(--bg);
+  border-block-end: 0.0625rem solid var(--rule-strong);
+}
+.phoneSubtotal,
+.phoneTotal {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.625rem 0.75rem;
+  font-weight: 600;
+  background: var(--surface);
+  border-block-start: 0.1875rem double var(--rule-strong);
+  border-block-end: 0.0625rem solid var(--rule);
+  box-sizing: border-box;
+}
+.phoneTotal {
+  border-block-start-color: var(--ink);
+}

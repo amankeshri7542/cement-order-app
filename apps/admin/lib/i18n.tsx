@@ -25,6 +25,7 @@ import {
   type Language,
   type MessageKey,
 } from '@shiv/i18n';
+import { KitProvider } from '@shiv/design';
 import { ApiError, api } from './api';
 
 /**
@@ -89,7 +90,7 @@ export function LanguageProvider({
   }, []);
   return (
     <LanguageContext.Provider value={{ language, setLanguage }}>
-      {children}
+      <KitProvider language={language}>{children}</KitProvider>
     </LanguageContext.Provider>
   );
 }
