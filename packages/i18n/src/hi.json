@@ -372,5 +372,15 @@
   "kit.stamp.difference": "फ़र्क़",
   "kit.stamp.cancelled": "रद्द",
   "kit.stamp.waiting": "रुका है",
-  "kit.stamp.paid": "चुकता"
+  "kit.stamp.paid": "चुकता",
+  "kit.close": "बंद करो",
+  "kit.back": "वापस",
+  "kit.dismiss": "हटाओ",
+  "kit.undo": "वापस लो",
+  "kit.more": "और",
+  "kit.chart.seeTable": "तालिका देखो",
+  "kit.chart.seeChart": "चार्ट देखो",
+  "kit.chart.empty": "अभी दिखाने को कुछ नहीं",
+  "kit.chart.point": "{label}: {value}",
+  "kit.chart.keys": "तीर से चार्ट पर चलो"
 }

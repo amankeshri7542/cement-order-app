@@ -3,7 +3,6 @@ import {
   Fragment,
   useCallback,
   useEffect,
-  useId,
   useMemo,
   useRef,
   useState,
@@ -21,7 +20,8 @@ import {
   type RowSelectionState,
 } from '@tanstack/react-table';
 import { useVirtualizer, useWindowVirtualizer } from '@tanstack/react-virtual';
-import { Button, IconButton } from './actions';
+import { Button } from './actions';
+import { Menu } from './overlays';
 import { DateText, MoneyText, QtyText } from './data';
 import { formatCount, moveRow } from './format';
 import { Checkbox } from './inputs';
@@ -173,76 +173,15 @@ function SumValue<T>({ column, value }: { column: Column<T>; value: number | und
 
 function RowMenu({ name, items }: { name: string; items: readonly RowMenuItem[] }) {
   const say = useKitWords();
-  const [open, setOpen] = useState(false);
-  const menuId = useId();
-  const box = useRef<HTMLSpanElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const away = (event: MouseEvent) => {
-      if (!box.current?.contains(event.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', away);
-    box.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
-    return () => document.removeEventListener('mousedown', away);
-  }, [open]);
-  if (!items.length) return null;
+  // The kit Menu lives in the top layer, so the table's own scroll area never clips it.
   return (
-    <span ref={box} className={kit.menuBox}>
-      <IconButton
-        label={say('kit.table.rowMenu', { name })}
-        icon="⋮"
-        size="sm"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-controls={open ? menuId : undefined}
-        onClick={(event) => {
-          event.stopPropagation();
-          setOpen(!open);
-        }}
-        onKeyDown={(event) => event.stopPropagation()}
-      />
-      {open && (
-        <ul
-          id={menuId}
-          role="menu"
-          className={kit.menu}
-          onKeyDown={(event) => {
-            event.stopPropagation();
-            const buttons = Array.from(
-              event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'),
-            );
-            const at = buttons.indexOf(document.activeElement as HTMLButtonElement);
-            if (event.key === 'Escape') {
-              setOpen(false);
-              box.current?.querySelector<HTMLButtonElement>('button')?.focus();
-            } else if (event.key === 'ArrowDown') {
-              event.preventDefault();
-              buttons[(at + 1) % buttons.length]?.focus();
-            } else if (event.key === 'ArrowUp') {
-              event.preventDefault();
-              buttons[(at - 1 + buttons.length) % buttons.length]?.focus();
-            }
-          }}
-        >
-          {items.map((item) => (
-            <li key={item.label} role="none">
-              <button
-                type="button"
-                role="menuitem"
-                className={`${kit.menuItem} ${item.danger ? kit.menuDanger : ''}`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setOpen(false);
-                  item.onSelect();
-                }}
-              >
-                {item.label}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </span>
+    <Menu
+      label={say('kit.table.rowMenu', { name })}
+      icon="⋮"
+      variant="quiet"
+      size="sm"
+      items={items}
+    />
   );
 }
 

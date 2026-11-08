@@ -3189,5 +3189,15 @@
   "kit.stamp.difference": "Difference",
   "kit.stamp.cancelled": "Cancelled",
   "kit.stamp.waiting": "Waiting",
-  "kit.stamp.paid": "Paid"
+  "kit.stamp.paid": "Paid",
+  "kit.close": "Close",
+  "kit.back": "Back",
+  "kit.dismiss": "Dismiss",
+  "kit.undo": "Undo",
+  "kit.more": "More",
+  "kit.chart.seeTable": "See as table",
+  "kit.chart.seeChart": "See as chart",
+  "kit.chart.empty": "Nothing to show yet",
+  "kit.chart.point": "{label}: {value}",
+  "kit.chart.keys": "Arrow keys move along the chart"
 }

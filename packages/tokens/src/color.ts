@@ -84,12 +84,16 @@ export const light: Palette = {
   /** Text on a saturated solid fill (danger red). */
   onSolid: '#FFFFFF',
   scrim: 'rgba(31, 35, 34, 0.45)',
-  /** Charts: ink to kraft, sequential and safe for colour-blind readers. */
-  chart1: '#1F2322',
-  chart2: '#4A4F4C',
-  chart3: '#8C877A',
-  chart4: '#B09B6E',
-  chart5: '#CDBF9E',
+  /**
+   * Charts: one kraft hue, from ink-brown to light kraft, for one series (chart1) or ordered parts
+   * of a whole. Checked with the dataviz validator (ordinal): one hue, even steps, and the lightest
+   * step at least 2:1 on the card. Charts always carry a legend and a table view as well.
+   */
+  chart1: '#352C20',
+  chart2: '#5D4D37',
+  chart3: '#856D4D',
+  chart4: '#A78A62',
+  chart5: '#C2A276',
   /** Udhaar by age: quieter to louder as it gets older, each with its own readable text. */
   ramp1: '#D9D5C8',
   ramp2: '#B09B6E',
@@ -127,11 +131,11 @@ export const dark: Palette = {
   focus: '#8DB3EA',
   onSolid: '#141512',
   scrim: 'rgba(0, 0, 0, 0.6)',
-  chart1: '#ECE8DE',
-  chart2: '#C9C4B8',
-  chart3: '#A39E92',
-  chart4: '#B9A479',
-  chart5: '#8C7A55',
+  chart1: '#F2E6D6',
+  chart2: '#D7C4AB',
+  chart3: '#BCA381',
+  chart4: '#A4875F',
+  chart5: '#8B6F48',
   ramp1: '#33352F',
   ramp2: '#9C8A62',
   ramp3: '#C9B68A',

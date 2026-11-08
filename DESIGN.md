@@ -369,7 +369,12 @@ Saathi (the owners' AI) answers with kit parts, not chat bubbles full of prose: 
 ### Feedback and charts
 
 - **Feedback:** a toast is short and carries an undo for inline edits. A banner (info, warn or error) sits at the top of the area it concerns. Errors say what was saved and what was not.
-- **Charts:** small themed SVG bar, stacked bar, line and sparkline charts, in colour-blind-safe ink-to-kraft steps, each with a "see as table" toggle.
+- **Charts:** small themed SVG bar, stacked bar, line and sparkline charts, each with a "see as table" toggle.
+  - **Colour:** one kraft hue from ink-brown to light kraft (`chart-1` to `chart-5`), checked as an ordered ramp in both themes. One series uses `chart-1`; parts of a whole take the steps in a fixed order, at most five, and anything more is folded into "Other" by the page.
+  - **Marks:** bars at most 24 px thick, rounded only at the data end; lines 2 px; 2 px gaps between stacked parts.
+  - **Labels:** text in ink, never in a series colour. A legend for two or more series, and one value labelled, not every point.
+  - **Reading:** a tooltip on hover and on keyboard focus, with arrow keys along the chart. Money axes are in rupees.
+- **Overlays:** menus, popovers and tooltips sit in the browser's top layer, so no scroll area clips them. A drawer slides in without fading, and hover-only row actions are hidden, not faded, so text is never drawn half-transparent.
 
 ### Icons and motion
 

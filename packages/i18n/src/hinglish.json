@@ -3189,5 +3189,15 @@
   "kit.stamp.difference": "Farq",
   "kit.stamp.cancelled": "Cancel",
   "kit.stamp.waiting": "Ruka hai",
-  "kit.stamp.paid": "Chukta"
+  "kit.stamp.paid": "Chukta",
+  "kit.close": "Band karo",
+  "kit.back": "Wapas",
+  "kit.dismiss": "Hatao",
+  "kit.undo": "Wapas lo",
+  "kit.more": "Aur",
+  "kit.chart.seeTable": "Table dekho",
+  "kit.chart.seeChart": "Chart dekho",
+  "kit.chart.empty": "Abhi dikhane ko kuch nahi",
+  "kit.chart.point": "{label}: {value}",
+  "kit.chart.keys": "Arrow se chart par chalo"
 }

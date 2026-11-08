@@ -118,7 +118,8 @@ export function LedgerTotal({
   );
 }
 
-function Sparkline({ values }: { values: readonly number[] }) {
+/** A small trend line for a KPI tile: the shape only, the numbers are elsewhere. */
+export function Sparkline({ values }: { values: readonly number[] }) {
   const points = sparkPoints(values, 96, 24);
   if (!points) return null;
   return (

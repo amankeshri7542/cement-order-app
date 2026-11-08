@@ -12,6 +12,15 @@ test.describe.configure({ mode: 'serial' });
 // The kit speaks Hinglish here, the desk's default; the last test switches language.
 test.beforeEach(async ({ context }) => deskLanguage(context, 'hinglish'));
 
+async function serious(page: Page) {
+  const result = await new AxeBuilder({ page })
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'])
+    .analyze();
+  return result.violations
+    .filter((row) => row.impact === 'serious' || row.impact === 'critical')
+    .map(({ id, nodes }) => ({ id, targets: nodes.slice(0, 3).map((node) => node.target) }));
+}
+
 async function open(page: Page, query = '') {
   await page.goto(`${desk}/kit${query}`);
   await expect(page.getByRole('heading', { name: 'DataTable' })).toBeVisible();
@@ -26,13 +35,22 @@ for (const theme of ['light', 'dark'] as const)
     await page.getByRole('combobox', { name: 'Combobox' }).fill('1');
     await expect(page.getByRole('listbox', { name: 'Combobox' })).toBeVisible();
     await page.getByRole('checkbox', { name: /^Nirmaan Cement 1 chuno$/ }).check();
-    const result = await new AxeBuilder({ page })
-      .withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'])
-      .analyze();
-    const serious = result.violations
-      .filter((row) => row.impact === 'serious' || row.impact === 'critical')
-      .map(({ id, nodes }) => ({ id, targets: nodes.slice(0, 3).map((node) => node.target) }));
-    expect(serious).toEqual([]);
+    expect(await serious(page), 'page').toEqual([]);
+    // And with each overlay open: a menu, the drawer, a dialog, a toast and a tooltip.
+    await page.locator('button[aria-haspopup="menu"]', { hasText: 'Menu' }).click();
+    await expect(page.getByRole('menu', { name: 'Menu' })).toBeVisible();
+    expect(await serious(page), 'menu').toEqual([]);
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Toast' }).click();
+    await page.getByRole('button', { name: 'Tooltip' }).hover();
+    expect(await serious(page), 'toast and tooltip').toEqual([]);
+    await page.getByRole('cell', { name: 'Nirmaan Cement 1', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Nirmaan Cement 1' })).toBeVisible();
+    expect(await serious(page), 'drawer').toEqual([]);
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Dialog' }).click();
+    await expect(page.getByRole('dialog', { name: 'Dialog' })).toBeVisible();
+    expect(await serious(page), 'dialog').toEqual([]);
   });
 
 const sizes: [number, number][] = [
@@ -169,6 +187,11 @@ test('the table in a real browser: keyboard, selection, menu, sort and grouping'
   await expect(table.locator('tbody tr[data-row="1"]')).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(page.getByTestId('opened')).toHaveText('Sthir Cement 2');
+  // Enter opens the row in the drawer; Escape closes it and the keyboard is back on the row.
+  await expect(page.getByRole('dialog', { name: 'Sthir Cement 2' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(table.locator('tbody tr[data-row="1"]')).toBeFocused();
   await page.keyboard.press('x');
   await expect(table.locator('tbody tr[data-row="1"]')).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByText('1 chune')).toBeVisible();
@@ -235,3 +258,116 @@ test('the kit speaks the page language', async ({ context, page }) => {
     en['kit.table.total'],
   );
 });
+
+test('a row opens in a drawer with its own address; back and a refresh keep it right', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await open(page);
+  await page.getByRole('cell', { name: 'Pakki Cement 3', exact: true }).click();
+  const drawer = page.getByRole('dialog', { name: 'Pakki Cement 3' });
+  await expect(drawer).toBeVisible();
+  await expect(page).toHaveURL(/[?&]open=s2(&|$)/);
+  // The list stays usable beside it: another row replaces the drawer's content.
+  await page.getByRole('cell', { name: 'Majboot Cement 4', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Majboot Cement 4' })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('dialog', { name: 'Majboot Cement 4' })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole('dialog', { name: 'Pakki Cement 3' })).toBeVisible();
+  await page.getByRole('button', { name: 'Band karo' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page).not.toHaveURL(/open=/);
+  // An address someone typed with something that is not an id opens nothing.
+  await page.goto(`${desk}/kit?open=%3Cimg%20src%3Dx%3E`);
+  await expect(page.getByRole('heading', { name: 'DataTable' })).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+test('on a phone the drawer covers the screen with a back button', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${desk}/kit?open=s0`);
+  const drawer = page.getByRole('dialog', { name: 'Nirmaan Cement 1' });
+  await expect(drawer).toBeVisible();
+  // After its 180 ms slide it covers the whole width.
+  await expect.poll(async () => (await drawer.boundingBox())?.x).toBe(0);
+  expect(Math.round((await drawer.boundingBox())!.width)).toBe(390);
+  await expect(drawer.getByRole('button', { name: 'Band karo' })).toBeHidden();
+  await drawer.getByRole('button', { name: /Wapas/ }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+test('a row menu opens above the table scroll area, never clipped by it', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto(`${desk}/kit?rows=2000`);
+  const scroller = page.locator('[class*="tableScroll"]').first();
+  await scroller.evaluate((node) => {
+    node.scrollTop = node.scrollHeight;
+  });
+  const last = page.getByRole('button', { name: /ke aur kaam$/ }).last();
+  await last.click();
+  const menu = page.getByRole('menu');
+  await expect(menu).toBeVisible();
+  const [area, panel] = [await scroller.boundingBox(), await menu.boundingBox()];
+  // Inside the screen, and allowed outside the table's own box.
+  expect(panel!.y).toBeGreaterThanOrEqual(0);
+  expect(panel!.y + panel!.height).toBeLessThanOrEqual(720);
+  expect(panel!.y < area!.y + area!.height).toBe(true);
+  await expect(page.getByRole('menuitem', { name: 'Remove' })).toBeInViewport({ ratio: 1 });
+});
+
+test('charts: a tooltip on hover and on keys, and the table toggle', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await open(page);
+  const bars = page.getByRole('figure', { name: 'BarChart', exact: true });
+  const chart = bars.getByRole('group', { name: /Sales by day/ });
+  await chart.focus();
+  await expect(bars.getByRole('status')).toHaveText('Sun₹1,200');
+  await page.keyboard.press('Home');
+  await expect(bars.getByRole('status')).toHaveText('Mon₹1,840');
+  const box = (await chart.boundingBox())!;
+  await page.mouse.move(box.x + box.width * 0.62, box.y + box.height / 2);
+  await expect(bars.getByRole('status')).toHaveText('Fri₹3,055');
+  // The tallest bar carries its value; the axis is in rupees.
+  await expect(chart.locator('text', { hasText: '₹4,980' })).toHaveCount(1);
+  await expect(chart.locator('text', { hasText: '₹6,000' })).toHaveCount(1);
+  await bars.getByRole('button', { name: 'Table dekho' }).click();
+  await expect(bars.getByRole('table')).toContainText('₹4,980.00');
+  const stacked = page.getByRole('figure', { name: 'StackedBarChart' });
+  await expect(stacked.getByRole('listitem')).toHaveText(['Cash', 'UPI', 'Udhaar']);
+});
+
+test('a toast with undo waits while the pointer is on it', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await open(page);
+  await page.getByRole('button', { name: 'Toast' }).click();
+  const toast = page.getByRole('status').filter({ hasText: 'Rate changed' });
+  await expect(toast.getByRole('button', { name: 'Undo' })).toBeVisible();
+  await toast.hover();
+  await page.waitForTimeout(6500);
+  await expect(toast).toBeVisible();
+  await toast.getByRole('button', { name: 'Hatao' }).click();
+  await expect(toast).toHaveCount(0);
+});
+
+for (const [name, width, height, theme] of [
+  ['1440-light', 1440, 900, 'light'],
+  ['390-light', 390, 844, 'light'],
+  ['1440-dark', 1440, 900, 'dark'],
+] as const)
+  test(`/kit looks the same: ${name}`, async ({ context, page }) => {
+    // A fixed day and no motion, so a snapshot changes only when the kit does.
+    await page.clock.setFixedTime(new Date('2026-11-08T06:30:00Z'));
+    await context.addCookies([{ name: 'shiv_theme', value: theme, url: desk }]);
+    await page.setViewportSize({ width, height });
+    await open(page);
+    await page.evaluate(() => document.fonts.ready);
+    // The dev server's own badge is not part of the kit.
+    await page.addStyleTag({ content: 'nextjs-portal { display: none !important; }' });
+    await expect(page).toHaveScreenshot(`kit-${name}.png`, {
+      fullPage: true,
+      animations: 'disabled',
+      caret: 'hide',
+      maxDiffPixelRatio: 0.002,
+    });
+  });

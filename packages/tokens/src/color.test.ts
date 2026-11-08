@@ -81,3 +81,24 @@ describe('the generated CSS', () => {
     assert.equal(cssName('chart1'), '--chart-1');
   });
 });
+
+// Chart steps (plan v4 B3b): each step stands out from the next and the faintest still shows on
+// the card and the surface, in both themes. The full check is the dataviz validator, run when
+// these values change.
+it('chart steps are ordered and the faintest still shows', () => {
+  for (const [theme, c] of [
+    ['light', light],
+    ['dark', dark],
+  ] as const) {
+    const steps = [c.chart1, c.chart2, c.chart3, c.chart4, c.chart5];
+    const onCard = steps.map((step) => contrast(step, c.card));
+    for (let index = 1; index < onCard.length; index++)
+      assert.ok(
+        onCard[index]! < onCard[index - 1]!,
+        `${theme} chart${index + 1} is fainter than chart${index}`,
+      );
+    for (const ground of ['card', 'surface'] as const)
+      assert.ok(contrast(c.chart5, c[ground]) >= 2, `${theme} chart5 on ${ground}`);
+    assert.ok(contrast(c.chart1, c.card) >= 4.5, `${theme} chart1 reads like ink`);
+  }
+});

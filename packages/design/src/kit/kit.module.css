@@ -669,14 +669,15 @@ th[aria-sort='descending'] .sortMark {
   align-items: center;
   gap: 0.25rem;
 }
+/* Hover actions show on hover or keyboard focus of their row. Hidden with visibility rather than a
+   fade, so nothing is ever drawn half-faded and too faint to read. The row menu always shows. */
 @media (hover: hover) and (min-width: 64rem) {
-  .rowActions > :not(.menuBox) {
-    opacity: 0;
-    transition: opacity var(--motion-fast) var(--ease);
+  .rowActions > :not([aria-haspopup='menu']) {
+    visibility: hidden;
   }
   .dataRow:hover .rowActions > *,
   .dataRow:focus-within .rowActions > * {
-    opacity: 1;
+    visibility: visible;
   }
 }
 .groupRow th {
@@ -875,4 +876,567 @@ th[aria-sort='descending'] .sortMark {
 }
 .phoneTotal {
   border-block-start-color: var(--ink);
+}
+
+/* ==== Kit part 2 (plan v4 B3b) ================================================================= */
+
+/* ---- Overlays -------------------------------------------------------------------------------- */
+.popover {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  z-index: var(--z-popover);
+  padding: 0;
+  border: 0.0625rem solid var(--rule-strong);
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: var(--shadow-overlay);
+  max-inline-size: min(22rem, calc(100vw - 1rem));
+  overflow: visible;
+}
+.popover[hidden] {
+  display: none;
+}
+.menuList {
+  display: grid;
+  min-inline-size: 12rem;
+  padding: 0.25rem 0;
+}
+.menuItem:disabled {
+  color: var(--ink-3);
+  cursor: not-allowed;
+}
+.tooltip {
+  padding: 0.375rem 0.625rem;
+  background: var(--ink);
+  color: var(--card);
+  border-color: var(--ink);
+  font-size: var(--text-meta);
+  line-height: var(--leading);
+  max-inline-size: min(18rem, calc(100vw - 1rem));
+}
+.drawer {
+  position: fixed;
+  z-index: var(--z-drawer);
+  inset-block: 0;
+  inset-inline-end: 0;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  inline-size: min(32rem, 100vw);
+  background: var(--card);
+  color: var(--ink);
+  border-inline-start: 0.0625rem solid var(--rule-strong);
+  box-shadow: var(--shadow-overlay);
+  animation: slideIn var(--motion-sheet) var(--ease);
+}
+/* A slide without a fade: text is never drawn half-transparent. */
+@keyframes slideIn {
+  from {
+    transform: translateX(1.5rem);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .drawer {
+    animation: none;
+  }
+}
+.drawerHead {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.5rem 0.5rem 1rem;
+  border-block-end: 0.0625rem solid var(--rule);
+}
+.drawerHead h2 {
+  flex: 1;
+  margin: 0;
+  font-size: var(--text-lead);
+  overflow-wrap: anywhere;
+}
+.drawerHead h2:focus {
+  outline: none;
+}
+.drawerBack {
+  display: none;
+  align-items: center;
+  gap: 0.25rem;
+  min-block-size: var(--touch);
+  padding: 0 0.5rem;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.drawerBody {
+  overflow: auto;
+  padding: 1rem;
+  overscroll-behavior: contain;
+}
+.drawerFoot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  padding: 0.75rem 1rem;
+  border-block-start: 0.0625rem solid var(--rule);
+}
+@media (max-width: 37.5rem) {
+  .drawer {
+    inline-size: 100vw;
+    border: 0;
+    box-shadow: none;
+  }
+  .drawerBack {
+    display: inline-flex;
+  }
+  .drawerClose {
+    display: none !important;
+  }
+}
+.dialog {
+  inline-size: min(30rem, calc(100vw - 2rem));
+  padding: 0;
+  border: 0.0625rem solid var(--rule-strong);
+  border-radius: var(--radius-control);
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: var(--shadow-overlay);
+}
+.dialog::backdrop {
+  background: var(--scrim);
+}
+.dialogBody {
+  padding: 1rem;
+}
+.dialogActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  padding: 0 1rem 1rem;
+}
+
+/* ---- Feedback -------------------------------------------------------------------------------- */
+.toast {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  padding: 0.5rem 0.5rem 0.5rem 1rem;
+  background: var(--rail);
+  color: var(--rail-ink);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow-overlay);
+  z-index: var(--z-toast);
+}
+.toastError {
+  box-shadow:
+    inset 0.25rem 0 0 var(--danger),
+    var(--shadow-overlay);
+}
+.toastText {
+  flex: 1 1 12rem;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+.toastAction {
+  min-block-size: var(--touch);
+  padding: 0 0.75rem;
+  border: 0.0625rem solid var(--rail-muted);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--rail-ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.toastAction:focus-visible,
+.toastClose:focus-visible {
+  outline: 0.125rem solid var(--rail-ink);
+  outline-offset: 0.125rem;
+}
+.toastClose {
+  color: var(--rail-ink) !important;
+}
+.banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.5rem 0.75rem;
+  padding: 0.75rem 0.75rem 0.75rem 1rem;
+  border: 0.0625rem solid var(--rule);
+  border-inline-start-width: 0.25rem;
+  background: var(--card);
+}
+.banner_info {
+  border-inline-start-color: var(--info);
+}
+.banner_warn {
+  border-inline-start-color: var(--warn);
+  background: var(--warn-soft);
+}
+.banner_error {
+  border-inline-start-color: var(--danger);
+  background: var(--danger-soft);
+}
+.bannerMark {
+  display: inline-grid;
+  place-items: center;
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  border-radius: var(--radius-pill);
+  background: var(--ink);
+  color: var(--card);
+  font-weight: 700;
+  font-size: var(--text-meta);
+  flex: none;
+}
+.banner_error .bannerMark {
+  background: var(--danger);
+  color: var(--on-solid);
+}
+.bannerBody {
+  display: grid;
+  gap: 0.25rem;
+  flex: 1 1 14rem;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+.bannerAction {
+  display: flex;
+  gap: 0.5rem;
+}
+.empty {
+  display: grid;
+  justify-items: center;
+  gap: 0.5rem;
+}
+.emptyIcon {
+  color: var(--ink-3);
+  font-size: var(--text-title);
+}
+.emptyBody {
+  margin: 0;
+  color: var(--ink-2);
+  max-inline-size: 32rem;
+}
+.skeletonRows,
+.skeletonTiles {
+  display: grid;
+  gap: 0.5rem;
+}
+.skeletonTiles {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+  gap: 0.75rem;
+}
+.skeletonTile {
+  block-size: 5.5rem;
+  background: var(--surface);
+  border: 0.0625rem solid var(--rule);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeletonTile {
+    animation: none;
+  }
+}
+
+/* ---- Layout ---------------------------------------------------------------------------------- */
+.pageHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  padding-block: 0.5rem 0.75rem;
+}
+.pageTitle {
+  min-inline-size: 0;
+}
+.pageTitle h1 {
+  margin: 0;
+  font-size: var(--text-title);
+  line-height: var(--leading-tight);
+  overflow-wrap: break-word;
+}
+.context {
+  margin: 0.25rem 0 0;
+  color: var(--ink-2);
+  font-size: var(--text-meta);
+}
+.pageActions,
+.sectionActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+.section {
+  display: grid;
+  gap: 0.75rem;
+  min-inline-size: 0;
+}
+.sectionHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.sectionHead :is(h2, h3) {
+  margin: 0;
+  font-size: var(--text-lead);
+}
+.card {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 0.0625rem solid var(--rule);
+  border-radius: var(--radius-none);
+  background: var(--card);
+  min-inline-size: 0;
+}
+.cardTitle {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: 600;
+}
+.cardBody {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+.cardFoot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding-block-start: 0.75rem;
+  border-block-start: 0.0625rem solid var(--rule);
+}
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+.split {
+  display: grid;
+  gap: 1rem;
+  min-inline-size: 0;
+}
+.splitList,
+.splitDetail {
+  min-inline-size: 0;
+}
+.splitBack {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-block-size: var(--touch);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+@media (max-width: 63.99rem) {
+  .split[data-open] .splitList,
+  .split:not([data-open]) .splitDetail {
+    display: none;
+  }
+}
+@media (min-width: 64rem) {
+  .split {
+    grid-template-columns: minmax(18rem, 2fr) minmax(0, 3fr);
+    align-items: start;
+  }
+  .splitBack {
+    display: none;
+  }
+  .splitDetail {
+    position: sticky;
+    inset-block-start: var(--sticky-top, 0);
+  }
+}
+
+/* ---- Charts ---------------------------------------------------------------------------------- */
+.chartFrame {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 1rem;
+  border: 0.0625rem solid var(--rule);
+  background: var(--card);
+  min-inline-size: 0;
+}
+.chartHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.chartHead h3 {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: 600;
+}
+.chartToggle {
+  min-block-size: var(--touch);
+  padding: 0 0.5rem;
+  border: 0;
+  background: none;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: var(--text-meta);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+@media (min-width: 64rem) {
+  .chartToggle {
+    min-block-size: 2.25rem;
+  }
+}
+.chartBody {
+  display: grid;
+  gap: 0.5rem;
+}
+.chartEmpty {
+  margin: 0;
+  padding: 2rem 0;
+  text-align: center;
+  color: var(--ink-2);
+}
+.plot {
+  position: relative;
+  min-inline-size: 0;
+}
+.plotSvg {
+  display: block;
+  max-inline-size: 100%;
+  overflow: visible;
+}
+.plotSvg:focus-visible {
+  outline: 0.125rem solid var(--focus);
+  outline-offset: 0.25rem;
+}
+.grid {
+  stroke: var(--rule);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+.axis {
+  fill: var(--ink-2);
+  font-size: var(--text-micro);
+  font-variant-numeric: tabular-nums;
+}
+.markLabel {
+  fill: var(--ink);
+  font-size: var(--text-meta);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.mark {
+  transition: opacity var(--motion-fast) var(--ease);
+}
+.markActive {
+  opacity: 0.75;
+}
+.s1 {
+  fill: var(--chart-1);
+  stroke: var(--chart-1);
+  background: var(--chart-1);
+}
+.s2 {
+  fill: var(--chart-2);
+  stroke: var(--chart-2);
+  background: var(--chart-2);
+}
+.s3 {
+  fill: var(--chart-3);
+  stroke: var(--chart-3);
+  background: var(--chart-3);
+}
+.s4 {
+  fill: var(--chart-4);
+  stroke: var(--chart-4);
+  background: var(--chart-4);
+}
+.s5 {
+  fill: var(--chart-5);
+  stroke: var(--chart-5);
+  background: var(--chart-5);
+}
+path.mark {
+  stroke: none;
+}
+.line {
+  fill: none !important;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.dot {
+  stroke: var(--card) !important;
+  stroke-width: 2;
+}
+.crosshair {
+  stroke: var(--rule-strong);
+  stroke-width: 1;
+}
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--ink-2);
+  font-size: var(--text-meta);
+}
+.legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+.legendBox {
+  inline-size: 0.75rem;
+  block-size: 0.75rem;
+  border-radius: var(--radius-none);
+}
+.legendLine {
+  inline-size: 1rem;
+  block-size: 0.125rem;
+}
+.chartTip {
+  position: absolute;
+  inset-block-start: 0;
+  transform: translateX(-50%);
+  display: grid;
+  gap: 0.125rem;
+  min-inline-size: 8rem;
+  padding: 0.375rem 0.625rem;
+  border: 0.0625rem solid var(--rule-strong);
+  background: var(--card);
+  box-shadow: var(--shadow-overlay);
+  pointer-events: none;
+  font-size: var(--text-meta);
+  z-index: var(--z-popover);
+}
+.tipLabel {
+  color: var(--ink-2);
+}
+.tipRow {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+.tipKey {
+  inline-size: 0.75rem;
+  block-size: 0.125rem;
 }
