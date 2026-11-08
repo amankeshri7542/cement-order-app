@@ -63,7 +63,8 @@ cp apps/admin/.env.example apps/admin/.env
 cp apps/mobile/.env.example apps/mobile/.env
 cp apps/storefront/.env.example apps/storefront/.env
 # Edit DATABASE_URL and generate a random OTP_HASH_SECRET in apps/api/.env.
-# If Docker is available, this starts a local database with the example credentials:
+# If Docker is available, this starts a local database with the example credentials.
+# Its development database is shiv_cement_dev; production alone keeps the name shiv_cement.
 docker compose up -d db
 npm run db:generate
 npm run build -w @shiv/shared

@@ -4,13 +4,13 @@ services:
     environment:
       POSTGRES_USER: shiv
       POSTGRES_PASSWORD: local-development-only
-      POSTGRES_DB: shiv_cement
+      POSTGRES_DB: shiv_cement_dev
     ports:
       - '127.0.0.1:5432:5432'
     volumes:
       - shiv_postgres:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U shiv -d shiv_cement']
+      test: ['CMD-SHELL', 'pg_isready -U shiv -d shiv_cement_dev']
       interval: 5s
       timeout: 3s
       retries: 10

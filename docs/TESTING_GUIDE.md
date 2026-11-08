@@ -241,8 +241,8 @@ Setting the target:
   rows.
 - Locally, the database name must end in `_test`. Use a dedicated one, for example
   `shiv_demo_test` (create it and run `npm run db:migrate` against it first). Do not use
-  `shiv_cement_test`: the automated suites wipe it. The local practice database `shiv_cement`
-  is refused. The local stack (`npm run local:start`) always uses `shiv_cement`, so it never
+  `shiv_cement_test`: the automated suites wipe it. The local practice database `shiv_cement_dev`
+  is refused. The local stack (`npm run local:start`) always uses `shiv_cement_dev`, so it never
   shows demo-kit data: on this Mac, review with the practice people and products from section 1
   instead. The demo kit is meant for staging; a local `_test` database only tests the kit itself.
 - On staging, set `DEMO_TARGET=staging`; the database name must contain "staging".

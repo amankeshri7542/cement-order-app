@@ -165,3 +165,85 @@ export async function applicationIdentity(name, origin) {
 export function pgEnv(env = process.env) {
   return env.LC_ALL || env.LANG ? env : { ...env, LC_ALL: 'en_US.UTF-8', LANG: 'en_US.UTF-8' };
 }
+
+/**
+ * The local development database. Production keeps `shiv_cement` (infra/docker-compose.yml), so a
+ * local name that ends in `_dev` can never be mistaken for it, and tools that refuse anything but a
+ * `_dev`, `_demo` or `_test` database can tell the two apart.
+ */
+export const devDatabase = 'shiv_cement_dev';
+export const legacyDevDatabase = 'shiv_cement';
+
+/**
+ * Rewrites the DATABASE_URL line of an apps/api/.env text from the old local database name to the
+ * new one. Only a loopback URL whose database is exactly the old name changes; every other line,
+ * the credentials, the query string and any quotes stay as they were. Already renamed: unchanged.
+ */
+export function renamedDevEnv(text) {
+  const lines = text.split('\n');
+  const at = lines.flatMap((line, index) => (/^\s*DATABASE_URL\s*=/.test(line) ? [index] : []));
+  if (at.length !== 1)
+    throw new Error('apps/api/.env must have exactly one DATABASE_URL line; fix it by hand first.');
+  const [, prefix, value] = /^(\s*DATABASE_URL\s*=\s*)(.*?)\s*$/.exec(lines[at[0]]);
+  const quote = /^(['"]).*\1$/.test(value) ? value[0] : '';
+  let url;
+  try {
+    url = new URL(quote ? value.slice(1, -1) : value);
+  } catch {
+    throw new Error('DATABASE_URL in apps/api/.env is not a valid URL.');
+  }
+  if (!['127.0.0.1', 'localhost'].includes(url.hostname))
+    throw new Error('Only a loopback development database is renamed.');
+  if (url.pathname === `/${devDatabase}`) return { text, changed: false };
+  if (url.pathname !== `/${legacyDevDatabase}`)
+    throw new Error(
+      `apps/api/.env uses the database "${decodeURIComponent(url.pathname.slice(1))}"; only "${legacyDevDatabase}" is renamed.`,
+    );
+  url.pathname = `/${devDatabase}`;
+  lines[at[0]] = `${prefix}${quote}${url}${quote}`;
+  return { text: lines.join('\n'), changed: true };
+}
+
+/**
+ * Compares the migration folders in apps/api/prisma/migrations with the rows of Prisma's
+ * `_prisma_migrations` table. A row counts as applied only when it finished and was not rolled
+ * back; one that started and never finished is a failed migration.
+ */
+export function migrationState(folders, rows) {
+  const names = folders.filter((name) => /^\d{14}_[a-z0-9_]+$/.test(name)).sort();
+  const known = new Set(names);
+  const applied = new Set(
+    rows.filter((row) => row.finished_at && !row.rolled_back_at).map((row) => row.migration_name),
+  );
+  return {
+    pending: names.filter((name) => !applied.has(name)),
+    failed: rows
+      .filter((row) => !row.finished_at && !row.rolled_back_at)
+      .map((row) => row.migration_name)
+      .sort(),
+    unknown: [...applied].filter((name) => !known.has(name)).sort(),
+  };
+}
+
+const listed = (names) =>
+  names.length > 3
+    ? `${names.slice(0, 3).join(', ')} and ${names.length - 3} more`
+    : names.join(', ');
+
+/** The warning `local:start` and `local:status` print, or null when the database is current. */
+export function migrationWarning({ pending, failed, unknown }, database) {
+  const lines = [];
+  if (failed.length)
+    lines.push(
+      `Database ${database}: ${failed.length} migration(s) failed part-way (${listed(failed)}). Check with: npm exec -w @shiv/api -- prisma migrate status`,
+    );
+  if (pending.length)
+    lines.push(
+      `Database ${database} is behind: ${pending.length} migration(s) not applied (${listed(pending)}). Pages will fail on missing tables. Run: npm run db:migrate -w @shiv/api`,
+    );
+  if (unknown.length)
+    lines.push(
+      `Database ${database} has ${unknown.length} migration(s) this checkout does not have (${listed(unknown)}); another branch migrated it.`,
+    );
+  return lines.length ? `WARNING: ${lines.join('\nWARNING: ')}` : null;
+}

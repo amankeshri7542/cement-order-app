@@ -15,6 +15,10 @@ import {
   stopManaged,
   applicationIdentity,
   pgEnv,
+  devDatabase,
+  renamedDevEnv,
+  migrationState,
+  migrationWarning,
 } from './local-services.mjs';
 
 async function server(t, handler, host = '127.0.0.1', port = 0) {
@@ -181,4 +185,119 @@ test('PostgreSQL tools get a locale when the shell has none, and keep an existin
   assert.equal(pgEnv({ PATH: '/bin' }).PATH, '/bin');
   assert.equal(pgEnv({ LANG: 'hi_IN.UTF-8' }).LC_ALL, undefined);
   assert.equal(pgEnv({ LC_ALL: 'C' }).LC_ALL, 'C');
+});
+
+const oldEnv = [
+  '# local only',
+  'NODE_ENV=development',
+  'DATABASE_URL=postgresql://shiv:local-development-only@127.0.0.1:55439/shiv_cement',
+  'OTP_PROVIDER=mock',
+  '',
+].join('\n');
+
+test('the dev database rename changes only the DATABASE_URL path and keeps everything else', () => {
+  const { text, changed } = renamedDevEnv(oldEnv);
+  assert.equal(changed, true);
+  assert.equal(devDatabase, 'shiv_cement_dev');
+  assert.equal(
+    text,
+    oldEnv.replace('55439/shiv_cement\n', '55439/shiv_cement_dev\n'),
+    'comments, other keys, credentials and the trailing newline stay',
+  );
+  // Running it again is a no-op.
+  assert.deepEqual(renamedDevEnv(text), { text, changed: false });
+});
+
+test('the dev database rename keeps quotes and query strings', () => {
+  const quoted = 'DATABASE_URL="postgresql://shiv:pw@localhost:5432/shiv_cement?schema=public"\n';
+  assert.equal(
+    renamedDevEnv(quoted).text,
+    'DATABASE_URL="postgresql://shiv:pw@localhost:5432/shiv_cement_dev?schema=public"\n',
+  );
+});
+
+test('the dev database rename refuses anything but the local practice database', () => {
+  const env = (url) => `NODE_ENV=development\nDATABASE_URL=${url}\n`;
+  // Not loopback: a server, staging or production database is never touched.
+  assert.throws(
+    () => renamedDevEnv(env('postgresql://u:p@db.example.test:5432/shiv_cement')),
+    /loopback/,
+  );
+  // Other local databases, including the test suites' one, are left alone.
+  for (const name of ['shiv_cement_test', 'shiv_staging', 'shiv_cementx', 'other'])
+    assert.throws(
+      () => renamedDevEnv(env(`postgresql://u:p@127.0.0.1:55439/${name}`)),
+      /only "shiv_cement" is renamed/,
+    );
+  assert.throws(() => renamedDevEnv(env('not a url')), /not a valid URL/);
+  // Two DATABASE_URL lines are ambiguous; none means there is nothing safe to change.
+  assert.throws(() => renamedDevEnv(oldEnv + oldEnv), /exactly one DATABASE_URL/);
+  assert.throws(() => renamedDevEnv('NODE_ENV=development\n'), /exactly one DATABASE_URL/);
+});
+
+const folders = [
+  '20261001000000_init',
+  '20261002000000_orders',
+  '20261003000000_khata',
+  'migration_lock.toml',
+];
+const done = (name) => ({ migration_name: name, finished_at: new Date(), rolled_back_at: null });
+
+test('a database with every migration applied gets no warning', () => {
+  const state = migrationState(folders, folders.slice(0, 3).map(done));
+  assert.deepEqual(state, { pending: [], failed: [], unknown: [] });
+  assert.equal(migrationWarning(state, 'shiv_cement_dev'), null);
+});
+
+test('pending migrations are listed in order with the command that fixes them', () => {
+  const state = migrationState([...folders].reverse(), [done('20261001000000_init')]);
+  assert.deepEqual(state.pending, ['20261002000000_orders', '20261003000000_khata']);
+  const warning = migrationWarning(state, 'shiv_cement_dev');
+  assert.match(warning, /shiv_cement_dev is behind: 2 migration\(s\) not applied/);
+  assert.match(warning, /20261002000000_orders, 20261003000000_khata/);
+  assert.match(warning, /npm run db:migrate -w @shiv\/api/);
+});
+
+test('an empty or missing migrations table means everything is pending', () => {
+  assert.equal(migrationState(folders, []).pending.length, 3);
+});
+
+test('rolled-back and failed migrations do not count as applied', () => {
+  const rows = [
+    done('20261001000000_init'),
+    {
+      migration_name: '20261002000000_orders',
+      finished_at: new Date(),
+      rolled_back_at: new Date(),
+    },
+    { migration_name: '20261003000000_khata', finished_at: null, rolled_back_at: null },
+  ];
+  const state = migrationState(folders, rows);
+  assert.deepEqual(state.pending, ['20261002000000_orders', '20261003000000_khata']);
+  assert.deepEqual(state.failed, ['20261003000000_khata']);
+  assert.match(
+    migrationWarning(state, 'x_dev'),
+    /1 migration\(s\) failed part-way \(20261003000000_khata\)/,
+  );
+});
+
+test('migrations applied by another branch are reported, and long lists are shortened', () => {
+  const extra = [
+    '20261101000000_a',
+    '20261102000000_b',
+    '20261103000000_c',
+    '20261104000000_d',
+    '20261105000000_e',
+  ];
+  const state = migrationState(folders, [...folders.slice(0, 3), ...extra].map(done));
+  assert.deepEqual(state.unknown, extra);
+  assert.match(
+    migrationWarning(state, 'x_dev'),
+    /5 migration\(s\) this checkout does not have \(20261101000000_a, 20261102000000_b, 20261103000000_c and 2 more\)/,
+  );
+});
+
+test('the migration warning never prints a connection URL or credentials', () => {
+  const warning = migrationWarning(migrationState(folders, []), 'shiv_cement_dev');
+  assert.doesNotMatch(warning, /postgres(ql)?:\/\/|local-development-only|@127\.0\.0\.1/);
 });

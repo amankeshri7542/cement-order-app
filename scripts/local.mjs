@@ -1,6 +1,7 @@
 import {
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   writeFileSync,
   openSync,
@@ -23,6 +24,11 @@ import {
   stopManaged,
   applicationIdentity,
   pgEnv,
+  devDatabase,
+  legacyDevDatabase,
+  renamedDevEnv,
+  migrationState,
+  migrationWarning,
 } from './local-services.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -45,7 +51,7 @@ const saveServices = (services) => {
   writeFileSync('.local/services.json.tmp', JSON.stringify(services, null, 2), { mode: 0o600 });
   renameSync('.local/services.json.tmp', '.local/services.json');
 };
-if (['start', 'stop'].includes(command)) {
+if (['start', 'stop', 'rename-dev-db'].includes(command)) {
   let lock;
   try {
     lock = openSync('.local/launcher.lock', 'wx', 0o600);
@@ -125,11 +131,72 @@ function database() {
     'start',
   ]);
 }
+function databaseRunning() {
+  const { url } = config();
+  return (
+    !!pg &&
+    spawnSync(`${pg}/pg_isready`, ['-h', url.hostname, '-p', url.port || '5432'], {
+      stdio: 'ignore',
+    }).status === 0
+  );
+}
+/**
+ * Warns when the development database is behind this checkout's migrations: on 7 Nov 2026 the app
+ * showed "The first rates need internet" because tables were missing, with nothing saying why.
+ * Prints database names only, never the connection URL.
+ */
+async function checkMigrations() {
+  const { env, url } = config();
+  const name = decodeURIComponent(url.pathname.slice(1));
+  if (name === legacyDevDatabase)
+    console.warn(
+      `NOTE: the development database still has its old name "${legacyDevDatabase}". Rename it once with: npm run local:stop, then node scripts/local.mjs rename-dev-db`,
+    );
+  let rows;
+  try {
+    const { PrismaClient } = await import('@prisma/client');
+    const client = new PrismaClient({ datasourceUrl: env.DATABASE_URL });
+    try {
+      rows = await client.$queryRawUnsafe(
+        'SELECT migration_name, finished_at, rolled_back_at FROM "_prisma_migrations"',
+      );
+    } catch (error) {
+      if (error?.meta?.code === '42P01' || /_prisma_migrations.*does not exist/.test(error.message))
+        rows = [];
+      else throw error;
+    } finally {
+      await client.$disconnect();
+    }
+  } catch (error) {
+    // Prisma puts the code in errorCode for connection errors and in code for query errors, and
+    // its messages often start with a blank line.
+    const missing =
+      [error?.errorCode, error?.code].includes('P1003') ||
+      /Database .* does not exist/.test(String(error?.message));
+    const reason = String(error?.message)
+      .split('\n')
+      .map((line) => line.trim())
+      .find(Boolean);
+    console.warn(
+      missing
+        ? `WARNING: database ${name} does not exist. Run npm run local:setup (or rename-dev-db if you still have ${legacyDevDatabase}).`
+        : `WARNING: could not check migrations for ${name}: ${reason}`,
+    );
+    return false;
+  }
+  const warning = migrationWarning(
+    migrationState(readdirSync('apps/api/prisma/migrations'), rows),
+    name,
+  );
+  if (warning) console.warn(warning);
+  else console.log(`database ${name}: all migrations applied`);
+  return !warning;
+}
 
 if (command === 'setup') {
   saveIfMissing(
     'apps/api/.env',
-    `NODE_ENV=development\nPORT=4000\nDATABASE_URL=postgresql://shiv:local-development-only@127.0.0.1:55439/shiv_cement\nCORS_ORIGINS=http://localhost:3000,http://localhost:8081\nOTP_PROVIDER=mock\nOTP_HASH_SECRET=${randomBytes(32).toString('hex')}\n`,
+    `NODE_ENV=development\nPORT=4000\nDATABASE_URL=postgresql://shiv:local-development-only@127.0.0.1:55439/${devDatabase}\nCORS_ORIGINS=http://localhost:3000,http://localhost:8081\nOTP_PROVIDER=mock\nOTP_HASH_SECRET=${randomBytes(32).toString('hex')}\n`,
   );
   saveIfMissing('apps/admin/.env', 'NEXT_PUBLIC_API_URL=http://localhost:4000/api/v1\n');
   saveIfMissing('apps/mobile/.env', 'EXPO_PUBLIC_API_URL=http://localhost:4000/api/v1\n');
@@ -248,6 +315,8 @@ if (command === 'setup') {
     Object.entries(ports).map(([name, port]) => [`LOCAL_${name.toUpperCase()}_PORT`, String(port)]),
   );
   database();
+  // Starts anyway: a warning, not a refusal, so a branch with a migration in progress still runs.
+  await checkMigrations();
   writeFileSync(
     '.local/ports.env',
     Object.entries(portEnv)
@@ -322,7 +391,51 @@ if (command === 'setup') {
   );
 } else if (command === 'db-stop') {
   pgRun('pg_ctl', ['-D', '.local/postgres', '-m', 'fast', 'stop']);
+} else if (command === 'rename-dev-db') {
+  if (savedServices().some((record) => processInfo(record.pid)))
+    throw new Error('Stop the local services first: npm run local:stop.');
+  config();
+  const { text, changed } = renamedDevEnv(readFileSync('apps/api/.env', 'utf8'));
+  if (!changed) console.log(`apps/api/.env already uses ${devDatabase}. Nothing to do.`);
+  else {
+    database();
+    const { PrismaClient } = await import('@prisma/client');
+    const adminUrl = new URL(parseEnv(readFileSync('apps/api/.env', 'utf8')).DATABASE_URL);
+    adminUrl.pathname = '/postgres';
+    const admin = new PrismaClient({ datasourceUrl: adminUrl.toString() });
+    try {
+      const names = (
+        await admin.$queryRaw`SELECT datname FROM pg_database WHERE datname IN (${legacyDevDatabase}, ${devDatabase})`
+      ).map((row) => row.datname);
+      if (names.includes(devDatabase))
+        throw new Error(
+          `${devDatabase} already exists. Point apps/api/.env at it by hand, or drop it first if it is a leftover.`,
+        );
+      if (names.includes(legacyDevDatabase)) {
+        try {
+          // Both names are constants, so this is not built from input.
+          await admin.$executeRawUnsafe(
+            `ALTER DATABASE "${legacyDevDatabase}" RENAME TO "${devDatabase}"`,
+          );
+        } catch (error) {
+          throw new Error(
+            `PostgreSQL refused the rename (${String(error.message).split('\n')[0]}). Close anything still connected to ${legacyDevDatabase} (psql, Prisma Studio, a test run) and retry.`,
+          );
+        }
+        console.log(`Renamed database ${legacyDevDatabase} to ${devDatabase}.`);
+      } else console.log(`${legacyDevDatabase} does not exist; run npm run local:setup next.`);
+    } finally {
+      await admin.$disconnect();
+    }
+    writeFileSync('apps/api/.env.tmp', text, { mode: 0o600 });
+    renameSync('apps/api/.env.tmp', 'apps/api/.env');
+    console.log(`apps/api/.env now uses ${devDatabase}.`);
+  }
 } else if (command === 'status') {
+  if (!existsSync('apps/api/.env')) console.log('database: not set up (npm run local:setup)');
+  else if (databaseRunning()) {
+    if (!(await checkMigrations())) process.exitCode = 1;
+  } else console.log('database: not running (npm run local:start starts it)');
   const records = savedServices();
   for (const [name, configuredPort] of Object.entries(ports)) {
     const record = records.find((service) => service.name === name);
@@ -353,4 +466,4 @@ if (command === 'setup') {
     );
     if (!ready) process.exitCode = 1;
   }
-} else throw new Error('Use setup, start, stop, db-stop or status.');
+} else throw new Error('Use setup, start, stop, db-stop, status or rename-dev-db.');
